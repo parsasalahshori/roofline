@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Button, Select } from '@roofline/ui';
+import { Button, Listbox, Panel, type ListboxOption } from '@roofline/ui';
 import { IMPORT_FIELDS, type ImportField, type ImportMapping, type ImportView } from '@roofline/shared';
 import { ApiError } from '../../api/client.ts';
 import { errors } from '../../copy/errors.ts';
 import { importCopy } from '../../copy/import.ts';
+import form from '../settings/form.module.css';
 import { useSetMapping } from './api.ts';
 import styles from './ImportWizard.module.css';
+import { WizardActions } from './WizardActions.tsx';
 
 export type MappingStepProps = { view: ImportView; onBack?: () => void; onNext: () => void };
 
@@ -36,7 +38,7 @@ export function MappingStep({ view, onBack, onNext }: MappingStepProps) {
   });
   const mutation = useSetMapping(view.id);
 
-  const options = [
+  const options: ListboxOption[] = [
     { value: '', label: importCopy.dontImport },
     ...view.headers.map((header, index) => ({ value: String(index), label: header })),
   ];
@@ -53,35 +55,36 @@ export function MappingStep({ view, onBack, onNext }: MappingStepProps) {
   }
 
   return (
-    <div className={styles.wizard}>
-      <h2 className={styles.title}>{importCopy.mappingTitle}</h2>
-      <p className={styles.note}>{importCopy.mappingHelp}</p>
-      {mappingError ? (
-        <p className={styles.error} role="alert">
-          {mappingError}
-        </p>
-      ) : null}
-      <div className={styles.fields}>
-        {IMPORT_FIELDS.map((field) => (
-          <Select
-            key={field}
-            label={FIELD_LABELS[field]}
-            value={values[field]}
-            options={options}
-            onChange={(value) => setValues((current) => ({ ...current, [field]: value }))}
-          />
-        ))}
-      </div>
-      <div className={styles.actions}>
+    <>
+      <Panel title={importCopy.mappingTitle}>
+        <p className={`${styles.note} ${styles.before}`}>{importCopy.mappingHelp}</p>
+        {mappingError ? (
+          <p className={styles.error} role="alert">
+            {mappingError}
+          </p>
+        ) : null}
+        <div className={form.grid}>
+          {IMPORT_FIELDS.map((field) => (
+            <Listbox
+              key={field}
+              label={FIELD_LABELS[field]}
+              value={values[field]}
+              options={options}
+              onChange={(value) => setValues((current) => ({ ...current, [field]: value }))}
+            />
+          ))}
+        </div>
+      </Panel>
+      <WizardActions status={importCopy.stepOf(2, 5)}>
         {onBack ? (
-          <Button variant="ghost" onClick={onBack}>
+          <Button variant="default" onClick={onBack}>
             {importCopy.back}
           </Button>
         ) : null}
         <Button variant="primary" busy={mutation.isPending} onClick={handleNext}>
           {importCopy.next}
         </Button>
-      </div>
-    </div>
+      </WizardActions>
+    </>
   );
 }

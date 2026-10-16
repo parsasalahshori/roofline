@@ -1,0 +1,37 @@
+/* The foot of a step: where the person is at the left, Back and the button that moves on at the right, on a raised bar */
+.bar {
+  position: sticky;
+  bottom: 16px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-3);
+  background: var(--raised);
+  box-shadow: var(--e-2);
+}
+
+.status {
+  margin: 0;
+  color: var(--ink-3);
+  font: 600 var(--font-size-min)/1.2 var(--f-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px 12px;
+}
+
+@media (max-width: 767.98px) {
+  /* A phone's tab bar is under the page, so the bar sits just above it */
+  .bar {
+    bottom: 8px;
+  }
+}

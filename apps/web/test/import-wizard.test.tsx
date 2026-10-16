@@ -225,8 +225,9 @@ it('the preview says why a row will be skipped', async () => {
 
   await user.click(await screen.findByRole('button', { name: importCopy.next }));
   await screen.findByRole('heading', { name: importCopy.previewTitle });
-  const table = screen.getByRole('table', { name: importCopy.previewTableLabel });
-  expect(within(table).getByText(`${importCopy.outcomeSkip}: No phone and no email`)).toBeInTheDocument();
+  // The table scrolls inside a region of its own, named by what it shows
+  const region = screen.getByRole('region', { name: importCopy.previewTableLabel });
+  expect(within(within(region).getByRole('table')).getByText(`${importCopy.outcomeSkip}: No phone and no email`)).toBeInTheDocument();
 }, 15000);
 
 it('shows the server message for a bad file', async () => {
@@ -272,4 +273,84 @@ it('a failed retry shows the server message', async () => {
   // The always-mounted empty alert region sits on the page too, so find the alert by its words.
   const alert = await screen.findByText('Could not restart.');
   expect(alert).toHaveAttribute('role', 'alert');
+}, 15000);
+
+/** The step the stepper says is in progress, by its position: 1 to 5, or none once every step is done. */
+async function currentStep(): Promise<number | null> {
+  const list = await screen.findByRole('list', { name: importCopy.stepsLabel });
+  const items = within(list).getAllByRole('listitem');
+  const index = items.findIndex((item) => item.getAttribute('aria-current') === 'step');
+  return index === -1 ? null : index + 1;
+}
+
+it('the steps follow the wizard: upload, columns, check, permission, import', async () => {
+  setup(importView({ status: 'uploaded' }));
+  renderApp('/settings/setup/import');
+
+  expect(await currentStep()).toBe(1);
+  cleanup();
+
+  setup(importView({ status: 'uploaded' }));
+  const second = renderApp('/settings/setup/import/i1');
+  expect(await currentStep()).toBe(2);
+  await second.user.click(await screen.findByRole('button', { name: importCopy.next }));
+  await screen.findByRole('heading', { name: importCopy.previewTitle });
+  expect(await currentStep()).toBe(3);
+  await second.user.click(screen.getByRole('button', { name: importCopy.next }));
+  await screen.findByRole('heading', { name: importCopy.consentTitle });
+  expect(await currentStep()).toBe(4);
+  // Back goes a step back, and the steps with it
+  await second.user.click(screen.getByRole('button', { name: importCopy.back }));
+  await screen.findByRole('heading', { name: importCopy.previewTitle });
+  expect(await currentStep()).toBe(3);
+}, 15000);
+
+it('the last step is in progress while the import runs and every step is done once it finished', async () => {
+  setup(importView({ status: 'processing', progress: { processed: 1, total: 3 } }));
+  renderApp('/settings/setup/import/i1');
+  expect(await currentStep()).toBe(5);
+  // How far along it is, in words with the figures
+  expect(screen.getByText(importCopy.progressCount(1, 3))).toBeInTheDocument();
+  cleanup();
+
+  setup(importView({ status: 'done', progress: { processed: 3, total: 3 }, counts: { ...importView().counts, new: 2, updated: 1 } }));
+  renderApp('/settings/setup/import/i1');
+  const heading = await screen.findByRole('heading', { name: importCopy.summaryTitle });
+  expect(heading).toBeInTheDocument();
+  expect(await currentStep()).toBeNull();
+  const list = screen.getByRole('list', { name: importCopy.stepsLabel });
+  for (const item of within(list).getAllByRole('listitem')) expect(item.getAttribute('data-state')).toBe('done');
+  expect(screen.getByText(importCopy.summaryNew(2))).toBeInTheDocument();
+}, 15000);
+
+it('each column of the file is picked from a list, and the pick is what is saved', async () => {
+  setup(importView({ status: 'uploaded' }));
+  const { user } = renderApp('/settings/setup/import/i1');
+
+  // Email starts on "Don't import"; the file's own column names are the other choices
+  const email = await screen.findByLabelText(importCopy.fieldEmail);
+  expect(email).toHaveTextContent(importCopy.dontImport);
+  await user.click(email);
+  expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([importCopy.dontImport, 'Name', 'Phone']);
+  await user.click(screen.getByRole('option', { name: 'Phone' }));
+  expect(screen.getByLabelText(importCopy.fieldEmail)).toHaveTextContent('Phone');
+
+  await user.click(screen.getByRole('button', { name: importCopy.next }));
+  await waitFor(() => expect(api.sent('PATCH /api/imports/i1')).toEqual([{ mapping: { name: 0, phone: 1, email: 1 } }]));
+}, 15000);
+
+it('the preview shows each row result as a tag and the counts with a glyph', async () => {
+  setup(importView({ status: 'uploaded', counts: { ...importView().counts, skipped: 1, skippedBy: { noName: 0, noContact: 1, badPhone: 0, duplicate: 0 } } }));
+  const { user } = renderApp('/settings/setup/import/i1');
+
+  await user.click(await screen.findByRole('button', { name: importCopy.next }));
+  const panel = await screen.findByRole('region', { name: importCopy.previewTitle });
+  expect(within(panel).getByText(importCopy.newCustomers(2))).toBeInTheDocument();
+  expect(within(panel).getByText(importCopy.skipNoContact(1))).toBeInTheDocument();
+  const table = within(within(panel).getByRole('region', { name: importCopy.previewTableLabel })).getByRole('table');
+  const rows = within(table).getAllByRole('row');
+  // The head, then one row for each of the two preview rows
+  expect(rows).toHaveLength(3);
+  expect(within(rows[1]!).getByText(importCopy.outcomeCreate)).toBeInTheDocument();
+  expect(within(rows[2]!).getByText(importCopy.outcomeUpdate)).toBeInTheDocument();
 }, 15000);

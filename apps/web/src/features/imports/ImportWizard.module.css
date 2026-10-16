@@ -1,12 +1,109 @@
-.wizard { display: grid; gap: 16px; max-width: 880px; min-width: 0; }
-.title { margin: 0; font-size: var(--font-size-body); font-weight: 600; color: var(--ink); }
-.note { margin: 0; color: var(--ink-3); font-size: var(--font-size-body); }
-.error { margin: 0; color: var(--ink); font-size: var(--font-size-body); border-left: 3px solid var(--bad); padding-left: 8px; }
-.fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.actions { display: flex; flex-wrap: wrap; gap: 12px; }
-.tableBox { overflow-x: auto; max-width: 100%; border: 1px solid var(--line-2); border-radius: 8px; }
-.table { border-collapse: collapse; width: 100%; font-size: var(--font-size-body); }
-.table th, .table td { padding: 8px 12px; text-align: left; white-space: nowrap; }
-.counts { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: var(--font-size-body); }
-.reasons { composes: counts; padding-left: 16px; color: var(--ink-3); }
-@media (max-width: 767.98px) { .fields { grid-template-columns: minmax(0, 1fr); } }
+/* The wizard: the steps, then the step in progress, one under another */
+.wizard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 880px;
+  min-width: 0;
+}
+
+/* A line of explanation under a heading, and the strip a failed save leaves above the fields */
+.note {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: var(--font-size-body);
+}
+
+.error {
+  margin: 0 0 16px;
+  padding-left: 8px;
+  border-left: 3px solid var(--bad);
+  color: var(--ink);
+  font-size: var(--font-size-body);
+}
+
+/* The upload's drop box and its button, no wider than they need */
+.picker {
+  max-width: 520px;
+}
+
+/* What the import will do, as short lines with a glyph in front of each */
+.counts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-body);
+}
+
+.count {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-weight: 600;
+}
+
+.glyph {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+/* Why rows are skipped: indented under the count they belong to, muted */
+.reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ink-3);
+  font-weight: 400;
+}
+
+.summary {
+  padding: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* A figure or a phone number in the preview: mono, so the digits line up down the column */
+.mono {
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The progress: the bar, then how far along it is in mono */
+.progress {
+  display: grid;
+  gap: 8px;
+}
+
+.progressCount {
+  margin: 0;
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A note above the fields it explains */
+.before {
+  margin-bottom: 16px;
+}
+
+/* A note or an error under a control inside a panel */
+.after {
+  margin: 12px 0 0;
+}
+
+/* The download of the skipped rows, under the summary */
+.download {
+  display: flex;
+  margin-top: 16px;
+}
