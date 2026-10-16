@@ -4,8 +4,9 @@ import { type Camera, frontWalls, project, type Vec, type Wall } from './windows
 /*
  * Does the outline's front wall line up with the house in the street photo? No AI: classic image edges. The front
  * wall (its two ground corners and two eave corners, from the outline and the wall height) is drawn into the photo with
- * the pinhole camera; points along its two vertical corners and its eave line are checked against the photo's Sobel
- * edges (a strong edge, running the same way, within a few pixels). A small search over the camera heading (Street
+ * the pinhole camera; points along its two vertical corners, its eave line and its ground line are checked against the
+ * photo's Sobel edges (a strong edge, running the same way, within a few pixels), and lines inside the wall that could
+ * pass for an eave (garage-door panels, window heads) count against it. A small search over the camera heading (Street
  * View headings can be a few degrees off) and the eave height finds the best line-up. A person can also drag the four
  * corners onto the house; the camera heading, its distance and the wall height are then fitted to those corners.
  *
@@ -30,11 +31,46 @@ const SAMPLE_STEP_PX = 3;
 const END_TRIM = 0.1;
 const MIN_SAMPLES_PER_LINE = 6;
 /**
- * The line-up is 'good' at or above this share of wall-line samples on a matching edge. By chance (a strong edge in
- * 10% of pixels, a third of them running the right way, 7 pixels searched) about 0.2 of samples hit; a wall that
- * truly lines up scores well above half on the synthetic renders and on the street photos the check was tuned on.
+ * The line-up's checks (strict: a wrong 'good' sizes every marked window wrong, so when in doubt it says 'unknown').
+ * By chance (a strong edge in 10% of pixels, a third of them running the right way, 7 pixels searched) about 0.2 of a
+ * line's samples hit. Tuned on synthetic renders (clean walls; walls with garage-door panels, porch posts and window
+ * heads) and on the live Street View fronts of 214 Shane Dr, Centerton, AR and 5437 Summer Pl, Jonesboro, AR, where
+ * the old three-line score (0.68, 0.63) said 'good' on a wall drawn over the garage door and the driveway.
+ * - FIT_GOOD_SCORE: the mean support 'good' needs at least.
+ * - FIT_OFF_SCORE: below this mean support (four lines, less the interior penalty) the wall plainly does not line up.
+ * - CORNER_MIN / EAVE_MIN / GROUND_MIN: each line's own support; a wall is only confirmed on all four.
+ * - INTERIOR_*: a horizontal line inside the wall standing INTERIOR_FREE or more above the wall's texture (see
+ *   interiorPeak) is penalised in the search, and fails the check when within EAVE_MARGIN of the eave's own support above the texture
+ *   (EAVE_MARGIN_AGREED when Google's heights put the eave where it is).
+ * - EAVE_THIRD_MIN: each third of the eave line on an edge (a garage door's top runs along part of a wall only).
+ * - WIDTH_SEARCH / WIDTH_TOLERANCE: the photo's strongest vertical edge near each corner (searched over WIDTH_SEARCH
+ *   of the width) must be within WIDTH_TOLERANCE of the drawn corner, so the photo's wall is as wide as the outline's.
+ * - EXTEND / BEYOND_MAX: an eave line that runs on at the same height past BOTH corners is a longer line (a fence, a
+ *   gutter run, a garage door's top over a wider drawn wall), not this wall's eave.
+ * - RIVAL_*: the best line-up must beat every one RIVAL_HEADING_DEG or more of heading away (the wall elsewhere along
+ *   the street) by RIVAL_MARGIN: edges that fit two places fit neither for sure. (Up and down, the eave's own check
+ *   and the interior lines do this job.)
+ * - EAVE_TOLERANCE: with Google's heights, the eave height read from the photo within this share of them.
  */
 export const FIT_GOOD_SCORE = 0.5;
+export const FIT_OFF_SCORE = 0.32;
+const CORNER_MIN = 0.45;
+const EAVE_MIN = 0.5;
+const GROUND_MIN = 0.4;
+const INTERIOR_FROM = 0.12;
+const INTERIOR_STEP_PX = 4;
+const INTERIOR_FREE = 0.35;
+const INTERIOR_PENALTY = 0.5;
+const EAVE_MARGIN = 0.15;
+const EAVE_MARGIN_AGREED = 0.1;
+const EAVE_THIRD_MIN = 0.3;
+const WIDTH_SEARCH = 0.15;
+const WIDTH_TOLERANCE = 0.06;
+const EXTEND = 0.25;
+const BEYOND_MAX = 0.6;
+export const EAVE_TOLERANCE = 0.15;
+const RIVAL_HEADING_DEG = 2;
+const RIVAL_MARGIN = 0.1;
 /**
  * Blurred or blank: the wall's region in the photo has little edge energy. Google blurs a house on request with a
  * heavy blur; its region's (median cell) gradient then falls far below the rest of the photo's. Below this ratio of the
@@ -120,21 +156,23 @@ export function wallQuad(cam: Camera, wall: Wall, eaveM: number): Quad | null {
   return a0[0] <= b0[0] ? [a0, b0, b1, a1] : [b0, a0, a1, b1];
 }
 
-/** The share of samples along a line from p to q that sit on a matching strong edge; null when too few are in the photo. */
-function lineScore(e: Edges, p: Vec, q: Vec): { hits: number; n: number } {
+/** Samples along a line from p to q (trimmed `trim` at each end): how many sit on a matching strong edge, of how many in the photo, and which. */
+function lineSamples(e: Edges, p: Vec, q: Vec, trim = END_TRIM): { hits: number; n: number; hit: boolean[] } {
   const len = Math.hypot(q[0] - p[0], q[1] - p[1]);
-  if (len < 1) return { hits: 0, n: 0 };
+  if (len < 1) return { hits: 0, n: 0, hit: [] };
   const ux = (q[0] - p[0]) / len;
   const uy = (q[1] - p[1]) / len;
   const nx = -uy;
   const ny = ux;
   let hits = 0;
   let n = 0;
-  for (let t = len * END_TRIM; t <= len * (1 - END_TRIM); t += SAMPLE_STEP_PX) {
+  const hit: boolean[] = [];
+  for (let t = len * trim; t <= len * (1 - trim); t += SAMPLE_STEP_PX) {
     const sx = p[0] + ux * t;
     const sy = p[1] + uy * t;
     if (sx < 1 || sy < 1 || sx >= e.w - 1 || sy >= e.h - 1) continue;
     n++;
+    let on = false;
     for (let k = -SEARCH_PX; k <= SEARCH_PX; k++) {
       const x = Math.round(sx + nx * k);
       const y = Math.round(sy + ny * k);
@@ -143,32 +181,78 @@ function lineScore(e: Edges, p: Vec, q: Vec): { hits: number; n: number } {
       const m = e.mag[i]!;
       if (m < e.strong) continue;
       if (Math.abs((e.gx[i]! * nx + e.gy[i]! * ny) / m) >= ORIENTATION_COS) {
-        hits++;
+        on = true;
         break;
       }
     }
+    if (on) hits++;
+    hit.push(on);
   }
-  return { hits, n };
+  return { hits, n, hit };
 }
 
-/** How well a drawn wall lines up: the mean, over its two vertical corners and its eave line, of each line's share on an edge. */
-export function quadScore(e: Edges, quad: Quad): { score: number | null; insideShare: number } {
-  const lines: [Vec, Vec][] = [
-    [quad[0], quad[3]],
-    [quad[1], quad[2]],
-    [quad[3], quad[2]],
+/** A line's share of samples on an edge; null when too few of its samples are in the photo. */
+function lineShare(e: Edges, p: Vec, q: Vec, trim = END_TRIM): number | null {
+  const s = lineSamples(e, p, q, trim);
+  return s.n >= MIN_SAMPLES_PER_LINE ? s.hits / s.n : null;
+}
+
+const lerp = (a: Vec, b: Vec, t: number): Vec => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+
+/**
+ * The strongest horizontal line inside a drawn wall, above the wall's own texture: horizontal lines are scanned every
+ * INTERIOR_STEP_PX between INTERIOR_FROM and 1 - INTERIOR_FROM of its height, and the best one's support less the
+ * lower-quartile support of them all (brick, siding and noise put some support on every line; a garage-door panel
+ * line, a window head or a porch beam stands out of it; panel lines can be so close together that half the lines touch
+ * one, hence the quartile, not the median).
+ */
+function interiorPeak(e: Edges, quad: Quad): { peak: number; base: number } {
+  const [bl, br, tr, tl] = quad;
+  const tall = Math.max(Math.hypot(tl[0] - bl[0], tl[1] - bl[1]), Math.hypot(tr[0] - br[0], tr[1] - br[1]));
+  const k = Math.max(6, Math.round((tall * (1 - 2 * INTERIOR_FROM)) / INTERIOR_STEP_PX));
+  const shares: number[] = [];
+  for (let i = 0; i <= k; i++) {
+    const t = INTERIOR_FROM + ((1 - 2 * INTERIOR_FROM) * i) / k;
+    const v = lineShare(e, lerp(bl, tl, t), lerp(br, tr, t));
+    if (v !== null) shares.push(v);
+  }
+  if (shares.length < 3) return { peak: 0, base: 0 };
+  const sorted = [...shares].sort((a, b) => a - b);
+  const base = sorted[Math.floor(sorted.length / 4)]!;
+  return { peak: sorted.at(-1)! - base, base };
+}
+
+/** Each of a drawn wall's four lines on the photo's edges (null: not enough of it in the photo). */
+export type LineSupport = { left: number | null; right: number | null; eave: number | null; ground: number | null };
+
+/**
+ * How a drawn wall sits on the photo's edges: each of its four lines (two vertical corners, the eave and the ground
+ * line), the strongest horizontal line inside it (garage-door panels, window heads and porch beams make lines there
+ * that can pass for an eave), and the share of the drawn wall inside the photo. `score` is the mean of the four lines
+ * less the interior penalty (and `texture`, the support any line inside it gets by chance); null when fewer than three lines are in the photo.
+ */
+export function quadScore(e: Edges, quad: Quad): { score: number | null; lines: LineSupport; interior: number; texture: number; insideShare: number } {
+  const [bl, br, tr, tl] = quad;
+  const pairs: [keyof LineSupport, Vec, Vec][] = [
+    ['left', bl, tl],
+    ['right', br, tr],
+    ['eave', tl, tr],
+    ['ground', bl, br],
   ];
-  const scores: number[] = [];
+  const lines: LineSupport = { left: null, right: null, eave: null, ground: null };
   let inside = 0;
   let total = 0;
-  for (const [p, q] of lines) {
+  for (const [k, p, q] of pairs) {
     const len = Math.hypot(q[0] - p[0], q[1] - p[1]);
     total += Math.max(0, Math.floor((len * (1 - 2 * END_TRIM)) / SAMPLE_STEP_PX) + 1);
-    const s = lineScore(e, p, q);
+    const s = lineSamples(e, p, q);
     inside += s.n;
-    if (s.n >= MIN_SAMPLES_PER_LINE) scores.push(s.hits / s.n);
+    lines[k] = s.n >= MIN_SAMPLES_PER_LINE ? s.hits / s.n : null;
   }
-  return { score: scores.length >= 2 ? scores.reduce((t, v) => t + v, 0) / scores.length : null, insideShare: total > 0 ? inside / total : 0 };
+  const { peak: interior, base: texture } = interiorPeak(e, quad);
+  const vals = Object.values(lines).filter((v): v is number => v !== null);
+  const score = vals.length >= 3 ? vals.reduce((a, b) => a + b, 0) / 4 - INTERIOR_PENALTY * Math.max(0, interior - INTERIOR_FREE) : null;
+  return { score, lines, interior, texture, insideShare: total > 0 ? inside / total : 0 };
 }
 
 /** Cells the wall's region is cut into for its edge energy, pixels. */
@@ -201,6 +285,23 @@ function regionEnergy(e: Edges, quad: Quad): number {
   return cells[Math.floor(cells.length / 2)] ?? 0;
 }
 
+/** Why a line-up is not 'good' (each a check it failed), for the logs and tests. */
+export type LineUpCheck =
+  | 'outside' // too little of the drawn wall is in the photo
+  | 'blurred' // the wall's region has almost no edges (blurred or blank)
+  | 'weak' // the drawn wall's lines sit on few edges overall ('off')
+  | 'score' // the mean support is under FIT_GOOD_SCORE
+  | 'left-corner'
+  | 'right-corner'
+  | 'eave'
+  | 'ground'
+  | 'eave-lookalike' // a line inside the wall is about as strong as the eave (garage-door panels, window heads)
+  | 'eave-short' // the eave line is on an edge along only part of the wall
+  | 'width' // the corners on the photo are not where the outline's wall length puts them
+  | 'wider-line' // the eave line runs on well past both corners: the drawn wall is part of something wider
+  | 'ambiguous' // a clearly different line-up fits nearly as well
+  | 'height'; // the eave height read from the photo disagrees with Google's heights
+
 export type LineUp = {
   fit: 'good' | 'off' | 'unknown';
   fitScore: number | null;
@@ -214,37 +315,117 @@ export type LineUp = {
   /** The wall region's edge energy against the photo's (low: blurred). */
   energyRatio: number | null;
   blurred: boolean;
+  /** The checks the best line-up failed (empty when good). */
+  failed: LineUpCheck[];
+  /** The best line-up's support on each line, and the strongest interior horizontal (null: no line-up found). */
+  lines: LineSupport | null;
+  interior: number | null;
 };
 
 /**
- * The line-up of `wall` (eave at `eaveM`) on a photo taken by `cam`: the best heading correction (±6 degrees) and
- * eave height (±25%), its score, and 'good' / 'off' / 'unknown' (wall mostly out of the photo, or a blurred / blank
- * region).
+ * How far the photo's vertical edge nearest each drawn corner is from it, as a share of the drawn wall's width, and how
+ * well it is supported: the column (between eave and ground) with the most edge support within WIDTH_SEARCH of the corner.
  */
-export function lineUp(edges: Edges, cam: Camera, wall: Wall, eaveM: number): LineUp {
+function cornerShift(e: Edges, quad: Quad, side: 'left' | 'right'): { shift: number; support: number } {
+  const [bl, br, tr, tl] = quad;
+  const [p, q] = side === 'left' ? [bl, tl] : [br, tr];
+  const width = Math.hypot(br[0] - bl[0], br[1] - bl[1]);
+  const ux = (br[0] - bl[0]) / (width || 1);
+  const uy = (br[1] - bl[1]) / (width || 1);
+  let best = { shift: 0, support: -1 };
+  const steps = Math.ceil((WIDTH_SEARCH * width) / 2);
+  for (let k = -steps; k <= steps; k++) {
+    const d = k * 2;
+    const s = lineShare(e, [p[0] + ux * d, p[1] + uy * d], [q[0] + ux * d, q[1] + uy * d]) ?? 0;
+    // Ties go to the drawn place.
+    if (s > best.support + 1e-9 || (Math.abs(s - best.support) < 1e-9 && Math.abs(d) < Math.abs(best.shift * width))) best = { shift: d / (width || 1), support: s };
+  }
+  return best;
+}
+
+/** The share of the eave line's samples on an edge in each third of it (the eave must run along the whole wall). */
+function eaveThirds(e: Edges, quad: Quad): number[] {
+  const [, , tr, tl] = quad;
+  return [0, 1, 2].map((k) => lineShare(e, lerp(tl, tr, k / 3), lerp(tl, tr, (k + 1) / 3), 0) ?? 0);
+}
+
+/** The eave line's support past each corner (EXTEND of the wall's width beyond it, at the same height). */
+function eaveBeyond(e: Edges, quad: Quad): { left: number; right: number } {
+  const [, , tr, tl] = quad;
+  const dx = tr[0] - tl[0];
+  const dy = tr[1] - tl[1];
+  const gap = 0.04;
+  return {
+    left: lineShare(e, [tl[0] - dx * (EXTEND + gap), tl[1] - dy * (EXTEND + gap)], [tl[0] - dx * gap, tl[1] - dy * gap], 0) ?? 0,
+    right: lineShare(e, [tr[0] + dx * gap, tr[1] + dy * gap], [tr[0] + dx * (EXTEND + gap), tr[1] + dy * (EXTEND + gap)], 0) ?? 0,
+  };
+}
+
+/**
+ * The line-up of `wall` (eave at `eaveM`) on a photo taken by `cam`: the best heading correction (±6 degrees) and
+ * eave height (±25%), its score, and 'good' / 'off' / 'unknown'. Strict: 'good' only when every check passes on the
+ * best line-up: both vertical corners, the eave and the ground line each on edges; no line inside the wall as strong
+ * as the eave; the eave on an edge along its whole length and not running on past both corners; the photo's corners
+ * where the outline's wall length puts them; and (with Google's heights) the eave height within EAVE_TOLERANCE of
+ * them. 'off' when the drawn wall sits on few edges at all or on neither vertical corner; 'unknown' otherwise (can't confirm), when the wall is
+ * mostly out of the photo, or blurred / blank.
+ */
+export function lineUp(edges: Edges, cam: Camera, wall: Wall, eaveM: number, opts: { heightKnown?: boolean } = {}): LineUp {
   const before = wallQuad(cam, wall, eaveM);
-  const none: LineUp = { fit: 'unknown', fitScore: null, headingCorrectionDeg: 0, eaveM: null, quad: before, quadBefore: before, energyRatio: null, blurred: false };
+  const none: LineUp = { fit: 'unknown', fitScore: null, headingCorrectionDeg: 0, eaveM: null, quad: before, quadBefore: before, energyRatio: null, blurred: false, failed: ['outside'], lines: null, interior: null };
   if (before === null) return none;
   const energy = regionEnergy(edges, before);
   const energyRatio = edges.meanMag > 0 ? energy / edges.meanMag : 0;
   const blurred = energy < MIN_REGION_ENERGY || energyRatio < BLUR_ENERGY_RATIO;
-  if (blurred) return { ...none, energyRatio: round3(energyRatio), blurred: true };
-  let best: { rank: number; score: number; dh: number; f: number; quad: Quad } | null = null;
+  if (blurred) return { ...none, energyRatio: round3(energyRatio), blurred: true, failed: ['blurred'] };
+  let best: { rank: number; score: number; dh: number; f: number; quad: Quad; lines: LineSupport; interior: number; texture: number } | null = null;
+  const tried: { score: number; dh: number; f: number }[] = [];
   for (let dh = -HEADING_SEARCH_DEG; dh <= HEADING_SEARCH_DEG + 1e-9; dh += HEADING_STEP_DEG) {
     for (let f = 1 - HEIGHT_SEARCH; f <= 1 + HEIGHT_SEARCH + 1e-9; f += HEIGHT_STEP) {
       const quad = wallQuad({ ...cam, heading: cam.heading + dh }, wall, eaveM * f);
       if (quad === null) continue;
-      const { score, insideShare } = quadScore(edges, quad);
+      const { score, lines, interior, texture, insideShare } = quadScore(edges, quad);
       if (score === null || insideShare < MIN_INSIDE_SHARE) continue;
       // Ties go to the smaller correction.
       const rank = score - 0.004 * Math.abs(dh) - 0.05 * Math.abs(f - 1);
-      if (best === null || rank > best.rank) best = { rank, score, dh, f, quad };
+      tried.push({ score, dh, f });
+      if (best === null || rank > best.rank) best = { rank, score, dh, f, quad, lines, interior, texture };
     }
   }
   if (best === null) return { ...none, energyRatio: round3(energyRatio) };
-  const good = best.score >= FIT_GOOD_SCORE;
+
+  const failed: LineUpCheck[] = [];
+  const { lines, interior, quad } = best;
+  if (best.score < FIT_OFF_SCORE) failed.push('weak');
+  else if (best.score < FIT_GOOD_SCORE) failed.push('score');
+  if ((lines.left ?? 0) < CORNER_MIN) failed.push('left-corner');
+  if ((lines.right ?? 0) < CORNER_MIN) failed.push('right-corner');
+  if ((lines.eave ?? 0) < EAVE_MIN) failed.push('eave');
+  if ((lines.ground ?? 0) < GROUND_MIN) failed.push('ground');
+  // A line inside the wall about as strong as the eave could be taken for it; with Google's heights agreeing with the
+  // eave's height it only has to stand clearly below the eave (EAVE_MARGIN_AGREED).
+  const heightAgrees = opts.heightKnown === true && Math.abs(best.f - 1) <= EAVE_TOLERANCE + 1e-9;
+  if (interior > Math.max(INTERIOR_FREE, (lines.eave ?? 0) - best.texture - (heightAgrees ? EAVE_MARGIN_AGREED : EAVE_MARGIN))) failed.push('eave-lookalike');
+  if (Math.min(...eaveThirds(edges, quad)) < EAVE_THIRD_MIN) failed.push('eave-short');
+  const left = cornerShift(edges, quad, 'left');
+  const right = cornerShift(edges, quad, 'right');
+  // Each corner where it is drawn, and the wall as wide on the photo as the outline's wall (shifts are shares of the width)
+  if (Math.abs(left.shift) > WIDTH_TOLERANCE || Math.abs(right.shift) > WIDTH_TOLERANCE || Math.abs(right.shift - left.shift) > WIDTH_TOLERANCE) failed.push('width');
+  const beyond = eaveBeyond(edges, quad);
+  if (Math.min(beyond.left, beyond.right) >= BEYOND_MAX) failed.push('wider-line');
+  // The best line-up must stand out: another clearly different one (the wall moved sideways or up and down) nearly as
+  // good means the edges fit more than one place, so neither can be trusted.
+  const b = best;
+  const rival = tried.filter((t) => Math.abs(t.dh - b.dh) >= RIVAL_HEADING_DEG).reduce((m, t) => Math.max(m, t.score), -Infinity);
+  if (rival > best.score - RIVAL_MARGIN) failed.push('ambiguous');
+  if (opts.heightKnown === true && Math.abs(best.f - 1) > EAVE_TOLERANCE + 1e-9) failed.push('height');
+
+  const good = failed.length === 0;
+  // 'off': plainly not on the house (few edges at all, or neither vertical corner on one); else 'unknown': can't confirm.
+  const off = failed.includes('weak') || (failed.includes('left-corner') && failed.includes('right-corner'));
+  const round2 = (v: number | null) => (v === null ? null : round3(v));
   return {
-    fit: good ? 'good' : 'off',
+    fit: good ? 'good' : off ? 'off' : 'unknown',
     fitScore: round3(best.score),
     headingCorrectionDeg: good ? Math.round(best.dh * 10) / 10 : 0,
     eaveM: good ? eaveM * best.f : null,
@@ -252,6 +433,9 @@ export function lineUp(edges: Edges, cam: Camera, wall: Wall, eaveM: number): Li
     quadBefore: before,
     energyRatio: round3(energyRatio),
     blurred: false,
+    failed,
+    lines: { left: round2(lines.left), right: round2(lines.right), eave: round2(lines.eave), ground: round2(lines.ground) },
+    interior: round3(interior),
   };
 }
 

@@ -77,6 +77,8 @@ export type MeasuredWindow = {
   floor: number;
   /** The detector's confidence, 0..1. */
   confidence: number;
+  /** The size before a door ruler on its photo corrected it (absent: no ruler on its photo). */
+  beforeRuler?: { widthIn: number; heightIn: number };
 };
 
 /** Windows worked out (not seen): counts per size class and how they were worked out. */
@@ -113,6 +115,56 @@ export type WindowsReviewReason = (typeof WINDOWS_REVIEW_REASONS)[number];
 
 /** A box a person drew on a photo; the server sizes it into a MeasuredWindow with source 'marked' (same id). */
 export type MarkedBox = { id: string; photoId: string; box: { x: number; y: number; w: number; h: number } };
+
+/**
+ * A door marked as a ruler on a Street View photo: a thing of known size on the front, so the photo's scale can be
+ * checked. A garage door is nearly always flush with its wall, so it is the better ruler; a front door often sits back
+ * in a porch or an entry, which makes it look smaller and the windows come out too big.
+ */
+export const RULER_KINDS = ['garage-door', 'front-door', 'custom'] as const;
+export type RulerKind = (typeof RULER_KINDS)[number];
+
+/** Standard door sizes, inches (width x height), first one the default. Garage doors: 16 x 7 ft, 9 x 7, 18 x 7, 16 x 8. */
+export const RULER_SIZES: Readonly<Record<Exclude<RulerKind, 'custom'>, readonly { widthIn: number; heightIn: number }[]>> = {
+  'garage-door': [
+    { widthIn: 192, heightIn: 84 },
+    { widthIn: 108, heightIn: 84 },
+    { widthIn: 216, heightIn: 84 },
+    { widthIn: 192, heightIn: 96 },
+  ],
+  'front-door': [
+    { widthIn: 36, heightIn: 80 },
+    { widthIn: 32, heightIn: 80 },
+    { widthIn: 72, heightIn: 80 },
+  ],
+};
+/** A custom ruler's sides, inches. */
+export const RULER_MIN_IN = 12;
+export const RULER_MAX_IN = 300;
+
+/** The door a person marked as a ruler (box: 0..1 of the photo) and its real size. */
+export type DoorRuler = { photoId: string; box: { x: number; y: number; w: number; h: number }; kind: RulerKind; widthIn: number; heightIn: number };
+
+/**
+ * What the server made of the ruler. Assumption: the door is flush with the wall the windows are on, and what is off
+ * is the camera's distance to the house (Street View's position or the outline can be metres off); so the camera is
+ * moved along its line to the wall until the door comes out at its real size, and every marked window on that photo
+ * is sized again with it. `rangeM`: camera to the door, as drawn from the outline and as the ruler puts it.
+ */
+export type RulerResult = {
+  photoId: string;
+  kind: RulerKind;
+  widthIn: number;
+  heightIn: number;
+  /** The door as sized from the outline's wall, before the correction. */
+  measuredWidthIn: number;
+  measuredHeightIn: number;
+  /** Real over measured size (geometric mean of width and height): 1.3 = things were coming out 30% small. */
+  scale: number;
+  rangeM: { before: number; after: number };
+  /** 'check' when the door's width and height disagree on the scale by more than 15% (box not on the door's edges). */
+  agreement: 'good' | 'check';
+};
 
 /** Known-size things a person can tape to the glass (inches, width x height when held upright). */
 export const WINDOW_PHOTO_REFERENCES = {
@@ -217,6 +269,8 @@ export type WindowAdjustments = {
   photosCoverAllWindows?: boolean;
   /** The person dragged the drawn wall's corners onto the house in a photo; the server re-fits camera and wall from it. */
   wallCorners?: { photoId: string; corners: [[number, number], [number, number], [number, number], [number, number]] } | null;
+  /** A door marked as a ruler on a photo: every marked window on that photo is sized again to fit it (null/absent: none). */
+  ruler?: DoorRuler | null;
   /** Added to the measured windows, per size class (replaces `estimated` for that class when set). */
   manualCounts: Partial<Record<WindowSizeClass, number>>;
 };
@@ -245,6 +299,8 @@ export type WindowMeasurementView = {
   photoWindows?: PhotoWindow[];
   /** Photos uploaded for this measurement (absent = none). */
   uploads?: WindowPhotoUpload[];
+  /** The door ruler, as the server applied it (absent/null: none, or it could not be sized). */
+  ruler?: RulerResult | null;
 };
 
 /** PATCH /api/window-measurements/:id. */

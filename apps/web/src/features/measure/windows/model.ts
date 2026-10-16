@@ -1,5 +1,6 @@
 import {
   DEFAULT_WINDOW_TIERS,
+  type DoorRuler,
   WINDOW_SIZE_CLASSES,
   windowCounts,
   type MarkedBox,
@@ -130,7 +131,7 @@ export function tiersFromQuotes(quotes: readonly WindowQuote[] | undefined): Win
 }
 
 /** The adjustments as the server keeps them, with the marks always a list. */
-export function readAdjustments(a: WindowAdjustments): Required<Omit<WindowAdjustments, 'wallCorners'>> & Pick<WindowAdjustments, 'wallCorners'> {
+export function readAdjustments(a: WindowAdjustments): Required<Omit<WindowAdjustments, 'wallCorners' | 'ruler'>> & Pick<WindowAdjustments, 'wallCorners'> & { ruler: DoorRuler | null } {
   return {
     excludedWindowIds: a.excludedWindowIds,
     marked: a.marked ?? [],
@@ -138,6 +139,7 @@ export function readAdjustments(a: WindowAdjustments): Required<Omit<WindowAdjus
     wallCorners: a.wallCorners ?? null,
     photoWindows: a.photoWindows ?? [],
     photosCoverAllWindows: a.photosCoverAllWindows ?? false,
+    ruler: a.ruler ?? null,
   };
 }
 

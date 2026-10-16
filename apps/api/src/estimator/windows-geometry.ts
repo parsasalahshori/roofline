@@ -218,7 +218,7 @@ export function hitWall(cam: Camera, walls: readonly Wall[], px: number, py: num
 export type Box = { x: number; y: number; w: number; h: number };
 
 /** A window sized from its box: width and height in inches, sill height (m), range to it (m) and its bearing. */
-export type Sized = { widthIn: number; heightIn: number; sillM: number; rangeM: number; bearing: number; floor: number };
+export type Sized = { widthIn: number; heightIn: number; sillM: number; rangeM: number; bearing: number; floor: number; /** Unrounded. */ widthM: number; heightM: number };
 
 /**
  * A box on the front sized with the pinhole model: the rays through its left and right edges (at mid height) meet the
@@ -250,6 +250,8 @@ export function sizeBox(cam: Camera, front: readonly Wall[], box: Box): Sized | 
     rangeM: centre.rangeM,
     bearing: bearing(cam.pos, [centre.point[0], centre.point[1]]),
     floor: floorOf(sillM),
+    widthM,
+    heightM,
   };
 }
 

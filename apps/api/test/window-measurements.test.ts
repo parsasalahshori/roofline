@@ -134,6 +134,19 @@ describe('the photo checks and the optional detector', () => {
     expect(view.photos[0]!.wallOverlay?.fit).toBe('unknown');
   });
 
+  it("a line-up the strict check can't confirm ('unknown' with a score) asks for a check; a blurred one (no score) does not", async () => {
+    const { owner, view } = await measuredHouse();
+    const set = (overlay: object) =>
+      ownerSql(`update window_measurements set photos = (select jsonb_agg(p || jsonb_build_object('wallOverlay', $1::jsonb)) from jsonb_array_elements(photos) p) where id = $2`, [JSON.stringify(overlay), view.id]);
+    const base = { corners: [[0.1, 0.7], [0.6, 0.7], [0.6, 0.5], [0.1, 0.5]], headingCorrectionDeg: 0, wallHeightFromPhotoFt: null };
+    await set({ ...base, fit: 'unknown', fitScore: 0.43 });
+    const unsure = (await owner.get(`/api/window-measurements/${view.id}`)).body as WindowMeasurementView;
+    expect(unsure.photos[0]!.wallOverlay?.fit).toBe('unknown');
+    expect(unsure.needsReview?.reasons).toContain('walls-unconfirmed');
+    await set({ ...base, fit: 'unknown', fitScore: null });
+    expect(((await owner.get(`/api/window-measurements/${view.id}`)).body as WindowMeasurementView).needsReview?.reasons ?? []).not.toContain('walls-unconfirmed');
+  });
+
   it('WINDOW_DETECTOR=owlv2: its boxes on the front become detector windows; the estimate covers the rest', async () => {
     const seen: { region: unknown }[] = [];
     const fake: WindowDetector = {
@@ -260,6 +273,81 @@ describe('PATCH: marked windows, counts, the wall corners', () => {
     expect(after.needsReview?.reasons ?? []).not.toContain('walls-unconfirmed');
     const undone = await owner.patch(`/api/window-measurements/${view.id}`).send({ wallCorners: null });
     expect(undone.body.walls.wallHeightFt).toBe(9);
+  });
+});
+
+describe('PATCH: a door as a ruler', () => {
+  /** A box on the drawn wall (a door-sized one), and what the server sizes it as with no ruler. */
+  async function doorOnWall(owner: SuperAgent, view: WindowMeasurementView) {
+    const photo = view.photos.find((p) => p.wallOverlay !== undefined)!;
+    const c = photo.wallOverlay!.corners;
+    const x = (c[0][0] + c[1][0]) / 2;
+    const yTop = c[3][1];
+    const yBottom = c[0][1];
+    const door = { x: x - 0.06, y: yTop + (yBottom - yTop) * 0.2, w: 0.04, h: (yBottom - yTop) * 0.75 };
+    const window = { x: x + 0.05, y: yTop + (yBottom - yTop) * 0.3, w: 0.05, h: (yBottom - yTop) * 0.4 };
+    const res = await owner.patch(`/api/window-measurements/${view.id}`).send({ marked: [{ id: 'door', photoId: photo.id, box: door }, { id: 'w1', photoId: photo.id, box: window }] });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    const sized = (id: string) => (res.body as WindowMeasurementView).windows.find((w) => w.id === id)!;
+    return { photo, door, window, doorSize: sized('door'), windowSize: sized('w1') };
+  }
+
+  it('a door of known size re-sizes every marked window on its photo; null takes it away', async () => {
+    const { owner, view } = await measuredHouse();
+    const { photo, door, doorSize, windowSize } = await doorOnWall(owner, view);
+    // The door is really 25% bigger than the outline's wall makes it: the house is further than the camera was put.
+    const real = { widthIn: Math.round(doorSize.widthIn * 1.25), heightIn: Math.round(doorSize.heightIn * 1.25) };
+    const res = await owner.patch(`/api/window-measurements/${view.id}`).send({ ruler: { photoId: photo.id, box: door, kind: 'custom', ...real } });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    const after = res.body as WindowMeasurementView;
+    expect(after.adjustments.ruler).toEqual({ photoId: photo.id, box: door, kind: 'custom', ...real });
+    expect(after.ruler).toMatchObject({ photoId: photo.id, kind: 'custom', ...real, measuredWidthIn: doorSize.widthIn, measuredHeightIn: doorSize.heightIn, agreement: 'good' });
+    expect(after.ruler!.scale).toBeCloseTo(1.25, 1);
+    expect(after.ruler!.rangeM.after).toBeGreaterThan(after.ruler!.rangeM.before * 1.15);
+    const d = after.windows.find((w) => w.id === 'door')!;
+    expect(Math.abs(d.widthIn - real.widthIn)).toBeLessThanOrEqual(2);
+    expect(Math.abs(d.heightIn - real.heightIn)).toBeLessThanOrEqual(2);
+    const w = after.windows.find((x) => x.id === 'w1')!;
+    expect(w.beforeRuler).toEqual({ widthIn: windowSize.widthIn, heightIn: windowSize.heightIn });
+    expect(w.widthIn / windowSize.widthIn).toBeGreaterThan(1.15);
+    expect(w.heightIn / windowSize.heightIn).toBeGreaterThan(1.15);
+    // Kept: a GET gives the same
+    expect(((await owner.get(`/api/window-measurements/${view.id}`)).body as WindowMeasurementView).ruler).toEqual(after.ruler);
+
+    const off = await owner.patch(`/api/window-measurements/${view.id}`).send({ ruler: null });
+    expect(off.status).toBe(200);
+    expect(off.body.ruler).toBeNull();
+    expect(off.body.adjustments.ruler).toBeUndefined();
+    expect(off.body.windows.find((x: { id: string }) => x.id === 'w1')).toMatchObject({ widthIn: windowSize.widthIn, heightIn: windowSize.heightIn });
+    expect(off.body.windows.find((x: { id: string }) => x.id === 'w1').beforeRuler).toBeUndefined();
+  });
+
+  it('a standard garage door: width and height that disagree with the box say check', async () => {
+    const { owner, view } = await measuredHouse();
+    const { photo, door, doorSize } = await doorOnWall(owner, view);
+    // Real size: as measured in width, 40% taller (the box is not on the door's edges)
+    const res = await owner.patch(`/api/window-measurements/${view.id}`).send({ ruler: { photoId: photo.id, box: door, kind: 'garage-door', widthIn: doorSize.widthIn, heightIn: Math.round(doorSize.heightIn * 1.4) } });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.ruler).toMatchObject({ kind: 'garage-door', agreement: 'check' });
+  });
+
+  it('refuses a bad ruler: unknown photo or kind, sizes out of range, a box off the photo; a door that cannot fit is a 422', async () => {
+    const { owner, view } = await measuredHouse();
+    const url = `/api/window-measurements/${view.id}`;
+    const photoId = view.photos[0]!.id;
+    const box = { x: 0.45, y: 0.5, w: 0.04, h: 0.1 };
+    const ok = { photoId, box, kind: 'front-door', widthIn: 36, heightIn: 80 };
+    expect((await owner.patch(url).send({ ruler: { ...ok, photoId: NO_UUID } })).status).toBe(400);
+    expect((await owner.patch(url).send({ ruler: { ...ok, kind: 'window' } })).status).toBe(400);
+    expect((await owner.patch(url).send({ ruler: { ...ok, widthIn: 6 } })).status).toBe(400);
+    expect((await owner.patch(url).send({ ruler: { ...ok, heightIn: 400 } })).status).toBe(400);
+    expect((await owner.patch(url).send({ ruler: { ...ok, box: { ...box, x: 0.99 } } })).status).toBe(400);
+    expect((await owner.patch(url).send({ ruler: { ...ok, extra: 1 } })).status).toBe(400);
+    // 300 x 300 in for a box this small: the camera would have to be many times further away
+    const far = await owner.patch(url).send({ ruler: { ...ok, box: { x: 0.45, y: 0.5, w: 0.01, h: 0.012 }, widthIn: 300, heightIn: 300 } });
+    expect(far.status).toBe(422);
+    expect(far.body.field ?? far.body.error?.field ?? 'ruler').toBe('ruler');
+    expect((await owner.get(url)).body.adjustments.ruler).toBeUndefined();
   });
 });
 

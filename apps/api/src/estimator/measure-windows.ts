@@ -100,7 +100,13 @@ async function panoOf(deps: AppDeps, centre: LngLat): Promise<StreetViewPano | '
   }
 }
 
-export type TakenPhoto = { stored: StoredFacadePhoto; bytes: Uint8Array; blurred: boolean };
+export type TakenPhoto = {
+  stored: StoredFacadePhoto;
+  bytes: Uint8Array;
+  blurred: boolean;
+  /** The drawn wall is mostly outside this photo (the line-up could not look at it). */
+  outside: boolean;
+};
 
 /** One photo: fetched, kept in the object store (30 days), and the front wall drawn and lined up on it. */
 export async function takePhoto(
@@ -110,6 +116,8 @@ export async function takePhoto(
   plan: NonNullable<ReturnType<typeof planOf>>,
   eaveM: number,
   now: Date,
+  /** The eave height is Google's (not assumed): the photo's eave height must then agree with it for a 'good' line-up. */
+  heightKnown = false,
 ): Promise<TakenPhoto | null> {
   let bytes: Uint8Array;
   try {
@@ -148,10 +156,10 @@ export async function takePhoto(
   base.distanceM = Math.round((centreRange(cam, front) ?? 0) * 10) / 10;
   const wall = mainWall(plan.walls, cam.pos);
   const gray = decodeGray(bytes);
-  if (wall === null || gray === null) return { stored: base, bytes, blurred: false };
+  if (wall === null || gray === null) return { stored: base, bytes, blurred: false, outside: false };
   // The photo is 640 x 640 as asked; a different size (never seen) is drawn at the size it came.
   const cameraAsCame = { ...cam, widthPx: gray.w, heightPx: gray.h };
-  const r = lineUp(sobel(gray), cameraAsCame, wall, eaveM);
+  const r = lineUp(sobel(gray), cameraAsCame, wall, eaveM, { heightKnown });
   const quad = r.quad;
   base.widthPx = gray.w;
   base.heightPx = gray.h;
@@ -166,7 +174,7 @@ export async function takePhoto(
     };
   }
   base.lineup = r.fit === 'good' ? { headingCorrectionDeg: r.headingCorrectionDeg, eaveM: r.eaveM } : null;
-  return { stored: base, bytes, blurred: r.blurred };
+  return { stored: base, bytes, blurred: r.blurred, outside: r.failed.includes('outside') };
 }
 
 /** The optional detector on the counted photos: windows sized like marked ones, on each photo's share of the front. */
@@ -232,14 +240,14 @@ export async function measureWindows(deps: AppDeps, ctx: TenantContext, i: { pro
       const front = frontWalls(plan.walls, plan.camera);
       const shots = planShots(front, plan.camera);
       const eaveM = eave ?? ASSUMED_EAVE_M;
-      const taken = (await Promise.all(shots.map((s) => takePhoto(deps, pano, s, plan, eaveM, now)))).filter((t): t is TakenPhoto => t !== null);
+      const taken = (await Promise.all(shots.map((s) => takePhoto(deps, pano, s, plan, eaveM, now, eave !== null)))).filter((t): t is TakenPhoto => t !== null);
       photos.push(...taken.map((t) => t.stored));
       const counted = taken.filter((t) => t.stored.measure);
       if (shots.length === 0) missing = 'facade-hidden';
       else if (taken.length === 0) missing = 'no-street-view';
       else if (counted.length > 0 && counted.every((t) => t.blurred)) missing = 'house-blurred';
       else {
-        if (counted.some((t) => t.stored.wallOverlay?.fit === 'unknown' && !t.blurred)) reasons.push('partly-hidden');
+        if (counted.some((t) => t.outside)) reasons.push('partly-hidden');
         if (deps.windowDetector.name !== null) {
           detector = deps.windowDetector.name;
           const found = await detect(deps, plan, taken, eaveM);

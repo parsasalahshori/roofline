@@ -1,22 +1,25 @@
 import type { StoredFacadePhoto, WindowGeometry, WindowMeasurementRow } from '@roofline/db';
 import {
+  type DoorRuler,
   type FacadePhoto,
   type MarkedBox,
   type MeasuredWindow,
   type PhotoWindow,
+  type RulerResult,
   type WindowMeasurementView,
   type WindowsReviewReason,
   WINDOWS_REVIEW_REASONS,
   windowSizeClass,
 } from '@roofline/shared';
 import { estimateAllSides, estimateSidesAndBack, type HouseWalls, houseWalls } from './windows-estimate.ts';
-import { type Box, CAMERA_HEIGHT_M, type Camera, frontWalls, inRange, localFrame, sizeBox, type Vec, type Wall, wallsOf } from './windows-geometry.ts';
+import { type Box, CAMERA_HEIGHT_M, type Camera, frontWalls, inRange, localFrame, METRES_TO_INCHES, type Sized, sizeBox, type Vec, type Wall, wallsOf } from './windows-geometry.ts';
 import { correctedCamera, mainWall, type Quad, wallQuad } from './windows-lineup.ts';
 import { sizePhotoWindow } from './window-uploads.ts';
 
 /*
  * A stored window measurement as the API answers it (pure): marked windows are sized here from the stored camera and
- * outline (with the person's corner fit, else the automatic line-up's heading correction), and the estimate is worked
+ * outline (with the person's corner fit, else the automatic line-up's heading correction; on the photo with a door
+ * ruler, with the camera distance the ruler gives), and the estimate is worked
  * out from the walls: all sides with nothing measured, the sides and back once front windows are measured.
  */
 
@@ -65,24 +68,99 @@ function extended(w: Wall): Wall {
   return { ...w, a: [w.a[0] - ux * 50, w.a[1] - uy * 50], b: [w.b[0] + ux * 50, w.b[1] + uy * 50], lengthM: w.lengthM + 100 };
 }
 
-/** A box marked (or found) on a photo, sized; null when it cannot be (no camera, or off every wall). */
-export function sizeOnPhoto(plan: Plan, photo: StoredFacadePhoto, box: Box): { widthIn: number; heightIn: number; floor: number; bearing: number } | null {
-  const cam = sizingCamera(plan, photo);
-  if (cam === null) return null;
+/** A box sized with `cam` on the front walls (else the main wall extended); null when off every wall or implausible. */
+function sizeWith(plan: Plan, cam: Camera, box: Box): Sized | null {
   const front = frontWalls(plan.walls, cam.pos);
   const sized = sizeBox(cam, front, box) ?? (() => {
     const main = mainWall(plan.walls, cam.pos);
     return main === null ? null : sizeBox(cam, [extended(main)], box);
   })();
-  if (sized === null || sized.widthIn < 6 || sized.heightIn < 6 || sized.widthIn > 400 || sized.heightIn > 400) return null;
+  return sized;
+}
+
+const plausible = (s: Sized | null): s is Sized => s !== null && s.widthIn >= 6 && s.heightIn >= 6 && s.widthIn <= 400 && s.heightIn <= 400;
+
+/** A box marked (or found) on a photo, sized; null when it cannot be (no camera, or off every wall). */
+export function sizeOnPhoto(plan: Plan, photo: StoredFacadePhoto, box: Box, cam: Camera | null = sizingCamera(plan, photo)): { widthIn: number; heightIn: number; floor: number; bearing: number } | null {
+  if (cam === null) return null;
+  const sized = sizeWith(plan, cam, box);
+  if (!plausible(sized)) return null;
   return { widthIn: sized.widthIn, heightIn: sized.heightIn, floor: sized.floor, bearing: sized.bearing };
 }
 
-export function markedWindow(plan: Plan | null, photos: readonly StoredFacadePhoto[], m: MarkedBox): MeasuredWindow | null {
+/** A ruler's width and height must agree on the scale within this share, else the result says 'check'. */
+const RULER_AGREE = 0.15;
+/** The camera's distance correction a ruler may make: x1/3 to x3 (beyond that the door or its size is wrong). */
+export const RULER_MIN_SCALE = 1 / 3;
+export const RULER_MAX_SCALE = 3;
+
+export type AppliedRuler = { result: RulerResult; camera: Camera };
+
+/**
+ * A door ruler applied to its photo: the camera that sizes the door at its real size. Assumption: the door is flush with
+ * the wall (a garage door nearly always is), and what is wrong is the camera's distance to the house; the camera is
+ * moved along its line to the main wall (correctedCamera's distance scale) until the door's geometric-mean size
+ * (width x height) matches. A ray-plane sizing is near-linear in the distance, so bisection on the log of the size
+ * ratio finds it. Null when the door cannot be sized on the photo, or the correction is out of RULER_MIN/MAX_SCALE.
+ */
+export function applyRuler(plan: Plan, photo: StoredFacadePhoto, ruler: DoorRuler): AppliedRuler | null {
+  const cam = sizingCamera(plan, photo);
+  if (cam === null) return null;
+  const wall = mainWall(plan.walls, cam.pos);
+  if (wall === null) return null;
+  const at = (s: number): Sized | null => sizeWith(plan, correctedCamera(cam, wall, 0, s), ruler.box);
+  const before = at(1);
+  if (before === null || !(before.widthM > 0) || !(before.heightM > 0)) return null;
+  const knownW = ruler.widthIn / METRES_TO_INCHES;
+  const knownH = ruler.heightIn / METRES_TO_INCHES;
+  // log(measured / real), geometric mean of width and height: 0 at the right distance
+  const err = (s: Sized) => (Math.log(s.widthM / knownW) + Math.log(s.heightM / knownH)) / 2;
+  const e1 = err(before);
+  const scale = Math.exp(-e1);
+  if (!(scale >= RULER_MIN_SCALE && scale <= RULER_MAX_SCALE)) return null;
+  let lo = scale < 1 ? RULER_MIN_SCALE * 0.9 : 1;
+  let hi = scale < 1 ? 1 : RULER_MAX_SCALE * 1.1;
+  let best: { s: number; sized: Sized } = { s: 1, sized: before };
+  for (let k = 0; k < 40; k++) {
+    const mid = Math.sqrt(lo * hi);
+    const sized = at(mid);
+    if (sized === null) {
+      // The door's rays leave the wall (moved too far): stay nearer
+      if (scale > 1) hi = mid;
+      else lo = mid;
+      continue;
+    }
+    best = { s: mid, sized };
+    if (err(sized) < 0) lo = mid;
+    else hi = mid;
+  }
+  if (Math.abs(err(best.sized)) > 0.02) return null;
+  const kw = ruler.widthIn / (before.widthM * METRES_TO_INCHES);
+  const kh = ruler.heightIn / (before.heightM * METRES_TO_INCHES);
+  const r1 = (v: number) => Math.round(v * 10) / 10;
+  return {
+    camera: correctedCamera(cam, wall, 0, best.s),
+    result: {
+      photoId: photo.id,
+      kind: ruler.kind,
+      widthIn: ruler.widthIn,
+      heightIn: ruler.heightIn,
+      measuredWidthIn: before.widthIn,
+      measuredHeightIn: before.heightIn,
+      scale: Math.round(scale * 1000) / 1000,
+      rangeM: { before: r1(before.rangeM), after: r1(best.sized.rangeM) },
+      agreement: Math.abs(Math.log(kw / kh)) <= Math.log(1 + RULER_AGREE) ? 'good' : 'check',
+    },
+  };
+}
+
+export function markedWindow(plan: Plan | null, photos: readonly StoredFacadePhoto[], m: MarkedBox, ruler: AppliedRuler | null = null): MeasuredWindow | null {
   const photo = photos.find((p) => p.id === m.photoId);
   if (plan === null || photo === undefined) return null;
-  const s = sizeOnPhoto(plan, photo, m.box);
+  const onRuler = ruler !== null && ruler.result.photoId === photo.id;
+  const s = sizeOnPhoto(plan, photo, m.box, onRuler ? ruler.camera : undefined);
   if (s === null) return null;
+  const plain = onRuler ? sizeOnPhoto(plan, photo, m.box) : null;
   return {
     id: m.id,
     photoId: m.photoId,
@@ -93,6 +171,7 @@ export function markedWindow(plan: Plan | null, photos: readonly StoredFacadePho
     sizeClass: windowSizeClass(s.widthIn, s.heightIn),
     floor: s.floor,
     confidence: 1,
+    ...(plain !== null ? { beforeRuler: { widthIn: plain.widthIn, heightIn: plain.heightIn } } : {}),
   };
 }
 
@@ -166,7 +245,9 @@ export function toWindowView(row: WindowMeasurementRow, now: Date): WindowMeasur
   const geometry = row.geometry ?? null;
   const plan = geometry === null ? null : planOf(geometry);
   const photos = row.photos;
-  const marked = (row.adjustments.marked ?? []).map((m) => markedWindow(plan, photos, m)).filter((w): w is MeasuredWindow => w !== null);
+  const rulerPhoto = row.adjustments.ruler == null ? undefined : photos.find((p) => p.id === row.adjustments.ruler!.photoId);
+  const ruler = plan === null || rulerPhoto === undefined ? null : applyRuler(plan, rulerPhoto, row.adjustments.ruler!);
+  const marked = (row.adjustments.marked ?? []).map((m) => markedWindow(plan, photos, m, ruler)).filter((w): w is MeasuredWindow => w !== null);
   const windows = [...row.windows, ...marked];
   const walls = wallsFor(geometry, photos);
   const estimated = walls === null ? (row.estimated ?? null) : windows.length > 0 ? estimateSidesAndBack(walls, windows) : estimateAllSides(walls);
@@ -189,7 +270,9 @@ export function toWindowView(row: WindowMeasurementRow, now: Date): WindowMeasur
   if (photos.some((p) => p.capturedOn !== null && yearsBetween(p.capturedOn, now) > OLD_IMAGERY_YEARS)) reasons.add('old-imagery');
   const counted = photos.filter((p) => p.measure);
   const personFitted = photos.some((p) => p.personFit !== null);
-  if (!personFitted && counted.some((p) => p.wallOverlay?.fit === 'off')) reasons.add('walls-unconfirmed');
+  // 'off' or 'unknown' (the strict line-up could not confirm it, not blurred): the walls are not confirmed.
+  const unconfirmed = (p: StoredFacadePhoto) => p.wallOverlay?.fit === 'off' || (p.wallOverlay?.fit === 'unknown' && p.wallOverlay.fitScore !== null);
+  if (!personFitted && counted.some(unconfirmed)) reasons.add('walls-unconfirmed');
   else reasons.delete('walls-unconfirmed');
 
   const floorsMeasured = windows.length > 0 ? Math.max(...windows.map((w) => w.floor)) : null;
@@ -213,11 +296,13 @@ export function toWindowView(row: WindowMeasurementRow, now: Date): WindowMeasur
       manualCounts: { ...row.adjustments.manualCounts },
       ...(row.adjustments.marked !== undefined ? { marked: row.adjustments.marked } : {}),
       ...(row.adjustments.wallCorners != null ? { wallCorners: row.adjustments.wallCorners } : {}),
+      ...(row.adjustments.ruler != null ? { ruler: row.adjustments.ruler } : {}),
       ...(row.adjustments.photoWindows !== undefined ? { photoWindows: row.adjustments.photoWindows } : {}),
       ...(row.adjustments.photosCoverAllWindows !== undefined ? { photosCoverAllWindows: row.adjustments.photosCoverAllWindows } : {}),
     },
     tookMs: row.tookMs,
     photoWindows,
     uploads: uploads.map((u) => ({ id: u.id, widthPx: u.widthPx, heightPx: u.heightPx, focal35mm: u.focal35mm, takenAt: u.takenAt })),
+    ruler: ruler?.result ?? null,
   };
 }

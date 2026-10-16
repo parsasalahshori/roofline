@@ -4,12 +4,12 @@ import { Router } from 'express';
 import busboy from 'busboy';
 import { z } from 'zod';
 import { appendWindowUpload, getWindowMeasurement, type StoredFacadePhoto, type StoredWindowUpload, updateWindowMeasurement, type WindowMeasurementChange, withTenant } from '@roofline/db';
-import { type PhotoWindowInput, priceWindows, SHEET_MAX_OFFSET_IN, SHEET_MAX_POINTS, SHEET_PAPER_IN, WINDOW_PHOTO_REFERENCES, WINDOW_SIZE_CLASSES, type WindowAdjustments, type WindowQuote, windowCounts } from '@roofline/shared';
+import { type DoorRuler, type PhotoWindowInput, priceWindows, RULER_KINDS, RULER_MAX_IN, RULER_MIN_IN, SHEET_MAX_OFFSET_IN, SHEET_MAX_POINTS, SHEET_PAPER_IN, WINDOW_PHOTO_REFERENCES, WINDOW_SIZE_CLASSES, type WindowAdjustments, type WindowQuote, windowCounts } from '@roofline/shared';
 import { arProblem, readImageInfo, sheetProblem, sizePhotoWindow } from '../estimator/window-uploads.ts';
 import type { AppDeps } from '../app.ts';
 import { measureWindows } from '../estimator/measure-windows.ts';
 import { fitCorners, mainWall, type Quad } from '../estimator/windows-lineup.ts';
-import { planOf, rawCamera, toWindowView } from '../estimator/windows-view.ts';
+import { applyRuler, planOf, rawCamera, toWindowView } from '../estimator/windows-view.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { can } from '../permissions.ts';
 import { assertKnownFields, noNul, parse, UUID } from '../validate.ts';
@@ -21,9 +21,11 @@ const COUNT_MESSAGE = 'Please enter a count from 0 to 200.';
 const WINDOWS_MESSAGE = 'Pick windows of this measurement.';
 const MARKED_MESSAGE = 'Mark windows inside a photo of this measurement (60 at most).';
 const CORNERS_MESSAGE = 'Drag the four corners onto the house in a photo of this measurement.';
+const RULER_MESSAGE = `Mark the door inside a photo of this measurement, with its size (${RULER_MIN_IN} to ${RULER_MAX_IN} in).`;
+const RULER_UNSIZED_MESSAGE = 'That door could not be used as a ruler on this photo: it is off the front wall, or its size is far from what the photo shows. Check the box is on the door and the door size is right.';
 
 const CREATE_FIELDS = ['propertyId', 'address'] as const;
-const PATCH_FIELDS = ['excludedWindowIds', 'manualCounts', 'marked', 'wallCorners', 'photoWindows', 'photosCoverAllWindows'] as const;
+const PATCH_FIELDS = ['excludedWindowIds', 'manualCounts', 'marked', 'wallCorners', 'photoWindows', 'photosCoverAllWindows', 'ruler'] as const;
 const PHOTO_WINDOWS_MESSAGE = 'Mark each window inside its photo, with a paper on the glass or one side measured (6 to 200 in; 60 windows at most).';
 const COVER_MESSAGE = 'Please check this field.';
 const UPLOAD_TOO_BIG_MESSAGE = 'That photo is over 12 MB.';
@@ -68,6 +70,12 @@ const cornerCoord = z.number().finite().min(-1).max(2);
 const point01 = z.tuple([cornerCoord, cornerCoord]);
 const CornersSchema = z
   .object({ photoId: z.string().regex(UUID), corners: z.tuple([point01, point01, point01, point01]) })
+  .strict()
+  .nullable();
+
+const rulerInches = z.number().finite().min(RULER_MIN_IN).max(RULER_MAX_IN);
+const RulerSchema = z
+  .object({ photoId: z.string().regex(UUID), box: BoxSchema, kind: z.enum(RULER_KINDS), widthIn: rulerInches, heightIn: rulerInches })
   .strict()
   .nullable();
 
@@ -206,8 +214,9 @@ function personFitFor(row: { geometry: Parameters<typeof planOf>[0] | null }, ph
 /**
  * `/api/window-measurements`: Measure windows.
  * - POST { address | propertyId } -> 201 WindowMeasurementView (the walls estimate, front photos with the wall drawn).
- * - GET /:id -> the view. PATCH /:id (WindowMeasurementPatch: excludedWindowIds, manualCounts, marked, wallCorners;
- *   each key given replaces what was there) -> the view, with marked windows sized and the estimate redone.
+ * - GET /:id -> the view. PATCH /:id (WindowMeasurementPatch: excludedWindowIds, manualCounts, marked, wallCorners,
+ *   ruler (a door of known size marked on a photo, or null); each key given replaces what was there) -> the view, with
+ *   marked windows sized (on the ruler's photo, to fit the ruler) and the estimate redone.
  * - GET /:id/photos/:photoId -> the JPEG (kept 30 days, Google's terms; 404 after).
  * - GET /:id/preview -> { quotes }: Good/Better/Best priced from the counted windows (null for members who do not see money).
  * Rep visibility and company isolation come from the repository: a measurement the caller may not see is a 404.
@@ -242,6 +251,7 @@ export function windowMeasurementRoutes(deps: AppDeps): Router {
     const marked = 'marked' in raw ? parseOr(MarkedSchema, raw.marked, MARKED_MESSAGE, 'marked') : undefined;
     const corners = 'wallCorners' in raw ? parseOr(CornersSchema, raw.wallCorners, CORNERS_MESSAGE, 'wallCorners') : undefined;
     const photoWindows = 'photoWindows' in raw ? parseOr(PhotoWindowsSchema, raw.photoWindows, PHOTO_WINDOWS_MESSAGE, 'photoWindows') : undefined;
+    const ruler = 'ruler' in raw ? parseOr(RulerSchema, raw.ruler, RULER_MESSAGE, 'ruler') : undefined;
     const coverAll = 'photosCoverAllWindows' in raw ? parseOr(z.boolean(), raw.photosCoverAllWindows, COVER_MESSAGE, 'photosCoverAllWindows') : undefined;
 
     const row = await withTenant(pools, ctx, async (tx) => {
@@ -297,6 +307,20 @@ export function windowMeasurementRoutes(deps: AppDeps): Router {
           next.wallCorners = { photoId, corners: corners.corners };
           // One person's fit at a time: it wins over the line-up on its photo and sets the walls' height.
           change.photos = found.photos.map((p) => ({ ...p, personFit: p.id === photoId ? fit : null }));
+        }
+      }
+      if (ruler !== undefined) {
+        if (ruler === null) next.ruler = null;
+        else {
+          const photoId = ruler.photoId.toLowerCase();
+          // With the corners this PATCH may have fitted
+          const photo = (change.photos ?? found.photos).find((p) => p.id === photoId);
+          if (photo === undefined) throw new AppError(400, RULER_MESSAGE, 'ruler');
+          const value: DoorRuler = { photoId, box: ruler.box, kind: ruler.kind, widthIn: ruler.widthIn, heightIn: ruler.heightIn };
+          // The door must size on the photo (on a front wall, the distance correction within x1/3 to x3)
+          const plan = found.geometry === null ? null : planOf(found.geometry);
+          if (plan === null || applyRuler(plan, photo, value) === null) throw new AppError(422, RULER_UNSIZED_MESSAGE, 'ruler');
+          next.ruler = value;
         }
       }
       // Excluded ids that no longer exist (a marked window taken away) drop out.
