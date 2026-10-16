@@ -76,6 +76,9 @@ if [ ! -x "$WORK/venv/bin/python" ]; then python3 -m venv "$WORK/venv" && "$WORK
 echo "== 10. Check it builds"
 npm run typecheck >/tmp/roofline-setup-typecheck.log 2>&1 && ok "typecheck" || echo "  typecheck FAILED: see /tmp/roofline-setup-typecheck.log"
 
+echo "== 11. Background sync with GitHub (every 3 minutes)"
+if [ "$REPO" = "$HOME/roofline-demo" ]; then bash "$REPO/scripts/new-mac/autosync-install.sh" && ok "installed"; else echo "  skipped: the repo is not at ~/roofline-demo"; fi
+
 echo
 echo "Done. Start the app:   cd $REPO && npm run demo     then open http://localhost:4500"
 echo "Before you change code, read docs/TWO-MACS.md (how the Pro and the Air stay in step)."

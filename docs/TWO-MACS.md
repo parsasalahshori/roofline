@@ -30,6 +30,18 @@ GitHub keeps them in step. Nothing is lost as long as work is pushed.
   4. If the Macs are on different Wi-Fi, use Tailscale (free) so the Air can still reach the Pro.
 - **Pushed work:** `git pull` on the Air, any time.
 
+## Background sync (installed on both Macs)
+
+`scripts/new-mac/autosync.sh` runs every 3 minutes (launchd, `com.roofline.autosync`):
+- It pushes any committed work on the current branch.
+- It pulls new work from GitHub, as a fast-forward only, and only when there are no unsaved edits.
+- It fast-forwards the other branches that track GitHub.
+- If the same branch changed on both Macs, it changes nothing and shows a notification: ask Claude to merge it.
+- Log: `~/Library/Logs/roofline-autosync.log`. Remove it with `bash scripts/new-mac/autosync-install.sh --remove`.
+
+So: work on both Macs at the same time on different branches, commit as you go, and each Mac sees the other's
+committed work within a few minutes. Merge finished branches into `real-lookups`.
+
 `bash scripts/new-mac/where.sh` prints, for this Mac: the branch, uncommitted files, and how far it is ahead of or
 behind GitHub. Run it on both Macs when unsure.
 
