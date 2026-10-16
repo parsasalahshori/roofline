@@ -19,6 +19,8 @@ export type MoveJobMenuProps = {
   archived?: boolean;
   /** A split button: "Move to {next stage}" for the common step, with the chevron menu beside it. Used on a board card. */
   split?: boolean;
+  /** The split button of a page head: the quick move is graphite and full height, with the chevron the same height. */
+  prominent?: boolean;
 };
 
 /** The stages in pipeline order. Installed is only offered from Won (Decision 2). */
@@ -37,7 +39,7 @@ const STAGE_COLOR: Record<Exclude<JobStage, 'lost'>, string> = {
  * Lost opens the sheet that asks why, Won without a value asks for it, anything else moves at once and
  * says so in a toast with Undo.
  */
-export function MoveJobMenu({ job, onMoved, compact = false, archived, split = false }: MoveJobMenuProps) {
+export function MoveJobMenu({ job, onMoved, compact = false, archived, split = false, prominent = false }: MoveJobMenuProps) {
   const move = useMoveJob();
   const archive = useArchiveJob(job.id);
   const toast = useToast();
@@ -105,6 +107,7 @@ export function MoveJobMenu({ job, onMoved, compact = false, archived, split = f
       current={job.stage}
       extras={extras}
       showLabel={!compact && !split}
+      className={prominent ? styles.tall : undefined}
       onPick={(key) => void choose(key)}
     />
   );
@@ -115,8 +118,8 @@ export function MoveJobMenu({ job, onMoved, compact = false, archived, split = f
         <div className={styles.split}>
           {nextStage !== null ? (
             <Button
-              variant="default"
-              size="sm"
+              variant={prominent ? 'ink' : 'default'}
+              size={prominent ? 'md' : 'sm'}
               className={styles.quick}
               data-part="quick"
               busy={move.isPending}

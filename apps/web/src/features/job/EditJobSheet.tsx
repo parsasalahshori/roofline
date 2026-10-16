@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { JOB_SOURCES, type JobSource, type JobView } from '@roofline/shared';
-import { Button, Field, Select, Sheet, useToast, type SelectOption } from '@roofline/ui';
+import { Button, Field, Listbox, Sheet, useToast, type ListboxOption } from '@roofline/ui';
 import { ApiError } from '../../api/client.ts';
 import { job } from '../../copy/job.ts';
 import { jobs } from '../../copy/jobs.ts';
@@ -10,7 +10,7 @@ import styles from './EditJobSheet.module.css';
 export type EditJobSheetProps = { view: JobView; onClose: () => void };
 
 const NEXT_STEP_MAX = 120;
-const sourceOptions: SelectOption[] = JOB_SOURCES.map((source) => ({ value: source, label: jobs.source[source] }));
+const sourceOptions: ListboxOption<JobSource>[] = JOB_SOURCES.map((source) => ({ value: source, label: jobs.source[source] }));
 
 /** Dollars typed by a person to cents. Empty is null (no value); anything else that is not a positive amount is 'invalid'. */
 function parseDollars(text: string): number | null | 'invalid' {
@@ -89,10 +89,10 @@ export function EditJobSheet({ view, onClose }: EditJobSheetProps) {
 
   const footer = (
     <div className={styles.footer}>
-      <Button variant="ghost" onClick={onClose}>
+      <Button variant="quiet" onClick={onClose}>
         {job.cancel}
       </Button>
-      <Button busy={update.isPending} onClick={() => void save()}>
+      <Button variant="primary" busy={update.isPending} onClick={() => void save()}>
         {job.save}
       </Button>
     </div>
@@ -114,7 +114,7 @@ export function EditJobSheet({ view, onClose }: EditJobSheetProps) {
             }}
           />
         ) : null}
-        <Select label={job.sourceLabel} value={source} options={sourceOptions} onChange={(next) => setSource(next as JobSource)} />
+        <Listbox label={job.sourceLabel} value={source} options={sourceOptions} onChange={setSource} />
         <Field
           label={job.nextStepFieldLabel}
           help={job.nextStepFieldHelp}
@@ -135,16 +135,16 @@ export function EditJobSheet({ view, onClose }: EditJobSheetProps) {
               <div className={styles.confirm}>
                 <p className={styles.confirmText}>{current.archived ? job.restoreConfirm : job.archiveConfirm}</p>
                 <div className={styles.confirmActions}>
-                  <Button busy={archive.isPending} onClick={() => void confirmArchive()}>
+                  <Button variant="ink" busy={archive.isPending} onClick={() => void confirmArchive()}>
                     {job.confirm}
                   </Button>
-                  <Button variant="ghost" onClick={() => setConfirming(false)}>
+                  <Button variant="default" onClick={() => setConfirming(false)}>
                     {job.cancel}
                   </Button>
                 </div>
               </div>
             ) : (
-              <Button variant="ghost" onClick={() => setConfirming(true)}>
+              <Button variant="default" onClick={() => setConfirming(true)}>
                 {current.archived ? job.restore : job.archive}
               </Button>
             )}

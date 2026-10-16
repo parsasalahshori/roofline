@@ -1,0 +1,193 @@
+/* Proposals: a row per proposal; the newest opens out into its options and what has happened to it */
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: grid;
+  gap: 14px;
+  padding: 14px 16px;
+}
+
+.item + .item {
+  border-top: 1px solid var(--line);
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.link {
+  display: flex;
+  flex: 1 1 240px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+  min-height: 40px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.link:hover .number {
+  text-decoration: underline;
+}
+
+.link:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--r-2);
+}
+
+.number {
+  font: 650 14px/1.2 var(--f-mono);
+}
+
+.from {
+  color: var(--ink-2);
+  font: 500 13px/1.2 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.chev {
+  margin-left: auto;
+  color: var(--ink-3);
+}
+
+/* Good, Better and Best side by side; the recommended one has the brand ring and tint and says so in a tag */
+.tiers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tile {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-3);
+  background: var(--surface);
+}
+
+.tile[data-recommended='true'] {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  box-shadow: 0 0 0 1px var(--brand);
+}
+
+.tier {
+  color: var(--ink-3);
+  font: 600 var(--font-size-min)/1 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tile[data-recommended='true'] .tier {
+  color: var(--brand-text);
+}
+
+.price {
+  font: 750 22px/1.1 var(--f-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.spec {
+  color: var(--ink-2);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.recommended {
+  justify-self: start;
+  margin-top: 4px;
+}
+
+.events {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  list-style: none;
+}
+
+.events li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.events svg {
+  color: var(--ink-3);
+}
+
+/* On a phone the options are rows, not columns: the tier and what it is at the left, the price at the right */
+@media (max-width: 767.98px) {
+  .tiers {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tile {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'tier price'
+      'spec price'
+      'tag price';
+    column-gap: 12px;
+    align-items: center;
+  }
+
+  .tier {
+    grid-area: tier;
+  }
+
+  .price {
+    grid-area: price;
+    font-size: 20px;
+  }
+
+  .spec {
+    grid-area: spec;
+  }
+
+  .recommended {
+    grid-area: tag;
+  }
+}
+
+/* Roof: the figures the proposal was priced from, in mono */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 16px;
+  margin: 0;
+}
+
+.stat {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.stat dt {
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+.stat dd {
+  margin: 0;
+  font: 600 18px/1.2 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}

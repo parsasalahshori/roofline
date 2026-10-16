@@ -89,7 +89,7 @@ const routes: RouteObject[] = [
           { path: 'agents/:agent', element: <AgentRoute /> },
           { path: 'jobs', element: <JobsPage /> },
           { path: 'jobs/new', element: <NewJob /> },
-          { path: 'jobs/:jobId', element: <AppPage app="jobs"><JobWindow /></AppPage> },
+          { path: 'jobs/:jobId', element: <JobWindow /> },
           { path: 'jobs/:jobId/quotes/:quoteId', element: <AppPage app="jobs"><QuoteWindow /></AppPage> },
           { path: 'customers', element: <CustomersPage /> },
           { path: 'customers/new', element: <NewCustomer /> },

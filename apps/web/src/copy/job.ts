@@ -3,21 +3,32 @@ import type { AppointmentKind, QuoteStatus } from '@roofline/shared';
 /** One job's window: header, stage stepper, edit sheet, sections. */
 export const job = {
   loading: 'Loading job',
+  errorTag: "Couldn't load",
   loadFailed: "We couldn't load this job. Try again in a minute.",
   retry: 'Try again',
   notFoundTitle: 'Not found',
   notFoundBody: "That job doesn't exist, or you can't see it.",
   backToJobs: 'Back to jobs',
+  /** The last step of the trail while the job loads. */
+  crumbJob: 'Job',
 
-  // Stat strip
-  statStage: 'Stage',
+  // The stage steps and the facts under them
   statValue: 'Value',
-  statDays: 'In this stage',
-  daysInStage: (n: number) => (n === 1 ? '1 day' : `${n} days`),
+  daysInStage: (n: number) => (n === 0 ? 'Today' : n === 1 ? '1 day' : `${n} days`),
 
   // Header
   addressLink: (address: string) => `${address} on the map`,
+  /** What follows the street in the line under the name: ", Austin, TX 78701". */
+  addressRest: (city: string, state: string, zip: string) => `, ${city}, ${state} ${zip}`,
+  /** The whole address, as the directions link carries it. */
+  addressFull: (street: string, city: string, state: string, zip: string) => `${street}, ${city}, ${state} ${zip}`,
   archivedChip: 'Archived',
+  insuranceClaim: 'Insurance claim',
+  actionsLabel: 'Reach the customer and move the job',
+  tilesLabel: 'Reach the customer',
+  call: 'Call',
+  text: 'Text',
+  directions: 'Directions',
   stepperLabel: 'Job stage',
   lostChip: 'Lost',
   lostWhy: (reason: string) => `Lost: ${reason}`,
@@ -25,8 +36,21 @@ export const job = {
   unassigned: 'Unassigned',
   nextStepLabel: 'Next step',
   nextStepNone: 'No next step yet.',
-  nextStepOn: (text: string, date: string) => `${text} on ${date}`,
+  nextStepEmptyBody: 'Write what happens next and when. It shows on the board.',
+  nextStepAdd: 'Add a next step',
+  /** The line under a next step: when, then who: "Tomorrow · Casey Moreno". */
+  nextStepMeta: (parts: readonly string[]) => parts.join(' · '),
+  today: 'Today',
+  tomorrow: 'Tomorrow',
+  overdue: 'Overdue',
   edit: 'Edit',
+
+  // Details panel
+  detailsTitle: 'Details',
+  customerLabel: 'Customer',
+  emailLabel: 'Email',
+  sinceLabel: 'In stage since',
+  createdLabel: 'Created',
 
   // Edit sheet
   editTitle: 'Edit job',
@@ -63,11 +87,12 @@ export const job = {
     adjuster: 'Adjuster',
     other: 'Other',
   } as Record<AppointmentKind, string>,
-  appointmentLine: (kind: string, when: string, person: string) => `${kind}, ${when}, ${person}`,
   appointmentAllDay: (date: string) => `${date}, all day`,
+  appointmentsEmptyBody: 'Book an inspection or an install and it shows here.',
 
   quotesTitle: 'Quotes',
   quotesEmpty: 'No quotes yet.',
+  quotesEmptyBody: 'A quote prices the job line by line. Start one and it shows here.',
   newQuote: 'New quote',
   quoteCreateFailed: "We couldn't start a quote. Try again.",
   quoteTotal: (dollars: string) => `Estimate ${dollars}`,
@@ -78,6 +103,11 @@ export const job = {
 
   proposalsTitle: 'Proposals',
   proposalsEmpty: 'No proposals yet.',
+  proposalsEmptyBody: 'Measure the roof, then send a Good, Better and Best proposal.',
+  tiersLabel: 'Options in this proposal',
+  recommended: 'Recommended',
+  /** The tag on a proposal the customer has opened: "Opened 2×". */
+  openedTag: (count: number) => `Opened ${count}×`,
   newProposal: 'New proposal',
   proposalStartFailed: "We couldn't start a proposal. Try again.",
   proposalsLoadFailed: "We couldn't load the proposals. Try again.",
@@ -86,6 +116,21 @@ export const job = {
 
   tasksTitle: 'Agent tasks',
   tasksEmpty: 'No agent tasks for this job.',
+  tasksEmptyBody: 'When an agent has something for this job, it shows up here.',
+
+  // Roof panel: what the newest proposal was priced from
+  roofTitle: 'Roof',
+  roofExact: 'Exact report',
+  roofEstimate: 'Estimate',
+  roofArea: 'Area',
+  roofPitch: 'Main pitch',
+  roofOrder: (wastePercent: number) => `Order +${wastePercent}%`,
+  roofRidge: 'Ridge and hip',
+  roofEdge: 'Eaves',
+  roofValley: 'Valleys',
+  squares: (n: number) => `${n.toFixed(1)} sq`,
+  feet: (n: number) => `${Math.round(n)} ft`,
+  pitchValue: (n: number) => `${n}/12`,
 
   timelineTitle: 'Timeline',
 } as const;

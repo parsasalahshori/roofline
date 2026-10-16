@@ -13,8 +13,9 @@
 
 .counter {
   margin: 0;
-  font-size: 0.875rem;
   color: var(--ink-3);
+  font: 500 var(--font-size-min)/1 var(--f-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .counter[data-over] {

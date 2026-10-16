@@ -45,7 +45,7 @@ export function NoteComposer({ subjectType, subjectId }: NoteComposerProps) {
         <p className={styles.counter} data-over={tooLong ? true : undefined}>
           {timeline.noteCounter(value.length, timeline.noteMax)}
         </p>
-        <Button type="submit" busy={add.isPending} disabled={tooLong || blank}>
+        <Button type="submit" variant="default" size="sm" busy={add.isPending} disabled={tooLong || blank}>
           {timeline.noteAdd}
         </Button>
       </div>

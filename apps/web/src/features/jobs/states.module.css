@@ -29,7 +29,7 @@
   padding: 6px 10px;
 }
 
-.empty[data-variant='inline'] .ghostRow:nth-child(3) {
+.empty[data-variant='inline'] .ghostRow:nth-child(n + 2) {
   display: none;
 }
 

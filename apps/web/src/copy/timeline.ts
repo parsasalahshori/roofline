@@ -5,6 +5,8 @@ import { frontDeskInbox } from './front-desk-inbox.ts';
 export const timeline = {
   label: 'Timeline',
   empty: 'Nothing has happened yet.',
+  emptyBody: 'Notes, texts, calls and moves show up here as they happen.',
+  errorTag: "Couldn't load",
   loading: 'Loading timeline',
   loadFailed: "We couldn't load the timeline. Try again in a minute.",
   retry: 'Try again',

@@ -1,7 +1,46 @@
+/* A call or text the Front Desk handled: a card on the timeline's rail */
+.item {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+  padding-bottom: 16px;
+}
+
+.item:last-child {
+  padding-bottom: 0;
+}
+
+.item:not(:last-child)::before {
+  position: absolute;
+  top: 18px;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+  background: var(--line-2);
+  content: '';
+}
+
+.dot {
+  flex: none;
+  box-sizing: border-box;
+  width: 9px;
+  height: 9px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--ink-3);
+}
+
+.dot[data-kind='front-desk'] {
+  background: var(--brand);
+}
+
 .card {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: var(--r-3);
@@ -16,9 +55,10 @@
 }
 
 .label {
-  font-size: 0.75rem;
-  font-weight: 600;
   color: var(--ink-3);
+  font: 600 var(--font-size-min)/1 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .summary {
@@ -28,14 +68,19 @@
 }
 
 .meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
   margin: 0;
-  font-size: 0.875rem;
   color: var(--ink-3);
+  font-size: 13px;
 }
 
 .link {
   display: inline-flex;
   align-items: center;
-  min-height: 40px;
   align-self: flex-start;
+  min-height: 40px;
+  color: var(--brand-text);
+  font-weight: 600;
 }
