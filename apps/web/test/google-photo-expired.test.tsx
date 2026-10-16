@@ -25,11 +25,13 @@ const PHOTO: FacadePhoto = { id: 'p1', heading: 0, fov: 60, widthPx: 640, height
 const EDIT: StageEdit = {
   editing: false,
   marking: false,
+  rulerMarking: false,
   locked: false,
   selected: null,
   select: () => undefined,
   toggle: () => undefined,
   draw: () => undefined,
+  drawRuler: () => undefined,
   changeBox: () => undefined,
   remove: () => undefined,
   moveCorners: () => undefined,
