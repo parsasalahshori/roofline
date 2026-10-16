@@ -64,6 +64,8 @@ export type OriginGuardOptions = {
   methods?: string;
   /** Access-Control-Allow-Headers. */
   headers?: string;
+  /** Adds a machine `code` ('cross_site') to the refusal, for APIs whose every error has one. */
+  coded?: boolean;
 };
 
 /**
@@ -98,7 +100,7 @@ export function originGuard(deps: AppDeps, options: OriginGuardOptions = {}): Re
         next(); // a cross-site GET gets no CORS header, so the browser keeps the answer from the page
         return;
       }
-      res.status(403).json({ error: MESSAGES.crossSite });
+      res.status(403).json(options.coded === true ? { error: MESSAGES.crossSite, code: 'cross_site' } : { error: MESSAGES.crossSite });
     }, next);
   };
 }

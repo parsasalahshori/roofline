@@ -14,7 +14,7 @@ import {
   type Ring,
   windowSizeClass,
 } from '@roofline/shared';
-import { HOMEOWNER_LIMITS } from '../src/public/homeowner-auth.ts';
+import { HOMEOWNER_LIMITS, HOMEOWNER_UNKNOWN_REQUEST } from '../src/public/homeowner-auth.ts';
 import { seedFootprintFixture } from '../src/scripts/footprint-fixture.ts';
 import { arCorners, boxCorners, cardScene, greyJpeg, sha256 } from './homeowner-fixture.ts';
 import { loginAs, makeTestApp, type TestApp } from './helpers.ts';
@@ -346,7 +346,7 @@ describe('the token', () => {
     ]);
     for (const res of answers) {
       expect(res.status).toBe(401);
-      expect(res.body).toEqual({ error: 'Please sign in.', code: 'unauthorized' });
+      expect(res.body).toEqual({ error: HOMEOWNER_UNKNOWN_REQUEST, code: 'unauthorized' });
     }
     const fine = await get(`/requests/${a.id}`, { token: a.token });
     expect(fine.status).toBe(200);
@@ -402,6 +402,7 @@ describe('the token', () => {
     const s = await start();
     const evil = await send('post', '/requests', { address: ADDRESS, services: ['gutters'] }, { origin: 'https://evil.example' });
     expect(evil.status).toBe(403);
+    expect(evil.body.code).toBe('cross_site');
     const ok = await get(`/requests/${s.id}`, { token: s.token, origin: 'https://evil.example' });
     expect(ok.headers['access-control-allow-origin']).toBeUndefined();
     const preflight = await request(t.app).options(`${base()}/requests/${s.id}/windows`).set('Origin', t.deps.config.APP_ORIGIN).set('Access-Control-Request-Method', 'POST');
@@ -885,10 +886,11 @@ describe('contact: the lead and the consent', () => {
 });
 
 describe('visits: slots and booking', () => {
-  async function filed(): Promise<Started> {
+  async function filed(person = 0): Promise<Started> {
     const s = await start();
     await addAr(s, 'a', 36, 48);
-    expect((await send('post', `/requests/${s.id}/contact`, contactBody(), { token: s.token })).status).toBe(201);
+    const who = person === 0 ? {} : { phone: `(402) 555-02${10 + person}`, email: `dana${person}@example.com` };
+    expect((await send('post', `/requests/${s.id}/contact`, contactBody(who), { token: s.token })).status).toBe(201);
     return s;
   }
   const bookingOn = () => q(`update company_settings set quote_booking = true where company_id = $1`, [t.seed.a.companyId]);
@@ -908,6 +910,28 @@ describe('visits: slots and booking', () => {
     const today = t.clock.now().toLocaleDateString('en-CA', { timeZone: on.timeZone });
     for (const sl of on.slots) expect(new Date(sl.start).toLocaleDateString('en-CA', { timeZone: on.timeZone }) > today).toBe(true);
     expect(JSON.stringify(on)).not.toMatch(/userId|name/i);
+  });
+
+  test('looking up times is limited per IP address (60 an hour, across requests) and per request (30 an hour)', async () => {
+    await bookingOn();
+    const ip = '203.0.113.77';
+    const three = [await filed(), await filed(1), await filed(2)];
+    for (let i = 0; i < HOMEOWNER_LIMITS.slotsPerTokenPerHour; i++) {
+      expect((await get(`/requests/${three[0]!.id}/slots`, { token: three[0]!.token, ip })).status, `call ${i}`).toBe(200);
+    }
+    // The request's own thirty are used up (a different address is not held back by it) ...
+    const perToken = await get(`/requests/${three[0]!.id}/slots`, { token: three[0]!.token, ip: '203.0.113.78' });
+    expect(perToken.status).toBe(429);
+    expect(perToken.body.code).toBe('rate_limited');
+    // ... and the address's sixty are used up by the other two requests together, whatever their tokens.
+    for (let i = 0; i < HOMEOWNER_LIMITS.slotsPerIpPerHour - HOMEOWNER_LIMITS.slotsPerTokenPerHour; i++) {
+      const s = three[1 + (i % 2)]!;
+      expect((await get(`/requests/${s.id}/slots`, { token: s.token, ip })).status, `call ${i}`).toBe(200);
+    }
+    const perIp = await get(`/requests/${three[2]!.id}/slots`, { token: three[2]!.token, ip });
+    expect(perIp.status).toBe(429);
+    expect(Number(perIp.headers['retry-after'])).toBeGreaterThan(0);
+    expect((await get(`/requests/${three[2]!.id}/slots`, { token: three[2]!.token, ip: '203.0.113.79' })).status).toBe(200);
   });
 
   test('a picked time books an inspection on the lead job; the status says so, with the rep\'s first name', async () => {
@@ -1010,31 +1034,89 @@ describe('status', () => {
 });
 
 describe('the homeowner\'s windows on the staff side', () => {
-  test('the address\'s newest window measurement carries them, marked source homeowner-app, with room and style; staff edits keep the mark only while the measurement is unchanged', async () => {
+  const propertyOf = async () => String((await q(`select property_id from homeowner_requests where company_id = $1 order by created_at desc limit 1`, [t.seed.a.companyId]))[0]!.property_id);
+
+  test('a rep\'s new measurement of the address starts with the windows the homeowner sent in, marked source homeowner-app, with room, style and photo; edits keep the mark only while the window is unchanged', async () => {
     const s = await start();
     await addAr(s, 'w-ar', 36, 48, { room: 'Kitchen', style: 'casement', label: 'Sink' });
     await send('post', `/requests/${s.id}/contact`, contactBody(), { token: s.token });
-    const [job] = await q(`select property_id from jobs where company_id = $1`, [t.seed.a.companyId]);
     const staff = await loginAs(t.app, t.seed.a.owner);
-    const got = await staff.get(`/api/window-measurements?propertyId=${job!.property_id}`);
-    expect(got.status, JSON.stringify(got.body)).toBe(200);
-    const list = got.body.adjustments.photoWindows as { id: string; source?: string; room?: string; style?: string }[];
+    const made = await staff.post('/api/window-measurements').send({ propertyId: await propertyOf() });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const list = made.body.adjustments.photoWindows as { id: string; source?: string; room?: string; style?: string }[];
     expect(list).toEqual([expect.objectContaining({ id: 'w-ar', source: 'homeowner-app', room: 'Kitchen', style: 'casement', label: 'Sink' })]);
-    expect(got.body.photoWindows).toHaveLength(1);
-    expect(got.body.photoWindows[0]).toMatchObject({ id: 'w-ar', source: 'homeowner-app', widthIn: expect.any(Number), room: 'Kitchen' });
+    expect(made.body.photoWindows).toHaveLength(1);
+    expect(made.body.photoWindows[0]).toMatchObject({ id: 'w-ar', source: 'homeowner-app', widthIn: expect.any(Number), room: 'Kitchen' });
+    // The photo it stands on comes along, and the rep can open it
+    expect(made.body.uploads).toHaveLength(1);
+    const photo = await staff.get(`/api/window-measurements/${made.body.id}/uploads/${made.body.uploads[0].id}`);
+    expect(photo.status).toBe(200);
+    expect(photo.headers['content-type']).toMatch(/image\/jpeg/);
+    // It is the address's newest measurement, the homeowner's own stays theirs and is what they see
+    const newest = await staff.get(`/api/window-measurements?propertyId=${await propertyOf()}`);
+    expect(newest.body.id).toBe(made.body.id);
+    expect((await view(s)).windows.map((w) => w.id)).toEqual(['w-ar']);
 
     // The web app sends the list back as it got it: the mark stays
-    const same = await staff.patch(`/api/window-measurements/${got.body.id}`).send({ photoWindows: got.body.adjustments.photoWindows, photosCoverAllWindows: true });
+    const same = await staff.patch(`/api/window-measurements/${made.body.id}`).send({ photoWindows: made.body.adjustments.photoWindows, photosCoverAllWindows: true });
     expect(same.status, JSON.stringify(same.body)).toBe(200);
     expect(same.body.adjustments.photoWindows[0].source).toBe('homeowner-app');
     // A label change keeps it; changing the corners makes it the staff's own measurement
     const relabeled = same.body.adjustments.photoWindows.map((w: object) => ({ ...w, label: 'Over the sink' }));
-    const kept = await staff.patch(`/api/window-measurements/${got.body.id}`).send({ photoWindows: relabeled });
+    const kept = await staff.patch(`/api/window-measurements/${made.body.id}`).send({ photoWindows: relabeled });
     expect(kept.body.adjustments.photoWindows[0]).toMatchObject({ source: 'homeowner-app', label: 'Over the sink' });
     const moved = relabeled.map((w: { corners: number[][] }) => ({ ...w, corners: w.corners.map(([x, y]) => [x! + 3, y!]) }));
-    const edited = await staff.patch(`/api/window-measurements/${got.body.id}`).send({ photoWindows: moved });
+    const edited = await staff.patch(`/api/window-measurements/${made.body.id}`).send({ photoWindows: moved });
     expect(edited.status, JSON.stringify(edited.body)).toBe(200);
     expect(edited.body.adjustments.photoWindows[0].source).toBeUndefined();
+    // Taking the copy away does not touch the homeowner's own
+    const gone = await staff.patch(`/api/window-measurements/${made.body.id}`).send({ photoWindows: [] });
+    expect(gone.status).toBe(200);
+    expect((await view(s)).windows.map((w) => w.id)).toEqual(['w-ar']);
+  });
+
+  test('windows the homeowner never sent in stay theirs: a rep\'s measurement does not take them, and their measurement is not the address\'s newest', async () => {
+    const s = await start();
+    await addAr(s, 'w-ar', 36, 48);
+    const propertyId = await propertyOf();
+    const staff = await loginAs(t.app, t.seed.a.owner);
+    // Only the homeowner has measured here: nothing for the company yet
+    expect((await staff.get(`/api/window-measurements?propertyId=${propertyId}`)).status).toBe(404);
+    const made = await staff.post('/api/window-measurements').send({ propertyId });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    expect(made.body.adjustments.photoWindows ?? []).toEqual([]);
+    expect(made.body.uploads).toEqual([]);
+    // A homeowner who measures after the rep's measurement does not take its place as the newest either
+    await addAr(s, 'w-two', 30, 40);
+    await send('post', `/requests/${s.id}/contact`, contactBody(), { token: s.token });
+    const newest = await staff.get(`/api/window-measurements?propertyId=${propertyId}`);
+    expect(newest.body.id).toBe(made.body.id);
+    // Sent in, the next measurement takes both windows
+    const next = await staff.post('/api/window-measurements').send({ propertyId });
+    expect((next.body.adjustments.photoWindows as { id: string }[]).map((w) => w.id)).toEqual(['w-ar', 'w-two']);
+    expect(next.body.uploads).toHaveLength(2);
+  });
+
+  test('only a request that is still good lends its windows: an expired one does not, and of two the newest does', async () => {
+    const old = await start();
+    await addAr(old, 'w-old', 36, 48);
+    await send('post', `/requests/${old.id}/contact`, contactBody(), { token: old.token });
+    const propertyId = await propertyOf();
+    t.clock.set(new Date(NOW.getTime() + (HOMEOWNER_TOKEN_DAYS + 1) * 24 * 60 * 60 * 1000));
+    const staff = await loginAs(t.app, t.seed.a.owner);
+    const expired = await staff.post('/api/window-measurements').send({ propertyId });
+    expect(expired.status, JSON.stringify(expired.body)).toBe(201);
+    expect(expired.body.adjustments.photoWindows ?? []).toEqual([]);
+    // Two requests at the address: the newest one that has windows is the one that comes along
+    const first = await start();
+    await addAr(first, 'w-first', 36, 48);
+    await send('post', `/requests/${first.id}/contact`, contactBody({ phone: '(402) 555-0111' }), { token: first.token });
+    t.clock.set(new Date(t.clock.now().getTime() + 60_000));
+    const second = await start();
+    await addAr(second, 'w-second', 30, 40);
+    await send('post', `/requests/${second.id}/contact`, contactBody({ phone: '(402) 555-0122' }), { token: second.token });
+    const made = await staff.post('/api/window-measurements').send({ propertyId });
+    expect((made.body.adjustments.photoWindows as { id: string }[]).map((w) => w.id)).toEqual(['w-second']);
   });
 
   test('staff cannot mark a window of their own as the homeowner\'s', async () => {
@@ -1098,19 +1180,17 @@ describe('the instant quote page and the app', () => {
     expect(plain.status).toBe(200);
     expect(plain.body.homeownerApp).toBeNull();
     const link = 'https://apps.apple.com/us/app/winchoice/id0000000000';
-    const withApp = await makeTestApp({ TRUST_PROXY: 1, HOMEOWNER_APP_URL: link });
-    try {
-      const res = await request(withApp.app).get(`/api/public/quote/${ACME}`);
+    for (const [extra, name] of [
+      [{ HOMEOWNER_APP_URL: link }, 'WinChoice'],
+      [{ HOMEOWNER_APP_URL: link, HOMEOWNER_APP_NAME: 'Summit Measure' }, 'Summit Measure'],
+    ] as const) {
+      // A new app starts a new database: the page is switched on again
+      await t.close();
+      t = await makeTestApp({ TRUST_PROXY: 1, ...extra });
+      await enable(t.seed.a.companyId, ACME);
+      const res = await request(t.app).get(`/api/public/quote/${ACME}`);
       expect(res.status).toBe(200);
-      expect(res.body.homeownerApp).toEqual({ url: link, name: 'WinChoice' });
-    } finally {
-      await withApp.close();
-    }
-    const named = await makeTestApp({ TRUST_PROXY: 1, HOMEOWNER_APP_URL: link, HOMEOWNER_APP_NAME: 'Summit Measure' });
-    try {
-      expect((await request(named.app).get(`/api/public/quote/${ACME}`)).body.homeownerApp).toEqual({ url: link, name: 'Summit Measure' });
-    } finally {
-      await named.close();
+      expect(res.body.homeownerApp).toEqual({ url: link, name });
     }
   });
 });

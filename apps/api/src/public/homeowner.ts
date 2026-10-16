@@ -57,7 +57,7 @@ import { quoteIpHash } from '../quote/guards.ts';
 import { estimateForHomeowner } from '../quote/homeowner-estimate.ts';
 import { canonicalJson, HEIC_MESSAGE, readUpload } from '../routes/window-measurements.ts';
 import { assertKnownFields, emailField, noNul, parse } from '../validate.ts';
-import { authed, authenticate, HOMEOWNER_LIMITS, newHomeownerToken, hashHomeownerToken, rateLimited } from './homeowner-auth.ts';
+import { authed, authenticate, HOMEOWNER_LIMITS, HOMEOWNER_UNKNOWN_REQUEST, newHomeownerToken, hashHomeownerToken, rateLimited } from './homeowner-auth.ts';
 import { buildRequestView, buildStatus, leadSummary, storedInput } from './homeowner-view.ts';
 import { policyUrls } from './policy-urls.ts';
 import { originGuard, pageFor, route } from './quote-access.ts';
@@ -330,7 +330,7 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
   const router = Router();
   const auth = authenticate(deps);
 
-  router.use(originGuard(deps, { methods: 'GET, POST, PATCH, DELETE', headers: 'Content-Type, Accept, Authorization' }));
+  router.use(originGuard(deps, { methods: 'GET, POST, PATCH, DELETE', headers: 'Content-Type, Accept, Authorization', coded: true }));
   router.use(perIpLimit('all', HOMEOWNER_LIMITS.ipPerMinute, MINUTE_MS));
   // Every answer is per request and personal to the homeowner's address: never cached, never indexed.
   router.use((_req, res, next) => {
@@ -427,7 +427,7 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
       const row = await getHomeownerRequest(tx, ctx, id);
       return row === null ? null : buildRequestView(tx, ctx, row);
     });
-    if (found === null) throw new AppError(401, MESSAGES.signIn).coded('unauthorized');
+    if (found === null) throw new AppError(401, HOMEOWNER_UNKNOWN_REQUEST).coded('unauthorized');
     return found;
   };
 
@@ -563,7 +563,7 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
         }
         return buildRequestView(tx, ctx, locked);
       });
-      if (out === null) throw new AppError(401, MESSAGES.signIn).coded('unauthorized');
+      if (out === null) throw new AppError(401, HOMEOWNER_UNKNOWN_REQUEST).coded('unauthorized');
       res.json(out);
     }),
   );
@@ -628,7 +628,7 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
         const fresh = await getHomeownerRequest(tx, ctx, locked.id);
         return { created: result.created, jobId: result.jobId, view: await buildRequestView(tx, ctx, fresh ?? locked) };
       });
-      if (filed === null) throw new AppError(401, MESSAGES.signIn).coded('unauthorized');
+      if (filed === null) throw new AppError(401, HOMEOWNER_UNKNOWN_REQUEST).coded('unauthorized');
       if (filed.created && filed.jobId !== null) {
         await officeAlert(deps, ctx, filed.jobId, { products, booked: false, priced: request.status === 'ready' && estimate?.status === 'ready', channel: 'app' });
         await startFollowUp(deps, ctx);
@@ -639,6 +639,7 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
 
   router.get(
     '/:slug/requests/:id/slots',
+    perIpLimit('slots', HOMEOWNER_LIMITS.slotsPerIpPerHour, HOUR_MS),
     route(async (_req, res) => {
       const { ctx, settings, request } = authed(res);
       requireOn(settings);
@@ -695,7 +696,7 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
         }
         return full;
       });
-      if (out === null) throw new AppError(401, MESSAGES.signIn).coded('unauthorized');
+      if (out === null) throw new AppError(401, HOMEOWNER_UNKNOWN_REQUEST).coded('unauthorized');
       res.json(out);
     }),
   );

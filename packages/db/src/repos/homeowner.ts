@@ -1,5 +1,5 @@
-import { and, desc, eq, inArray, isNull, ne } from 'drizzle-orm';
-import { type HomeownerCallbackReason, HOMEOWNER_APP_SOURCE, type QuoteProduct } from '@roofline/shared';
+import { and, desc, eq, gt, inArray, isNotNull, isNull, ne } from 'drizzle-orm';
+import { type HomeownerCallbackReason, HOMEOWNER_APP_SOURCE, type QuoteProduct, type WindowAdjustments } from '@roofline/shared';
 import {
   appointments,
   homeownerRequests,
@@ -121,6 +121,50 @@ export async function ensureHomeownerMeasurement(tx: Tx, ctx: TenantContext, req
     .set({ windowMeasurementId: made.id, updatedAt: now })
     .where(and(eq(homeownerRequests.id, request.id), eq(homeownerRequests.companyId, ctx.companyId)));
   return made;
+}
+
+/**
+ * A new window measurement of an address (a rep's "Measure windows") starts with the windows the homeowner measured in
+ * the app there: those of the newest request at the address that was sent to the company (the contact form: a request
+ * the homeowner never sent stays theirs alone) and has not expired. They come along as they were, still marked
+ * 'homeowner-app' (quote-grade; a rep who moves a corner or the scale makes one their own), with the photos they stand
+ * on. The homeowner's own measurement is not touched, and what they change later does not reach this copy. Returns the
+ * measurement as it is now.
+ */
+export async function adoptHomeownerWindows(tx: Tx, ctx: TenantContext, target: WindowMeasurementRow, now: Date): Promise<WindowMeasurementRow> {
+  const sources = await tx
+    .select({ adjustments: windowMeasurements.adjustments, uploads: windowMeasurements.uploads })
+    .from(homeownerRequests)
+    .innerJoin(windowMeasurements, and(eq(windowMeasurements.id, homeownerRequests.windowMeasurementId), eq(windowMeasurements.companyId, homeownerRequests.companyId)))
+    .where(
+      and(
+        eq(homeownerRequests.companyId, ctx.companyId),
+        eq(homeownerRequests.propertyId, target.propertyId),
+        isNotNull(homeownerRequests.quoteRequestId),
+        gt(homeownerRequests.expiresAt, now),
+      ),
+    )
+    .orderBy(desc(homeownerRequests.createdAt), desc(homeownerRequests.id))
+    .limit(5);
+  const ownWindows = (adjustments: WindowAdjustments) => (adjustments.photoWindows ?? []).filter((w) => w.source === HOMEOWNER_APP_SOURCE);
+  const from = sources.find((x) => ownWindows(x.adjustments).length > 0);
+  if (from === undefined) return target;
+  const held = new Set((target.adjustments.photoWindows ?? []).map((w) => w.id));
+  const windows = ownWindows(from.adjustments).filter((w) => !held.has(w.id));
+  if (windows.length === 0) return target;
+  const photoIds = new Set(windows.flatMap((w) => (w.uploadId === undefined ? [] : [w.uploadId])));
+  const heldPhotos = new Set((target.uploads ?? []).map((u) => u.id));
+  const photos = (from.uploads ?? []).filter((u) => photoIds.has(u.id) && !heldPhotos.has(u.id));
+  const [row] = await tx
+    .update(windowMeasurements)
+    .set({
+      adjustments: { ...target.adjustments, photoWindows: [...(target.adjustments.photoWindows ?? []), ...windows] },
+      uploads: [...(target.uploads ?? []), ...photos],
+      updatedAt: now,
+    })
+    .where(and(eq(windowMeasurements.id, target.id), eq(windowMeasurements.companyId, ctx.companyId)))
+    .returning();
+  return row ?? target;
 }
 
 /** The adjustments (the homeowner's windows) and uploads (their photos) of the request's measurement, or null before it has one. */

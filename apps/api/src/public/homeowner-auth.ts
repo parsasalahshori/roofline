@@ -4,7 +4,7 @@ import { ipKeyGenerator, MemoryStore, type Options } from 'express-rate-limit';
 import { getHomeownerRequest, type HomeownerRequestRow, type TenantContext, withTenant } from '@roofline/db';
 import { HOMEOWNER_TOKEN_RE, type InstantQuoteSettings } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
-import { AppError, MESSAGES } from '../errors.ts';
+import { AppError } from '../errors.ts';
 import { createAllowance } from '../rate-limit.ts';
 import { UUID } from '../validate.ts';
 import { pageFor } from './quote-access.ts';
@@ -40,6 +40,8 @@ export const HOMEOWNER_LIMITS = {
 } as const;
 
 export const HOMEOWNER_TOO_MANY = "You're going a little fast. Please wait a moment and try again.";
+/** What a call with no good token is told (the app has no sign-in; it starts a new estimate). */
+export const HOMEOWNER_UNKNOWN_REQUEST = "We couldn't find your request. Please start a new estimate.";
 export const HOMEOWNER_TOO_MANY_HOURLY = "That's a lot of tries from this connection. Please try again in an hour, or give us a call.";
 
 export const rateLimited = (hourly: boolean, retryAfterSeconds: number, res?: { setHeader(name: string, value: string): unknown }): AppError => {
@@ -117,7 +119,7 @@ export function authenticate(deps: AppDeps): { middleware: RequestHandler; budge
     book: createAllowance(HOUR_MS, HOMEOWNER_LIMITS.bookPerTokenPerHour),
     slots: createAllowance(HOUR_MS, HOMEOWNER_LIMITS.slotsPerTokenPerHour),
   };
-  const unauthorized = () => new AppError(401, MESSAGES.signIn).coded('unauthorized');
+  const unauthorized = () => new AppError(401, HOMEOWNER_UNKNOWN_REQUEST).coded('unauthorized');
 
   const middleware: RequestHandler = (req, res, next) => {
     void (async () => {

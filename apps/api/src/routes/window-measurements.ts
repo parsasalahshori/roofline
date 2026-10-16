@@ -292,11 +292,14 @@ function checkPhotoWindow(w: z.infer<typeof PhotoWindowSchema>, uploads: readonl
 
 /**
  * `/api/window-measurements`: Measure windows.
- * - POST { address | propertyId } -> 201 WindowMeasurementView (the walls estimate, front photos with the wall drawn).
+ * - POST { address | propertyId } -> 201 WindowMeasurementView (the walls estimate, front photos with the wall drawn). It
+ *   starts with the windows a homeowner measured in the phone app at that address and sent in (marked source
+ *   'homeowner-app', quote-grade; adoptHomeownerWindows).
  * - GET /:id -> the view. PATCH /:id (WindowMeasurementPatch: excludedWindowIds, manualCounts, marked, wallCorners,
  *   ruler (a door of known size marked on a photo, or null); each key given replaces what was there) -> the view, with
  *   marked windows sized (on the ruler's photo, to fit the ruler) and the estimate redone.
- * - GET ?propertyId=<uuid> -> the property's newest measurement (404 when there is none).
+ * - GET ?propertyId=<uuid> -> the property's newest measurement (404 when there is none; the measurement a homeowner's
+ *   own request keeps is not one).
  * - POST /:id/photo-windows (one PhotoWindowInput) -> 201 the view with it added (200 when the same window was there);
  *   DELETE /:id/photo-windows/:windowId -> the view without it. Both checked and recomputed like PATCH.
  * - GET /:id/photos/:photoId -> the JPEG (kept 30 days, Google's terms; 410 after).

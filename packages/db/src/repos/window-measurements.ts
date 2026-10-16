@@ -1,6 +1,6 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, notExists, sql } from 'drizzle-orm';
 import type { EstimatedWindows, LngLat, MeasuredWindow, WindowAdjustments, WindowDetectorName, WindowsMissReason } from '@roofline/shared';
-import { properties, type StoredFacadePhoto, type StoredWindowUpload, type WindowGeometry, windowMeasurements } from '../schema/index.ts';
+import { homeownerRequests, properties, type StoredFacadePhoto, type StoredWindowUpload, type WindowGeometry, windowMeasurements } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { getProperty } from './properties.ts';
 import { propertyScope } from './scope.ts';
@@ -82,13 +82,36 @@ export async function getWindowMeasurement(tx: Tx, ctx: TenantContext, id: strin
   return found?.row ?? null;
 }
 
-/** The newest window measurement of a property the member may see; null when there is none (or they may not see it). */
+/**
+ * The newest window measurement of a property the member may see; null when there is none (or they may not see it). The
+ * windows a homeowner measured in the app are kept on a measurement of their own request: it is never the answer here
+ * (it has no walls or street photos, and would hide the company's own earlier measurement); a new measurement of the
+ * address starts with those windows instead (adoptHomeownerWindows).
+ */
 export async function getLatestWindowMeasurementForProperty(tx: Tx, ctx: TenantContext, propertyId: string): Promise<WindowMeasurementRow | null> {
   const [found] = await tx
     .select({ row: windowMeasurements })
     .from(windowMeasurements)
     .innerJoin(properties, and(eq(properties.id, windowMeasurements.propertyId), eq(properties.companyId, windowMeasurements.companyId)))
-    .where(and(eq(windowMeasurements.propertyId, propertyId), eq(windowMeasurements.companyId, ctx.companyId), propertyScope(ctx)))
+    .where(
+      and(
+        eq(windowMeasurements.propertyId, propertyId),
+        eq(windowMeasurements.companyId, ctx.companyId),
+        propertyScope(ctx),
+        notExists(
+          tx
+            .select({ one: sql`1` })
+            .from(homeownerRequests)
+            .where(
+              and(
+                eq(homeownerRequests.companyId, windowMeasurements.companyId),
+                eq(homeownerRequests.propertyId, windowMeasurements.propertyId),
+                eq(homeownerRequests.windowMeasurementId, windowMeasurements.id),
+              ),
+            ),
+        ),
+      ),
+    )
     .orderBy(desc(windowMeasurements.createdAt), desc(windowMeasurements.id))
     .limit(1);
   return found?.row ?? null;
