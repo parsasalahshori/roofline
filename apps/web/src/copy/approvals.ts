@@ -44,8 +44,11 @@ export const approvals = {
   /** The tag on a card: what the card is asking for. */
   tagNeedsOk: 'Needs your OK',
   tagWaitingOwner: 'Waiting for owner',
-  /** "Storm Scout drafted · 3 days ago". */
-  drafted: (agent: string, ago: string): string => `${agent} drafted · ${ago}`,
+  /**
+   * "Storm Scout drafted · 3 days ago". The age is one unit (non-breaking spaces), so on a narrow phone the line breaks
+   * before it and never inside it ("3 days" over "ago").
+   */
+  drafted: (agent: string, ago: string): string => `${agent} drafted · ${ago.replaceAll(' ', '\u00a0')}`,
   /** How long ago, in words: "just now", "12 min ago", "3 hr ago", "2 days ago". */
   ago: (iso: string, now: number): string => {
     const then = Date.parse(iso);

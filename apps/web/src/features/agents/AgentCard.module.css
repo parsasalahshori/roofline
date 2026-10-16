@@ -77,7 +77,7 @@
 }
 
 .pick:focus-visible::after {
-  outline: 2px solid var(--focus);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
@@ -146,16 +146,23 @@
   color: var(--ink-3);
 }
 
+/* What it did last: the sentence (three lines at most) and, under it on a line of its own, how long ago */
 .latest {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   margin: 0;
   font-size: 14px;
   line-height: 1.4;
   overflow-wrap: anywhere;
+}
+
+.latestText {
   display: -webkit-box;
+  overflow: hidden;
   -webkit-line-clamp: 3;
   line-clamp: 3;
   -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 .ago {

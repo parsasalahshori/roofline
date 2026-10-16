@@ -40,6 +40,8 @@ describe('how long ago, and when it ends', () => {
   it('says how long ago a plan was drafted, in words', () => {
     expect(approvals.ago(at(-20_000), NOW)).toBe('just now');
     expect(approvals.ago(at(-12 * MINUTE), NOW)).toBe('12 min ago');
+    // In the "drafted" line the age holds together: only a space before it may break the line
+    expect(approvals.drafted('Storm Scout', '12 min ago')).toBe('Storm Scout drafted · 12\u00a0min\u00a0ago');
     expect(approvals.ago(at(-3 * HOUR), NOW)).toBe('3 hr ago');
     expect(approvals.ago(at(-DAY), NOW)).toBe('1 day ago');
     expect(approvals.ago(at(-3 * DAY), NOW)).toBe('3 days ago');

@@ -20,6 +20,7 @@ let api: ReturnType<typeof stubApi>;
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   expect(api?.unexpected ?? []).toEqual([]);
 });
 
@@ -44,6 +45,11 @@ function renderApp(overrides: Routes, role: 'owner' | 'office' | 'rep' = 'owner'
     </Providers>,
   );
   return { user: userEvent.setup(), queryClient };
+}
+
+/** A DOM has no layout, so every box measures nothing. This gives them all one width, as the browser would give the page. */
+function withWidth(width: number): void {
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({ width, height: 100, x: 0, y: 0, top: 0, left: 0, right: width, bottom: 100, toJSON: () => ({}) });
 }
 
 async function openWindow() {
@@ -120,6 +126,27 @@ describe('Agents window', () => {
     await user.click(within(storm).getByRole('button', { name: /Storm Scout/ }));
     expect(storm).toHaveAttribute('data-selected', 'true');
     expect(front).not.toHaveAttribute('data-selected');
+  });
+
+  it('with no room for the panel beside the cards there is no panel, and a card opens its agent\'s page', async () => {
+    renderApp({ 'GET /api/agents': () => ({ body: OVERVIEW }) }, 'owner', () => withWidth(700));
+    const dialog = await openWindow();
+    await waitFor(() => expect(within(dialog).queryByRole('complementary')).toBeNull());
+    const link = within(dialog).getByRole('link', { name: `${agentsDash.openAgent} Storm Scout` });
+    expect(link).toHaveAttribute('href', '/agents/storm-scout');
+    expect(within(dialog).queryByRole('button', { name: new RegExp(agentsDash.selectHint) })).toBeNull();
+    // Nothing is picked, so no card has the ring
+    for (const card of within(dialog).getAllByRole('article')) expect(card).not.toHaveAttribute('data-selected');
+  });
+
+  it.each([
+    [991, false],
+    [992, true],
+  ])('the panel sits beside the cards from 62rem of width: at %ipx it is %s', async (width, beside) => {
+    renderApp({ 'GET /api/agents': () => ({ body: OVERVIEW }) }, 'owner', () => withWidth(width));
+    const dialog = await openWindow();
+    await waitFor(() => expect(within(dialog).queryByRole('complementary', { name: /Front Desk/ }) !== null).toBe(beside));
+    expect(within(dialog).queryByRole('button', { name: `${agentsDash.selectHint} Storm Scout` }) !== null).toBe(beside);
   });
 
   it('the tabs are pages: Overview is the current one', async () => {

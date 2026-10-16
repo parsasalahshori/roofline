@@ -56,6 +56,55 @@ test('agents window: cards show the numbers from the seeded tasks', async ({ pag
   await expect(open).toHaveAttribute('href', '/agents/storm-scout');
 });
 
+test('agents window: tabbing to a card draws a ring around the whole card', async ({ page, loginAs, markTodaySeen, agentsSeed }) => {
+  void agentsSeed;
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/agents');
+  await expect(card(page, 'Estimator')).toBeVisible({ timeout: 15_000 });
+
+  // A keyboard user reaches a card by its name. The ring is drawn by the stretched name button's overlay, so it is the
+  // overlay's outline that has to be a real line (a wrong colour token makes it fall back to none and nothing shows).
+  const pick = page.getByRole('button', { name: 'Show details for Estimator' });
+  for (let step = 0; step < 60 && !(await pick.evaluate((el) => el === document.activeElement)); step += 1) {
+    await page.keyboard.press('Tab');
+  }
+  await expect(pick).toBeFocused();
+  const ring = await pick.evaluate((el) => {
+    const after = getComputedStyle(el, '::after');
+    const box = el.closest('article')?.getBoundingClientRect();
+    return { style: after.outlineStyle, width: after.outlineWidth, overlay: [Math.round(parseFloat(after.width)), Math.round(parseFloat(after.height))], card: box ? [Math.round(box.width), Math.round(box.height)] : null };
+  });
+  expect(ring.style).toBe('solid');
+  expect(ring.width).toBe('2px');
+  // The overlay covers the card edge to edge, so the ring is around the card and not only around the words
+  expect(ring.overlay).toEqual(ring.card);
+});
+
+test.describe('agents on a tablet', () => {
+  // 1024px less the icon rail leaves under 62rem: no room for the panel beside the cards
+  test.use({ viewport: { width: 1024, height: 800 } });
+
+  test('with no room for the panel a card opens its agent page, and there is no panel stacked under the page', async ({
+    page,
+    loginAs,
+    markTodaySeen,
+    agentsSeed,
+  }) => {
+    void agentsSeed;
+    await loginAs(page, 'owner');
+    await markTodaySeen('owner@a.test');
+    await page.goto('/agents');
+    await expect(grid(page)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('complementary', { name: /Front Desk/ })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^Show details for / })).toHaveCount(0);
+
+    await page.getByRole('link', { name: 'Open Estimator' }).click();
+    await expect(page).toHaveURL(/\/agents\/estimator$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Estimator' })).toBeVisible({ timeout: 15_000 });
+  });
+});
+
 test('agents window: totals tiles show tasks, hours and office time, marked as estimates', async ({ page, loginAs, markTodaySeen, agentsSeed }) => {
   void agentsSeed;
   await loginAs(page, 'owner');
