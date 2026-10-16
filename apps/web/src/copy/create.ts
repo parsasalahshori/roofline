@@ -1,7 +1,6 @@
 /** The New customer, New job and Add a home screens (Task 22). */
 export const create = {
   notOnMap: "Saved. We couldn't find that address on the map yet.",
-  save: 'Save',
   saving: 'Saving...',
   address: {
     street: 'Street address',

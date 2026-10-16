@@ -12,8 +12,6 @@ export const timeline = {
   retry: 'Try again',
   showOlder: 'Show older',
   by: (name: string) => `by ${name}`,
-  textIn: 'Received',
-  textOut: 'Sent',
   messageStatus: {
     scheduled: 'Scheduled',
     queued: 'Sending',
