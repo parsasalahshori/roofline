@@ -3,6 +3,8 @@ import RoomPlan
 import RooflineCore
 import SwiftUI
 
+// VERIFY: if RoomPlan's RoomCaptureSession is main-actor isolated, this must stay @MainActor (all callers are views).
+@MainActor
 enum RoomScanSupport {
     /// RoomPlan needs LiDAR.
     static var isSupported: Bool { RoomCaptureSession.isSupported }

@@ -87,6 +87,7 @@ private struct MethodRow: View {
 }
 
 /// What this phone can do.
+@MainActor
 enum DeviceCaps {
     static var arSupported: Bool { ARWorldTrackingConfiguration.isSupported }
 

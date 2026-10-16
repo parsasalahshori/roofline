@@ -81,7 +81,7 @@ private struct SheetWebView: UIViewRepresentable {
             store.setCookie(c) { group.leave() }
         }
         group.notify(queue: .main) {
-            view.load(URLRequest(url: url))
+            MainActor.assumeIsolated { _ = view.load(URLRequest(url: url)) }
         }
         return view
     }
