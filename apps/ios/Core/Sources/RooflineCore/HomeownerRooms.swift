@@ -33,8 +33,8 @@ public enum RoomType: String, CaseIterable, Sendable, Hashable {
 }
 
 public enum RoomNames {
-    /// The rooms a new request starts with: the three nearly every home has (the third is the mockup's "Not started").
-    public static let seed = ["Living room", "Kitchen", "Bedroom 1"]
+    /// The rooms a new request starts with: the three nearly every home has, in the mockup's order (the third is its "Not started").
+    public static let seed = ["Kitchen", "Living room", "Bedroom 1"]
 
     /// What "Add a room" offers, in order, after the rooms already in the list are taken out.
     public static let suggestionPool = ["Bedroom 2", "Bathroom", "Hall", "Dining room", "Bedroom 3", "Office", "Bathroom 2", "Laundry", "Basement", "Garage"]

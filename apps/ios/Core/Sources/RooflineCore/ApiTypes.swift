@@ -102,8 +102,9 @@ public struct CardDimensions: Codable, Equatable, Sendable {
 }
 
 /// The 'card' scale (the homeowner app): a standard bank card lies on the glass, its four corners in the photo's pixels
-/// (TL, TR, BR, BL of the LANDSCAPE card: the first edge is the long side), and the card's real size. The server maps the
-/// card to its real rectangle with a homography and sizes the window frame's corners with it.
+/// (TL, TR, BR, BL of the LANDSCAPE card: the first edge is the long side), and the card's real size. The server fits the
+/// window's plane to the frame's corners, then scales it with the card's taps (the card is the ruler); `CardSizing` is the
+/// same math on the phone.
 public struct CardScale: Codable, Equatable, Sendable {
     public var cardCorners: [Vec2]
     public var card: CardDimensions

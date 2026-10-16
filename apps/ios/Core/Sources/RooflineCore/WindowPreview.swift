@@ -1,8 +1,8 @@
 import Foundation
 
 /// The size of a window saved on the phone, before the server has sized it: the same math the server runs (the AR port,
-/// the room scan's own width and height, the card homography), so the list and the label sheet can show a number at once
-/// and the server's answer, when it comes, is a refinement and not a surprise.
+/// the room scan's own width and height, the card model of window-photo-card.ts), so the list and the label sheet can show
+/// a number at once and the server's answer, when it comes, is a refinement and not a surprise.
 public struct WindowPreview: Equatable, Sendable {
     public var widthIn: Double
     public var heightIn: Double
@@ -29,8 +29,10 @@ public struct WindowPreview: Equatable, Sendable {
 }
 
 public enum LocalWindowPreview {
-    /// Nil when the window cannot be sized on the phone (the size comes after upload).
-    public static func of(_ w: PhotoWindowInput, imageWidthPx: Int, imageHeightPx: Int) -> WindowPreview? {
+    /// Nil when the window cannot be sized on the phone (the size comes after upload). `focal35mm` is the photo's
+    /// 35 mm-equivalent focal length when it says (a card photo is sized with it; nil means 26 mm assumed, as the server
+    /// does), and is not used by the other scales.
+    public static func of(_ w: PhotoWindowInput, imageWidthPx: Int, imageHeightPx: Int, focal35mm: Double? = nil) -> WindowPreview? {
         switch w.scale {
         case .ar(let s):
             guard let size = sizeFromArPoints(s.pointsM, device: s.device ?? .arkit, cornerSpreadM: s.cornerSpreadM) else { return nil }
@@ -42,7 +44,7 @@ public enum LocalWindowPreview {
                                  needsCheck: s.confidence == .low, reasons: s.confidence == .low ? ["The scan was not sure about this window."] : [])
         case .card(let c):
             guard let corners = w.corners, imageWidthPx > 0, imageHeightPx > 0,
-                  let size = CardSizing.size(cardCorners: c.cardCorners, windowCorners: corners, imageWidthPx: Double(imageWidthPx), imageHeightPx: Double(imageHeightPx)) else { return nil }
+                  let size = CardSizing.size(cardCorners: c.cardCorners, windowCorners: corners, imageWidthPx: Double(imageWidthPx), imageHeightPx: Double(imageHeightPx), focal35mm: focal35mm) else { return nil }
             return WindowPreview(widthIn: size.widthIn, heightIn: size.heightIn, uncertaintyIn: max(size.uncertaintyWidthIn, size.uncertaintyHeightIn),
                                  needsCheck: size.quality == .check, reasons: size.reasons)
         case .other:

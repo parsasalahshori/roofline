@@ -376,23 +376,54 @@ private let homeownerOutboxChecks: [Check] = [
         ctx.expect(!FileManager.default.fileExists(atPath: dir.appendingPathComponent("\(b.id).jpg").path), "the removed request's photo is gone")
         ctx.equal(await ob.pendingCount, 0, "a-1 is done")
     },
-    Check("LocalWindowPreview: a card photo is sized by the card, and a size the phone is wildly unsure of is not shown") { ctx in
-        // A front-on photo at 40 px per inch: the card is 135 x 85 px, the window 1425 x 2385 px
-        let s = 40.0
-        let cw = CardLimits.widthIn * s, ch = CardLimits.heightIn * s
-        let card = [Vec2(800, 1000), Vec2(800 + cw, 1000), Vec2(800 + cw, 1000 + ch), Vec2(800, 1000 + ch)]
-        let frame = [Vec2(300, 400), Vec2(1725, 400), Vec2(1725, 2785), Vec2(300, 2785)]
-        let w = PhotoWindowInput(id: "c1", uploadId: "u", label: nil, windowKey: nil, corners: frame, scale: .card(CardScale(cardCorners: card)), room: "Kitchen", style: "double-hung")
-        let p = LocalWindowPreview.of(w, imageWidthPx: 2250, imageHeightPx: 3000)
-        ctx.near(p?.widthIn, 35.625, 0.05, "the nominal size is recovered on a front-on photo")
-        ctx.near(p?.heightIn, 59.625, 0.05)
-        ctx.equal(p?.needsCheck, true, "a card this small next to the window is a check")
-        ctx.expect(p?.isShowable == false, "and the doubt is too big to print")
+    Check("LocalWindowPreview: a card photo is sized by the server's card model with the photo's focal length, and a size the phone is wildly unsure of is not shown") { ctx in
+        // The photos and the server's answers for them are the parity corpus of CardChecks (CardParityData.swift)
+        func parity(_ name: String) -> CardParityCase? { cardParityCases.first { $0.name == name } }
+        guard let front = parity("front-on photo at 40 px per inch, 2250x3000, a full-size card (the old app check)"),
+              let told = parity("26 mm lens told"), let none = parity("no focal length told, shot at 26 mm"),
+              let tiny = parity("card tapped at a quarter of its size (the ± is huge)"),
+              let wantFront = front.size, let wantTold = told.size, let wantNone = none.size, let wantTiny = tiny.size else {
+            ctx.expect(false, "the parity photos are in the corpus")
+            return
+        }
+        func window(_ c: CardParityCase) -> PhotoWindowInput {
+            PhotoWindowInput(id: "c1", uploadId: "u", label: nil, windowKey: nil, corners: c.windowCorners, scale: .card(CardScale(cardCorners: c.cardCorners)), room: "Kitchen", style: "double-hung")
+        }
+        func preview(_ c: CardParityCase, focal35mm: Double?) -> WindowPreview? {
+            LocalWindowPreview.of(window(c), imageWidthPx: Int(c.widthPx), imageHeightPx: Int(c.heightPx), focal35mm: focal35mm)
+        }
+        func agrees(_ p: WindowPreview?, _ want: [Double], _ c: CardParityCase, _ what: String) {
+            ctx.near(p?.widthIn, want[0], 1e-6 * want[0], "\(what): the server's width")
+            ctx.near(p?.heightIn, want[1], 1e-6 * want[1], "\(what): the server's height")
+            ctx.near(p?.uncertaintyIn, max(want[2], want[3]), 1e-6 * max(want[2], want[3]), "\(what): the larger +/-")
+            ctx.equal(p?.needsCheck, c.quality == "check", "\(what): needs a check")
+            ctx.equal(p?.reasons ?? [], c.reasons, "\(what): the server's reasons")
+        }
+        // A front-on photo at 40 px per inch: the card is 135 x 85 px, the window 1425 x 2385 px, the photo says nothing about its lens
+        let p = preview(front, focal35mm: front.focal35mm)
+        agrees(p, wantFront, front, "front-on photo")
+        ctx.equal(p?.needsCheck, true, "a 135 px card next to a 36 x 60 in window is a check")
+        ctx.expect(p?.isShowable == true, "about 7/8 inch of doubt is worth printing")
+        ctx.expect(p.map { $0.widthIn < 35 && $0.heightIn < 58 } == true, "a card tapped at its sharp-corner size makes the window read small, as the server does")
+        // The photo's focal length is passed on: 26 mm told and the same photo with nothing told differ only in the doubt
+        let withFocal = preview(told, focal35mm: told.focal35mm)
+        agrees(withFocal, wantTold, told, "26 mm told")
+        let without = preview(none, focal35mm: none.focal35mm)
+        agrees(without, wantNone, none, "no focal length")
+        ctx.equal(without?.widthIn, withFocal?.widthIn, "the same size")
+        ctx.expect((without?.uncertaintyIn ?? 0) > (withFocal?.uncertaintyIn ?? .infinity), "10% of doubt in the lens is more than 3%")
+        agrees(preview(none, focal35mm: 26), wantTold, told, "the same photo with 26 mm passed on")
+        ctx.equal(preview(none, focal35mm: 700)?.uncertaintyIn, without?.uncertaintyIn, "a focal length the server would not read is not said")
+        // A card tapped at a quarter of its size: the phone is wildly unsure, so the size is not printed
+        let hopeless = preview(tiny, focal35mm: tiny.focal35mm)
+        agrees(hopeless, wantTiny, tiny, "tiny card")
+        ctx.expect(hopeless?.isShowable == false, "and the doubt is too big to print")
         // No photo size, or no frame corners: nothing to show
+        let w = window(told)
         ctx.expect(LocalWindowPreview.of(w, imageWidthPx: 0, imageHeightPx: 0) == nil)
         var noCorners = w
         noCorners.corners = nil
-        ctx.expect(LocalWindowPreview.of(noCorners, imageWidthPx: 2250, imageHeightPx: 3000) == nil)
+        ctx.expect(LocalWindowPreview.of(noCorners, imageWidthPx: Int(told.widthPx), imageHeightPx: Int(told.heightPx)) == nil)
         // The limit itself
         ctx.expect(WindowPreview(widthIn: 36, heightIn: 60, uncertaintyIn: 4, needsCheck: true).isShowable)
         ctx.expect(!WindowPreview(widthIn: 36, heightIn: 60, uncertaintyIn: 4.2, needsCheck: true).isShowable)
@@ -595,7 +626,7 @@ private let homeownerFormChecks: [Check] = [
         ctx.equal(late.first?.id, "2026-10-20")
     },
     Check("RoomNames and StyleGuess: rooms the homeowner names, styles the app suggests") { ctx in
-        ctx.equal(RoomNames.seed, ["Living room", "Kitchen", "Bedroom 1"])
+        ctx.equal(RoomNames.seed, ["Kitchen", "Living room", "Bedroom 1"])
         ctx.equal(RoomNames.suggestions(excluding: RoomNames.seed), ["Bedroom 2", "Bathroom", "Hall"])
         ctx.equal(RoomNames.suggestions(excluding: ["Bedroom 2", "bathroom"], limit: 2), ["Hall", "Dining room"])
         ctx.equal(RoomNames.clean("  den   upstairs "), "den upstairs")
