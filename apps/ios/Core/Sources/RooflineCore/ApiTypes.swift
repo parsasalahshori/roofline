@@ -88,10 +88,37 @@ public struct RoomPlanScale: Codable, Equatable, Sendable {
     }
 }
 
-/// How a photographed window is scaled. This app writes 'ar' and 'roomplan'; other kinds are kept as JSON.
+/// A bank card's real size, as the homeowner API wants it next to the card's corners (ISO/IEC 7810 ID-1).
+public struct CardDimensions: Codable, Equatable, Sendable {
+    public var widthMm: Double
+    public var heightMm: Double
+
+    public static let idOne = CardDimensions(widthMm: 85.6, heightMm: 53.98)
+
+    public init(widthMm: Double, heightMm: Double) {
+        self.widthMm = widthMm
+        self.heightMm = heightMm
+    }
+}
+
+/// The 'card' scale (the homeowner app): a standard bank card lies on the glass, its four corners in the photo's pixels
+/// (TL, TR, BR, BL of the LANDSCAPE card: the first edge is the long side), and the card's real size. The server maps the
+/// card to its real rectangle with a homography and sizes the window frame's corners with it.
+public struct CardScale: Codable, Equatable, Sendable {
+    public var cardCorners: [Vec2]
+    public var card: CardDimensions
+
+    public init(cardCorners: [Vec2], card: CardDimensions = .idOne) {
+        self.cardCorners = cardCorners
+        self.card = card
+    }
+}
+
+/// How a photographed window is scaled. This app writes 'ar', 'roomplan' and (homeowner app) 'card'; other kinds are kept as JSON.
 public enum WindowPhotoScale: Codable, Equatable, Sendable {
     case ar(ArScale)
     case roomplan(RoomPlanScale)
+    case card(CardScale)
     case other(JSONValue)
 
     private enum Key: String, CodingKey { case kind }
@@ -100,6 +127,7 @@ public enum WindowPhotoScale: Codable, Equatable, Sendable {
         switch self {
         case .ar: return "ar"
         case .roomplan: return "roomplan"
+        case .card: return "card"
         case .other(let v): return v["kind"]?.stringValue ?? "?"
         }
     }
@@ -112,6 +140,8 @@ public enum WindowPhotoScale: Codable, Equatable, Sendable {
             self = .ar(try ArScale(from: decoder))
         case "roomplan":
             self = .roomplan(try RoomPlanScale(from: decoder))
+        case "card":
+            self = .card(try CardScale(from: decoder))
         default:
             self = .other(try JSONValue(from: decoder))
         }
@@ -126,6 +156,10 @@ public enum WindowPhotoScale: Codable, Equatable, Sendable {
         case .roomplan(let s):
             var c = encoder.container(keyedBy: Key.self)
             try c.encode("roomplan", forKey: .kind)
+            try s.encode(to: encoder)
+        case .card(let s):
+            var c = encoder.container(keyedBy: Key.self)
+            try c.encode("card", forKey: .kind)
             try s.encode(to: encoder)
         case .other(let v):
             try v.encode(to: encoder)
@@ -143,20 +177,26 @@ public struct PhotoWindowInput: Codable, Equatable, Sendable, Identifiable {
     public var windowKey: String?
     public var corners: [Vec2]?
     public var scale: WindowPhotoScale
+    /// Homeowner app only (HomeownerWindowInput): the room, 1 to 40 characters. Absent for rep windows.
+    public var room: String?
+    /// Homeowner app only: the company's window style key (double-hung, slider, ...). Absent for rep windows.
+    public var style: String?
 
-    public init(id: String, uploadId: String?, label: String?, windowKey: String?, corners: [Vec2]?, scale: WindowPhotoScale) {
+    public init(id: String, uploadId: String?, label: String?, windowKey: String?, corners: [Vec2]?, scale: WindowPhotoScale, room: String? = nil, style: String? = nil) {
         self.id = id
         self.uploadId = uploadId
         self.label = label
         self.windowKey = windowKey
         self.corners = corners
         self.scale = scale
+        self.room = room
+        self.style = style
     }
 
     /// The window it belongs to: its shared key, else its own id.
     public var groupKey: String { (windowKey?.isEmpty == false ? windowKey : nil) ?? id }
 
-    private enum Keys: String, CodingKey { case id, uploadId, label, windowKey, corners, scale }
+    private enum Keys: String, CodingKey { case id, uploadId, label, windowKey, corners, scale, room, style }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -166,6 +206,8 @@ public struct PhotoWindowInput: Codable, Equatable, Sendable, Identifiable {
         windowKey = try c.decodeIfPresent(String.self, forKey: .windowKey)
         corners = try c.decodeIfPresent([Vec2].self, forKey: .corners)
         scale = try c.decode(WindowPhotoScale.self, forKey: .scale)
+        room = try c.decodeIfPresent(String.self, forKey: .room)
+        style = try c.decodeIfPresent(String.self, forKey: .style)
     }
 
     // Exactly the input's keys: a sized PhotoWindow decoded into this drops widthIn etc. (the server refuses them)
@@ -177,6 +219,9 @@ public struct PhotoWindowInput: Codable, Equatable, Sendable, Identifiable {
         if let key = windowKey, !key.isEmpty { try c.encode(key, forKey: .windowKey) }
         if let corners = corners { try c.encode(corners, forKey: .corners) }
         try c.encode(scale, forKey: .scale)
+        // Homeowner keys: written only when set, so a rep's window encodes exactly as before
+        if let room = room, !room.isEmpty { try c.encode(room, forKey: .room) }
+        if let style = style, !style.isEmpty { try c.encode(style, forKey: .style) }
     }
 }
 
