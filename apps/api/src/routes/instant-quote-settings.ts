@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getQuoteSettings, QuoteSlugTakenError, saveQuoteSettings, withTenant } from '@roofline/db';
+import { expireQuoteEstimates, getQuoteSettings, QuoteSlugTakenError, saveQuoteSettings, withTenant } from '@roofline/db';
 import {
   type InstantQuoteSettings,
   QUOTE_COLOR_RE,
@@ -62,7 +62,12 @@ export function instantQuoteSettingsRoutes(deps: AppDeps): Router {
     const body = parse(Body, req.body) as InstantQuoteSettings;
     const next: InstantQuoteSettings = { ...body, embedOrigins: [...new Set(body.embedOrigins)] };
     try {
-      const saved = await withTenant(pools, ctx, (tx) => saveQuoteSettings(tx, ctx, next, clock.now()));
+      const now = clock.now();
+      const saved = await withTenant(pools, ctx, async (tx) => {
+        const view = await saveQuoteSettings(tx, ctx, next, now);
+        await expireQuoteEstimates(tx, ctx, now);
+        return view;
+      });
       res.json({ ...saved, pageUrl: pageUrl(saved.slug) });
     } catch (err) {
       if (err instanceof QuoteSlugTakenError) throw new AppError(409, err.message, 'slug');

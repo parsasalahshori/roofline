@@ -186,6 +186,25 @@ describe('POST /api/public/quote/:slug/estimate', () => {
     expect(third.quoteId).not.toBe(first.quoteId);
   });
 
+  test('saving the price book, the option tiers or the page settings re-prices: a stored estimate is not reused', async () => {
+    const first = await estimated();
+    const agent = await loginAs(t.app, t.seed.a.owner);
+    const book = await agent.get('/api/pricebook');
+    expect((await agent.put('/api/pricebook').send({ prices: book.body.prices, defaults: book.body.defaults })).status).toBe(200);
+    const second = await estimated();
+    expect(second.quoteId).not.toBe(first.quoteId);
+    const tiers = await agent.get('/api/tier-templates');
+    expect((await agent.put('/api/tier-templates').send({ templates: tiers.body.templates })).status).toBe(200);
+    const third = await estimated();
+    expect(third.quoteId).not.toBe(second.quoteId);
+    const settings = await agent.get('/api/instant-quote/settings');
+    const body = { ...(settings.body as Record<string, unknown>), rangePct: 15 };
+    delete body.pageUrl;
+    expect((await agent.put('/api/instant-quote/settings').send(body)).status).toBe(200);
+    const fourth = await estimated();
+    expect(fourth.quoteId).not.toBe(third.quoteId);
+  });
+
   test('past the daily cap it answers fallback (no measurement) and the request can still be sent', async () => {
     await q(`update company_settings set quote_daily_cap = 0 where company_id = $1`, [t.seed.a.companyId]);
     const e = await estimated();

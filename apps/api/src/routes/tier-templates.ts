@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { audit, getTierTemplates, saveTierTemplates, withTenant } from '@roofline/db';
+import { audit, expireQuoteEstimates, getTierTemplates, saveTierTemplates, withTenant } from '@roofline/db';
 import { TIERS, TierTemplateSchema, type TierTemplate } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
@@ -54,6 +54,7 @@ export function tierTemplateRoutes(deps: AppDeps): Router {
     const saved = await withTenant(pools, ctx, async (tx) => {
       const before = await getTierTemplates(tx, ctx);
       const after = await saveTierTemplates(tx, ctx, templates, now);
+      await expireQuoteEstimates(tx, ctx, now);
       await audit(tx, ctx, {
         action: 'tier_templates.updated',
         targetType: 'tier_templates',

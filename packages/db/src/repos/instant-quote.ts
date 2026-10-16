@@ -140,6 +140,18 @@ export async function findCachedEstimate(
   return row ?? null;
 }
 
+/**
+ * Stops every stored estimate of the company being reused: called when the owner saves the price book, the option
+ * tiers or the page settings, so the next visitor sees ranges at the new prices. The measurements themselves stay
+ * (the roof's map data is cached separately), so the re-price costs little.
+ */
+export async function expireQuoteEstimates(tx: Tx, ctx: TenantContext, now: Date): Promise<void> {
+  await tx
+    .update(quoteEstimates)
+    .set({ expiresAt: now })
+    .where(and(eq(quoteEstimates.companyId, ctx.companyId), gt(quoteEstimates.expiresAt, now)));
+}
+
 /** Estimates since `since` that spent paid calls: what the daily cap counts. */
 export async function countMeasuredSince(tx: Tx, ctx: TenantContext, since: Date): Promise<number> {
   const [row] = await tx

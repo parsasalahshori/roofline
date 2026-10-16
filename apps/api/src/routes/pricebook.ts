@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { audit, getPricebook, savePricebook, withTenant } from '@roofline/db';
+import { audit, expireQuoteEstimates, getPricebook, savePricebook, withTenant } from '@roofline/db';
 import { type Pricebook, pricebookSchema, type QuoteDefaults, scopeSchema } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
@@ -74,6 +74,7 @@ export function pricebookRoutes(deps: AppDeps): Router {
     const saved = await withTenant(pools, ctx, async (tx) => {
       const previous = await getPricebook(tx, ctx);
       const view = await savePricebook(tx, ctx, { prices, defaults }, now);
+      await expireQuoteEstimates(tx, ctx, now);
       await audit(tx, ctx, {
         action: 'pricebook.updated',
         targetType: 'pricebook',
