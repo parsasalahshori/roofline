@@ -12,6 +12,7 @@ export const CAPABILITIES = [
   'approve_spend',
   'import',
   'view_money_totals',
+  'approve_factory_order',
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -19,12 +20,13 @@ export type Capability = (typeof CAPABILITIES)[number];
 /** What `can` needs to know about someone: their role and whether spend approval was delegated to them. */
 export type Member = { role: Role | 'system'; canApproveSpend: boolean };
 
-const OFFICE: ReadonlySet<Capability> = new Set(['approve_message', 'approve_internal', 'view_money_totals']);
+const OFFICE: ReadonlySet<Capability> = new Set(['approve_message', 'approve_internal', 'view_money_totals', 'approve_factory_order']);
 
 /**
  * The permission matrix of spec 3.2.
  * - owner: everything.
- * - office: approve messages and internal tasks, see money totals, and approve spend only when the
+ * - office: approve messages and internal tasks, see money totals, mark window factory orders ready
+ *   (locking their sizes), and approve spend only when the
  *   owner has delegated it (`canApproveSpend`).
  * - rep: nothing that needs a capability.
  * - system (the runner and the scheduler acting for a company, with no signed-in person): nothing.

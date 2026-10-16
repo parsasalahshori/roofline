@@ -253,6 +253,20 @@
       "when": 1792113530606,
       "tag": "0035_instant_quote_grants_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792115457475,
+      "tag": "0036_window_orders_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792115472497,
+      "tag": "0037_window_orders_grants_rls",
+      "breakpoints": true
     }
   ]
 }

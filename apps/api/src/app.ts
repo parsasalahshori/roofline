@@ -78,6 +78,7 @@ import { todayRoutes } from './routes/today.ts';
 import { weatherRoutes } from './routes/weather.ts';
 import { measurementRoutes } from './routes/measurements.ts';
 import { windowMeasurementRoutes } from './routes/window-measurements.ts';
+import { windowMeasurementOrderRoutes, windowOrderRoutes, windowOrderSettingsRoutes } from './routes/window-orders.ts';
 import type { StreetView } from './providers/street-view.ts';
 import type { WindowDetector } from './providers/window-detector.ts';
 import { tierTemplateRoutes } from './routes/tier-templates.ts';
@@ -400,6 +401,9 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/agent-values', agentValueRoutes(deps));
   app.use('/api/measurements', measurementRoutes(deps));
   app.use('/api/window-measurements', windowMeasurementRoutes(deps));
+  app.use('/api/window-measurements', windowMeasurementOrderRoutes(deps));
+  app.use('/api/window-orders', windowOrderRoutes(deps));
+  app.use('/api/window-order-settings', windowOrderSettingsRoutes(deps));
   app.use('/api/tier-templates', tierTemplateRoutes(deps));
   app.use('/api/estimator/settings', estimatorSettingsRoutes(deps));
   app.use('/api/instant-quote/settings', instantQuoteSettingsRoutes(deps));

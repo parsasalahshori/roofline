@@ -54,6 +54,10 @@ import {
   type WindowAdjustments,
   type WindowPhotoUpload,
   type GutterAdjustments,
+  WINDOW_ORDER_STATUSES,
+  type WindowOrderLine,
+  type WindowOrderSettings,
+  type WindowOrderSettingsPatch,
 } from '@roofline/shared';
 import { bytea, citext, enumCheck, multiPolygon, pk, point4326, timestamps, tstz } from './columns.ts';
 import {
@@ -171,6 +175,7 @@ export const TENANT_TABLES = [
   'window_measurements',
   'quote_estimates',
   'quote_requests',
+  'window_orders',
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];
@@ -217,6 +222,8 @@ export const companySettings = pgTable(
     aerialMeasure: boolean('aerial_measure').notNull().default(false),
     /** Whether a signed proposal carries the estimate clause (spec 5.3). */
     estimateChangeClause: boolean('estimate_change_clause').notNull().default(true),
+    /** Window factory orders: the company's deductions, rounding, uncertainty factor and limits (null = the defaults in code). */
+    windowOrderSettings: jsonb('window_order_settings').$type<WindowOrderSettingsPatch>(),
     /** Front Desk: false until forwarding passes or the owner turns it on. */
     frontDeskEnabled: boolean('front_desk_enabled').notNull().default(false),
     /** Front Desk: text the caller back about a missed call and answer SMS. */
@@ -2257,5 +2264,40 @@ export const quoteRequests = pgTable(
     }),
     index('quote_requests_company_created_idx').on(t.companyId, t.createdAt),
     check('quote_requests_products_check', sql`${t.products} <@ array['windows','roof','gutters']::text[]`),
+  ],
+);
+
+/**
+ * Window factory orders: the windows of one window measurement that were measured on site (photo windows), as lines a
+ * window factory builds from. One order per measurement. 'draft' is edited; 'ready' locks the order sizes (owner or
+ * office); 'sent' records who exported it to the factory (the export itself is a manual download).
+ */
+export const windowOrders = pgTable(
+  'window_orders',
+  {
+    id: pk(),
+    companyId: companyId(),
+    windowMeasurementId: uuid('window_measurement_id').notNull(),
+    status: text('status', { enum: WINDOW_ORDER_STATUSES }).notNull().default('draft'),
+    lines: jsonb('lines').$type<WindowOrderLine[]>().notNull().default([]),
+    /** The company's order settings as they were when the order was made (refreshed while a draft, fixed once ready). */
+    settings: jsonb('settings').$type<WindowOrderSettings>().notNull(),
+    poNumber: text('po_number').notNull().default(''),
+    readyAt: tstz('ready_at'),
+    readyByUserId: userRef('ready_by_user_id'),
+    sentAt: tstz('sent_at'),
+    sentByUserId: userRef('sent_by_user_id'),
+    createdByUserId: userRef('created_by_user_id'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('window_orders_company_id_id_uniq').on(t.companyId, t.id),
+    unique('window_orders_company_measurement_uniq').on(t.companyId, t.windowMeasurementId),
+    foreignKey({
+      name: 'window_orders_company_measurement_fk',
+      columns: [t.companyId, t.windowMeasurementId],
+      foreignColumns: [windowMeasurements.companyId, windowMeasurements.id],
+    }),
+    enumCheck('window_orders', 'status', t.status, WINDOW_ORDER_STATUSES),
   ],
 );

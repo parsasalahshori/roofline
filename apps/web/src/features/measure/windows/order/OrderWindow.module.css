@@ -1,0 +1,611 @@
+/* The window factory order: the Measure frame's header (MeasureWindow.module.css), then one scrolling column. */
+
+.headerBack {
+  margin-left: auto;
+}
+
+.tall {
+  min-height: 44px;
+}
+
+.scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.centre {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px 16px;
+  text-align: center;
+}
+
+.preparing {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.muted {
+  margin: 0;
+  color: var(--ds-text-label, #505b64);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+/* The top: address, status, save state, PO number and the photo-only note */
+.top {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.topLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.address {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 12px;
+  border: 1px solid var(--ds-hairline-strong, #c3cbd1);
+  border-radius: var(--ds-r-chip, 999px);
+  background: var(--ds-surface-2, #eceff1);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.statusPill[data-status="ready"] {
+  border-color: var(--ds-success, #0ca30c);
+  background: var(--ds-success-tint, #e2f4e2);
+  color: var(--ds-success-ink, #0a6e1d);
+}
+
+.statusPill[data-status="sent"] {
+  border-color: var(--ds-info, #2f6fde);
+  background: var(--ds-info-tint, #e3ecfb);
+  color: var(--ds-info-ink, #1f55b3);
+}
+
+.saveState {
+  margin: 0 0 0 auto;
+  color: var(--ds-text-label, #505b64);
+  font-size: 12.5px;
+}
+
+.saveState[data-save="error"] {
+  color: var(--ds-danger-ink, #a32424);
+  font-weight: 600;
+}
+
+.poField {
+  width: 220px;
+}
+
+.poField input {
+  min-height: 44px;
+}
+
+.po {
+  font-weight: 600;
+}
+
+/* Bulk apply */
+.bulk {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--ds-accent-line, rgba(217, 158, 0, 0.55));
+  border-radius: var(--ds-r-card, 12px);
+  background: var(--ds-accent-tint, #fff1d1);
+}
+
+.bulkCount {
+  margin: 0;
+  font-weight: 700;
+}
+
+.bulkFields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.bulkActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.selectAll {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+/* The lines table: one tbody per line, a summary row and an options row */
+.lines {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.caption {
+  margin-bottom: 8px;
+  color: var(--ds-text-label, #505b64);
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.lines th {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line, #dde2e6);
+  color: var(--ds-text-label, #505b64);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.line td {
+  padding: 8px;
+  vertical-align: top;
+}
+
+.line .summaryRow td {
+  border-top: 1px solid var(--line, #dde2e6);
+  background: var(--ds-surface, #fff);
+}
+
+.line .optionsRow td {
+  padding-top: 0;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line, #dde2e6);
+  background: var(--ds-surface, #fff);
+}
+
+.line[data-status="error"] .summaryRow td:first-child,
+.line[data-status="error"] .optionsRow td:first-child {
+  box-shadow: inset 4px 0 0 var(--ds-danger, #d03b3b);
+}
+
+.line[data-status="check"] .summaryRow td:first-child,
+.line[data-status="check"] .optionsRow td:first-child {
+  box-shadow: inset 4px 0 0 var(--ds-accent, #ffc21a);
+}
+
+.selectCell {
+  width: 44px;
+}
+
+.selectCell label {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.photoCell {
+  width: 72px;
+}
+
+.thumb {
+  display: block;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--ds-r-tag, 6px);
+  background: var(--ds-surface-2, #eceff1);
+  object-fit: cover;
+}
+
+.locationCell {
+  min-width: 160px;
+}
+
+.locationInner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lineNo {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--ds-r-chip, 999px);
+  background: var(--ds-surface-2, #eceff1);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.compactField {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.compactField input {
+  min-height: 44px;
+}
+
+.qtyCell {
+  width: 88px;
+}
+
+.sizeCell {
+  min-width: 120px;
+  white-space: nowrap;
+}
+
+.sizeCell > span {
+  display: block;
+}
+
+.orderSize {
+  display: block;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.special {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: var(--ds-r-chip, 999px);
+  background: var(--ds-info-tint, #e3ecfb);
+  color: var(--ds-info-ink, #1f55b3);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.statusCell {
+  min-width: 200px;
+}
+
+.lineStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: var(--ds-r-chip, 999px);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.lineStatus[data-status="ready"] {
+  background: var(--ds-success-tint, #e2f4e2);
+  color: var(--ds-success-ink, #0a6e1d);
+}
+
+.lineStatus[data-status="check"] {
+  background: var(--ds-accent-tint, #fff1d1);
+  color: var(--ds-accent-ink, #8a5a00);
+}
+
+.lineStatus[data-status="error"] {
+  background: var(--ds-danger-tint, #fbe3e3);
+  color: var(--ds-danger-ink, #a32424);
+}
+
+.reasons {
+  margin: 6px 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.reasons li[data-level="error"] {
+  color: var(--ds-danger-ink, #a32424);
+}
+
+.reasons li[data-level="check"] {
+  color: var(--ds-accent-ink, #8a5a00);
+}
+
+/* The options row: pickers in a wrapping grid */
+.options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 10px 12px;
+  margin: 0;
+  padding: 0 0 0 52px;
+  border: 0;
+  min-width: 0;
+}
+
+.options select,
+.options input {
+  min-height: 44px;
+}
+
+.toggles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 4px 16px;
+}
+
+.toggles button {
+  min-height: 44px;
+}
+
+.notes {
+  grid-column: span 2;
+}
+
+.safety {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border-radius: var(--ds-r-card, 12px);
+  background: var(--ds-bg, #f6f7f8);
+}
+
+.safetyTitle {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--ds-text-label, #505b64);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.yesNo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.question {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.yesNoButtons {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.answer {
+  min-width: 64px;
+  min-height: 44px;
+  border: 1px solid var(--ds-hairline-strong, #c3cbd1);
+  background: var(--ds-surface, #fff);
+}
+
+.answer[data-on="true"] {
+  border-color: var(--ds-text-1, #151c22);
+  background: var(--ds-text-1, #151c22);
+  color: var(--ds-surface, #fff);
+}
+
+.sill {
+  max-width: 220px;
+}
+
+.suggestions {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--ds-accent-line, rgba(217, 158, 0, 0.55));
+  border-radius: var(--ds-r-ctl, 9px);
+  background: var(--ds-accent-tint, #fff1d1);
+}
+
+.suggestion {
+  flex: 1 1 260px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.useTempered {
+  min-height: 44px;
+  border: 1px solid var(--ds-text-1, #151c22);
+  background: var(--ds-surface, #fff);
+}
+
+/* Totals, the sheet preview and the actions */
+.bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(260px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line, #dde2e6);
+  border-radius: var(--ds-r-card, 12px);
+  background: var(--ds-surface, #fff);
+}
+
+.panelTitle {
+  margin: 0;
+  color: var(--ds-text-label, #505b64);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.totals {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.total {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.total dt {
+  color: var(--ds-text-label, #505b64);
+}
+
+.total dd {
+  margin: 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.sheetScroll {
+  overflow-x: auto;
+}
+
+.sheet {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.sheetCaption {
+  margin-bottom: 6px;
+  color: var(--ds-text-label, #505b64);
+  text-align: left;
+}
+
+.sheet th,
+.sheet td {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--line, #dde2e6);
+  text-align: left;
+  vertical-align: top;
+}
+
+.sheet th {
+  font-weight: 700;
+}
+
+.downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 1100px) {
+  .bottom {
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 1fr);
+  }
+
+  .bottom > :nth-child(2) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+/* Narrow (a tablet held upright, a phone): each line becomes a stacked card */
+@media (max-width: 820px) {
+  .lines,
+  .lines tbody,
+  .lines tr,
+  .lines td {
+    display: block;
+  }
+
+  .lines thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .line {
+    margin-bottom: 12px;
+    border: 1px solid var(--line, #dde2e6);
+    border-radius: var(--ds-r-card, 12px);
+    overflow: hidden;
+  }
+
+  .line .summaryRow {
+    display: grid;
+    grid-template-columns: 44px 72px minmax(0, 1fr);
+  }
+
+  .line .summaryRow td {
+    border-top: 0;
+  }
+
+  .locationCell {
+    grid-column: 3;
+  }
+
+  .sizeCell,
+  .qtyCell,
+  .statusCell {
+    grid-column: 1 / -1;
+    width: auto;
+  }
+
+  .sizeCell::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--ds-text-label, #505b64);
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .options {
+    padding-left: 0;
+  }
+
+  .notes {
+    grid-column: 1 / -1;
+  }
+
+  .bottom {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bottom > :nth-child(2) {
+    grid-row: auto;
+  }
+}
