@@ -442,8 +442,11 @@ describe('calendar window', () => {
     });
     expect(await screen.findByTestId('appt-a1')).toBeInTheDocument();
     expect(screen.queryByTestId('appt-a3')).toBeNull();
+    // The server leaves canceled visits out unless asked: the switch asks for them
+    expect(appointmentReads().every((read) => read.searchParams.get('includeCanceled') === null)).toBe(true);
     await user.click(screen.getByRole('switch', { name: calendar.showCanceled }));
     expect(await screen.findByTestId('appt-a3')).toBeInTheDocument();
+    expect(appointmentReads().at(-1)?.searchParams.get('includeCanceled')).toBe('true');
   });
 });
 
