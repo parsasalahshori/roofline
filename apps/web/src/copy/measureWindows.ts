@@ -288,7 +288,9 @@ export const windowPhotos = {
 
   // The measuring sheet (recommended)
   methodSheet: 'Measuring sheet',
-  sheetHint: 'The sheet on the glass is found for you. Check the yellow corners sit on the window frame.',
+  sheetHintProposed: 'The window was found around the sheet. Check the yellow corners sit on the window frame.',
+  sheetHintPlace: 'Drag the four corners onto the frame.',
+  sheetHintCheck: 'Check the yellow corners sit on the window frame.',
   howToTitle: 'How to photograph a window',
   howTo: [
     'Tape the measuring sheet flat on the glass, in a lower corner.',

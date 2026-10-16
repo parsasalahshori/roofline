@@ -38,6 +38,8 @@ const NAMES: Record<string, string> = {
   snap1Offset: 'sheet + snapping + offset, 1% clicks',
   snap4Picked: 'end-to-end, 4% clicks, person picks among the top 3 outlines',
   snap1Picked: 'end-to-end, 1% clicks, person picks among the top 3 outlines',
+  proposedTop: 'no clicks: the engine proposes the outline around the sheet',
+  proposedPicked: 'no clicks: proposed, person picks among the top 3 outlines',
   combined3: 'sheet + snapping + offset, 3 photos combined',
 };
 
@@ -127,13 +129,13 @@ async function main() {
   md += `\n### Reported uncertainty (sheet + snapping + offset)\n\nBoth width and height inside 1 sigma: ${(100 * within(1)).toFixed(0)}% (ideal about 47% for two independent normals), inside 2 sigma: ${(100 * within(2)).toFixed(0)}% (ideal about 91%). Median reported sigma: width ${median(cal.map((r) => r.results.sheetSnapOffset!.uw!)).toFixed(3)} in, height ${median(cal.map((r) => r.results.sheetSnapOffset!.uh!)).toFixed(3)} in.\n`;
 
   // Right boundary in the ranked outlines.
-  const rk = (key: 'rank4' | 'rank1', zone: (r: PhotoResult) => boolean) => {
+  const rk = (key: 'rank4' | 'rank1' | 'rankP', zone: (r: PhotoResult) => boolean) => {
     const sel = rs.filter((r) => r.detected && zone(r));
     const pct = (k: number) => ((100 * sel.filter((r) => r[key] >= 1 && r[key] <= k).length) / Math.max(1, sel.length)).toFixed(0);
     return `top 1 ${pct(1)}%, top 2 ${pct(2)}%, top 3 ${pct(3)}% (n ${sel.length})`;
   };
   const inFrame = (r: PhotoResult) => r.inFrame;
-  md += `\n### Right boundary among the ranked outlines\n\n- 4% clicks: all ${rk('rank4', () => true)}; target zone ${rk('rank4', near)}; window wholly in the photo ${rk('rank4', inFrame)}.\n- 1% clicks: all ${rk('rank1', () => true)}; target zone ${rk('rank1', near)}; window wholly in the photo ${rk('rank1', inFrame)}.\n- Photos whose window runs off the photo (no outline can be right): ${rs.filter((r) => r.detected && !r.inFrame).length}.\n`;
+  md += `\n### Right boundary among the ranked outlines\n\n- 4% clicks: all ${rk('rank4', () => true)}; target zone ${rk('rank4', near)}; window wholly in the photo ${rk('rank4', inFrame)}.\n- 1% clicks: all ${rk('rank1', () => true)}; target zone ${rk('rank1', near)}; window wholly in the photo ${rk('rank1', inFrame)}.\n- Proposed around the sheet, no clicks: all ${rk('rankP', () => true)}; window wholly in the photo ${rk('rankP', inFrame)}; no proposal ${rs.filter((r) => r.detected && r.rankP < 0).length}.\n- Photos whose window runs off the photo (no outline can be right): ${rs.filter((r) => r.detected && !r.inFrame).length}.\n`;
   // Sigma calibration: the factor that makes 68% of normalized errors fall inside 1 sigma (target zone, end-to-end 1%).
   const z = rs
     .filter((r) => near(r) && r.results.snap1Picked !== null)

@@ -80,6 +80,7 @@ export type WindowPhotoCv = {
   /**
    * Proposes the window's rectangle around the found sheet (the sheet sits on the glass), so the person rarely drags
    * corners from scratch; null when nothing rectangular encloses the sheet. Same shape as snapQuad (candidates ranked).
+   * The browser engine implements it; optional so a stand-in engine (tests) can leave it out.
    */
   proposeQuad?(img: RgbaImage, sheet: SheetDetection, target?: WindowMeasureTarget): Promise<SnappedQuad | null>;
   /** The window's size from the sheet, its corners, the camera focal length (pixels) and the frame's offset. */

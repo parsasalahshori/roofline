@@ -208,15 +208,21 @@ export function PhotoMeasure({
   // A new window on the sheet: once the photo is read and the sheet looked for, start from the engine's proposed
   // outline around the sheet (when it can propose one), else fit the starting corners to the frame nearby
   const seeded = useRef(initial !== null);
+  // Whether the engine proposed this new window's outline (the hint says so only when it did)
+  const [proposed, setProposed] = useState<'pending' | 'found' | 'none'>('pending');
   const looked = find.status === 'found' || find.status === 'missing' || find.status === 'failed';
   const seed = () => {
     // Without a proposal the corners stay where they start until the person places them
-    if (propose === null) return;
+    if (propose === null) {
+      setProposed('none');
+      return;
+    }
     const seq = ++snapSeq.current;
     setSnapping(true);
     void propose(engineTarget).then((s) => {
       if (seq !== snapSeq.current) return;
       setSnapping(false);
+      setProposed(s !== null ? 'found' : 'none');
       if (s !== null) applySnap(s);
     });
   };
@@ -527,7 +533,7 @@ export function PhotoMeasure({
           </Button>
         ))}
       </div>
-      <p className={styles.hint}>{arMode ? copy.arHint : method === 'sheet' ? copy.sheetHint : method === 'reference' ? copy.referenceHint : copy.knownSideHint}</p>
+      <p className={styles.hint}>{arMode ? copy.arHint : method === 'sheet' ? (initial !== null ? copy.sheetHintCheck : proposed === 'found' ? copy.sheetHintProposed : copy.sheetHintPlace) : method === 'reference' ? copy.referenceHint : copy.knownSideHint}</p>
       {sheetStatus}
       {arMode ? (
         <div className={styles.arPanel} data-ar-panel="">

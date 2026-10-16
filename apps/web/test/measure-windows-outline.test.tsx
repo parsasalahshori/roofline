@@ -211,6 +211,10 @@ describe('Corners proposed around the sheet', () => {
     expect(cv.proposeQuad!.mock.calls[0]![2]).toBe('inside-frame');
     expect(cv.snapQuad).not.toHaveBeenCalled();
     expect(windowPolygon().getAttribute('points')).toBe(pointsOf(FRAME));
+    // The hint says the window was found; the corners count as placed, so the size and Save are there
+    expect(screen.getByText(copy.sheetHintProposed)).toBeTruthy();
+    expect(document.querySelector('[data-snap]')!.textContent).toBe(copy.snapped);
+    expect((screen.getByRole('button', { name: copy.save }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('nothing proposed: the corners wait for the person, then snap', async () => {
@@ -219,6 +223,10 @@ describe('Corners proposed around the sheet', () => {
     await waitFor(() => expect(cv.proposeQuad).toHaveBeenCalledTimes(1));
     await act(async () => {});
     expect(cv.snapQuad).not.toHaveBeenCalled();
+    // The hint does not claim the corners were found
+    expect(screen.getByText(copy.sheetHintPlace)).toBeTruthy();
+    expect(screen.queryByText(copy.sheetHintProposed)).toBeNull();
+    expect(document.querySelector('[data-snap]')!.textContent).toBe(copy.placeCorners(0));
     await place();
     await waitFor(() => expect(cv.snapQuad).toHaveBeenCalledTimes(1));
   });
