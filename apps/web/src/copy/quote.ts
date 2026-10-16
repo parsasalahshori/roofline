@@ -43,7 +43,7 @@ export const quote = {
   // Results
   resultsTitle: 'Your estimate',
   forAddress: (address: string): string => `For ${address}`,
-  roofLine: (squares: number): string => `Roof: about ${squares.toLocaleString('en-US')} squares`,
+  roofLine: (squares: number): string => `About ${squares.toLocaleString('en-US')} squares`,
   windowsLine: (count: number): string => `About ${count} ${count === 1 ? 'window' : 'windows'}`,
   windowsAdjust: 'We counted from above. Adjust if needed.',
   windowsFewer: 'One window fewer',
@@ -63,7 +63,8 @@ export const quote = {
 
   // Fallback (daily limit reached, or a home we would rather price after a look: a flat, a big building, a roof hard to see)
   fallbackTitle: "We'll call you with your estimate",
-  fallbackBody: 'Some homes need a person to look before we can give a fair price, and this is one of them. Leave your details and we will call you with your estimate, usually within one business day.',
+  fallbackLead: 'Some homes need a person to look before we can give a fair price, and this is one of them.',
+  fallbackBody: 'Leave your details and we will call you with your estimate, usually within one business day.',
 
   // Lead form
   formTitle: 'How can we reach you?',

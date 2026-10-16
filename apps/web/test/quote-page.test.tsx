@@ -2,9 +2,10 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QUOTE_CONSENT_VERSION, quoteConsentText, quoteTextConsentText, type PublicQuoteConfig } from '@roofline/shared';
+import { publicCopy } from '../src/copy/public.ts';
 import { quote, quoteMoney } from '../src/copy/quote.ts';
 import type { EstimateAnswer } from '../src/features/quote/api.ts';
-import { embedSnippet, RESIZE_MESSAGE } from '../src/features/quote/embed.ts';
+import { embedSnippet, reportHeight, RESIZE_MESSAGE } from '../src/features/quote/embed.ts';
 import { checkLead, QuotePage } from '../src/features/quote/QuotePage.tsx';
 import { thumbLayout } from '../src/features/quote/RoofThumb.tsx';
 import { type Reply, stubApi } from './helpers.tsx';
@@ -303,6 +304,142 @@ describe('QuotePage', () => {
   });
 });
 
+describe('the company on the page', () => {
+  const brandStyle = () => document.getElementById('roofline-brand');
+
+  afterEach(() => {
+    brandStyle()?.remove();
+  });
+
+  it("the company's colour goes in through applyBrand: one style element, no per-page variable, gone when the page goes", async () => {
+    api = stubApi({ [`GET ${BASE}`]: () => ({ body: { ...CONFIG, accentColor: '#ed3a2b' } }) });
+    const view = render(<QuotePage slug={SLUG} />);
+    await screen.findByText(CONFIG.companyName);
+    await waitFor(() => expect(brandStyle()).not.toBeNull());
+    // The brand slot is filled from the colour (WinChoice red here), light and dark, each with its own readable ink
+    expect(brandStyle()!.textContent).toMatch(/--brand:\s*#[0-9a-f]{6}/i);
+    expect(brandStyle()!.textContent).toMatch(/--brand-ink:/);
+    expect(document.querySelector('[style*="--quote-accent"]')).toBeNull();
+    view.unmount();
+    expect(brandStyle()).toBeNull();
+  });
+
+  it('a page with no colour of its own leaves the default blue alone', async () => {
+    api = stubApi({ [`GET ${BASE}`]: () => ({ body: { ...CONFIG, accentColor: null } }) });
+    render(<QuotePage slug={SLUG} />);
+    await screen.findByText(CONFIG.companyName);
+    expect(brandStyle()).toBeNull();
+  });
+
+  it('the company name is the wordmark when there is no logo; a logo image replaces it; the Call pill dials the company', async () => {
+    api = stubApi({ [`GET ${BASE}`]: () => ({ body: CONFIG }) });
+    const first = render(<QuotePage slug={SLUG} />);
+    expect(await screen.findByText(CONFIG.companyName)).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: CONFIG.companyName })).toBeNull();
+    expect(screen.getByRole('link', { name: publicCopy.callAria('(402) 555-0100') })).toHaveAttribute('href', 'tel:+14025550100');
+    first.unmount();
+
+    api = stubApi({ [`GET ${BASE}`]: () => ({ body: { ...CONFIG, logoUrl: 'https://cdn.example.test/summit.png', phone: null } }) });
+    render(<QuotePage slug={SLUG} />);
+    expect(await screen.findByRole('img', { name: CONFIG.companyName })).toHaveAttribute('src', 'https://cdn.example.test/summit.png');
+    expect(screen.queryByText(CONFIG.companyName)).toBeNull();
+    // No phone, no pill
+    expect(screen.queryByRole('link', { name: /^Call / })).toBeNull();
+  });
+
+  it('under the address it shows the facts the company gave when it gave two or more', async () => {
+    api = stubApi({
+      [`GET ${BASE}`]: () => ({ body: { ...CONFIG, rating: { value: 4.9, count: 212, source: 'Google' }, sinceYear: 2004, license: { state: 'NE', number: '48213' } } }),
+    });
+    render(<QuotePage slug={SLUG} />);
+    const row = await screen.findByRole('list', { name: publicCopy.trustLabel });
+    expect(row).toHaveTextContent('4.9');
+    expect(row).toHaveTextContent('212 Google reviews');
+    expect(row).toHaveTextContent('2004');
+    expect(row).toHaveTextContent('NE #48213');
+    expect(screen.queryByText(publicCopy.visitTitle)).toBeNull();
+  });
+
+  it('with fewer than two facts (the API sends none today) it says what happens at the visit, with no number the company did not give', async () => {
+    api = stubApi({ [`GET ${BASE}`]: () => ({ body: CONFIG }) });
+    render(<QuotePage slug={SLUG} />);
+    const visit = await screen.findByRole('region', { name: publicCopy.visitTitle });
+    expect(visit.textContent ?? '').not.toMatch(/\d/);
+    expect(screen.queryByRole('list', { name: publicCopy.trustLabel })).toBeNull();
+  });
+
+  it('the booking form carries the same row, or the visit, once; the estimate screen carries neither', async () => {
+    const user = userEvent.setup();
+    setup({ [`POST ${BASE}/estimate`]: () => ({ body: READY }) });
+    await getEstimate(user);
+    await screen.findByRole('heading', { name: quote.resultsTitle });
+    expect(screen.queryByRole('region', { name: publicCopy.visitTitle })).toBeNull();
+    await user.click(screen.getByRole('button', { name: quote.continueButton }));
+    expect(await screen.findAllByRole('region', { name: publicCopy.visitTitle })).toHaveLength(1);
+  });
+
+  it('says which of the three steps the person is on', async () => {
+    const user = userEvent.setup();
+    setup({ [`POST ${BASE}/estimate`]: () => ({ body: READY }) });
+    await screen.findByText(CONFIG.companyName);
+    // The first screen is the address: no step yet
+    expect(screen.queryByText(/^Step \d of 3$/)).toBeNull();
+    await getEstimate(user);
+    // The scan is step 1 (it may already be over: the test shortens it to nothing), the estimate is 2, the form is 3
+    await screen.findByRole('heading', { name: quote.resultsTitle });
+    expect(screen.getByText(publicCopy.stepOf(2, 3))).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: quote.continueButton }));
+    expect(await screen.findByText(publicCopy.stepOf(3, 3))).toBeInTheDocument();
+  });
+
+  it('a range is written short on the card and in full for a screen reader, once each', async () => {
+    const user = userEvent.setup();
+    setup({ [`POST ${BASE}/estimate`]: () => ({ body: READY }) });
+    await getEstimate(user);
+    await screen.findByRole('heading', { name: quote.resultsTitle });
+    expect(screen.getByText(publicCopy.rangeShort('$12,500', '$19,800'))).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByText(quote.range(1_250_000, 1_980_000))).toHaveClass('visually-hidden');
+  });
+
+  it('a home that needs a person (the fallback) is a service: its panel says so and the form follows, at step 2', async () => {
+    const user = userEvent.setup();
+    setup({ [`POST ${BASE}/estimate`]: () => ({ body: FALLBACK }) });
+    await getEstimate(user);
+    expect(await screen.findByRole('heading', { name: quote.fallbackTitle })).toBeInTheDocument();
+    expect(screen.getByText(quote.fallbackLead)).toBeInTheDocument();
+    expect(screen.getByText(quote.fallbackBody)).toBeInTheDocument();
+    expect(screen.getByText(publicCopy.stepOf(2, 3))).toBeInTheDocument();
+    // The page names the number the call comes from: the company's own, from its page settings
+    expect(screen.getByText(publicCopy.callFrom('(402) 555-0100'))).toBeInTheDocument();
+    expect(screen.queryByText(quote.noObligation)).toBeNull();
+  });
+
+  it('the done screen shows the booked day once, as the date tile and one sentence', async () => {
+    const user = userEvent.setup();
+    const start = '2026-10-16T15:00:00.000Z';
+    api = stubApi({
+      [`GET ${BASE}`]: () => ({ body: { ...CONFIG, booking: true } }),
+      [`POST ${BASE}/estimate`]: () => ({ body: READY }),
+      [`GET ${BASE}/slots`]: () => ({ body: { timeZone: 'America/Chicago', slots: [{ id: start, start, end: '2026-10-16T16:00:00.000Z' }] } }),
+      [`POST ${BASE}/lead`]: () => ({ status: 201, body: { ok: true, booked: { start, end: '2026-10-16T16:00:00.000Z' } } }),
+    });
+    render(<QuotePage slug={SLUG} />);
+    await getEstimate(user);
+    await user.click(await screen.findByRole('button', { name: quote.continueButton }));
+    // The times are said to be in the company's zone, in words, above the chips
+    const group = await screen.findByRole('group', { name: quote.slotsTitle });
+    expect(within(group).getByText(publicCopy.slotsZone('Central Daylight Time'))).toBeInTheDocument();
+    await user.click((await within(group).findAllByRole('radio'))[1]!);
+    await fillForm(user);
+    await user.click(screen.getByRole('checkbox', { name: quote.consentLabel }));
+    await user.click(screen.getByRole('button', { name: quote.submit }));
+    expect(await screen.findByRole('heading', { name: quote.doneTitle('Dana') })).toBeInTheDocument();
+    expect(screen.getAllByText(/10:00 AM/)).toHaveLength(1);
+    expect(screen.getByText('OCT')).toBeInTheDocument();
+    expect(screen.getByText('16')).toBeInTheDocument();
+  });
+});
+
 describe('Turnstile on the page', () => {
   it('with a site key, the widget token goes with the estimate; the button waits for it', async () => {
     const user = userEvent.setup();
@@ -341,6 +478,44 @@ describe('quote helpers', () => {
       expect(y).toBeGreaterThan(0);
       expect(y).toBeLessThan(100);
     }
+  });
+
+  it('framed, the page marks the document embedded and tells the parent its height: a number, and nothing else', () => {
+    const doc = document.implementation.createHTMLDocument('framed');
+    const root = doc.createElement('div');
+    root.id = 'root';
+    root.getBoundingClientRect = () => ({ height: 321.4 }) as DOMRect;
+    doc.body.append(root);
+    const posted: unknown[][] = [];
+    const parent = { postMessage: (...args: unknown[]) => posted.push(args) };
+    const framed = { parent, document: doc } as unknown as Window;
+    const observers: { disconnect: () => void }[] = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(public callback: () => void) {}
+        observe() {}
+        disconnect() {
+          observers.push(this);
+        }
+      },
+    );
+    const stop = reportHeight(framed);
+    expect(doc.documentElement.hasAttribute('data-embedded')).toBe(true);
+    expect(posted).toEqual([[{ type: RESIZE_MESSAGE, height: 322 }, '*']]);
+    expect(Object.keys((posted[0]![0] as object)).sort()).toEqual(['height', 'type']);
+    stop();
+    expect(observers).toHaveLength(1);
+  });
+
+  it('on its own (not framed) the page is not marked embedded and tells nobody anything', () => {
+    const posted: unknown[] = [];
+    const alone = { document: document.implementation.createHTMLDocument('alone') } as unknown as Window;
+    Object.assign(alone, { parent: alone });
+    alone.parent.postMessage = (message: unknown) => void posted.push(message);
+    reportHeight(alone)();
+    expect(alone.document.documentElement.hasAttribute('data-embedded')).toBe(false);
+    expect(posted).toEqual([]);
   });
 
   it('the embed snippet checks the page origin and only reads a height', () => {
