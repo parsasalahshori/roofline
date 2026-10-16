@@ -187,7 +187,7 @@ export function sizePhotoWindow(input: PhotoWindowInput, photo: { widthPx: numbe
     good = good && quadIsGood(s.corners);
   } else if (s.kind === 'sheet') {
     if (sheetProblem(input, photo) !== null) return null;
-    const m = measureWithSheet({ widthPx: photo.widthPx, heightPx: photo.heightPx, focalPx, imagePoints: s.imagePoints, sheetPointsIn: s.sheetPointsIn, windowQuad: input.corners, planeOffsetIn: s.planeOffsetIn })!;
+    const m = measureWithSheet({ widthPx: photo.widthPx, heightPx: photo.heightPx, focalPx, imagePoints: s.imagePoints, sheetPointsIn: s.sheetPointsIn, sheetIndex: s.sheetIndex, printScale: s.printScale, windowQuad: input.corners, planeOffsetIn: s.planeOffsetIn })!;
     size = { widthIn: m.widthIn, heightIn: m.heightIn };
     // The sheet's pose gives the true viewing angle (the quad-based estimate above is only a fallback).
     good = quadIsGood(input.corners) && m.viewAngleDeg <= STEEP_CHECK_DEG;
@@ -215,7 +215,7 @@ export function sheetProblem(input: PhotoWindowInput, photo: { widthPx: number; 
   if (s.kind !== 'sheet') return null;
   if (s.imagePoints.length < SHEET_MIN_POINTS || s.imagePoints.length !== s.sheetPointsIn.length) return 'too few points of the measuring sheet were found';
   const focalPx = focalPxFrom35mm(photo.focal35mm ?? DEFAULT_FOCAL_35MM, photo.widthPx, photo.heightPx);
-  const m = measureWithSheet({ widthPx: photo.widthPx, heightPx: photo.heightPx, focalPx, imagePoints: s.imagePoints, sheetPointsIn: s.sheetPointsIn, windowQuad: input.corners, planeOffsetIn: s.planeOffsetIn });
+  const m = measureWithSheet({ widthPx: photo.widthPx, heightPx: photo.heightPx, focalPx, imagePoints: s.imagePoints, sheetPointsIn: s.sheetPointsIn, sheetIndex: s.sheetIndex, printScale: s.printScale, windowQuad: input.corners, planeOffsetIn: s.planeOffsetIn });
   if (m === null) return 'the measuring sheet\'s points do not fit a flat sheet';
   if (m.rmsPx > SHEET_MAX_RMS_PX) return `the measuring sheet is not flat or the photo is blurred (fit error ${m.rmsPx.toFixed(1)} px)`;
   return null;

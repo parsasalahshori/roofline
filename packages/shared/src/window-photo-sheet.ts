@@ -351,6 +351,193 @@ function denormalize(norm: HomographyFit['norm'], params: number[]): M3 {
   return H.map((v) => v / H[8]!);
 }
 
+/** A fitted sheet plane: the homography for sheet A, its parameters' covariance and how to rebuild H from them. */
+export type PlaneFit = {
+  H: M3;
+  rmsPx: number;
+  inlierCount: number;
+  inliers: boolean[];
+  params: number[];
+  covariance: number[][] | null;
+  toH: (params: number[]) => M3;
+  model: 'homography' | 'pose';
+};
+
+function homographyPlane(f: HomographyFit): PlaneFit {
+  return { H: f.H, rmsPx: f.rmsPx, inlierCount: f.inlierCount, inliers: f.inliers, params: f.norm.params, covariance: f.covariance, toH: (p) => denormalize(f.norm, p), model: 'homography' };
+}
+
+function rodrigues(r: number[]): number[] {
+  const th = Math.hypot(r[0]!, r[1]!, r[2]!);
+  if (th < 1e-12) return [1, -r[2]!, r[1]!, r[2]!, 1, -r[0]!, -r[1]!, r[0]!, 1];
+  const [x, y, z] = [r[0]! / th, r[1]! / th, r[2]! / th];
+  const c = Math.cos(th);
+  const sn = Math.sin(th);
+  const C = 1 - c;
+  return [c + x * x * C, x * y * C - z * sn, x * z * C + y * sn, y * x * C + z * sn, c + y * y * C, y * z * C - x * sn, z * x * C - y * sn, z * y * C + x * sn, c + z * z * C];
+}
+
+function rotToVec(R: number[]): number[] {
+  const tr = R[0]! + R[4]! + R[8]!;
+  const th = Math.acos(Math.max(-1, Math.min(1, (tr - 1) / 2)));
+  if (th < 1e-9) return [0, 0, 0];
+  const k = th / (2 * Math.sin(th));
+  return [(R[7]! - R[5]!) * k, (R[2]! - R[6]!) * k, (R[3]! - R[1]!) * k];
+}
+
+/**
+ * The sheet plane fitted as a camera pose with the KNOWN focal length (6 dof: rotation and translation; plus 3 for a
+ * second sheet's place on the same glass: its turn and shift relative to sheet A), by Levenberg-Marquardt on the
+ * reprojection error. Fewer free parameters than a homography (8), so a curled sheet or a few noisy points cannot
+ * invent perspective that then grows across a window several times the sheet's size.
+ */
+export function fitSheetPose(sheetPts: Pt[], imagePts: Pt[], o: { focalPx: number; cx: number; cy: number; sheetIndex?: number[]; inlierPx?: number }): PlaneFit | null {
+  const n = Math.min(sheetPts.length, imagePts.length);
+  const idx = o.sheetIndex ?? new Array<number>(n).fill(0);
+  const ids = (s: number) => [...Array(n).keys()].filter((i) => (idx[i] ?? 0) === s);
+  let a = ids(0);
+  let b = ids(1);
+  // Sheet A is the one with points (when only B was seen, B plays A).
+  let swap = false;
+  if (a.length < 4 && b.length >= 4) {
+    [a, b] = [b, a];
+    swap = true;
+  }
+  if (a.length < 4) return null;
+  const fa = fitSheetHomography(a.map((i) => sheetPts[i]!), a.map((i) => imagePts[i]!), { inlierPx: o.inlierPx });
+  if (fa === null) return null;
+  const pa = poseFromHomography(fa.H, o.focalPx, o.cx, o.cy);
+  if (pa === null) return null;
+  const two = b.length >= 4;
+  const params = [...rotToVec(pa.R), ...pa.t];
+  const isB = new Array<boolean>(n).fill(false);
+  for (const i of b) isB[i] = true;
+  let use = new Array<boolean>(n).fill(false);
+  a.forEach((i, k) => (use[i] = fa.inliers[k]!));
+  if (two) {
+    const fb = fitSheetHomography(b.map((i) => sheetPts[i]!), b.map((i) => imagePts[i]!), { inlierPx: o.inlierPx });
+    const pb = fb === null ? null : poseFromHomography(fb.H, o.focalPx, o.cx, o.cy);
+    if (fb === null || pb === null) return null;
+    // B in A's frame: R_A^T R_B (an in-plane turn) and R_A^T (t_B - t_A).
+    const RA = pa.R;
+    const RtA = (v: number[]) => [RA[0]! * v[0]! + RA[3]! * v[1]! + RA[6]! * v[2]!, RA[1]! * v[0]! + RA[4]! * v[1]! + RA[7]! * v[2]!, RA[2]! * v[0]! + RA[5]! * v[1]! + RA[8]! * v[2]!];
+    const r1b = RtA([pb.R[0]!, pb.R[3]!, pb.R[6]!]);
+    const d = RtA([pb.t[0] - pa.t[0], pb.t[1] - pa.t[1], pb.t[2] - pa.t[2]]);
+    params.push(Math.atan2(r1b[1]!, r1b[0]!), d[0]!, d[1]!);
+    b.forEach((i, k) => (use[i] = fb.inliers[k]!));
+  }
+  void swap;
+  const f = o.focalPx;
+  const project = (p: number[], i: number): Pt => {
+    const R = rodrigues(p);
+    let [x, y] = sheetPts[i]!;
+    if (two && isB[i]) {
+      const c = Math.cos(p[6]!);
+      const sn = Math.sin(p[6]!);
+      [x, y] = [c * x - sn * y + p[7]!, sn * x + c * y + p[8]!];
+    }
+    const X = R[0]! * x + R[1]! * y + p[3]!;
+    const Y = R[3]! * x + R[4]! * y + p[4]!;
+    const Z = R[6]! * x + R[7]! * y + p[5]!;
+    return [o.cx + (f * X) / Z, o.cy + (f * Y) / Z];
+  };
+  const P = params.length;
+  const lm = (p0: number[], use: boolean[]) => {
+    let p = p0.slice();
+    const res = (q: number[]) => {
+      const r: number[] = [];
+      for (let i = 0; i < n; i++) {
+        if (!use[i]) continue;
+        const pr = project(q, i);
+        r.push(pr[0] - imagePts[i]![0], pr[1] - imagePts[i]![1]);
+      }
+      return r;
+    };
+    const sse = (r: number[]) => r.reduce((acc, v) => acc + v * v, 0);
+    let r = res(p);
+    let e = sse(r);
+    let lambda = 1e-3;
+    let JtJ: number[][] = [];
+    const jac = (q: number[]) => {
+      const cols: number[][] = [];
+      for (let k = 0; k < P; k++) {
+        const h = k < 3 || k === 6 ? 1e-7 : 1e-6 * Math.max(1, Math.abs(q[k]!));
+        const up = q.slice();
+        const dn = q.slice();
+        up[k]! += h;
+        dn[k]! -= h;
+        const ru = res(up);
+        const rd = res(dn);
+        cols.push(ru.map((v, i) => (v - rd[i]!) / (2 * h)));
+      }
+      return cols;
+    };
+    for (let it = 0; it < 60; it++) {
+      const J = jac(p);
+      JtJ = Array.from({ length: P }, (_, i) => Array.from({ length: P }, (_, j) => J[i]!.reduce((acc, v, k) => acc + v * J[j]![k]!, 0)));
+      const g = J.map((col) => col.reduce((acc, v, k) => acc + v * r[k]!, 0));
+      let improved = false;
+      for (let t = 0; t < 10; t++) {
+        const A = JtJ.map((row, i) => row.map((v, j) => (i === j ? v * (1 + lambda) + 1e-12 : v)));
+        const step = solveLinear(A, g.map((v) => -v));
+        if (step === null) {
+          lambda *= 10;
+          continue;
+        }
+        const q = p.map((v, i) => v + step[i]!);
+        const rq = res(q);
+        const eq = sse(rq);
+        if (eq < e) {
+          const rel = (e - eq) / Math.max(e, 1e-30);
+          p = q;
+          r = rq;
+          e = eq;
+          lambda = Math.max(lambda / 10, 1e-12);
+          improved = true;
+          if (rel < 1e-12) it = 1000;
+          break;
+        }
+        lambda *= 10;
+      }
+      if (!improved) break;
+    }
+    return { p, e, JtJ, m: r.length / 2 };
+  };
+  let fit = lm(params, use);
+  for (let round = 0; round < 3; round++) {
+    const errs = [...Array(n).keys()].map((i) => {
+      const pr = project(fit.p, i);
+      return Math.hypot(pr[0] - imagePts[i]![0], pr[1] - imagePts[i]![1]);
+    });
+    const inl = errs.filter((_, i) => use[i]).sort((x, y) => x - y);
+    const med = inl[Math.floor(inl.length / 2)] ?? 0;
+    const limit = Math.max(3.5 * 1.4826 * med, 0.75);
+    const next = errs.map((e2) => e2 < Math.min(limit, 2 * (o.inlierPx ?? 4)));
+    if (next.filter(Boolean).length < 4 || next.every((v, i) => v === use[i])) break;
+    use = next;
+    fit = lm(fit.p, use);
+  }
+  const toH = (p: number[]): M3 => {
+    const R = rodrigues(p);
+    const K: M3 = [f, 0, o.cx, 0, f, o.cy, 0, 0, 1];
+    const H = mul3(K, [R[0]!, R[1]!, p[3]!, R[3]!, R[4]!, p[4]!, R[6]!, R[7]!, p[5]!]);
+    return H.map((v) => v / H[8]!);
+  };
+  const dof = 2 * fit.m - P;
+  const inv = dof > 0 ? invertMatrix(fit.JtJ) : null;
+  const sigma2 = dof > 0 ? fit.e / dof : 0;
+  return {
+    H: toH(fit.p),
+    rmsPx: Math.sqrt(fit.e / Math.max(fit.m, 1)),
+    inlierCount: fit.m,
+    inliers: use,
+    params: fit.p,
+    covariance: inv === null ? null : inv.map((row) => row.map((v) => v * sigma2)),
+    toH,
+    model: 'pose',
+  };
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Pose and plane offset
 
@@ -438,6 +625,12 @@ export type SheetMeasureInput = {
   cornerSigmaPx?: number | [number, number, number, number];
   /** One-sigma doubt in the offset the person entered, inches (0.25 when not given). */
   offsetSigmaIn?: number;
+  /** Two sheets: which sheet each point is on (0 = A, 1 = B). Fitted as one plane (pose model). */
+  sheetIndex?: number[];
+  /** The printed scale read off the ruler (1 = 100%): the sheet's inches are multiplied by it. */
+  printScale?: number;
+  /** 'pose' (default): the plane as a camera pose with the known focal length; 'homography': a free 8-dof fit. */
+  planeModel?: 'pose' | 'homography';
 };
 
 export type SheetMeasurement = {
@@ -507,10 +700,21 @@ export function measureWithSheet(input: SheetMeasureInput): SheetMeasurement | n
   const { widthPx, heightPx, focalPx, windowQuad, planeOffsetIn } = input;
   if (!(focalPx > 0) || !(widthPx > 0) || !(heightPx > 0) || !Number.isFinite(planeOffsetIn)) return null;
   if (input.imagePoints.length !== input.sheetPointsIn.length || input.imagePoints.length < SHEET_MIN_POINTS) return null;
-  const fit = fitSheetHomography(input.sheetPointsIn, input.imagePoints, { inlierPx: Math.max(4, 0.0015 * Math.max(widthPx, heightPx)) });
-  if (fit === null || fit.inlierCount < SHEET_MIN_POINTS) return null;
   const cx = widthPx / 2;
   const cy = heightPx / 2;
+  const ps = input.printScale ?? 1;
+  if (!(ps > 0.5 && ps < 1.5)) return null;
+  const sheetPts: Pt[] = ps === 1 ? input.sheetPointsIn : input.sheetPointsIn.map(([x, y]) => [x * ps, y * ps]);
+  const inlierPx = Math.max(4, 0.0015 * Math.max(widthPx, heightPx));
+  const twoSheets = input.sheetIndex !== undefined && input.sheetIndex.some((v) => v === 1) && input.sheetIndex.some((v) => v === 0);
+  const model = twoSheets ? 'pose' : (input.planeModel ?? 'pose');
+  let fit: PlaneFit | null;
+  if (model === 'pose') fit = fitSheetPose(sheetPts, input.imagePoints, { focalPx, cx, cy, sheetIndex: input.sheetIndex, inlierPx });
+  else {
+    const h = fitSheetHomography(sheetPts, input.imagePoints, { inlierPx });
+    fit = h === null ? null : homographyPlane(h);
+  }
+  if (fit === null || fit.inlierCount < SHEET_MIN_POINTS) return null;
   const pose = poseFromHomography(fit.H, focalPx, cx, cy);
   if (pose === null) return null;
   const corners = cornersOnFrame(fit.H, pose, focalPx, cx, cy, windowQuad, planeOffsetIn);
@@ -542,22 +746,22 @@ export function measureWithSheet(input: SheetMeasureInput): SheetMeasurement | n
   };
   // (a) the homography's parameters.
   if (fit.covariance !== null) {
-    const P = fit.norm.params;
+    const P = fit.params;
     const grads: { w: number; h: number }[] = [];
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < P.length; i++) {
       const eps = 1e-6 * Math.max(1, Math.abs(P[i]!));
       const up = P.slice();
       const dn = P.slice();
       up[i]! += eps;
       dn[i]! -= eps;
-      const a = base(denormalize(fit.norm, up), windowQuad, planeOffsetIn, focalPx);
-      const b = base(denormalize(fit.norm, dn), windowQuad, planeOffsetIn, focalPx);
+      const a = base(fit.toH(up), windowQuad, planeOffsetIn, focalPx);
+      const b = base(fit.toH(dn), windowQuad, planeOffsetIn, focalPx);
       grads.push(a === null || b === null ? { w: 0, h: 0 } : { w: (a.w - b.w) / (2 * eps), h: (a.h - b.h) / (2 * eps) });
     }
     let vw = 0;
     let vh = 0;
-    for (let i = 0; i < 8; i++) {
-      for (let j = 0; j < 8; j++) {
+    for (let i = 0; i < P.length; i++) {
+      for (let j = 0; j < P.length; j++) {
         vw += grads[i]!.w * fit.covariance[i]![j]! * grads[j]!.w;
         vh += grads[i]!.h * fit.covariance[i]![j]! * grads[j]!.h;
       }

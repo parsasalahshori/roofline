@@ -155,3 +155,38 @@ describe('combining photos', () => {
     expect(combineSheetMeasurements([])).toBeNull();
   });
 });
+
+describe('the pose model, two sheets and the print scale', () => {
+  it('two sheets in opposite corners (each in its own inches, turned) fit one plane exactly', () => {
+    const s = scene({ yawDeg: 30, pitchDeg: 6, distanceIn: 110, offsetIn: 1 });
+    // Sheet B: the same points turned 90 degrees and shifted to the top-left of the glass; its inches are its own.
+    const theta = Math.PI / 2;
+    const bOrigin: Pt = [3, 3];
+    const bPts = s.sheetPointsIn.map(([x, y]) => [Math.cos(theta) * x - Math.sin(theta) * y + bOrigin[0], Math.sin(theta) * x + Math.cos(theta) * y + bOrigin[1]] as Pt);
+    // Project B through the same camera: reuse scene() geometry via a second call with the same camera.
+    const cam = camera({ distanceIn: 110, yawDeg: 30, pitchDeg: 6, focalPx: s.focalPx, w: s.w, h: s.h, target: [18, 30, 0] });
+    const bImg = bPts.map(([x, y]) => cam.project([x, y, 0]));
+    const m = measureWithSheet({
+      widthPx: s.w,
+      heightPx: s.h,
+      focalPx: s.focalPx,
+      imagePoints: [...s.imagePoints, ...bImg],
+      sheetPointsIn: [...s.sheetPointsIn, ...s.sheetPointsIn],
+      sheetIndex: [...s.sheetPointsIn.map(() => 0), ...s.sheetPointsIn.map(() => 1)],
+      windowQuad: s.windowQuad,
+      planeOffsetIn: 1,
+    })!;
+    expect(m.widthIn).toBeCloseTo(36, 4);
+    expect(m.heightIn).toBeCloseTo(60, 4);
+  });
+
+  it('applies the printed scale read off the ruler', () => {
+    const s = scene({ yawDeg: 10, pitchDeg: 0, distanceIn: 100, offsetIn: 0 });
+    // Printed at 98%: the true sheet is 0.98 of the nominal inches.
+    const printed = s.sheetPointsIn.map(([x, y]) => [x / 0.98, y / 0.98] as Pt);
+    const args = { widthPx: s.w, heightPx: s.h, focalPx: s.focalPx, imagePoints: s.imagePoints, sheetPointsIn: printed, windowQuad: s.windowQuad, planeOffsetIn: 0 };
+    expect(measureWithSheet(args)!.widthIn).toBeCloseTo(36 / 0.98, 3);
+    expect(measureWithSheet({ ...args, printScale: 0.98 })!.widthIn).toBeCloseTo(36, 4);
+    expect(measureWithSheet({ ...args, printScale: 0.98, planeModel: 'homography' })!.widthIn).toBeCloseTo(36, 4);
+  });
+});

@@ -399,6 +399,9 @@ describe('on-site window photos', () => {
     const ok = { id: 'p1', uploadId: id, label: 'Den', corners: photo.window, scale };
     const send = (scaleOver: Record<string, unknown>) => owner.patch(url).send({ photoWindows: [{ ...ok, scale: { ...scale, ...scaleOver } }] });
     expect((await send({ planeOffsetIn: 6.5 })).status).toBe(400);
+    expect((await send({ printScale: 1.2 })).status).toBe(400);
+    expect((await send({ sheetIndex: [0, 1] })).status).toBe(400);
+    expect((await send({ sheetIndex: photo.sheet.sheetPointsIn.map(() => 2) })).status).toBe(400);
     expect((await send({ paper: 'legal' })).status).toBe(400);
     expect((await send({ sheetPointsIn: photo.sheet.sheetPointsIn.slice(1) })).status).toBe(400);
     expect((await send({ sheetPointsIn: photo.sheet.sheetPointsIn.map(([x, y], i) => (i === 0 ? [x, 12] : [x, y])) })).status).toBe(400);
@@ -420,6 +423,10 @@ describe('on-site window photos', () => {
     expect(blurred.body.error).toContain('not flat');
     expect((await owner.get(url)).body.adjustments.photoWindows).toBeUndefined();
     expect((await send({})).status).toBe(200);
+    // The printed scale read off the ruler (printed at 98%): the size shrinks by the same factor.
+    const scaled = await send({ printScale: 0.98, sheetIndex: photo.sheet.sheetPointsIn.map(() => 0) });
+    expect(scaled.status, JSON.stringify(scaled.body)).toBe(200);
+    expect(Math.abs(scaled.body.photoWindows[0].widthIn - 36 * 0.98)).toBeLessThan(0.05);
   });
 
   it('another company cannot see, fetch or add photos', async () => {
