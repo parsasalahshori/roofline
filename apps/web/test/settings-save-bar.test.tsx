@@ -66,4 +66,29 @@ describe('save bar and the column that scrolls', () => {
     rerender(inColumn(false));
     expect(column().style.getPropertyValue('scroll-padding-bottom')).toBe('');
   });
+
+  it('lifts the field that is being typed in when the bar appears over it', () => {
+    const lift = vi.fn();
+    // jsdom has no layout and no scrollIntoView: every box overlaps every other, and the call is recorded
+    Element.prototype.scrollIntoView = lift;
+    const box = { top: 0, bottom: 100, left: 0, right: 100, width: 100, height: 100, x: 0, y: 0, toJSON: () => ({}) };
+    const rects = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(box);
+    const withField = (dirty: boolean) => (
+      <div style={{ overflowY: 'auto' }}>
+        <form>
+          <input aria-label="Name" />
+          <SaveBar dirty={dirty} saving={false} saveLabel="Save" onDiscard={() => {}} />
+        </form>
+      </div>
+    );
+    const { rerender } = render(withField(false));
+    screen.getByLabelText('Name').focus();
+    expect(lift).not.toHaveBeenCalled();
+
+    rerender(withField(true));
+    expect(lift).toHaveBeenCalledWith({ block: 'nearest' });
+
+    rects.mockRestore();
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+  });
 });

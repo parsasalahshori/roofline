@@ -79,10 +79,12 @@ export function ScheduleTab() {
       );
     }
     return (
-      <div role="status">
-        <Skeleton lines={4} />
-        <span className="visually-hidden">{schedule.loading}</span>
-      </div>
+      <Panel>
+        <div role="status">
+          <Skeleton lines={4} />
+          <span className="visually-hidden">{schedule.loading}</span>
+        </div>
+      </Panel>
     );
   }
 

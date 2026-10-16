@@ -72,10 +72,12 @@ export function CompanyTab() {
       );
     }
     return (
-      <div role="status">
-        <Skeleton lines={4} />
-        <span className="visually-hidden">{settings.loading}</span>
-      </div>
+      <Panel>
+        <div role="status">
+          <Skeleton lines={4} />
+          <span className="visually-hidden">{settings.loading}</span>
+        </div>
+      </Panel>
     );
   }
 

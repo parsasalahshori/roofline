@@ -169,10 +169,12 @@ function PricebookPart() {
       );
     }
     return (
-      <div role="status">
-        <Skeleton lines={6} />
-        <span className="visually-hidden">{prices.loading}</span>
-      </div>
+      <Panel>
+        <div role="status">
+          <Skeleton lines={6} />
+          <span className="visually-hidden">{prices.loading}</span>
+        </div>
+      </Panel>
     );
   }
 
