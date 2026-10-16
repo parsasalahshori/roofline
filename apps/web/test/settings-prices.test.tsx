@@ -1,5 +1,5 @@
 import { cleanup, screen } from '@testing-library/react';
-import { DEFAULT_TIER_TEMPLATES, defaultPricebook, type PricebookView } from '@roofline/shared';
+import { DEFAULT_TIER_TEMPLATES, defaultPricebook, type PricebookView, DEFAULT_WINDOW_ORDER_SETTINGS } from '@roofline/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { prices } from '../src/copy/prices.ts';
 import { PricesTab } from '../src/features/settings/PricesTab.tsx';
@@ -10,6 +10,7 @@ const ESTIMATOR_ROUTES = {
   'GET /api/tier-templates': () => ({ body: { templates: DEFAULT_TIER_TEMPLATES.map((t) => ({ ...t, addOns: [...t.addOns], highlights: [...t.highlights] })) } }),
   'GET /api/estimator/settings': () => ({ body: { defaultPitchX12: 6, overhangFt: 1, proposalValidDays: 30, aerialMeasure: false, aerialConfigured: false, estimateChangeClause: true, financingAprBps: null, financingTermMonths: null } }),
   'GET /api/instant-quote/settings': () => ({ body: { enabled: false, slug: null, products: ['windows', 'roof'], rangePct: 12, dailyCap: 50, embedOrigins: [], booking: false, accentColor: null, pageUrl: null } }),
+  'GET /api/window-order-settings': () => ({ body: DEFAULT_WINDOW_ORDER_SETTINGS }),
 };
 
 const DEFAULTS = { wastePercent: 12, markupPercent: 25, taxPercent: 0, material: 'architectural' } as const;

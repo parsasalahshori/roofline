@@ -1,0 +1,21 @@
+/* Factory orders: the parts of the form that span both columns of the shared section form */
+.full {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.subheading {
+  margin: 8px 0 4px;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* Save and the way back to the standard values, side by side, wrapping on a phone */
+.actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
