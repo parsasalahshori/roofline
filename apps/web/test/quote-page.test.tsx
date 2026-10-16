@@ -399,9 +399,10 @@ describe('Measure with the app', () => {
     const code = screen.getByRole('img', { name: quote.appQrAlt('WinChoice') });
     expect(code.querySelector('path')!.getAttribute('d')!.length).toBeGreaterThan(200);
     expect(screen.queryByRole('button', { name: quote.continueButton })).toBeNull();
-    // The free visit goes on to the form as before
+    // The free visit goes on to the form as before, and the app offer steps out of the way
     await user.click(screen.getByRole('button', { name: quote.visitButton }));
     expect(screen.getByRole('heading', { name: quote.formTitle })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: quote.appTitle('WinChoice') })).toBeNull();
   });
 
   it('is hidden when the company has no app link, when windows were not picked, and for a call back', async () => {

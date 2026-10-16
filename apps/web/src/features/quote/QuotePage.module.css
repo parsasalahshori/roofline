@@ -145,6 +145,12 @@
   gap: 8px;
 }
 
+/* The second choice next to "Measure with the app": an outlined button, so it reads as a button and not as a link */
+.secondary {
+  width: 100%;
+  border-color: var(--ds-hairline-strong, #c3cbd1) !important;
+}
+
 .honeypot {
   position: absolute;
   left: -10000px;
@@ -480,7 +486,7 @@
 @media (min-width: 720px) {
   .appRow {
     flex-direction: row;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     gap: 16px;
   }

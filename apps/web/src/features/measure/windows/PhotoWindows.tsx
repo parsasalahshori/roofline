@@ -1,5 +1,5 @@
 import { Banner, Button, Checkbox, ProgressBar } from '@roofline/ui';
-import { photoWindowKey, type PhotoWindow, type PhotoWindowInput, type WindowPhotoUpload } from '@roofline/shared';
+import { HOMEOWNER_APP_SOURCE, photoWindowKey, type PhotoWindow, type PhotoWindowInput, type WindowPhotoUpload } from '@roofline/shared';
 import { createPortal } from 'react-dom';
 import { Suspense, useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { measureWindows, windowPhotos as copy } from '../../../copy/measureWindows.ts';
@@ -202,13 +202,20 @@ export type Uploads = ReturnType<typeof useWindowUploads>;
 /** Where the flow is: taking photos, or sizing the window on one of them. */
 export type FlowAt = { step: 'capture' } | { step: 'print' } | { step: 'ar' } | { step: 'measure'; uploadId: string; windowId: string | null; ar?: ArResult };
 
+/** A window's name in the list: its label; the room it is in (windows from the homeowner's phone app have one); both; else "Window N". */
+function windowName(w: PhotoWindowInput, n: number): string {
+  const room = w.room?.trim() ?? '';
+  if (room === '') return w.label ?? copy.untitled(n);
+  return w.label !== undefined && w.label.trim() !== '' ? copy.roomAndLabel(room, w.label.trim()) : room;
+}
+
 /** The windows photographed so far (several photos of one window are one window), named as the card names them. */
 export function windowGroups(inputs: readonly PhotoWindowInput[]): WindowGroup[] {
   const out: WindowGroup[] = [];
   for (const w of inputs) {
     const key = photoWindowKey(w);
     if (out.some((g) => g.key === key)) continue;
-    out.push({ key, name: w.label ?? copy.untitled(out.length + 1) });
+    out.push({ key, name: windowName(w, out.length + 1) });
   }
   return out;
 }
@@ -563,7 +570,7 @@ export function PhotoWindowsList({
                 <span className={flow.rowText}>
                   <span className={flow.rowName}>
                     {g.name}
-                    <span className={flow.chip}>{members.length > 1 ? copy.photosOfWindow(members.length) : copy.chip}</span>
+                    <span className={flow.chip}>{members.length > 1 ? copy.photosOfWindow(members.length) : first.source === HOMEOWNER_APP_SOURCE ? copy.chipHomeowner : copy.chip}</span>
                   </span>
                   <span className={flow.rowSize}>{out ? measureWindows.leftOut : size}</span>
                   {!out && shown?.detail ? <span className={flow.rowDetail}>{shown.detail}</span> : null}

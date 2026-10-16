@@ -311,7 +311,11 @@ export const windowPhotos = {
   // In the card
   listTitle: 'Photographed windows',
   chip: 'Photo',
+  /** The chip on a window the homeowner measured in their phone app (quote-grade: measure it again before ordering). */
+  chipHomeowner: 'Homeowner app',
   untitled: (n: number) => `Window ${n}`,
+  /** A homeowner-app window is named by its room, with the homeowner's own words for it in brackets. */
+  roomAndLabel: (room: string, label: string) => `${room} (${label})`,
   rowLabel: (name: string, size: string) => `${name}, ${size}. Open to edit.`,
   edit: 'Edit',
   inQuote: 'In the quote',

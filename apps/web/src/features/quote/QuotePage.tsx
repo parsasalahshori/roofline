@@ -368,8 +368,8 @@ function Results({
       </section>
     );
   }
-  // The phone app measures windows where the company has one: offered next to the free visit.
-  const app = services.includes('windows') && windows !== null ? config.homeownerApp : null;
+  // The phone app measures windows where the company has one: offered next to the free visit (until they choose the visit).
+  const app = showContinue && services.includes('windows') && windows !== null ? config.homeownerApp : null;
   return (
     <section className={styles.card} aria-labelledby={headingId}>
       <h1 id={headingId} className={styles.title}>
@@ -402,7 +402,7 @@ function Results({
       {showContinue ? (
         <div className={styles.actions}>
           {app !== null ? <p className={styles.small}>{quote.appOr}</p> : null}
-          <Button size="lg" className={app !== null ? undefined : styles.primary} variant={app !== null ? 'ghost' : 'primary'} onClick={onContinue}>
+          <Button size="lg" className={app !== null ? styles.secondary : styles.primary} variant={app !== null ? 'ghost' : 'primary'} onClick={onContinue}>
             {app !== null ? quote.visitButton : quote.continueButton}
           </Button>
           <Button variant="ghost" onClick={onStartOver}>
