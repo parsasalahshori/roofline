@@ -30,6 +30,7 @@ import { livePhotoWindows } from './photoModel.ts';
 import { PhotoWindowsFlow, PhotoWindowsList, useWindowUploads, type FlowAt } from './PhotoWindows.tsx';
 import { WallsPlan, WindowsCard } from './WindowsCard.tsx';
 import { MeasureSwitch } from './MeasureSwitch.tsx';
+import { OrderStatusChip } from './order/OrderChip.tsx';
 import styles from './WindowsWindow.module.css';
 
 export const SAVE_DEBOUNCE_MS = 500;
@@ -348,6 +349,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
       <main className={frame.main}>
         <div className={styles.strip}>
           <h3 className={styles.address}>{v.address}</h3>
+          <OrderStatusChip measurementId={v.id} hasPhotoWindows={(v.photoWindows ?? []).length > 0} />
         </div>
         <div className={styles.stage} data-phase={scan.phase} data-editing={editing ? 'true' : 'false'} data-photo={photo === null ? 'none' : undefined}>
           <div className={styles.stageTop}>
