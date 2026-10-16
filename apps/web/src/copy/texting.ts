@@ -1,6 +1,14 @@
 /** Texting registration. */
 export const texting = {
   loading: 'Loading your texting setup',
+  /** The three steps of a registration, above the form: send it, wait for the carriers, texting is on. */
+  stepsLabel: 'Registration steps',
+  steps: { business: 'Business details', carriers: 'Carrier review', on: 'Texting on' },
+  stepDone: 'Done',
+  /** The panels of the form, and the panel that takes its place once it is sent. */
+  panels: { business: 'Your business', contact: 'Who the carriers can reach', send: 'Review and send' },
+  statusTitle: 'Texting registration',
+  statusTags: { waiting: 'Waiting', approved: 'Approved', almost: 'Almost ready' },
   fields: {
     legalName: 'Legal business name',
     ein: 'EIN',

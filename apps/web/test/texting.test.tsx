@@ -3,10 +3,11 @@ import userEvent from '@testing-library/user-event';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
 import { RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { USE_CASE_LABEL, type BrandInfo, type TextingView } from '@roofline/shared';
+import { BRAND_FIELDS, USE_CASE_LABEL, type BrandInfo, type TextingView } from '@roofline/shared';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { texting } from '../src/copy/texting.ts';
+import { BUSINESS_FIELDS, CONTACT_FIELDS } from '../src/features/texting/TextingForm.tsx';
 import { ACCOUNT, SHELL_ROUTES, stubApi } from './helpers.tsx';
 
 // The real map loads maplibre-gl, which these tests never need. The stand-in has two pins that open a job and a customer.
@@ -106,7 +107,11 @@ describe('texting registration', () => {
     expect(screen.getByText(texting.whatYouText(USE_CASE_LABEL))).toBeInTheDocument();
 
     await user.type(screen.getByLabelText(texting.fields.ein), '12-3456789');
-    await user.selectOptions(screen.getByLabelText(texting.fields.businessType), 'llc');
+    // The business type is a list that opens, with nothing picked until the person picks
+    expect(screen.getByLabelText(texting.fields.businessType)).toHaveTextContent('—');
+    await user.click(screen.getByLabelText(texting.fields.businessType));
+    await user.click(screen.getByRole('option', { name: texting.businessTypes.llc }));
+    expect(screen.getByLabelText(texting.fields.businessType)).toHaveTextContent(texting.businessTypes.llc);
     await user.type(screen.getByLabelText(texting.fields.street), '12 Main St');
     await user.type(screen.getByLabelText(texting.fields.city), 'Omaha');
     await user.type(screen.getByLabelText(texting.fields.state), 'NE');
@@ -222,5 +227,56 @@ describe('texting registration', () => {
     expect(ein).toHaveAttribute('aria-invalid', 'true');
     expect(ein).toHaveAccessibleDescription('Enter your 9-digit EIN.');
     expect(within(ein.closest('div') as HTMLElement).getByText('Enter your 9-digit EIN.')).toBeInTheDocument();
+  });
+
+  it('asks for every field of a registration, in two panels', async () => {
+    // A field added to the shared list must land in one of the panels, or the form would silently stop asking for it
+    expect([...BUSINESS_FIELDS, ...CONTACT_FIELDS].sort()).toEqual([...BRAND_FIELDS].sort());
+
+    signedInApi(view());
+    renderApp('/settings/setup/texting');
+
+    const business = await screen.findByRole('region', { name: texting.panels.business });
+    for (const field of BUSINESS_FIELDS) expect(within(business).getByLabelText(texting.fields[field])).toBeInTheDocument();
+    const contact = screen.getByRole('region', { name: texting.panels.contact });
+    for (const field of CONTACT_FIELDS) expect(within(contact).getByLabelText(texting.fields[field])).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: texting.panels.send })).getByRole('button', { name: texting.send })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['not_started', { state: 'not_started' }, [1, 'current']],
+    ['needs_fix', { state: 'needs_fix', brand: FULL_BRAND, reason: 'Check the EIN.', rejectedFields: ['ein'] }, [1, 'current']],
+    ['waiting', { state: 'waiting', brand: FULL_BRAND, submittedAt: '2026-10-11T15:00:00Z' }, [2, 'current']],
+    ['approved', { state: 'approved', brand: FULL_BRAND, number: '+14025550100' }, [3, 'done']],
+  ] as const)('the steps follow the registration: %s', async (_name, overrides, [step, state]) => {
+    signedInApi(view(overrides as Partial<TextingView>));
+    renderApp('/settings/setup/texting');
+
+    const list = await screen.findByRole('list', { name: texting.stepsLabel });
+    const items = within(list).getAllByRole('listitem');
+    expect(items).toHaveLength(3);
+    expect(items[step - 1]!.getAttribute('data-state')).toBe(state);
+    // Everything before the step in progress is done
+    for (const earlier of items.slice(0, step - 1)) expect(earlier.getAttribute('data-state')).toBe('done');
+  });
+
+  it('the state of a sent registration is a tag at the right of its title, with the news under it', async () => {
+    signedInApi(view({ state: 'waiting', brand: FULL_BRAND, submittedAt: '2026-10-11T15:00:00Z' }));
+    renderApp('/settings/setup/texting');
+    const waiting = await screen.findByRole('region', { name: texting.statusTitle });
+    expect(within(waiting).getByText(texting.statusTags.waiting)).toBeInTheDocument();
+    expect(within(waiting).getByText(texting.waiting)).toBeInTheDocument();
+    cleanup();
+
+    signedInApi(view({ state: 'approved', brand: FULL_BRAND, number: '+14025550100' }));
+    renderApp('/settings/setup/texting');
+    const approved = await screen.findByRole('region', { name: texting.statusTitle });
+    expect(within(approved).getByText(texting.statusTags.approved)).toBeInTheDocument();
+    cleanup();
+
+    signedInApi(view({ state: 'approved', brand: FULL_BRAND, number: null }));
+    renderApp('/settings/setup/texting');
+    const almost = await screen.findByRole('region', { name: texting.statusTitle });
+    expect(within(almost).getByText(texting.statusTags.almost)).toBeInTheDocument();
   });
 });

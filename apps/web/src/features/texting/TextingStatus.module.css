@@ -1,9 +1,7 @@
-/* The status card: one line of news, with the sent date under it while the carriers review */
-.card {
+/* One line of news, with the sent date under it while the carriers review */
+.body {
   display: grid;
   gap: 8px;
-  max-width: 720px;
-  min-width: 0;
 }
 
 /* The main message, in the body size and the main text colour */
