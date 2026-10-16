@@ -1,4 +1,4 @@
-/* The agenda: one heading per day, then its rows. Rows are at least 40px tall, the phone touch target. */
+/* The list: a panel for each day, a table in it. Rows are as tall as a thumb on a phone. */
 .agenda {
   display: flex;
   flex-direction: column;
@@ -6,79 +6,133 @@
   min-width: 0;
 }
 
-.day {
+.time {
+  width: 1%;
+  color: var(--ink-2);
+  font-family: var(--f-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.visit {
   min-width: 0;
 }
 
-.heading {
-  margin: 0 0 6px;
-  font-size: var(--font-size-body);
-  font-weight: 600;
-  color: var(--ink);
+/* The visit's name is the row's button: text-weight, left-aligned, as wide as its words */
+.open {
+  min-height: 28px;
+  max-width: 100%;
+  justify-content: flex-start;
+  padding: 0 4px;
+  margin-left: -4px;
+  font-size: 13px;
+  font-weight: 650;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  border: 1px solid var(--line);
-  border-radius: var(--r-3);
-  background: var(--surface);
-}
-
-.item + .item {
-  border-top: 1px solid var(--line);
+.open[data-status="canceled"] {
+  text-decoration: line-through;
 }
 
 .row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 40px;
-  justify-content: flex-start;
-  text-align: left;
+  cursor: pointer;
 }
 
-.time {
-  flex: none;
-  min-width: 72px;
-  font-size: var(--font-size-body);
-  font-variant-numeric: tabular-nums;
-  color: var(--ink-3);
+.person {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .dot {
   flex: none;
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
 }
 
-.text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
+.nobody {
+  color: var(--ink-3);
 }
 
-.title,
-.customer {
+.address {
+  max-width: 280px;
   overflow: hidden;
+  color: var(--ink-2);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.title {
-  font-size: var(--font-size-body);
-  color: var(--ink);
-}
-
-.customer {
-  font-size: var(--font-size-min);
+/* Under the visit, for a phone: the customer. Wide screens have their own column for it. */
+.under {
+  display: none;
   color: var(--ink-3);
+  font-size: var(--font-size-min);
 }
 
 .more {
   display: flex;
   justify-content: center;
+}
+
+/* Nothing scheduled: the sentence, the next action and the shape of the rows that will be here */
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px 16px;
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+}
+
+.ghosts {
+  display: flex;
+  flex-direction: column;
+  max-width: 560px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.ghost {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.ghost:last-child {
+  border-bottom: 0;
+}
+
+.ghostTime {
+  width: 64px;
+  height: 12px;
+  border-radius: var(--r-1);
+  background: var(--sunken);
+}
+
+.ghostLine {
+  flex: 1 1 auto;
+  height: 12px;
+  border-radius: var(--r-1);
+  background: var(--sunken);
+}
+
+@media (max-width: 767.98px) {
+  .wide {
+    display: none;
+  }
+
+  .under {
+    display: block;
+  }
+
+  .open {
+    min-height: 40px;
+  }
 }

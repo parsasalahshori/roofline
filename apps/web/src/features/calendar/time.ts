@@ -141,6 +141,16 @@ export function minutesIntoDay(dayStart: Date, instant: Date): number {
   return (instant.getTime() - dayStart.getTime()) / 60_000;
 }
 
+/** "Mon" for the zone day of `date`. */
+export function formatWeekday(date: Date, zone: string): string {
+  return cachedFormatter('weekday', zone, { weekday: 'short' }).format(date);
+}
+
+/** "2": the day of the month of the zone day of `date`. */
+export function formatDayNumber(date: Date, zone: string): string {
+  return String(zonedParts(date, zone).day);
+}
+
 /** Long label such as "Mon, Nov 2" for the zone day of `date`. */
 export function formatDayLabel(date: Date, zone: string): string {
   return cachedFormatter('day', zone, { weekday: 'short', month: 'short', day: 'numeric' }).format(date).replace(/[\u00a0\u202f]/g, ' ');

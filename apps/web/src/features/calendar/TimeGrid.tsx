@@ -1,7 +1,8 @@
-import { useEffect, useRef, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import type { AppointmentView } from '@roofline/shared';
 import { calendar } from '../../copy/calendar.ts';
-import { formatDayLabel, formatTime, startOfZonedDay, zonedDateKey, zonedParts } from './time.ts';
+import { colorOfAppointment } from './colors.ts';
+import { formatDayLabel, formatDayNumber, formatTime, formatWeekday, startOfZonedDay, zonedDateKey, zonedParts } from './time.ts';
 import type { GridViewProps } from './types.ts';
 import styles from './TimeGrid.module.css';
 
@@ -10,11 +11,12 @@ const WINDOW_START = 360;
 const WINDOW_END = 1260;
 const ROW_MINUTES = 30;
 const ROW_COUNT = (WINDOW_END - WINDOW_START) / ROW_MINUTES;
-const ROW_PX = 24;
-/** The scroll container opens at 07:00, two rows down. */
+/** A row is 32px: a 30 minute visit has one line, an hour has the three it needs. */
+const ROW_PX = 32;
+/** The grid opens at 07:00, two rows down, unless today is shown. */
 const SCROLL_TO_ROW = 2;
 const DAY_MINUTES = 1440;
-const GUTTER_PX = 56;
+const GUTTER_PX = 64;
 const COLUMN_MIN_PX = 120;
 
 /** Wall-clock minutes since midnight of `instant` in `zone`. */
@@ -103,17 +105,22 @@ function layoutLanes(items: { row: number; span: number }[]): { lane: number; la
   return result;
 }
 
+/** The row the grid opens on: a few rows above the clock when today is shown, else 07:00. */
+function openingRow(todayShown: boolean, nowMinute: number): number {
+  if (!todayShown || nowMinute < WINDOW_START || nowMinute > WINDOW_END) return SCROLL_TO_ROW;
+  return Math.max(0, Math.floor((nowMinute - WINDOW_START) / ROW_MINUTES) - 3);
+}
+
 const pad = (value: number): string => String(value).padStart(2, '0');
 
-/** The shared time grid for the Week and Day views: a day header, an all-day row and 06:00 to 21:00 in 30-minute rows. */
+/**
+ * The shared time grid for the Week and Day views: a head with the days, an all-day row and 06:00 to 21:00 in 30-minute rows
+ * on faint hairlines (an hour's line is the stronger one). A visit is a tinted block with a 3px edge in its person's colour;
+ * what does not fit a block is cut with an ellipsis and told in full by the block's title. Today has a brand line for the time now.
+ */
 export function TimeGrid({ zone, days, appointments, busy, people, showCanceled, now, onSlot, onOpen }: GridViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const element = scrollRef.current;
-    if (element) element.scrollTop = SCROLL_TO_ROW * ROW_PX;
-  }, []);
 
   const dayStarts = days.map((day) => startOfZonedDay(day, zone));
   const dayKeys = days.map((day) => zonedDateKey(day, zone));
@@ -121,7 +128,11 @@ export function TimeGrid({ zone, days, appointments, busy, people, showCanceled,
   const nowMinute = wallMinutes(now, zone);
   const shownAppointments = showCanceled ? appointments : appointments.filter((appt) => appt.status !== 'canceled');
 
-  const colorOf = (appt: AppointmentView): string => people.find((person) => person.userId === appt.assigned?.userId)?.color ?? 'var(--st-inst)';
+  const [startRow] = useState(() => openingRow(dayKeys.includes(nowKey), nowMinute));
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (element) element.scrollTop = startRow * ROW_PX;
+  }, [startRow]);
 
   /** Arrow keys walk the appointments in DOM order; Enter opens the focused one. */
   const onItemKeyDown = (event: KeyboardEvent<HTMLElement>, appointmentId: string) => {
@@ -145,10 +156,21 @@ export function TimeGrid({ zone, days, appointments, busy, people, showCanceled,
     }
   };
 
-  const labels = dayStarts.length > 0 ? Array.from({ length: ROW_COUNT }, (_, row) => {
-    const minute = WINDOW_START + row * ROW_MINUTES;
-    return minute % 60 === 0 ? formatTime(instantAtMinute(dayStarts[0], minute, zone), zone) : null;
-  }) : [];
+  /** What the pointer finds on a block: everything it shows, and the parts that may have been cut short. */
+  const tipOf = (appt: AppointmentView, range: string | null): string =>
+    calendar.eventTitle([appt.title, ...(appt.customerName ? [appt.customerName] : []), ...(range !== null ? [range] : []), ...(appt.assigned ? [appt.assigned.name] : [])]);
+
+  /** A canceled, done or no-show visit is struck or marked in the block, and said aloud: never colour alone. */
+  const statusNote = (appt: AppointmentView): ReactNode =>
+    appt.status !== 'scheduled' ? <span className="visually-hidden">{calendar.status[appt.status]}</span> : null;
+
+  const labels =
+    dayStarts.length > 0
+      ? Array.from({ length: ROW_COUNT }, (_, row) => {
+          const minute = WINDOW_START + row * ROW_MINUTES;
+          return minute % 60 === 0 ? formatTime(instantAtMinute(dayStarts[0], minute, zone), zone) : null;
+        })
+      : [];
 
   const columns = dayKeys.map((dayKey, col) => {
     const allDay: ReactNode[] = [];
@@ -156,59 +178,74 @@ export function TimeGrid({ zone, days, appointments, busy, people, showCanceled,
     const busyTimed: ReactNode[] = [];
 
     const dayAppointments = shownAppointments.filter((appt) => onDay(appt.startsAt, appt.endsAt, appt.allDay, dayKey, zone));
-    for (const appt of dayAppointments.filter((appt) => appt.allDay)) {
+    for (const appt of dayAppointments.filter((candidate) => candidate.allDay)) {
       allDay.push(
         <div
           key={appt.id}
           role="link"
           tabIndex={0}
           className={styles.allDayItem}
+          title={tipOf(appt, null)}
           data-testid={`allday-${appt.id}`}
           data-appt={appt.id}
           data-status={appt.status}
-          style={{ '--person': colorOf(appt) } as CSSProperties}
+          style={{ '--person': colorOfAppointment(appt, people) } as CSSProperties}
           onClick={() => onOpen(appt.id)}
           onKeyDown={(event) => onItemKeyDown(event, appt.id)}
         >
           <span className={styles.itemTitle}>{appt.title}</span>
-          {appt.customerName ? <span>{appt.customerName}</span> : null}
+          {appt.customerName ? <span className={styles.itemSub}>{appt.customerName}</span> : null}
+          {statusNote(appt)}
         </div>,
       );
     }
 
     const timedAppointments = dayAppointments
-      .filter((appt) => !appt.allDay)
+      .filter((candidate) => !candidate.allDay)
       .map((appt) => ({ appt, ...placeInDay(appt.startsAt, appt.endsAt, dayKey, zone) }));
     const lanes = layoutLanes(timedAppointments);
     timedAppointments.forEach(({ appt, row, span }, index) => {
       const { lane, lanes: laneCount } = lanes[index];
-      const range = `${formatTime(new Date(appt.startsAt), zone)} - ${formatTime(new Date(appt.endsAt), zone)}`;
+      const start = formatTime(new Date(appt.startsAt), zone);
+      const range = calendar.timeRange(start, formatTime(new Date(appt.endsAt), zone));
       timed.push(
         <div
           key={appt.id}
           role="link"
           tabIndex={0}
           className={styles.appt}
+          title={tipOf(appt, range)}
           data-testid={`appt-${appt.id}`}
           data-appt={appt.id}
           data-status={appt.status}
+          data-size={span === 1 ? 'short' : 'tall'}
           data-row-start={row}
           data-row-span={span}
           data-lane={lane}
           data-lanes={laneCount}
           style={{
-            '--person': colorOf(appt),
+            '--person': colorOfAppointment(appt, people),
             top: `calc(${row} * var(--row-h))`,
             height: `calc(${span} * var(--row-h) - 2px)`,
-            left: `${(lane * 100) / laneCount}%`,
-            width: `${100 / laneCount}%`,
+            left: `calc(${(lane * 100) / laneCount}% + 1px)`,
+            width: `calc(${100 / laneCount}% - 2px)`,
           } as CSSProperties}
           onClick={() => onOpen(appt.id)}
           onKeyDown={(event) => onItemKeyDown(event, appt.id)}
         >
-          <span className={styles.itemTitle}>{appt.title}</span>
-          {appt.customerName ? <span>{appt.customerName}</span> : null}
-          <span className={styles.itemTime}>{range}</span>
+          {span === 1 ? (
+            <>
+              <span className={styles.itemTime}>{start}</span>
+              <span className={styles.itemTitle}>{appt.title}</span>
+            </>
+          ) : (
+            <>
+              <span className={styles.itemTitle}>{appt.title}</span>
+              {appt.customerName ? <span className={styles.itemSub}>{appt.customerName}</span> : null}
+              <span className={styles.itemTime}>{range}</span>
+            </>
+          )}
+          {statusNote(appt)}
         </div>,
       );
     });
@@ -276,14 +313,20 @@ export function TimeGrid({ zone, days, appointments, busy, people, showCanceled,
       >
         <div className={styles.corner} />
         {dayKeys.map((dayKey, col) => (
-          <div key={dayKey} className={styles.dayHead} data-day={dayKey}>
-            {formatDayLabel(days[col], zone)}
+          <div key={dayKey} className={styles.dayHead} data-day={dayKey} data-today={dayKey === nowKey ? 'true' : undefined}>
+            <span className={styles.weekday} aria-hidden="true">
+              {formatWeekday(days[col], zone)}
+            </span>
+            <span className={styles.dayNumber} aria-hidden="true">
+              {formatDayNumber(days[col], zone)}
+            </span>
+            <span className="visually-hidden">{formatDayLabel(days[col], zone)}</span>
           </div>
         ))}
 
         <div className={styles.gutterAllDay}>{calendar.allDay}</div>
         {columns.map((column) => (
-          <div key={column.dayKey} className={styles.allDayCell} data-day={column.dayKey}>
+          <div key={column.dayKey} className={styles.allDayCell} data-day={column.dayKey} data-today={column.dayKey === nowKey ? 'true' : undefined}>
             {column.allDay}
           </div>
         ))}
@@ -296,17 +339,11 @@ export function TimeGrid({ zone, days, appointments, busy, people, showCanceled,
           ))}
         </div>
         {columns.map((column) => (
-          <div key={column.dayKey} className={styles.column} data-day={column.dayKey}>
+          <div key={column.dayKey} className={styles.column} data-day={column.dayKey} data-today={column.dayKey === nowKey ? 'true' : undefined}>
             <div className={styles.slots}>{column.slots}</div>
             {column.busyTimed}
             {column.timed}
-            {column.showNow ? (
-              <div
-                data-testid="now-line"
-                className={styles.now}
-                style={{ top: `calc(${column.nowRow} * var(--row-h))` } as CSSProperties}
-              />
-            ) : null}
+            {column.showNow ? <div data-testid="now-line" className={styles.now} style={{ top: `calc(${column.nowRow} * var(--row-h))` } as CSSProperties} /> : null}
           </div>
         ))}
       </div>

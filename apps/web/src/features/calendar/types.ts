@@ -5,7 +5,7 @@ export type BusyBlock = { userId: string; start: string; end: string; allDay: bo
 export type AppointmentsBody = { appointments: AppointmentView[]; busy: BusyBlock[] };
 export type CalendarPerson = { userId: string; name: string; color: string };
 
-/** Props shared by WeekView and DayView. `days` are the zone-day-start instants shown (7 for week, 1 for day). */
+/** Props shared by the week and the day grid. `days` are the zone-day-start instants shown (7 for week, 1 for day). */
 export type GridViewProps = {
   zone: string;
   days: Date[];
@@ -27,6 +27,8 @@ export type AgendaViewProps = {
   appointments: AppointmentView[];
   people: CalendarPerson[];
   showCanceled: boolean;
+  /** The zone day ("YYYY-MM-DD") that is today, so its panel can say so. */
+  todayKey?: string;
   onOpen: (appointmentId: string) => void;
   onLoadMore: () => void;
 };

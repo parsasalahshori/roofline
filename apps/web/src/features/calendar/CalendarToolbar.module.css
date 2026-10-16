@@ -1,4 +1,7 @@
-/* The calendar toolbar wraps onto as many lines as the width needs, so nothing scrolls sideways at 375px. */
+/*
+ * The calendar's controls, in two rows that wrap as far as the width needs. The range is Archivo, like the page's title.
+ * On a phone the switch takes the full width, the arrows get a thumb each, and the chips slide sideways in one row.
+ */
 .toolbar {
   display: flex;
   flex-direction: column;
@@ -11,38 +14,73 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 12px 16px;
   min-width: 0;
 }
 
-.nav,
-.views,
-.end {
+.nav {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 8px 16px;
   min-width: 0;
 }
 
+.steps {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .label {
-  font-size: var(--font-size-body);
-  font-weight: 600;
+  margin: 0;
+  font: 650 20px/1.2 var(--f-display);
+  font-stretch: 110%;
+  letter-spacing: -0.01em;
   color: var(--ink);
-  overflow-wrap: anywhere;
 }
 
 .zoneNote {
   margin: 0;
-  font-size: var(--font-size-min);
   color: var(--ink-3);
+  font-size: var(--font-size-min);
 }
 
 @media (max-width: 767.98px) {
-  .nav > *,
-  .views > *,
-  .end > * {
-    min-height: 40px;
-    min-width: 40px;
+  /* The switch first, over the full width: three big targets */
+  .row:first-child {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .views {
+    display: flex;
+    width: 100%;
+  }
+
+  .views > button {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+
+  .nav {
+    flex-wrap: nowrap;
+    justify-content: space-between;
+  }
+
+  .label {
+    min-width: 0;
+    font-size: 17px;
+    text-align: right;
+  }
+
+  .steps > * {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* The chips and the switch share a row; the chips give way */
+  .row:nth-child(2) {
+    flex-wrap: nowrap;
   }
 }

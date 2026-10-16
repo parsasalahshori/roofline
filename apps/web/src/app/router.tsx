@@ -94,7 +94,7 @@ const routes: RouteObject[] = [
           { path: 'customers', element: <AppPage app="customers"><CustomersWindow /></AppPage> },
           { path: 'customers/new', element: <AppPage app="customers"><NewCustomer /></AppPage> },
           { path: 'customers/:customerId', element: <AppPage app="customers"><CustomerWindow /></AppPage> },
-          { path: 'calendar', element: <AppPage app="calendar"><CalendarWindow /></AppPage> },
+          { path: 'calendar', element: <CalendarWindow /> },
           { path: 'calendar/new', element: <AppPage app="calendar"><AppointmentWindow /></AppPage> },
           { path: 'calendar/appointments/:appointmentId', element: <AppPage app="calendar"><AppointmentWindow /></AppPage> },
           { path: 'settings', element: <Navigate to="/settings/company" replace /> },
