@@ -183,7 +183,9 @@ describe('schema', () => {
         where table_schema = 'public' and table_name = 'measurements' and column_name = 'gutter_adjustments'`,
     );
     expect(col).toMatchObject({ data_type: 'jsonb', is_nullable: 'NO' });
-    expect(col!.column_default).toContain('"excludedRunIds":[]');
+    // Postgres prints the jsonb default normalised: '{"size": null, "downspouts": {}, "excludedRunIds": []}'::jsonb
+    expect(col!.column_default).toMatch(/"excludedRunIds":\s*\[\]/);
+    expect(col!.column_default).toMatch(/"size":\s*null/);
     const [cls] = await ownerQuery<{ relrowsecurity: boolean; relforcerowsecurity: boolean }>(
       `select relrowsecurity, relforcerowsecurity from pg_class where oid = 'public.measurements'::regclass`,
     );
