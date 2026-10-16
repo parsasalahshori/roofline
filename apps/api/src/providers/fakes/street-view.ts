@@ -32,7 +32,9 @@ export function plainJpeg(): Uint8Array {
  */
 export class FakeStreetView implements StreetView {
   readonly configured = true;
-  readonly calls: ({ method: 'metadata'; point: LngLat } | { method: 'image'; req: StreetViewImageRequest })[] = [];
+  readonly calls: ({ method: 'metadata'; point: LngLat | string } | { method: 'image'; req: StreetViewImageRequest })[] = [];
+  /** Set to answer per request instead (null: none there); `pano`, when set, still wins. */
+  answer: ((where: LngLat | string) => StreetViewPano | null) | null = null;
   none = false;
   offsetM = 20;
   capturedOn: string | null = '2023-06';
@@ -51,12 +53,18 @@ export class FakeStreetView implements StreetView {
     }
   }
 
-  async metadata(point: LngLat): Promise<StreetViewPano | null> {
-    this.calls.push({ method: 'metadata', point: [point[0], point[1]] });
+  /**
+   * A point: a Google pano `offsetM` south of it. An address: none (the fake cannot look one up), so the point asked
+   * about decides, as before.
+   */
+  async metadata(where: LngLat | string): Promise<StreetViewPano | null> {
+    this.calls.push({ method: 'metadata', point: typeof where === 'string' ? where : [where[0], where[1]] });
     this.fail();
     if (this.none) return null;
     if (this.pano !== null) return structuredClone(this.pano);
-    return { panoId: 'fake-pano', location: [point[0], point[1] - this.offsetM / 111_320], capturedOn: this.capturedOn };
+    if (this.answer !== null) return this.answer(where);
+    if (typeof where === 'string') return null;
+    return { panoId: 'fake-pano', location: [where[0], where[1] - this.offsetM / 111_320], capturedOn: this.capturedOn, byGoogle: true };
   }
 
   async image(req: StreetViewImageRequest): Promise<Uint8Array> {

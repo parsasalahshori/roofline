@@ -8,14 +8,23 @@ import { FakeStreetView } from './fakes/street-view.ts';
  * never part of an error: a failed fetch is a fresh error that carries neither the URL nor the cause.
  */
 
-/** The panorama: Google's id, where the camera stood, and when it was captured ('YYYY-MM', null if not said). */
-export type StreetViewPano = { panoId: string; location: LngLat; capturedOn: string | null };
+/**
+ * The panorama: its id, where the camera stood, when it was captured ('YYYY-MM', null if not said), and whether it is
+ * Google's own (copyright "© Google": a Street View car or trekker) rather than a photo sphere someone uploaded
+ * (source=outdoor still returns those). A person's upload has no known camera height or level, and its id can hold a '.'.
+ */
+export type StreetViewPano = { panoId: string; location: LngLat; capturedOn: string | null; byGoogle: boolean };
+/** A panorama id as Google gives it: letters, digits, '_', '-' and, for people's uploads, '.'. */
+export const PANO_ID = /^[\w.-]{1,200}$/;
 export type StreetViewImageRequest = { panoId: string; heading: number; fov: number; pitch: number; widthPx: number; heightPx: number };
 
 export interface StreetView {
   readonly configured: boolean;
-  /** The outdoor panorama nearest `point` within `radiusM`; null when Google has none there (ZERO_RESULTS / NOT_FOUND). */
-  metadata(point: LngLat, opts?: { radiusM?: number }): Promise<StreetViewPano | null>;
+  /**
+   * The outdoor panorama nearest `where` within `radiusM`: a point, or an address (Google finds the address itself and
+   * answers with a panorama on its street); null when Google has none there (ZERO_RESULTS / NOT_FOUND).
+   */
+  metadata(where: LngLat | string, opts?: { radiusM?: number }): Promise<StreetViewPano | null>;
   /** A JPEG from that panorama. Throws StreetViewUnavailableError on any failure. */
   image(req: StreetViewImageRequest): Promise<Uint8Array>;
 }
@@ -110,11 +119,19 @@ export class GoogleStreetView implements StreetView {
     }
   }
 
-  async metadata(point: LngLat, opts?: { radiusM?: number }): Promise<StreetViewPano | null> {
-    const [lng, lat] = point;
-    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+  async metadata(where: LngLat | string, opts?: { radiusM?: number }): Promise<StreetViewPano | null> {
+    let location: string;
+    if (typeof where === 'string') {
+      const address = where.trim();
+      if (address === '' || address.length > 300) return null;
+      location = encodeURIComponent(address);
+    } else {
+      const [lng, lat] = where;
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+      location = `${lat.toFixed(7)},${lng.toFixed(7)}`;
+    }
     const radius = Math.round(Math.min(200, Math.max(10, opts?.radiusM ?? DEFAULT_RADIUS_M)));
-    const url = `${this.baseUrl}/metadata?location=${lat.toFixed(7)},${lng.toFixed(7)}&radius=${radius}&source=outdoor&key=${encodeURIComponent(this.key)}`;
+    const url = `${this.baseUrl}/metadata?location=${location}&radius=${radius}&source=outdoor&key=${encodeURIComponent(this.key)}`;
     const res = await this.get(url, METADATA_TIMEOUT_MS);
     if (!res.ok) throw new StreetViewUnavailableError('http');
     let body: unknown;
@@ -133,10 +150,11 @@ export class GoogleStreetView implements StreetView {
     const loc = typeof root.location === 'object' && root.location !== null ? (root.location as Record<string, unknown>) : {};
     const pLat = num(loc.lat);
     const pLng = num(loc.lng);
-    const panoId = typeof root.pano_id === 'string' && /^[\w-]{1,200}$/.test(root.pano_id) ? root.pano_id : null;
+    const panoId = typeof root.pano_id === 'string' && PANO_ID.test(root.pano_id) ? root.pano_id : null;
     if (pLat === null || pLng === null || panoId === null) throw new StreetViewUnavailableError('bad-answer');
     const date = typeof root.date === 'string' && /^\d{4}-\d{2}$/.test(root.date) ? root.date : null;
-    return { panoId, location: [pLng, pLat], capturedOn: date };
+    const byGoogle = typeof root.copyright === 'string' && /google/i.test(root.copyright);
+    return { panoId, location: [pLng, pLat], capturedOn: date, byGoogle };
   }
 
   async image(req: StreetViewImageRequest): Promise<Uint8Array> {
@@ -145,7 +163,7 @@ export class GoogleStreetView implements StreetView {
     const fov = Math.min(120, Math.max(10, req.fov));
     const pitch = Math.min(90, Math.max(-90, req.pitch));
     const heading = ((req.heading % 360) + 360) % 360;
-    if (!/^[\w-]{1,200}$/.test(req.panoId)) throw new StreetViewUnavailableError('bad-answer');
+    if (!PANO_ID.test(req.panoId)) throw new StreetViewUnavailableError('bad-answer');
     const url =
       `${this.baseUrl}?size=${w}x${h}&pano=${encodeURIComponent(req.panoId)}&heading=${heading.toFixed(2)}` +
       `&fov=${fov.toFixed(1)}&pitch=${pitch.toFixed(1)}&source=outdoor&return_error_code=true&key=${encodeURIComponent(this.key)}`;
