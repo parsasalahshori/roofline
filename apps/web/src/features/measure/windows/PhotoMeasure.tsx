@@ -6,6 +6,7 @@ import {
   type PhotoWindowInput,
   type Quad,
   type SheetDetection,
+  type SnappedQuad,
   type WindowPhotoMeasurement,
   type WindowPhotoReference,
   type WindowPhotoScale,
@@ -19,7 +20,11 @@ import {
   feet1,
   inchesFraction,
   LOW_SIDE_CONFIDENCE,
+  ENGINE_TARGET,
   measureOnSheet,
+  needsOutlinePick,
+  readPrintScale,
+  TARGET_LAYER,
   PLANE_TARGETS,
   planeTargetFor,
   plusMinusFraction,
@@ -37,7 +42,14 @@ import styles from './PhotoMeasure.module.css';
 type Method = 'sheet' | 'reference' | 'known-side';
 type Which = 'window' | 'paper';
 type Drag = { which: Which; i: number; x: number; y: number; fw: number; fh: number };
-type SnapInfo = { sideConfidence: [number, number, number, number]; moved: boolean };
+/** The last snap (or proposal): per-side confidence, corner noise, rival edges and the ranked outlines. */
+type SnapInfo = Omit<SnappedQuad, 'quad'>;
+/** Which ranked outline is shown, and whether the person chose it (else it follows "What are you measuring?"). */
+type Pick_ = { index: number; by: 'auto' | 'person' };
+const PICK_MAX = 3;
+/** Outline A, B, C: distinct on photos of white frames, tan siding and blue glass. */
+const PICK_COLORS = ['#ffc21a', '#19c3e6', '#e64bd2'] as const;
+const PICK_ZOOM_PX = 64;
 
 const LOUPE_PX = 112;
 const LOUPE_ZOOM = 3;
@@ -111,36 +123,90 @@ export function PhotoMeasure({
   const [snapOn, setSnapOn] = useState(true);
   const [snapping, setSnapping] = useState(false);
   const [snapInfo, setSnapInfo] = useState<SnapInfo | null>(null);
+  const [pick, setPick] = useState<Pick_ | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const snapSeq = useRef(0);
 
   const sheetMode = method === 'sheet';
-  const { engine, find, canSnap, snap } = useSheetPhoto({ src, upload, enabled: sheetMode });
-  const detection: Pick<SheetDetection, 'paper' | 'imagePoints' | 'sheetPointsIn'> | null =
-    find.status === 'found' ? find.detection : initialScale?.kind === 'sheet' ? { paper: initialScale.paper, imagePoints: initialScale.imagePoints, sheetPointsIn: initialScale.sheetPointsIn } : null;
+  const { engine, find, canSnap, snap, propose } = useSheetPhoto({ src, upload, enabled: sheetMode });
+  const detection: Pick<SheetDetection, 'paper' | 'imagePoints' | 'sheetPointsIn' | 'sheetIndex' | 'sheets'> | null =
+    find.status === 'found'
+      ? find.detection
+      : initialScale?.kind === 'sheet'
+        ? {
+            paper: initialScale.paper,
+            imagePoints: initialScale.imagePoints,
+            sheetPointsIn: initialScale.sheetPointsIn,
+            ...(initialScale.sheetIndex !== undefined && { sheetIndex: initialScale.sheetIndex, sheets: Math.max(...initialScale.sheetIndex) + 1 }),
+          }
+        : null;
+  const twoSheets = (detection?.sheets ?? 1) >= 2;
+  const printScale = detection === null ? 1 : initialScale?.kind === 'sheet' && find.status !== 'found' ? (initialScale.printScale ?? 1) : readPrintScale(detection.paper);
+  const target: PlaneTarget = planeTargetFor(offsetIn);
+  const engineTarget = ENGINE_TARGET[target];
 
+  /** The ranked outline that is what the person measures, else the top one. */
+  const defaultPick = (c: NonNullable<SnapInfo['candidates']>, t: typeof engineTarget) => Math.max(0, c.findIndex((x) => x.layer === TARGET_LAYER[t]));
+  const applySnap = (s: SnappedQuad) => {
+    const { quad, ...info } = s;
+    setSnapInfo(info);
+    if (needsOutlinePick(s)) {
+      const index = defaultPick(s.candidates!, engineTarget);
+      setPick({ index, by: 'auto' });
+      setWindowQuad(roundQuad(index === 0 ? quad : s.candidates![index]!.quad, W, H));
+    } else {
+      setPick(null);
+      setWindowQuad(roundQuad(quad, W, H));
+    }
+  };
   const runSnap = (q: Quad) => {
     if (!snapOn) return;
     const seq = ++snapSeq.current;
     setSnapping(true);
-    void snap(q).then((s) => {
+    void snap(q, engineTarget).then((s) => {
       if (seq !== snapSeq.current) return;
       setSnapping(false);
-      if (s === null) return;
-      setWindowQuad(roundQuad(s.quad, W, H));
-      setSnapInfo({ sideConfidence: s.sideConfidence, moved: s.moved });
+      if (s !== null) applySnap(s);
     });
   };
 
-  // A new window on the sheet: once the photo is read, fit the starting corners to the frame nearby
+  // A new window on the sheet: once the photo is read and the sheet looked for, start from the engine's proposed
+  // outline around the sheet (when it can propose one), else fit the starting corners to the frame nearby
   const seeded = useRef(initial !== null);
+  const looked = find.status === 'found' || find.status === 'missing' || find.status === 'failed';
+  const seed = () => {
+    if (propose === null) {
+      runSnap(windowQuad);
+      return;
+    }
+    const seq = ++snapSeq.current;
+    setSnapping(true);
+    void propose(engineTarget).then((s) => {
+      if (seq !== snapSeq.current) return;
+      setSnapping(false);
+      if (s !== null) applySnap(s);
+      else runSnap(windowQuad);
+    });
+  };
   useEffect(() => {
-    if (!sheetMode || !canSnap || seeded.current) return;
+    if (!sheetMode || !canSnap || !looked || seeded.current) return;
     seeded.current = true;
-    runSnap(windowQuad);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the pixels arrive
-  }, [sheetMode, canSnap]);
+    seed();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the pixels and the sheet are in
+  }, [sheetMode, canSnap, looked]);
+
+  const choose = (index: number, by: Pick_['by']) => {
+    const c = snapInfo?.candidates?.[index];
+    if (c === undefined) return;
+    snapSeq.current += 1;
+    setSnapping(false);
+    setPick({ index, by });
+    setWindowQuad(roundQuad(c.quad, W, H));
+  };
+  // Per-side confidence and corner noise belong to the engine's chosen outline (the first); another pick has neither
+  const onChosen = snapInfo !== null && (pick === null || pick.index === 0);
+  const cornerSigmaPx = onChosen ? snapInfo.cornerSigmaPx : undefined;
 
   const inches = Number.parseFloat(inchesText);
   const scale: WindowPhotoScale | null =
@@ -149,7 +215,15 @@ export function PhotoMeasure({
       : method === 'known-side'
         ? { kind: 'known-side', side, inches: Number.isFinite(inches) ? inches : 0 }
         : detection !== null
-          ? { kind: 'sheet', paper: detection.paper, imagePoints: detection.imagePoints, sheetPointsIn: detection.sheetPointsIn, planeOffsetIn: offsetIn }
+          ? {
+              kind: 'sheet',
+              paper: detection.paper,
+              imagePoints: detection.imagePoints,
+              sheetPointsIn: detection.sheetPointsIn,
+              planeOffsetIn: offsetIn,
+              ...(detection.sheetIndex !== undefined && { sheetIndex: detection.sheetIndex }),
+              ...(printScale !== 1 && { printScale }),
+            }
           : null;
   const input: PhotoWindowInput | null =
     scale === null
@@ -165,10 +239,18 @@ export function PhotoMeasure({
   const unchanged = saved !== null && input !== null && sizingKey(saved) === sizingKey(input);
 
   const measurement: WindowPhotoMeasurement | null = useMemo(
-    () => (sheetMode && engine.cv !== null && detection !== null ? measureOnSheet(engine.cv, upload, detection, windowQuad, offsetIn) : null),
+    () => (sheetMode && engine.cv !== null && detection !== null ? measureOnSheet(engine.cv, upload, detection, windowQuad, offsetIn, { cornerSigmaPx, printScale }) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- detection is derived from find / initial
-    [sheetMode, engine.cv, find, upload, windowQuad, offsetIn],
+    [sheetMode, engine.cv, find, upload, windowQuad, offsetIn, cornerSigmaPx, printScale],
   );
+  // Each outline on offer, sized (for "A: 35 7/8 x 59 3/4")
+  const offered =
+    sheetMode && pick !== null && engine.cv !== null && detection !== null
+      ? (snapInfo?.candidates ?? []).slice(0, PICK_MAX).map((c, i) => ({
+          ...c,
+          size: measureOnSheet(engine.cv!, upload, detection, c.quad, offsetIn, { cornerSigmaPx: i === 0 ? snapInfo?.cornerSigmaPx : undefined, printScale }),
+        }))
+      : [];
   const size: { widthIn: number; heightIn: number } | null = unchanged
     ? { widthIn: saved.widthIn, heightIn: saved.heightIn }
     : sheetMode
@@ -214,6 +296,10 @@ export function PhotoMeasure({
     // A snap still on its way is for corners the person is now moving: drop it
     snapSeq.current += 1;
     setSnapping(false);
+    if (which === 'window') {
+      setPick(null);
+      setSnapInfo(null);
+    }
     const q = which === 'window' ? windowQuad : paperQuad;
     const r = frameRef.current?.getBoundingClientRect();
     setDrag({ which, i, x: q[i]![0], y: q[i]![1], fw: r?.width ?? 0, fh: r?.height ?? 0 });
@@ -263,9 +349,9 @@ export function PhotoMeasure({
     });
 
   // The window's four sides (top, right, bottom, left), each as sure as the snap was
-  const lowSides = snapInfo === null ? [] : snapInfo.sideConfidence.flatMap((c, i) => (c < LOW_SIDE_CONFIDENCE ? [i] : []));
+  const lowSides = !onChosen ? [] : snapInfo.sideConfidence.flatMap((c, i) => (c < LOW_SIDE_CONFIDENCE ? [i] : []));
   const sideLines =
-    sheetMode && snapInfo !== null
+    sheetMode && onChosen
       ? windowQuad.map((a, i) => {
           const b = windowQuad[(i + 1) % 4]!;
           const sure = snapInfo.sideConfidence[i]!;
@@ -313,10 +399,15 @@ export function PhotoMeasure({
     else onSave(final);
   };
 
-  const target: PlaneTarget = planeTargetFor(offsetIn);
   const chooseTarget = (t: keyof typeof PLANE_TARGETS) => {
     setOffsetIn(PLANE_TARGETS[t]);
     setOffsetText(String(PLANE_TARGETS[t]));
+    // An outline the screen picked follows what is measured; one the person tapped stays
+    const c = snapInfo?.candidates;
+    if (pick !== null && pick.by === 'auto' && c !== undefined) {
+      const index = defaultPick(c, ENGINE_TARGET[t]);
+      if (index !== pick.index) choose(index, 'auto');
+    }
   };
 
   const sheetStatus = !sheetMode ? null : engine.status === 'loading' ? (
@@ -344,6 +435,11 @@ export function PhotoMeasure({
   ) : (
     <div className={styles.status} role="status" data-sheet="found">
       <span className={styles.found}>{copy.sheetFound}</span>
+      {twoSheets ? (
+        <span className={styles.found} data-two-sheets="">
+          {copy.twoSheets}
+        </span>
+      ) : null}
       {distanceIn !== null && viewAngleDeg !== null ? <span data-quality="">{copy.quality(feet1(distanceIn), viewAngleDeg)}</span> : null}
       {warnings.length > 0 ? (
         <ul className={styles.warnings} data-warnings="">
@@ -390,16 +486,71 @@ export function PhotoMeasure({
           <svg className={styles.quads} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
             {method === 'reference' ? <polygon className={styles.paper} points={points(paperQuad)} vectorEffect="non-scaling-stroke" /> : null}
             {sheetMode && find.status === 'found' ? <polygon className={styles.sheet} data-sheet-outline="" points={points(find.detection.outline)} vectorEffect="non-scaling-stroke" /> : null}
-            <polygon className={styles.window} data-snapping={snapping ? 'true' : undefined} points={points(windowQuad)} vectorEffect="non-scaling-stroke" />
+            <polygon
+              className={styles.window}
+              data-snapping={snapping ? 'true' : undefined}
+              style={pick !== null && offered.length > 1 ? { stroke: PICK_COLORS[pick.index] } : undefined}
+              points={points(windowQuad)}
+              vectorEffect="non-scaling-stroke"
+            />
+            {offered.map((c, i) =>
+              i === pick?.index ? null : <polygon key={i} className={styles.candidate} data-candidate={i} style={{ stroke: PICK_COLORS[i] }} points={points(c.quad)} vectorEffect="non-scaling-stroke" />,
+            )}
             {sideLines}
           </svg>
           {sheetMode && find.status === 'found' ? <span className="visually-hidden">{copy.sheetOutline}</span> : null}
           {edgeFlags}
+          {offered.map((c, i) => {
+            const [x, y] = c.quad[i % 4]!;
+            return (
+              <span key={i} className={styles.candidateTag} data-candidate-tag={i} data-corner={i % 4} data-picked={i === pick?.index ? 'true' : undefined} style={{ left: pct(x, W), top: pct(y, H), background: PICK_COLORS[i] }} aria-hidden="true">
+                {copy.pickLetters[i]}
+              </span>
+            );
+          })}
           {method === 'reference' ? handles('paper', paperQuad) : null}
           {handles('window', windowQuad)}
           {loupe}
         </div>
       </div>
+      {offered.length > 1 ? (
+        <fieldset className={styles.pick} data-outline-pick="">
+          <legend className={styles.targetsLegend}>{copy.pickTitle}</legend>
+          <p className={styles.practice}>{copy.pickHint}</p>
+          {offered.map((c, i) => {
+            const letter = copy.pickLetters[i]!;
+            const sizeText = c.size === null ? copy.noSize : copy.sizeExact(inchesFraction(c.size.widthIn), inchesFraction(c.size.heightIn));
+            const [cx, cy] = c.quad[3];
+            const span = Math.max(W, H) * 0.07;
+            return (
+              <label key={i} className={styles.pickOption} data-candidate-option={i} data-checked={pick?.index === i ? 'true' : undefined}>
+                <input type="radio" name="outline-pick" checked={pick?.index === i} onChange={() => choose(i, 'person')} aria-label={copy.pickOption(letter, sizeText, copy.layers[c.layer])} />
+                <span className={styles.pickLetter} style={{ background: PICK_COLORS[i] }} aria-hidden="true">
+                  {letter}
+                </span>
+                <span className={styles.targetText}>
+                  <span>{sizeText}</span>
+                  <span className={styles.targetHint}>
+                    {copy.layers[c.layer]}
+                    {c.layer === TARGET_LAYER[engineTarget] ? ` · ${copy.pickMatches}` : ''}
+                  </span>
+                </span>
+                <span
+                  className={styles.pickZoom}
+                  role="img"
+                  aria-label={copy.pickCorner(letter)}
+                  style={{
+                    backgroundImage: `url("${src}")`,
+                    backgroundSize: `${(W / span) * PICK_ZOOM_PX}px ${(H / span) * PICK_ZOOM_PX}px`,
+                    backgroundPosition: `${PICK_ZOOM_PX / 2 - (cx / span) * PICK_ZOOM_PX}px ${PICK_ZOOM_PX / 2 - (cy / span) * PICK_ZOOM_PX}px`,
+                    borderColor: PICK_COLORS[i],
+                  }}
+                />
+              </label>
+            );
+          })}
+        </fieldset>
+      ) : null}
       <div className={styles.controls}>
         {sheetMode ? (
           <>
@@ -475,6 +626,12 @@ export function PhotoMeasure({
             </span>
           ) : null}
           {sizeText !== null ? <span className={styles.sizeSource}>{unchanged ? copy.fromServer : copy.live}</span> : null}
+          {sizeText !== null && twoSheets && sheetMode ? <span className={styles.sizeNote} data-size-two-sheets="">{copy.twoSheetsSize}</span> : null}
+          {sizeText !== null && sheetMode && printScale !== 1 ? (
+            <span className={styles.sizeNote} data-size-print-scale="">
+              {copy.printCheckApplied((printScale * 100).toFixed(1))}
+            </span>
+          ) : null}
           {combined !== null ? (
             <span className={styles.combined} data-combined="">
               <span className={styles.sizeLabel}>{copy.combinedLabel(siblings.length + 1)}</span>

@@ -107,6 +107,7 @@ export function SheetHowTo({ onPrint }: { onPrint: () => void }) {
           <li key={step}>{step}</li>
         ))}
       </ol>
+      <p className={flow.bigWindow}>{copy.bigWindow}</p>
       <Button variant="ghost" className={flow.printButton} onClick={onPrint}>
         {copy.printOpen}
       </Button>

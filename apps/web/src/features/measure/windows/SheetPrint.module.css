@@ -97,3 +97,38 @@
     -webkit-print-color-adjust: exact;
   }
 }
+
+.which {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--ds-surface-2, #eceff1);
+}
+
+.whichButton {
+  min-height: 44px;
+  font-weight: 600;
+}
+
+.whichButton[data-selected="true"] {
+  background: var(--ds-surface, #fff);
+  box-shadow: 0 1px 3px rgba(21, 28, 34, 0.15);
+}
+
+.check {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line, #dde2e6);
+  border-radius: 12px;
+}
+
+.checkTitle {
+  padding: 0;
+  font-size: 15px;
+  font-weight: 700;
+}

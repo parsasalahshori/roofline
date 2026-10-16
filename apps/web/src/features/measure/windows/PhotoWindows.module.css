@@ -283,3 +283,10 @@
   color: var(--ds-text-label, #505b64);
   font-size: 12px;
 }
+
+.bigWindow {
+  margin: 0;
+  color: var(--ds-text-2, #3a444d);
+  font-size: 13px;
+  line-height: 1.4;
+}

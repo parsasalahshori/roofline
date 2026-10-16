@@ -9,6 +9,9 @@ import {
   type PhotoWindowInput,
   type Quad,
   type SheetDetection,
+  type SnappedQuad,
+  type WindowLayer,
+  type WindowMeasureTarget,
   type WindowPhotoCv,
   type WindowPhotoMeasurement,
   type WindowPhotoUpload,
@@ -115,6 +118,10 @@ export type LocalSheetSize = {
 export const PLANE_TARGETS = { frame: 1.0, trim: 1.5, glass: 0 } as const;
 export type PlaneTarget = keyof typeof PLANE_TARGETS | 'custom';
 
+/** The engine's name for what is measured, and the outline layer that is. ('custom' measures the frame.) */
+export const ENGINE_TARGET = { frame: 'inside-frame', trim: 'outside-trim', glass: 'glass', custom: 'inside-frame' } as const satisfies Record<PlaneTarget, WindowMeasureTarget>;
+export const TARGET_LAYER = { 'inside-frame': 'frame-inner', 'outside-trim': 'outer-trim', glass: 'glass' } as const satisfies Record<WindowMeasureTarget, WindowLayer>;
+
 export function planeTargetFor(offsetIn: number): PlaneTarget {
   const hit = (Object.keys(PLANE_TARGETS) as (keyof typeof PLANE_TARGETS)[]).find((k) => PLANE_TARGETS[k] === offsetIn);
   return hit ?? 'custom';
@@ -129,12 +136,27 @@ export const LOW_SIDE_CONFIDENCE = 0.5;
 export function measureOnSheet(
   cv: Pick<WindowPhotoCv, 'measure'>,
   upload: Pick<WindowPhotoUpload, 'widthPx' | 'heightPx' | 'focal35mm'>,
-  sheet: Pick<SheetDetection, 'imagePoints' | 'sheetPointsIn'>,
+  sheet: Pick<SheetDetection, 'imagePoints' | 'sheetPointsIn' | 'sheetIndex'>,
   windowQuad: Quad,
   planeOffsetIn: number,
+  extra: {
+    /** From snapQuad; absent for corners placed by hand (the engine then assumes 1.5 px). */
+    cornerSigmaPx?: [number, number, number, number] | undefined;
+    /** The printed sheet's scale read off its ruler (1 = 100%). */
+    printScale?: number | undefined;
+  } = {},
 ): WindowPhotoMeasurement | null {
   const focalPx = focalPxFrom35mm(upload.focal35mm ?? DEFAULT_FOCAL_35MM, upload.widthPx, upload.heightPx);
-  const m = cv.measure({ widthPx: upload.widthPx, heightPx: upload.heightPx, focalPx, sheet, windowQuad, planeOffsetIn });
+  const m = cv.measure({
+    widthPx: upload.widthPx,
+    heightPx: upload.heightPx,
+    focalPx,
+    sheet,
+    windowQuad,
+    planeOffsetIn,
+    ...(extra.cornerSigmaPx !== undefined && { cornerSigmaPx: extra.cornerSigmaPx }),
+    ...(extra.printScale !== undefined && extra.printScale !== 1 && { printScale: extra.printScale }),
+  });
   if (m === null || !(m.widthIn > 0) || !(m.heightIn > 0) || !Number.isFinite(m.widthIn) || !Number.isFinite(m.heightIn)) return null;
   return m;
 }
@@ -173,3 +195,41 @@ export function plusMinusFraction(u: number): string {
 
 /** Feet to one decimal, from inches (for "6.5 ft"). */
 export const feet1 = (inches: number) => Math.round((inches / 12) * 10) / 10;
+
+/**
+ * The ruler printed on each measuring sheet (cv/sheet-layout.ts rulerSpec): 6 in on letter, 15 cm on A4. The person
+ * measures it after printing; what they got over this is the printer's scale.
+ */
+export const SHEET_RULER = { letter: { length: 6, unit: 'in' }, a4: { length: 15, unit: 'cm' } } as const;
+/** A printer scale outside this is a misprint, not a scale to correct for (print again at Actual size). */
+export const PRINT_SCALE_RANGE = [0.9, 1.1] as const;
+
+const PRINT_SCALE_KEY = (paper: string) => `roofline.measuringSheet.printScale.${paper}`;
+/** This device's printed sheet's scale (1 = printed at exactly 100%). 1 when not checked or storage is blocked. */
+export function readPrintScale(paper: string): number {
+  try {
+    const v = Number.parseFloat(globalThis.localStorage?.getItem(PRINT_SCALE_KEY(paper)) ?? '');
+    return Number.isFinite(v) && v >= PRINT_SCALE_RANGE[0] && v <= PRINT_SCALE_RANGE[1] ? v : 1;
+  } catch {
+    return 1;
+  }
+}
+export function writePrintScale(paper: string, scale: number): void {
+  try {
+    globalThis.localStorage?.setItem(PRINT_SCALE_KEY(paper), String(scale));
+  } catch {
+    // Private mode: the check holds for this visit only.
+  }
+}
+
+/** Outlines close enough in score that the person picks (the engine ranks them; this is how close is "close"). */
+export const CLOSE_SCORE = 0.15;
+
+/** Whether to ask "Which outline are you measuring?": rival edges near a side, or the top two outlines score close. */
+export function needsOutlinePick(s: Pick<SnappedQuad, 'rivals' | 'candidates'>): boolean {
+  const c = s.candidates ?? [];
+  if (c.length < 2) return false;
+  if ((s.rivals ?? []).some((r) => r > 0)) return true;
+  const [a, b] = [c[0]!.score, c[1]!.score];
+  return Math.abs(a - b) <= CLOSE_SCORE * Math.max(Math.abs(a), Math.abs(b), 1e-9);
+}
