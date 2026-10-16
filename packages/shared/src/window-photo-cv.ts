@@ -23,7 +23,15 @@ export type SheetDetection = {
 };
 
 /** A window corner quad refined onto the frame's edges, with how sure each side is (0..1). */
-export type SnappedQuad = { quad: Quad; sideConfidence: [number, number, number, number]; moved: boolean };
+export type SnappedQuad = {
+  quad: Quad;
+  sideConfidence: [number, number, number, number];
+  moved: boolean;
+  /** One-sigma pixel noise of each corner from the edge fits (pass to measure as cornerSigmaPx). */
+  cornerSigmaPx?: [number, number, number, number];
+  /** Per side: how many other strong parallel edges (trim, sash, glass) were near; above 0 the person should check it. */
+  rivals?: [number, number, number, number];
+};
 
 export type WindowPhotoMeasurement = {
   widthIn: number;
@@ -42,7 +50,16 @@ export type WindowPhotoCv = {
   /** Moves rough corners onto the frame's edges nearby (search band about 3% of the photo). */
   snapQuad(img: RgbaImage, rough: Quad): Promise<SnappedQuad>;
   /** The window's size from the sheet, its corners, the camera focal length (pixels) and the frame's offset. */
-  measure(input: { widthPx: number; heightPx: number; focalPx: number; sheet: Pick<SheetDetection, 'imagePoints' | 'sheetPointsIn'>; windowQuad: Quad; planeOffsetIn: number }): WindowPhotoMeasurement | null;
+  measure(input: {
+    widthPx: number;
+    heightPx: number;
+    focalPx: number;
+    sheet: Pick<SheetDetection, 'imagePoints' | 'sheetPointsIn'>;
+    windowQuad: Quad;
+    planeOffsetIn: number;
+    /** From snapQuad (1.5 px when not given: corners placed by hand). */
+    cornerSigmaPx?: number | [number, number, number, number];
+  }): WindowPhotoMeasurement | null;
   /** Several photos of the same window combined: the median size and the spread between photos. */
   combine(ms: WindowPhotoMeasurement[]): { widthIn: number; heightIn: number; spreadIn: { width: number; height: number } } | null;
 };
