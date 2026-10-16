@@ -143,6 +143,10 @@ export type WindowPhotoScale =
        * glass; the frame being measured is usually 0.5-2 in proud of it). Corrected using the camera distance.
        */
       planeOffsetIn: number;
+      /** Two sheets (big windows): which sheet each point is on, 0 = A, 1 = B. Absent: one sheet. */
+      sheetIndex?: number[];
+      /** The printed scale read off the sheet's ruler (1 = 100%). Absent: 1. */
+      printScale?: number;
     };
 
 /**

@@ -82,9 +82,12 @@ const ScaleSchema = z.discriminatedUnion('kind', [
       imagePoints: z.array(z.tuple([finite, finite])).max(SHEET_MAX_POINTS),
       sheetPointsIn: z.array(z.tuple([finite, finite])).max(SHEET_MAX_POINTS),
       planeOffsetIn: z.number().finite().min(-SHEET_MAX_OFFSET_IN).max(SHEET_MAX_OFFSET_IN),
+      sheetIndex: z.array(z.union([z.literal(0), z.literal(1)])).max(SHEET_MAX_POINTS).optional(),
+      printScale: z.number().finite().min(0.9).max(1.1).optional(),
     })
     .strict()
     .refine((v) => v.imagePoints.length === v.sheetPointsIn.length)
+    .refine((v) => v.sheetIndex === undefined || v.sheetIndex.length === v.sheetPointsIn.length)
     .refine((v) => v.sheetPointsIn.every(([x, y]) => x >= 0 && y >= 0 && x <= SHEET_PAPER_IN[v.paper].widthIn && y <= SHEET_PAPER_IN[v.paper].heightIn)),
 ]);
 const PhotoWindowsSchema = z
