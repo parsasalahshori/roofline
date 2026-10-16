@@ -28,6 +28,15 @@ test('map home has no serious accessibility violations', async ({ page, loginAs,
   await scan(page);
 });
 
+test('my day has no serious accessibility violations', async ({ page, loginAs, markTodaySeen }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/today');
+  await expect(page.getByRole('main', { name: 'My day' })).toBeVisible();
+  await expect(page.getByRole('region', { name: "Today's visits" })).toBeVisible();
+  await scan(page);
+});
+
 test('approvals list has no serious accessibility violations', async ({ page, loginAs, markTodaySeen }) => {
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');

@@ -125,7 +125,7 @@ test('no horizontal scroll', async ({ page, loginAs, markTodaySeen, scenario }) 
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
 
-  for (const path of ['/', '/approvals', '/approvals/' + scenario.taskId]) {
+  for (const path of ['/', '/today', '/approvals', '/approvals/' + scenario.taskId]) {
     await page.goto(path);
     if (path === '/') {
       await expect(page.getByText('Map showing 70 customers and 25 open jobs.')).toBeAttached({ timeout: 20_000 });
@@ -134,6 +134,33 @@ test('no horizontal scroll', async ({ page, loginAs, markTodaySeen, scenario }) 
     }
     await noSideScroll(page);
   }
+});
+
+test('Home: the layer switch, the storm note, the key and the map controls do not overlap', async ({ page, loginAs, markTodaySeen }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/');
+  await expect(page.getByText('Map showing 70 customers and 25 open jobs.')).toBeAttached({ timeout: 20_000 });
+
+  const layers = page.getByRole('group', { name: 'Map layers' });
+  const note = page.getByRole('region', { name: 'The latest storm' });
+  const key = page.getByTestId('map-legend');
+  const zoom = page.locator('.maplibregl-ctrl-zoom-in');
+  const attribution = page.locator('.maplibregl-ctrl-attrib-button');
+  await expect(layers).toBeVisible();
+  await expect(note).toBeVisible();
+  await expect(key).toBeVisible();
+  await expect(zoom).toBeVisible();
+
+  const boxes = await Promise.all([layers, note, key, zoom, attribution].map((locator) => locator.boundingBox()));
+  const [layersBox, noteBox, keyBox, zoomBox, attributionBox] = boxes;
+  for (const box of [layersBox, noteBox, keyBox, zoomBox]) expect(box).not.toBeNull();
+  expectApart(layersBox!, noteBox!);
+  expectApart(keyBox!, zoomBox!);
+  expectApart(noteBox!, keyBox!);
+  // The attribution button is the legal line: nothing sits over it
+  if (attributionBox) expectApart(keyBox!, attributionBox);
+  await noSideScroll(page);
 });
 
 test('Approve stays pinned', async ({ page, loginAs, markTodaySeen, scenario }) => {
