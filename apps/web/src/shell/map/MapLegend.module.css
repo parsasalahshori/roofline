@@ -1,0 +1,125 @@
+/*
+ * Bottom left, over the map: a floating key, the hail sizes and the pin colours. It sits above the bottom strip the map's
+ * attribution uses (the legal line must always be readable) and leaves the right edge to the zoom control.
+ * A map wide enough for one row gets one row; a narrower one gets the two keys stacked.
+ */
+.legend {
+  position: absolute;
+  bottom: 44px;
+  left: 12px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: calc(100% - 72px);
+  padding: 8px 12px;
+  border-radius: var(--r-2);
+  background: var(--surface);
+  color: var(--ink-2);
+  box-shadow: var(--e-2);
+  font-size: var(--font-size-min);
+}
+
+.group {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.swatch {
+  width: 14px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.divider {
+  display: none;
+}
+
+@container map (min-width: 960px) {
+  .legend {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .divider {
+    display: block;
+    align-self: stretch;
+    width: 1px;
+    background: var(--line);
+  }
+}
+
+/* A phone's map is narrow: the key leaves the zoom column free and sits above the attribution button's strip (an
+   attribution opened at the start stays readable), the hail sizes as one ramp from the smallest to the biggest */
+@media (max-width: 767.98px) {
+  .legend {
+    right: 64px;
+    bottom: 56px;
+    max-width: none;
+    padding: 8px 10px;
+  }
+
+  .group {
+    align-self: stretch;
+  }
+
+  .list {
+    gap: 4px 12px;
+  }
+
+  .hail .list {
+    flex-wrap: nowrap;
+    gap: 0;
+  }
+
+  .item[data-ramp="first"] {
+    flex-direction: row-reverse;
+    margin-right: 6px;
+  }
+
+  .item[data-ramp="last"] {
+    margin-left: 6px;
+  }
+
+  .item[data-ramp="middle"] .name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .item[data-ramp="middle"] {
+    gap: 0;
+  }
+
+  .legend[data-suppressed="true"] {
+    display: none;
+  }
+}

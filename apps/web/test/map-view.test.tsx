@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
@@ -85,6 +85,8 @@ const fake = vi.hoisted(() => {
     easeTo = vi.fn();
     addControl = vi.fn();
     remove = vi.fn();
+    setLayoutProperty = vi.fn();
+    setPaintProperty = vi.fn();
 
     getZoom(): number {
       return 10;
@@ -435,14 +437,112 @@ describe('MapView', () => {
       map.emit('click', { point: { x: -96.8, y: 32.9 }, lngLat: { lng: -96.8, lat: 32.9 } });
     });
 
-    expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument();
-    expect(screen.getByText('Proposal')).toBeInTheDocument();
+    const card = await screen.findByRole('region', { name: 'Ada Lovelace' });
+    // The stage tag is on the card; the legend names the stage too
+    expect(within(card).getByText('Proposal')).toBeInTheDocument();
+    expect(within(card).getByRole('link', { name: mapCopy.directions })).toHaveAttribute('href', expect.stringContaining('12%20Oak%20St'));
 
-    await user.click(screen.getByRole('button', { name: mapCopy.open }));
+    await user.click(within(card).getByRole('button', { name: mapCopy.openJob }));
 
     expect(onOpen).toHaveBeenCalledTimes(1);
     expect(onOpen).toHaveBeenCalledWith({ kind: 'job', id: 'job-1' });
     expect(screen.queryByText('Ada Lovelace')).toBeNull();
+  });
+
+  it('has three layer switches in a labelled group, Jobs and Hail pressed at the start', () => {
+    renderMap();
+    const group = screen.getByRole('group', { name: mapCopy.layersLabel });
+    expect(within(group).getByRole('button', { name: mapCopy.jobsLayer })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(group).getByRole('button', { name: mapCopy.hailLayer })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('the Jobs switch hides every pin and cluster, and brings them back', async () => {
+    const user = userEvent.setup();
+    renderMap();
+    const map = lastMap();
+    act(() => {
+      map.emit('style.load');
+    });
+    const shown = (visibility: string) =>
+      ['jobs', 'jobs-hit', 'customers', 'customers-hit', 'clusters', 'jobs-clusters', 'customers-clusters'].map((id) => [id, 'visibility', visibility]);
+
+    // Nothing is touched while the switch is on
+    expect(map.setLayoutProperty).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: mapCopy.jobsLayer }));
+    expect(screen.getByRole('button', { name: mapCopy.jobsLayer })).toHaveAttribute('aria-pressed', 'false');
+    for (const call of shown('none')) expect(map.setLayoutProperty).toHaveBeenCalledWith(...call);
+
+    // A swapped style or rebuilt pins start visible: the switch is applied again
+    map.setLayoutProperty.mockClear();
+    act(() => {
+      map.emit('style.load');
+    });
+    expect(map.setLayoutProperty).toHaveBeenCalledWith('jobs', 'visibility', 'none');
+
+    await user.click(screen.getByRole('button', { name: mapCopy.jobsLayer }));
+    for (const call of shown('visible')) expect(map.setLayoutProperty).toHaveBeenCalledWith(...call);
+  });
+
+  it('turning Jobs off closes a pin card and the pin legend goes with the pins', async () => {
+    const user = userEvent.setup();
+    renderMap();
+    const map = lastMap();
+    act(() => {
+      map.emit('style.load');
+    });
+    expect(screen.getByTestId('pin-legend')).toBeInTheDocument();
+    map.rendered = [
+      {
+        properties: { kind: 'job', id: 'job-1', name: 'Ada Lovelace', addressLine: '12 Oak St', stage: 'lead', stageLabel: 'Lead' },
+        geometry: { type: 'Point', coordinates: [-96.8, 32.9] },
+      },
+    ];
+    act(() => {
+      map.emit('click', { point: { x: -96.8, y: 32.9 }, lngLat: { lng: -96.8, lat: 32.9 } });
+    });
+    expect(await screen.findByRole('region', { name: 'Ada Lovelace' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: mapCopy.jobsLayer }));
+    expect(screen.queryByRole('region', { name: 'Ada Lovelace' })).toBeNull();
+    expect(screen.queryByTestId('pin-legend')).toBeNull();
+  });
+
+  it('the pin legend names each pin colour', () => {
+    renderMap();
+    const legend = screen.getByTestId('pin-legend');
+    expect(legend).toHaveAccessibleName(mapCopy.pinLegend);
+    for (const name of Object.values(mapCopy.pinNames)) expect(within(legend).getByText(name)).toBeInTheDocument();
+  });
+
+  it('rings the picked pin in the company colour, and clears the ring when the card closes', async () => {
+    const user = userEvent.setup();
+    renderMap();
+    const map = lastMap();
+    act(() => {
+      map.emit('style.load');
+    });
+    map.rendered = [
+      {
+        properties: { kind: 'job', id: 'job-1', name: 'Ada Lovelace', addressLine: '12 Oak St', stage: 'lead', stageLabel: 'Lead' },
+        geometry: { type: 'Point', coordinates: [-96.8, 32.9] },
+      },
+    ];
+    act(() => {
+      map.emit('click', { point: { x: -96.8, y: 32.9 }, lngLat: { lng: -96.8, lat: 32.9 } });
+    });
+    const card = await screen.findByRole('region', { name: 'Ada Lovelace' });
+
+    expect(map.addSource).toHaveBeenCalledWith(
+      'selected-pin',
+      expect.objectContaining({ data: expect.objectContaining({ features: [expect.objectContaining({ geometry: { type: 'Point', coordinates: [-96.8, 32.9] } })] }) }),
+    );
+    expect(map.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'selected-pin-ring', type: 'circle', paint: expect.objectContaining({ 'circle-stroke-width': 2 }) }),
+    );
+
+    await user.click(within(card).getByRole('button', { name: 'Close' }));
+    expect(map.getSource('selected-pin')?.setData).toHaveBeenLastCalledWith({ type: 'FeatureCollection', features: [] });
   });
 
   it('asks for the visible area once after a burst of moves', async () => {

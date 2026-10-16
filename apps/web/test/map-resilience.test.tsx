@@ -11,7 +11,7 @@ import { rail } from '../src/copy/rail.ts';
 import { mapCopy } from '../src/copy/map.ts';
 import { SOURCE } from '../src/shell/map/layers.ts';
 import type { MapViewProps } from '../src/shell/map/MapView.tsx';
-import { ACCOUNT, COMPANY, SHELL_ROUTES, type Reply } from './helpers.tsx';
+import { ACCOUNT, COMPANY, routeFor, SHELL_ROUTES, type Reply } from './helpers.tsx';
 
 /*
  * The map's failure and the company switch, seen from the shell. The map is a lazy chunk: a failed
@@ -200,7 +200,7 @@ beforeEach(() => {
       if (url === '/api/auth/me') return Promise.resolve(json(signedIn));
       if (url.startsWith('/api/map/storm-layer?')) return Promise.resolve(json({ swaths: { type: 'FeatureCollection', features: [] }, spots: { type: 'FeatureCollection', features: [] }, newestRunAt: null, stale: false }));
       const key = `${init?.method ?? 'GET'} ${url}`;
-      const handler = SHELL_ROUTES[key];
+      const handler = routeFor(SHELL_ROUTES, key);
       if (!handler) unexpected.push(key);
       const reply: Reply = handler ? handler() : { status: 500, body: { error: `Unexpected ${key}` } };
       return Promise.resolve(json(reply.body ?? {}, reply.status ?? 200));

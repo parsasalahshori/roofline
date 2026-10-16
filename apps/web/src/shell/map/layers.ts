@@ -1,7 +1,7 @@
 import { type ColorScheme, type TokenName, tokensFor } from '@roofline/ui';
 import type { Feature, FeatureCollection, MultiPolygon } from 'geojson';
 import type { GeoJSONSource, LayerSpecification, Map as MapLibreMap, SourceSpecification } from 'maplibre-gl';
-import { hailFillExpression } from './stormLayer.ts';
+import { hailFillExpression, hailStrokeExpression } from './stormLayer.ts';
 
 /*
  * The map's sources and layers. Two groups are added in order: BASE (the storm swath, the service area
@@ -44,8 +44,11 @@ export const LAYER = {
   jobsHit: 'jobs-hit',
 } as const;
 
-/** Opacity of the hail swath fill. */
-export const HAIL_FILL_OPACITY = 0.7;
+/** Opacity of the hail swath fill: 40%, so the streets and pins show through (the design's 35 to 45%). */
+export const HAIL_FILL_OPACITY = 0.4;
+/** Width and opacity of the stroke around each hail band. */
+export const HAIL_STROKE_WIDTH = 1.2;
+export const HAIL_STROKE_OPACITY = 0.8;
 
 /** Everything the layers draw. */
 export type MapData = {
@@ -207,9 +210,9 @@ function addBaseGroup(map: MapLibreMap, data: MapData, hasGlyphs: boolean, t: Pa
       id: LAYER.stormSwathOutline,
       type: 'line',
       source: SOURCE.stormSwath,
-      // Not an outline: a wide, blurred line in the contour's own colour feathers the edge of each band.
+      // A thin stroke one step darker than the band's fill
       layout: { 'line-join': 'round' },
-      paint: { 'line-color': hailFillExpression(), 'line-width': 22, 'line-blur': 20, 'line-opacity': 0.55 },
+      paint: { 'line-color': hailStrokeExpression(), 'line-width': HAIL_STROKE_WIDTH, 'line-opacity': HAIL_STROKE_OPACITY },
     }),
   );
 
@@ -236,7 +239,9 @@ function addBaseGroup(map: MapLibreMap, data: MapData, hasGlyphs: boolean, t: Pa
       id: LAYER.serviceArea,
       type: 'line',
       source: SOURCE.serviceArea,
-      paint: { 'line-color': t.ink, 'line-opacity': 0.5, 'line-width': 2 },
+      // A quiet dashed hairline: where the company works, never louder than the data on the map
+      layout: { 'line-join': 'round' },
+      paint: { 'line-color': t['ink-3'], 'line-opacity': 0.55, 'line-width': 1.25, 'line-dasharray': [3, 3] },
     }),
   );
 
@@ -355,6 +360,27 @@ function removePinGroup(map: MapLibreMap): void {
   }
   for (const id of [SOURCE.customers, SOURCE.jobs]) {
     if (map.getSource(id)) map.removeSource(id);
+  }
+}
+
+/** Every layer of the PINS group: the single pins, their hit layers, the clusters and the count labels. */
+const PIN_LAYER_IDS: readonly string[] = [
+  LAYER.clusters,
+  COUNT_LAYER.clusters,
+  LAYER.customerClusters,
+  LAYER.jobClusters,
+  LAYER.customers,
+  LAYER.customersHit,
+  LAYER.jobs,
+  LAYER.jobsHit,
+  COUNT_LAYER.customerClusters,
+  COUNT_LAYER.jobClusters,
+];
+
+/** Shows or hides every pin and cluster (the Jobs switch). A layer that is not on the map is skipped. */
+export function setPinsVisible(map: MapLibreMap, visible: boolean): void {
+  for (const id of PIN_LAYER_IDS) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
   }
 }
 

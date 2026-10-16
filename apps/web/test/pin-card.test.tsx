@@ -47,9 +47,22 @@ describe('PinCard', () => {
     const user = userEvent.setup();
     const onOpen = vi.fn();
     render(<PinCard pin={JOB_PIN} onOpen={onOpen} onClose={vi.fn()} />);
-    await user.click(screen.getByRole('button', { name: 'Open' }));
+    await user.click(screen.getByRole('button', { name: 'Open job' }));
     expect(onOpen).toHaveBeenCalledTimes(1);
     expect(onOpen).toHaveBeenCalledWith({ kind: 'job', id: 'job-1' });
+  });
+
+  it('offers directions to the address as a link that opens in a new tab', () => {
+    render(<PinCard pin={JOB_PIN} onOpen={vi.fn()} onClose={vi.fn()} />);
+    const link = screen.getByRole('link', { name: 'Directions' });
+    expect(link).toHaveAttribute('href', 'https://www.google.com/maps/dir/?api=1&destination=12%20Oak%20St');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
+  });
+
+  it('has no directions link for a pin with no address', () => {
+    render(<PinCard pin={{ ...JOB_PIN, addressLine: '' }} onOpen={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.queryByRole('link', { name: 'Directions' })).toBeNull();
   });
 
   it('calls onClose once when Close is pressed', async () => {
@@ -73,7 +86,7 @@ describe('PinCard', () => {
     const user = userEvent.setup();
     const onOpen = vi.fn();
     render(<PinCard pin={CUSTOMER_PIN} onOpen={onOpen} onClose={vi.fn()} />);
-    await user.click(screen.getByRole('button', { name: 'Open' }));
+    await user.click(screen.getByRole('button', { name: 'Open customer' }));
     expect(onOpen).toHaveBeenCalledWith({ kind: 'customer', id: 'cust-1' });
   });
 });

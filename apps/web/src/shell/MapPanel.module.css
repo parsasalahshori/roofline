@@ -15,17 +15,26 @@
   inset: 0;
 }
 
-/* Over the map, top left. The wrapper lets clicks through to the map between its children. */
+/* Over the map, top left, clear of the layer switch at the right (about 250px). The wrapper lets clicks through to the map between its children. */
 .overlay {
   position: absolute;
-  top: 16px;
-  left: 16px;
+  top: 12px;
+  left: 12px;
   z-index: 4;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-width: calc(100% - 140px);
+  max-width: min(440px, calc(100% - 274px));
   pointer-events: none;
+}
+
+/* Phone: the layer switch takes the top right of a narrow map, so the callout sits under it, across the width */
+@media (max-width: 767.98px) {
+  .overlay {
+    top: 68px;
+    right: 12px;
+    max-width: none;
+  }
 }
 
 .overlay > * {

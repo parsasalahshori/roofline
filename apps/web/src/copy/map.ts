@@ -2,20 +2,26 @@
 export const mapCopy = {
   /** The accessible name of the map region. */
   label: 'Map of your customers and jobs',
-  /** The satellite switch. Its pressed state says whether satellite is on. */
-  satellite: 'Satellite view',
-  /** The button on a picked pin that opens its customer or job. */
-  open: 'Open',
+  /** The three switches over the map. Each one's pressed state says whether its layer is on. */
+  layersLabel: 'Map layers',
+  jobsLayer: 'Jobs',
+  satellite: 'Satellite',
+  /** The buttons on a picked pin: open its job or customer, and get driving directions to its address. */
+  openJob: 'Open job',
+  openCustomer: 'Open customer',
+  directions: 'Directions',
   /** Shown once, over the map, when its style, a source or a tile fails to load. */
   error: 'The map is having trouble loading. Your work is safe.',
   /** The legend title and the name of its region. */
   hailLegend: 'Radar-estimated hail',
-  /** The visible title of the map's hail legend chips. */
-  hailLegendTitle: "Last night's hail",
+  /** The title of the hail legend, read by a screen reader (the chips carry the meaning for everyone else). */
+  hailLegendTitle: 'Hail size',
+  /** The pin legend's name, and the words beside each colour (a customer is someone with no open job). */
+  pinLegend: 'What the pins mean',
+  pinNames: { lead: 'Lead', inspection: 'Inspection', proposal: 'Proposal', won: 'Won', customer: 'Customer' } as const,
   /** The everyday object each legend level is named for, level 1 first; its size is `hailSizeLevels`. */
   hailSizeNames: ['Penny', 'Quarter', 'Ping-pong', 'Golf ball', 'Tennis ball'] as const,
-  /** The hail layer switch. Its pressed state says whether the layer is on. */
-  hailLayer: 'Hail layer',
+  hailLayer: 'Hail',
   /** The hail size of each legend level, level 1 first. */
   hailSizeLevels: ['0.75 in', '1.25 in', '1.75 in', '2.5 in', '3 in or more'] as const,
   /** The card a click on a roof opens (owner and office only). */

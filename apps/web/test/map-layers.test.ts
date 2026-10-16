@@ -2,7 +2,17 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Feature, FeatureCollection, MultiPolygon } from 'geojson';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { tokens } from '@roofline/ui';
-import { emptyMapData, HAIL_FILL_OPACITY, installMapLayers, removeMapLayers, updateMapData } from '../src/shell/map/layers.ts';
+import {
+  emptyMapData,
+  HAIL_FILL_OPACITY,
+  HAIL_STROKE_OPACITY,
+  HAIL_STROKE_WIDTH,
+  installMapLayers,
+  removeMapLayers,
+  setPinsVisible,
+  updateMapData,
+} from '../src/shell/map/layers.ts';
+import { hailStrokeExpression } from '../src/shell/map/stormLayer.ts';
 import type { MapData } from '../src/shell/map/layers.ts';
 
 type Spec = Record<string, unknown>;
@@ -32,6 +42,7 @@ function fakeMap() {
   const removeLayer = vi.fn((id: string) => {
     layers.delete(id);
   });
+  const setLayoutProperty = vi.fn();
   const removeSource = vi.fn((id: string) => {
     for (const layer of layers.values()) {
       if (layer.source === id) throw new Error(`Source ${id} is still used by a layer`);
@@ -43,6 +54,7 @@ function fakeMap() {
     getStyle: () => style,
     getSource: (id: string) => sources.get(id),
     getLayer: (id: string) => layers.get(id),
+    setLayoutProperty,
     addSource,
     addLayer,
     removeLayer,
@@ -58,6 +70,7 @@ function fakeMap() {
     addLayer,
     removeLayer,
     removeSource,
+    setLayoutProperty,
   };
 }
 
@@ -186,6 +199,20 @@ describe('installMapLayers', () => {
     });
   });
 
+  it('outlines each hail band with a thin stroke one step darker than its fill, at 40% fill', () => {
+    const fake = fakeMap();
+    installMapLayers(fake.map, sampleData());
+
+    expect(HAIL_FILL_OPACITY).toBe(0.4);
+    expect(layerSpec(fake, 'storm-swath-outline')).toMatchObject({
+      type: 'line',
+      source: 'storm-swath',
+      paint: { 'line-color': hailStrokeExpression(), 'line-width': HAIL_STROKE_WIDTH, 'line-opacity': HAIL_STROKE_OPACITY },
+    });
+    // A hairline, not the wide blur it used to be
+    expect(layerSpec(fake, 'storm-swath-outline')).not.toHaveProperty('paint.line-blur');
+  });
+
   it('draws the service area as a line, holding one feature for a MultiPolygon and none for null', () => {
     const withArea = fakeMap();
     installMapLayers(withArea.map, sampleData({ serviceArea: AREA }));
@@ -193,7 +220,8 @@ describe('installMapLayers', () => {
     expect(layerSpec(withArea, 'service-area')).toMatchObject({
       type: 'line',
       source: 'service-area',
-      paint: { 'line-color': tokens.ink, 'line-opacity': 0.5, 'line-width': 2 },
+      // A quiet dashed hairline
+      paint: { 'line-color': tokens['ink-3'], 'line-opacity': 0.55, 'line-width': 1.25, 'line-dasharray': [3, 3] },
     });
     expect(sourceSpec(withArea, 'service-area')).toEqual({
       type: 'geojson',
@@ -428,5 +456,25 @@ describe('removeMapLayers', () => {
     expect(() => removeMapLayers(fake.map)).not.toThrow();
     expect(fake.removeLayer).not.toHaveBeenCalled();
     expect(fake.removeSource).not.toHaveBeenCalled();
+  });
+});
+
+describe('setPinsVisible', () => {
+  it('sets the visibility of every pin and cluster layer that is on the map, and skips the rest', () => {
+    const fake = fakeMap();
+    installMapLayers(fake.map, sampleData());
+
+    setPinsVisible(fake.map, false);
+    const hidden = fake.setLayoutProperty.mock.calls.map(([id, name, value]) => [id, name, value]);
+    for (const id of ['clusters', 'jobs', 'jobs-hit', 'customers', 'customers-hit', 'jobs-clusters', 'customers-clusters']) {
+      expect(hidden).toContainEqual([id, 'visibility', 'none']);
+    }
+    // The hail and the service area are not pins
+    expect(hidden.map(([id]) => id)).not.toContain('storm-swath-fill');
+    expect(hidden.map(([id]) => id)).not.toContain('service-area');
+
+    fake.setLayoutProperty.mockClear();
+    setPinsVisible(fake.map, true);
+    expect(fake.setLayoutProperty).toHaveBeenCalledWith('jobs', 'visibility', 'visible');
   });
 });

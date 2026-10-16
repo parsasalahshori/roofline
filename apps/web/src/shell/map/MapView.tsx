@@ -1,5 +1,5 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Button, type ColorScheme, useToast } from '@roofline/ui';
+import { Button, type ColorScheme, tokens, useToast } from '@roofline/ui';
 import { Map as MapLibreMap, NavigationControl } from 'maplibre-gl';
 import { useContext, useEffect, useRef, useState } from 'react';
 import { UNSAFE_LocationContext } from 'react-router';
@@ -11,13 +11,14 @@ import { footprintTilesInBox } from '@roofline/shared';
 import { type BuildingAt, useBuildingAt, useEstimateFromFootprint, useEstimateFromPoint, useLoadBuildings } from '../../features/estimator/api.ts';
 import { useStormLayer } from '../../features/storm/layerApi.ts';
 import type { StormLayerResponse } from '../../features/storm/layerTypes.ts';
-import { HailLegend } from './HailLegend.tsx';
+import { MapLegend } from './MapLegend.tsx';
 import { bindMapInteractions } from './interactions.ts';
-import { emptyMapData, installMapLayers, updateMapData, type MapData } from './layers.ts';
+import { emptyMapData, installMapLayers, setPinsVisible, updateMapData, type MapData } from './layers.ts';
 import { mapStyle, satelliteAvailable } from './mapStyle.ts';
 import { PinCard } from './PinCard.tsx';
 import { setRoofHighlight } from './roofLayer.ts';
 import { RoofCard } from './RoofCard.tsx';
+import { setSelectedPin } from './selectedLayer.ts';
 import { applyStormData, setStormVisible } from './stormLayer.ts';
 import { needsClientClustering, normalizeBbox, toFeatureCollections } from './pins.ts';
 import type { Bbox } from '../../api/types.ts';
@@ -50,6 +51,12 @@ const PINS_DEBOUNCE_MS = 300;
 /** The only place the two build-time map settings are read. It is called at use time, so tests can stub them. */
 function readMapEnv(): MapEnv {
   return { maptilerKey: import.meta.env.VITE_MAPTILER_KEY, tiles: import.meta.env.VITE_MAP_TILES, imagery: import.meta.env.VITE_MAP_IMAGERY };
+}
+
+/** The company's colour as the page has it now (the brand slot is written at run time), for the ring around a picked pin. */
+function brandColor(): string {
+  if (typeof document === 'undefined') return tokens.brand;
+  return getComputedStyle(document.documentElement).getPropertyValue('--brand').trim() || tokens.brand;
 }
 
 /** Creates the map, or answers null when it cannot start (MapLibre throws when the browser has no WebGL). */
@@ -97,9 +104,15 @@ export function MapView({ onOpen, onEstimate }: MapViewProps) {
   const [hailOn, setHailOn] = useState(true);
   const hailOnRef = useRef(true);
   const hailToggled = useRef(false);
+  // The Jobs switch: every pin and cluster, on or off
+  const [pinsOn, setPinsOn] = useState(true);
+  const pinsOnRef = useRef(true);
+  const pinsToggled = useRef(false);
   const stormRef = useRef<StormLayerResponse | undefined>(undefined);
   const [failed, setFailed] = useState(false);
   const [picked, setPicked] = useState<PickedPin | null>(null);
+  // The picked pin as the map's style.load handler needs it (a swapped style loses the ring)
+  const pickedRef = useRef<PickedPin | null>(null);
   const [roof, setRoof] = useState<PickedRoof | null>(null);
   const roofRef = useRef<PickedRoof | null>(null);
   const toast = useToast();
@@ -160,7 +173,9 @@ export function MapView({ onOpen, onEstimate }: MapViewProps) {
       installMapLayers(instance, dataRef.current, schemeRef.current);
       applyStormData(instance, stormRef.current);
       if (!hailOnRef.current) setStormVisible(instance, false);
+      if (!pinsOnRef.current) setPinsVisible(instance, false);
       if (roofRef.current) setRoofHighlight(instance, roofRef.current.polygon as Geometry);
+      if (pickedRef.current) setSelectedPin(instance, pickedRef.current.lngLat, brandColor());
     });
     instance.on('load', scheduleBbox);
     instance.on('moveend', scheduleBbox);
@@ -202,7 +217,11 @@ export function MapView({ onOpen, onEstimate }: MapViewProps) {
     };
     dataRef.current = next;
     const instance = mapRef.current;
-    if (instance && styleReady.current) updateMapData(instance, next);
+    if (instance && styleReady.current) {
+      updateMapData(instance, next);
+      // A rebuilt pin group starts visible
+      if (!pinsOnRef.current) setPinsVisible(instance, false);
+    }
   }, [area.data, shownPins]);
 
   // Feed the storm layer from the last good answer.
@@ -223,6 +242,22 @@ export function MapView({ onOpen, onEstimate }: MapViewProps) {
     const instance = mapRef.current;
     if (instance && styleReady.current) setStormVisible(instance, hailOn);
   }, [hailOn]);
+
+  // The Jobs switch. Nothing is touched on the first mount while the pins are on.
+  useEffect(() => {
+    pinsOnRef.current = pinsOn;
+    if (pinsOn && !pinsToggled.current) return;
+    pinsToggled.current = true;
+    const instance = mapRef.current;
+    if (instance && styleReady.current) setPinsVisible(instance, pinsOn);
+  }, [pinsOn]);
+
+  // The ring around the picked pin: the company's colour, 2px
+  useEffect(() => {
+    pickedRef.current = picked;
+    const instance = mapRef.current;
+    if (instance && styleReady.current) setSelectedPin(instance, picked === null ? null : picked.lngLat, brandColor());
+  }, [picked]);
   // /?focus=<propertyId>: fly to that property's pin and open its card, once per distinct value.
   useEffect(() => {
     // Leaving ?focus= forgets the last one, so following the same address link again flies again.
@@ -348,7 +383,7 @@ export function MapView({ onOpen, onEstimate }: MapViewProps) {
   const swathCount = shownStorm?.swaths?.features?.length ?? 0;
 
   return (
-    <div className={styles.root} data-mode={mode}>
+    <div className={styles.root} data-mode={mode} data-card={picked !== null || (roof !== null && canEstimate) ? 'open' : undefined}>
       <div ref={containerRef} className={styles.map} role="region" aria-label={mapCopy.label} />
       <p className="visually-hidden" aria-live="polite">
         {summarize(shownPins)}
@@ -358,9 +393,25 @@ export function MapView({ onOpen, onEstimate }: MapViewProps) {
         {hailOn && storm.data?.stale === true ? <p className={styles.banner}>{stormCopy.staleBanner}</p> : null}
         {findingRoof ? <p className={styles.banner}>{mapCopy.findingRoof}</p> : null}
       </div>
-      <div className={styles.controls}>
+      <div role="group" aria-label={mapCopy.layersLabel} className={styles.controls}>
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-pressed={pinsOn}
+          onClick={() => {
+            // Hidden pins leave no card behind
+            if (pinsOn) setPicked(null);
+            setPinsOn((current) => !current);
+          }}
+        >
+          {mapCopy.jobsLayer}
+        </Button>
+        <Button size="sm" variant="ghost" aria-pressed={hailOn} onClick={() => setHailOn((current) => !current)}>
+          {mapCopy.hailLayer}
+        </Button>
         {satellite ? (
           <Button
+            size="sm"
             variant="ghost"
             aria-pressed={mode === 'satellite'}
             data-state={mode === 'satellite' ? 'on' : 'off'}
@@ -369,11 +420,8 @@ export function MapView({ onOpen, onEstimate }: MapViewProps) {
             {mapCopy.satellite}
           </Button>
         ) : null}
-        <Button variant="ghost" aria-pressed={hailOn} onClick={() => setHailOn((current) => !current)}>
-          {mapCopy.hailLayer}
-        </Button>
       </div>
-      <HailLegend visible={hailOn && swathCount > 0} />
+      <MapLegend hail={hailOn && swathCount > 0} pins={pinsOn} suppressed={picked !== null || (roof !== null && canEstimate)} />
       <p className="visually-hidden" aria-live="polite">
         {roof ? mapCopy.roofPicked : ''}
       </p>

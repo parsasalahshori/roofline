@@ -26,6 +26,15 @@ export function hailFillExpression(): unknown[] {
   return ['step', ['get', 'thresholdIn'], c1, 1.25, c2, 1.75, c3, 2.5, c4, 3, c5];
 }
 
+/**
+ * The outline of a swath band: the next level's colour, one step darker than its fill (the biggest band keeps its
+ * own). The design draws a 1.2px stroke in it over a 40% fill, so each band reads as a contour and not a blur.
+ */
+export function hailStrokeExpression(): unknown[] {
+  const [, c2, c3, c4, c5] = HAIL_LEVEL_COLORS;
+  return ['step', ['get', 'thresholdIn'], c2, 1.25, c3, 1.75, c4, 2.5, c5, 3, c5];
+}
+
 function emptyCollection(): FeatureCollection {
   return { type: 'FeatureCollection', features: [] };
 }

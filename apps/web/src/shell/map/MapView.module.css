@@ -4,6 +4,8 @@
   inset: 0;
   overflow: hidden;
   background: var(--map-land);
+  /* The map's own width decides how the legend lays out (one row when wide), whatever the screen is */
+  container: map / inline-size;
 }
 
 .map {
@@ -11,7 +13,7 @@
   inset: 0;
 }
 
-/* Bottom centre, a small pill above the legend and the zoom, so it never hides behind a card. The status region is always on the page and empty (zero size, so it blocks no map clicks); a screen reader announces the banner when it is inserted. */
+/* Bottom centre, a small pill above the legend, so it never hides behind it. The status region is always on the page and empty (zero size, so it blocks no map clicks); a screen reader announces the banner when it is inserted. */
 .status {
   position: absolute;
   bottom: 64px;
@@ -33,51 +35,51 @@
   text-align: center;
 }
 
-/* Top right: the layer switch, one surface holding two toggles. The toggles are ghost Buttons, so this file gives them the segmented look. */
+/* Top right: the layer switch, one floating surface holding three toggles (Jobs, Hail, Satellite). The toggles are ghost Buttons, so this file gives them the segmented look; the pressed ones are filled and ink. */
 .controls {
   position: absolute;
-  top: 16px;
-  right: 16px;
+  top: 12px;
+  right: 12px;
   z-index: 3;
   display: flex;
   gap: 2px;
   padding: 3px;
-  border-radius: var(--r-3);
+  border-radius: var(--r-2);
   background: var(--surface);
   box-shadow: var(--e-2);
 }
 
 .controls button[data-variant="ghost"] {
-  min-height: 30px;
   padding: 0 12px;
   border: 0;
-  border-radius: var(--r-2);
-  color: var(--ink-2);
+  border-radius: var(--r-1);
+  color: var(--ink-3);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .controls button[data-variant="ghost"][aria-pressed="true"] {
   background: var(--sunken);
+  box-shadow: inset 0 0 0 1px var(--line);
   color: var(--ink);
-  font-weight: 600;
 }
 
-/* A pin or roof card: a callout at the bottom, left of the zoom buttons. z-index 3 lifts it over MapLibre's control corners (z-index 2), so an open attribution never covers its text or buttons. */
+/* A pin or roof card: a callout above the zoom control, at the right. z-index 3 lifts it over MapLibre's control corners (z-index 2), so an open attribution never covers its text or buttons. */
 .card {
   position: absolute;
-  right: 64px;
-  bottom: 16px;
+  right: 12px;
+  bottom: 112px;
   z-index: 3;
-  width: min(340px, calc(100% - 96px));
+  width: min(300px, calc(100% - 24px));
 }
 
-/* Phone: the card spans the width the zoom control and the attribution button leave (the right 50px of the map) with a 16px gap. */
+/* Phone: the card spans the map's width at the bottom (the legend steps aside while it is open) */
 @media (max-width: 767.98px) {
   .card {
-    right: auto;
-    left: 16px;
-    width: min(360px, calc(100% - 82px));
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    width: auto;
   }
 
   /* MapLibre's own buttons are 29px (zoom) and 24px (attribution); on phone they are 40px touch targets. */
@@ -104,9 +106,30 @@
 
 /* MapLibre's controls take the panel's look: a hairline, the surface colour and the small radius */
 .map :global(.maplibregl-ctrl-group) {
-  border-radius: var(--r-3);
+  border-radius: var(--r-2);
   background: var(--surface);
   box-shadow: var(--e-2);
+}
+
+/* The corner's 10px margins become the design's 12px, so the zoom lines up with the legend and the switch */
+.map :global(.maplibregl-ctrl-bottom-right .maplibregl-ctrl) {
+  margin: 0 12px 12px 0;
+}
+
+.map :global(.maplibregl-ctrl-group button) {
+  width: 34px;
+  height: 34px;
+}
+
+/* The zoom's icons are dark line art; in the dark theme they are turned light */
+:global(:root[data-theme="dark"]) .map :global(.maplibregl-ctrl-icon) {
+  filter: invert(1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme="light"])) .map :global(.maplibregl-ctrl-icon) {
+    filter: invert(1);
+  }
 }
 
 .map :global(.maplibregl-ctrl-group button + button) {
