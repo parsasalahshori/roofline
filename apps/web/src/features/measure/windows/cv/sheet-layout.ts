@@ -137,5 +137,5 @@ export function calibrationSheetSvg(paper: SheetPaper, index: SheetIndex = 0): C
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${fmt(layout.widthIn)}in" height="${fmt(layout.heightIn)}in" viewBox="0 0 ${fmt(layout.widthIn)} ${fmt(layout.heightIn)}">` +
     `<rect width="100%" height="100%" fill="#fff"/><g fill="#000" font-family="Helvetica, Arial, sans-serif">${parts.join('')}${ruler.join('')}${numbers.join('')}${words.join('')}</g></svg>`;
-  return { paper, svg, widthIn: layout.widthIn, heightIn: layout.heightIn };
+  return { paper, svg, widthIn: layout.widthIn, heightIn: layout.heightIn, rulerIn: r.lengthIn };
 }

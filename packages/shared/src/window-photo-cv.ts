@@ -9,7 +9,14 @@ export type RgbaImage = { width: number; height: number; data: Uint8ClampedArray
 export type SheetPaper = 'letter' | 'a4';
 
 /** The printable measuring sheet: markers at known positions plus a ruler to check the printer did not scale it. */
-export type CalibrationSheet = { paper: SheetPaper; svg: string; widthIn: number; heightIn: number };
+export type CalibrationSheet = {
+  paper: SheetPaper;
+  svg: string;
+  widthIn: number;
+  heightIn: number;
+  /** The printed ruler's true length, inches (6 on letter; 15 cm = 5.906 on A4): printScale = measured / rulerIn. */
+  rulerIn?: number;
+};
 
 /** The sheet found in a photo: matched points and how well a single plane explains them. */
 export type SheetDetection = {
