@@ -266,6 +266,16 @@
   overflow: hidden;
 }
 
+/* The kit's panel header does not wrap: where the card is narrow, "Bring in new photo windows" takes a line of its own, not the title's room */
+.sheet > div:first-child {
+  flex-wrap: wrap;
+}
+
+.sheet > div:first-child > :last-child:not(:first-child) {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+
 /* "Bring in new photo windows" wraps onto two lines where the header is narrow */
 .refresh[data-variant] {
   min-width: 0;
@@ -775,6 +785,7 @@
 
   .table .row > td {
     display: block;
+    width: auto;
     padding: 6px 8px;
     border-bottom: 0;
   }

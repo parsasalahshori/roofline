@@ -144,7 +144,7 @@
   flex-wrap: wrap;
 }
 
-.elevation > div:first-child > :last-child {
+.elevation > div:first-child > :last-child:not(:first-child) {
   flex: 1 1 auto;
   justify-content: flex-end;
 }
