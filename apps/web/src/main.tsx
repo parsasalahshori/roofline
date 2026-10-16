@@ -1,23 +1,15 @@
 import '@fontsource-variable/archivo/wdth.css';
 import '@roofline/ui/tokens.css';
 import '@roofline/ui/base.css';
-import { StrictMode } from 'react';
-import { createRoot } from 'react-dom/client';
-import { RouterProvider } from 'react-router/dom';
-import { Providers } from './app/providers.tsx';
-import { createAppRouter } from './app/router.tsx';
-// Starts the Google satellite tile session at load, so the roof view has it ready when it opens.
-import './features/measure/lift/googleTiles.ts';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('index.html has no #root element');
 
-const router = createAppRouter();
-
-createRoot(root).render(
-  <StrictMode>
-    <Providers>
-      <RouterProvider router={router} />
-    </Providers>
-  </StrictMode>,
-);
+// The public instant quote page (/q/:slug) is its own small bundle: no app shell, router, map or tile session.
+// Everything else loads the app (boot.tsx). The slug is the only thing read from the address.
+const quoteSlug = /^\/q\/([a-z0-9-]{3,40})\/?$/i.exec(window.location.pathname)?.[1];
+if (quoteSlug !== undefined) {
+  void import('./features/quote/entry.tsx').then((m) => m.mountQuotePage(root, quoteSlug.toLowerCase()));
+} else {
+  void import('./app/boot.tsx').then((m) => m.bootApp(root));
+}

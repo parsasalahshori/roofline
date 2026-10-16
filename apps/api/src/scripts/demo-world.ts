@@ -59,6 +59,8 @@ import { seedStormFixture } from './storm-fixture.ts';
  */
 
 export const DEMO_COMPANY_SLUG = 'summit-ridge-roofing';
+/** The demo's instant quote page: /q/summit-ridge. */
+export const DEMO_QUOTE_SLUG = 'summit-ridge';
 export const DEMO_COMPANY_NAME = 'Summit Ridge Roofing';
 /** A fictional, demo-only credential (every demo user shares the password). */
 export const DEMO_LOGIN = { email: 'owner@summitridge.test', password: 'summit-ridge-demo' } as const;
@@ -779,6 +781,12 @@ export async function seedDemoWorld(pools: Pools, ownerUrl: string, now: Date, o
       [companyId, ago(3 * DAY), DEMO_FRONT_DESK_FACTS],
     );
     const booked = await seedFrontDeskWorld(pools, ctx, now, DEMO_COMPANY_NAME, frontDeskHomes);
+
+    // The instant quote page, /q/summit-ridge: on, all three services, visit times offered, the default range and cap.
+    await q(
+      `update company_settings set quote_enabled = true, quote_slug = $2, quote_products = '{windows,roof,gutters}', quote_booking = true where company_id = $1`,
+      [companyId, DEMO_QUOTE_SLUG],
+    );
 
     // 5. Agents history: finished plans with minutes saved, one needing attention.
     await seedAgentsHistory(q, companyId, ownerId, now);

@@ -36,6 +36,8 @@ const APP_SYSTEM_RLS_TABLES = [
   'ad_campaigns',
   'storm_pages',
   'email_opt_outs',
+  // Instant quote: three columns of company_settings only (company_id, quote_slug, quote_enabled), to find a page by slug.
+  'company_settings',
 ] as const;
 /** Global estimator tables: no tenant data, no RLS. app_system writes them from the loader job. */
 const FOOTPRINT_TABLES = ['building_footprints', 'building_footprint_states', 'building_footprint_tiles'] as const;
@@ -638,6 +640,27 @@ describe('grants', () => {
     );
   });
 
+  test('instant quote: app_tenant has SELECT, INSERT and UPDATE on quote_estimates and quote_requests, no DELETE; app_system nothing there and only three columns of company_settings', async () => {
+    expect(await tablePrivileges('app_tenant', ['quote_estimates', 'quote_requests'])).toEqual([
+      privs('quote_estimates', true, true, true, false),
+      privs('quote_requests', true, true, true, false),
+    ]);
+    expect(await tablePrivileges('app_system', ['quote_estimates', 'quote_requests'])).toEqual([
+      privs('quote_estimates', false, false, false, false),
+      privs('quote_requests', false, false, false, false),
+    ]);
+    const cols = await ownerQuery<{ column_name: string }>(
+      `select column_name from information_schema.columns
+        where table_schema = 'public' and table_name = 'company_settings'
+          and has_column_privilege('app_system', 'public.company_settings', column_name, 'SELECT') order by 1`,
+    );
+    expect(cols.map((c) => c.column_name)).toEqual(['company_id', 'quote_enabled', 'quote_slug']);
+    const [writes] = await ownerQuery<{ any: boolean }>(
+      `select has_any_column_privilege('app_system', 'public.company_settings', 'INSERT,UPDATE') as any`,
+    );
+    expect(writes).toEqual({ any: false });
+  });
+
   test('app_tenant has SELECT, INSERT and UPDATE on window_measurements, no DELETE; app_system nothing', async () => {
     expect(await tablePrivileges('app_tenant', ['window_measurements'])).toEqual([privs('window_measurements', true, true, true, false)]);
     expect(await tablePrivileges('app_system', ['window_measurements'])).toEqual([privs('window_measurements', false, false, false, false)]);
@@ -885,6 +908,9 @@ describe('grants', () => {
       sel('calls', 'company_id'),
       sel('calls', 'id'),
       sel('calls', 'status'),
+      sel('company_settings', 'company_id'),
+      sel('company_settings', 'quote_enabled'),
+      sel('company_settings', 'quote_slug'),
       sel('company_storms', 'company_id'),
       sel('company_storms', 'id'),
       sel('company_storms', 'status'),
@@ -1684,6 +1710,7 @@ describe('app_system', () => {
         | 'ad_campaigns'
         | 'storm_pages'
         | 'email_opt_outs'
+        | 'company_settings'
       >,
       string
     >;
@@ -1701,6 +1728,19 @@ describe('app_system', () => {
     } finally {
       await client.end();
     }
+  });
+
+  test('system role can read only the instant quote slug columns of company_settings', async () => {
+    await ownerQuery(
+      `insert into company_settings (company_id, quote_enabled, quote_slug) values ($1, true, 'acme-a')
+       on conflict (company_id) do update set quote_enabled = true, quote_slug = 'acme-a'`,
+      [seed.a.companyId],
+    );
+    const rows = await systemRaw<{ company_id: string }>(`select company_id, quote_slug, quote_enabled from company_settings where quote_slug = 'acme-a'`);
+    expect(rows.map((r) => r.company_id)).toEqual([seed.a.companyId]);
+    await expect(systemRaw(`select hourly_rate_cents from company_settings`)).rejects.toThrow(/permission denied/);
+    await expect(systemRaw(`select * from company_settings`)).rejects.toThrow(/permission denied/);
+    await expect(systemRaw(`update company_settings set quote_enabled = false`)).rejects.toThrow(/permission denied/);
   });
 
   test('system role can read only whitelisted columns of agent_tasks', async () => {

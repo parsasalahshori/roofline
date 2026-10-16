@@ -145,6 +145,10 @@ const ConfigSchema = z
     GEOCODIO_API_KEY: z.string().optional(),
     /** G1 agents: MapTiler server-side key for the static map in claim packets. Optional; unset: claim packets have no map image. */
     MAPTILER_SERVER_KEY: z.string().optional(),
+    /** Instant quote page: Cloudflare Turnstile secret. Set together with TURNSTILE_SITE_KEY; unset: no Turnstile check. */
+    TURNSTILE_SECRET: z.string().optional(),
+    /** Instant quote page: Cloudflare Turnstile site key the page renders the widget with. */
+    TURNSTILE_SITE_KEY: z.string().optional(),
     /**
      * Google Solar API key (buildingInsights): roof pitch from Google's measured roof planes, and an outline when no
      * building footprint is found. Unset: the estimator's default pitch, and draw mode where no footprint is found.

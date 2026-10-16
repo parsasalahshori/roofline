@@ -56,6 +56,7 @@ function signedInApi(account = ACCOUNT, overrides: Routes = {}) {
 const PRICES_ROUTES: Routes = {
   'GET /api/tier-templates': () => ({ body: { templates: DEFAULT_TIER_TEMPLATES.map((t) => ({ ...t, addOns: [...t.addOns], highlights: [...t.highlights] })) } }),
   'GET /api/estimator/settings': () => ({ body: { defaultPitchX12: 6, overhangFt: 1, proposalValidDays: 30, aerialMeasure: false, aerialConfigured: false, estimateChangeClause: true, financingAprBps: null, financingTermMonths: null } }),
+  'GET /api/instant-quote/settings': () => ({ body: { enabled: false, slug: null, products: ['windows', 'roof'], rangePct: 12, dailyCap: 50, embedOrigins: [], booking: false, accentColor: null, pageUrl: null } }),
 };
 
 function renderApp(path: string) {

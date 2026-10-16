@@ -87,6 +87,9 @@ import { doorRoutes } from './routes/door-routes.ts';
 import { stormSettingsRoutes } from './routes/storm-settings.ts';
 import { adsRoutes } from './routes/ads.ts';
 import { stormRequestRoutes } from './public/storm-requests.ts';
+import { publicQuoteRoutes } from './public/quote.ts';
+import { quotePage } from './public/quote-page.ts';
+import { instantQuoteSettingsRoutes } from './routes/instant-quote-settings.ts';
 import { stormPage } from './public/storm-page.ts';
 import { unsubscribeRoutes } from './public/unsubscribe.ts';
 import { proposalRoutes } from './routes/proposals.ts';
@@ -298,6 +301,10 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   // mounted ahead of blockCrossSiteMutations. The router brings its own rate limit, Origin check and body
   // parsers, so a no-JS form gets a redirect for every failure.
   app.use('/api/public/storm-requests', stormRequestRoutes(deps));
+  // The instant quote page's API (public/quote.ts): called from the page on the app's origin, or from a company's own
+  // site that embeds it, so like the storm form it is mounted ahead of blockCrossSiteMutations and the session gate,
+  // with its own limits, body parser (8 KB), Origin check and CORS for the company's allowed embed origins.
+  app.use('/api/public/quote', publicQuoteRoutes(deps));
 
   app.get('/health', (_req, res) => {
     res.json({ ok: true });
@@ -395,6 +402,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/window-measurements', windowMeasurementRoutes(deps));
   app.use('/api/tier-templates', tierTemplateRoutes(deps));
   app.use('/api/estimator/settings', estimatorSettingsRoutes(deps));
+  app.use('/api/instant-quote/settings', instantQuoteSettingsRoutes(deps));
   app.use('/api/estimator', estimatorMapRoutes(deps));
   app.use('/api/proposals', proposalRoutes(deps));
   // Storm Scout: storms and their plans, door-knock routes, per-company storm settings, and ads.
@@ -418,7 +426,11 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
 
   // The web app itself, when there is a build to serve. After every API route, so it can only
   // answer what they did not; web.ts keeps it off /api, /hooks and /health.
-  if (config.WEB_DIST_DIR !== undefined) serveWeb(app, config.WEB_DIST_DIR);
+  if (config.WEB_DIST_DIR !== undefined) {
+    // The instant quote page (/q/:slug) may be framed by the company's own sites: its headers first (quote-page.ts).
+    app.use(quotePage(deps));
+    serveWeb(app, config.WEB_DIST_DIR);
+  }
 
   app.use(notFoundHandler);
   app.use(errorHandler(logError));
