@@ -51,8 +51,8 @@
 ## What helps (for the app's coaching)
 
 - Use a real ID-1 card from any wallet: credit, debit or driver licence. Not a gift card or business card that is not 85.6 x 53.98 mm.
-- Tape the card flat on the glass in the middle of the window, fully visible, no glare. 10° off flat costs 0.2 to 0.3 in on 48 x 72;
-  30° costs 1.5 to 2.2 in.
+- Tape the card flat ON the glass (not held out in front of it) in the middle of the window, fully visible, no glare. 10° off flat costs
+  0.2 to 0.3 in on 48 x 72; 30° costs 1.5 to 2.2 in.
 - Tap the TIP of each rounded corner, using the magnifier. Tapping where the sharp corners would be makes the window about 2.6% too small.
 - Stand square to the window, 3 to 5 ft (1 to 1.5 m) back, with the whole window in the photo and some room around it. Closer does not
   help (the frame's depth matters more up close); farther makes the card small.
@@ -115,5 +115,5 @@ Calibration: 69% of the errors fall inside 1 sigma (rows between 67% and 71%) an
 - No real phone lens has been measured. The wide lens is flagged 'check'; the main lens is assumed close to a pinhole.
 - A photo with no focal length is sized at 26 mm: pass the 10% doubt, and expect a larger ± at angles.
 - The window must be a rectangle in one plane: arched, bay, bowed or very deep-set windows are not covered.
-- Real taps may well be sloppier than 2 px: unaided, one screen point of a 4032 px photo shown about 400 points wide is about 10 photo
-  px (a guess, not a measurement). The magnifier is what is meant to hold 2 px.
+- The card must be ON the glass. Every inch it is held in front of the glass makes the window about 1.7% too small at 5 ft (1 in over the distance).
+- Real taps may be sloppier than 2 px (unaided, one screen point is about 10 photo px: a guess); the magnifier is meant to hold 2 px.
