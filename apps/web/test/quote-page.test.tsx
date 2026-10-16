@@ -213,6 +213,9 @@ describe('QuotePage', () => {
     await user.click(screen.getByRole('button', { name: quote.submit }));
     await waitFor(() => expect(api.sent(`POST ${BASE}/lead`)).toHaveLength(1));
     expect((api.sent(`POST ${BASE}/lead`)[0] as { slotId: string }).slotId).toBe(start);
+    // The confirmation names the same time the person picked (10:00 AM in Chicago), not the viewer's own clock.
+    expect(radios[1]!.closest('label')!.textContent).toContain('10:00 AM');
+    expect(await screen.findByText(/10:00 AM/)).toBeInTheDocument();
   });
 });
 

@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent } from 'react';
+import { visitTime } from './time.ts';
 import { Banner, Button, Checkbox, Field, Skeleton } from '@roofline/ui';
 import type { PublicQuoteConfig, PublicQuoteSlot, QuoteProduct } from '@roofline/shared';
 import { quote } from '../../copy/quote.ts';
@@ -21,7 +22,7 @@ type Step =
   | { kind: 'address'; error?: AddressError }
   | { kind: 'measuring'; startedAt: number; answer: EstimateAnswer | null }
   | { kind: 'results'; answer: EstimateAnswer; showForm: boolean }
-  | { kind: 'done'; firstName: string; booked: { start: string; end: string } | null };
+  | { kind: 'done'; firstName: string; booked: { start: string; end: string } | null; timeZone: string };
 
 const TICK_MS = 80;
 
@@ -118,12 +119,12 @@ export function QuotePage({ slug }: { slug: string }) {
                 slug={slug}
                 config={c}
                 answer={step.answer}
-                onDone={(firstName, booked) => setStep({ kind: 'done', firstName, booked })}
+                onDone={(firstName, booked, timeZone) => setStep({ kind: 'done', firstName, booked, timeZone })}
               />
             ) : null}
           </>
         ) : null}
-        {step.kind === 'done' ? <Done config={c} firstName={step.firstName} booked={step.booked} /> : null}
+        {step.kind === 'done' ? <Done config={c} firstName={step.firstName} booked={step.booked} timeZone={step.timeZone} /> : null}
       </main>
     </div>
   );
@@ -357,7 +358,7 @@ function LeadForm({
   slug: string;
   config: PublicQuoteConfig;
   answer: EstimateAnswer;
-  onDone: (firstName: string, booked: { start: string; end: string } | null) => void;
+  onDone: (firstName: string, booked: { start: string; end: string } | null, timeZone: string) => void;
 }) {
   // Products with a range shown are ticked; with nothing measured (fallback), every product the page offers is.
   const shown: QuoteProduct[] = config.products.filter((p) => (p === 'roof' ? answer.roof : p === 'windows' ? answer.windows : answer.gutters) !== null);
@@ -419,7 +420,7 @@ function LeadForm({
         ...(config.turnstileSiteKey !== null && { turnstileToken: human }),
       })
       .then(
-        (res) => onDone(form.firstName.trim(), res.booked),
+        (res) => onDone(form.firstName.trim(), res.booked, slots?.timeZone ?? 'UTC'),
         (err: unknown) => {
           setSending(false);
           setHuman('');
@@ -429,8 +430,7 @@ function LeadForm({
       );
   }
 
-  const fmt = (iso: string, zone: string) =>
-    new Date(iso).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: zone });
+  const fmt = (iso: string, zone: string) => visitTime(iso, zone, 'short');
 
   return (
     <section className={styles.card} aria-labelledby={headingId}>
@@ -497,10 +497,10 @@ function LeadForm({
   );
 }
 
-function Done({ config, firstName, booked }: { config: PublicQuoteConfig; firstName: string; booked: { start: string; end: string } | null }) {
+function Done({ config, firstName, booked, timeZone }: { config: PublicQuoteConfig; firstName: string; booked: { start: string; end: string } | null; timeZone: string }) {
   const ref = useRef<HTMLHeadingElement>(null);
   useEffect(() => ref.current?.focus(), []);
-  const when = booked ? new Date(booked.start).toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : null;
+  const when = booked ? visitTime(booked.start, timeZone, 'long') : null;
   return (
     <section className={styles.card}>
       <div className={styles.check} aria-hidden="true">
