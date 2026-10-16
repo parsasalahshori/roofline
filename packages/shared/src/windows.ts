@@ -97,7 +97,12 @@ export type EstimatedWindows = {
   /** 'all-sides' when nothing on the front is measured; 'sides-and-back' once front windows are marked or found. */
   covers?: 'all-sides' | 'sides-and-back';
   bySizeClass: Record<WindowSizeClass, number>;
-  /** Plain-English basis, shown to the user, e.g. "2 floors, 186 ft of side and back wall, front spacing". */
+  /**
+   * How far off the count may be, when an input is shaky (no height data, a storey and a half, a low wing that may be a
+   * garage or a room, an outline from Google's roof): the count is shown as "low to high". Absent/null: no range.
+   */
+  range?: { low: number; high: number } | null;
+  /** Plain-English basis (API consumers; the web app words it from the walls itself). */
   basis: string;
 };
 
@@ -296,10 +301,23 @@ export type WindowMeasurementView = {
   photos: FacadePhoto[];
   windows: MeasuredWindow[];
   estimated: EstimatedWindows | null;
-  /** Floors above ground, when known (from the house's height). */
+  /** Floors above ground, when known (from the house's height): 1, 1.5 (a storey and a half), 2 or 3. */
   stories: number | null;
   /** The walls the estimate is worked out from (from the outline and Google's heights). Absent/null when unknown. */
-  walls?: { perimeterFt: number; wallHeightFt: number | null; wallAreaSqFt: number | null; frontWallFt: number | null } | null;
+  walls?: {
+    perimeterFt: number;
+    wallHeightFt: number | null;
+    wallAreaSqFt: number | null;
+    frontWallFt: number | null;
+    /** The wall the windows are counted on: 9 ft a floor, low wings left out (absent on older answers). */
+    windowWallSqFt?: number;
+    /** Low one-storey wings of a taller house (an attached garage, a porch) left out of the count, feet of wall. */
+    lowWingFt?: number;
+    /** Where the floors come from: Google's height map, a person's fit on the street photo, or assumed (one floor) when there is none. */
+    floorsFrom?: 'height-map' | 'photo' | 'assumed';
+    /** Where the outline comes from: a building footprint, else Google's roof (no footprint there). */
+    outlineFrom?: 'footprint' | 'google-roof';
+  } | null;
   detector: WindowDetectorName | null;
   missing: { reason: WindowsMissReason } | null;
   needsReview: { reasons: WindowsReviewReason[] } | null;
@@ -312,6 +330,11 @@ export type WindowMeasurementView = {
   uploads?: WindowPhotoUpload[];
   /** The door ruler, as the server applied it (absent/null: none, or it could not be sized). */
   ruler?: RulerResult | null;
+  /**
+   * The Street View tools are on for this server (WINDOWS_STREET_VIEW_TOOLS): the front wall drawn on the photo, its
+   * corners, marking windows on the photo and the door ruler. Absent or false: the photo is a read-only picture.
+   */
+  photoTools?: boolean;
 };
 
 /** PATCH /api/window-measurements/:id. */

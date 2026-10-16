@@ -7,11 +7,14 @@ import { seedFootprintFixture } from '../src/scripts/footprint-fixture.ts';
 import jpeg from 'jpeg-js';
 import { DetectorError, type WindowDetector } from '../src/providers/window-detector.ts';
 import { windowPhoto } from './window-photo-fixture.ts';
+import { hipLayers, layersCover } from './roof-3d-fixture.ts';
 
 /*
  * Measure windows through the API, with fakes for every outside service: the house's outline comes from a footprint
  * loaded by hand, Street View is the fake (a camera 20 m south of the house, a made-up photo), there are no Google
- * heights (one 9 ft floor is assumed) and no detector (the default).
+ * heights (one 9 ft floor is assumed) and no detector (the default). The Street View tools (WINDOWS_STREET_VIEW_TOOLS:
+ * the wall drawn and lined up on the photo, marks, corners, the ruler) are on in this file except where a test says
+ * otherwise; the server's default is off.
  */
 
 const NOW = new Date('2026-10-12T15:00:00.000Z');
@@ -29,7 +32,7 @@ let t: TestApp;
 let who: Actors;
 
 beforeEach(async () => {
-  t = await makeTestApp();
+  t = await makeTestApp({ WINDOWS_STREET_VIEW_TOOLS: true });
   who = new Actors(t);
   t.clock.set(NOW);
 });
@@ -76,7 +79,10 @@ describe('POST /api/window-measurements', () => {
     expect(view.walls!.frontWallFt!).toBeGreaterThan(70);
     expect(view.estimated!.covers).toBe('all-sides');
     expect(total(view)).toBe(Math.round((view.walls!.wallAreaSqFt! * 0.12) / 15));
-    expect(view.estimated!.basis).toContain('9 ft high (assumed, no height data)');
+    // One floor assumed (no heights): the count is a range up to two floors' worth.
+    expect(view.walls!.floorsFrom).toBe('assumed');
+    expect(view.estimated!.range).toEqual({ low: total(view), high: total(view) * 2 });
+    expect(view.photoTools).toBe(true);
     expect(view.detector).toBeNull();
     expect(view.windows).toEqual([]);
     expect(view.needsReview?.reasons).toContain('estimated-from-size');
@@ -114,6 +120,44 @@ describe('POST /api/window-measurements', () => {
     expect((await owner.post('/api/window-measurements').send({})).status).toBe(400);
     expect((await owner.post('/api/window-measurements').send({ propertyId: NO_UUID })).status).toBe(404);
     expect((await owner.post('/api/window-measurements').send({ propertyId: NO_UUID, extra: 1 })).status).toBe(400);
+  });
+});
+
+describe('Street View tools off (the default) and Google\u2019s roof as the outline', () => {
+  it('keeps the photo as a picture only: no wall drawn or lined up, no walls-unconfirmed; the routes still answer', async () => {
+    t = await makeTestApp();
+    who = new Actors(t);
+    t.clock.set(NOW);
+    const { owner, view } = await measuredHouse();
+    expect(view.photoTools).toBe(false);
+    expect(view.photos.length).toBeGreaterThanOrEqual(1);
+    expect(view.photos[0]!.capturedOn).toBe('2023-06');
+    expect(view.photos.every((p) => p.wallOverlay === undefined)).toBe(true);
+    expect(view.needsReview?.reasons ?? []).not.toContain('walls-unconfirmed');
+    expect(view.estimated!.covers).toBe('all-sides');
+    // A mark made before the tools were turned off still saves and is sized.
+    const photoId = view.photos[0]!.id;
+    const res = await owner.patch(`/api/window-measurements/${view.id}`).send({ marked: [{ id: 'm1', photoId, box: { x: 0.45, y: 0.5, w: 0.05, h: 0.08 } }] });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect((res.body as WindowMeasurementView).photos.every((p) => p.wallOverlay === undefined)).toBe(true);
+  });
+
+  it('no footprint: the outline of Google\u2019s roof (its mask), not Solar\u2019s box; floors from the height map', async () => {
+    // Google's box for the building is 6 m too big each way; the height map has the real hip roof (4 m eaves).
+    t.solar.set(INSIDE, { center: INSIDE, box: { sw: [-96.00007, 41.24995], ne: [-95.99963, 41.25025] }, imageryQuality: 'HIGH', imageryDate: '2024-05-01', segments: [] });
+    const layers = hipLayers(HOUSE);
+    t.solarLayers.set(layersCover(layers), layers);
+    const propertyId = await homeAt(3, INSIDE);
+    const owner = await who.as('owner');
+    const view = await measure(owner, { propertyId });
+    // The house is about 309 ft round; Solar's box would be about 460 ft.
+    expect(view.walls!.perimeterFt).toBeGreaterThan(295);
+    expect(view.walls!.perimeterFt).toBeLessThan(330);
+    expect(view.walls!.outlineFrom).toBe('google-roof');
+    expect(view.walls!.floorsFrom).toBe('height-map');
+    expect(view.stories).toBe(1);
+    // An outline from the roof (overhangs included): a range either way.
+    expect(view.estimated!.range).not.toBeNull();
   });
 });
 
@@ -272,7 +316,11 @@ describe('PATCH: marked windows, counts, the wall corners', () => {
     expect(fitted.fit).toBe('good');
     expect(fitted.wallHeightFromPhotoFt!).toBeGreaterThan(12);
     expect(after.walls!.wallHeightFt).toBeGreaterThan(12);
-    expect(total(after)).toBeGreaterThan(total(view));
+    expect(after.walls!.floorsFrom).toBe('photo');
+    // Still one floor: one row of windows, so the same count; but no longer an assumed height, so no range.
+    expect(total(after)).toBe(total(view));
+    expect(view.estimated!.range).not.toBeNull();
+    expect(after.estimated!.range ?? null).toBeNull();
     expect(after.needsReview?.reasons ?? []).not.toContain('walls-unconfirmed');
     const undone = await owner.patch(`/api/window-measurements/${view.id}`).send({ wallCorners: null });
     expect(undone.body.walls.wallHeightFt).toBe(9);

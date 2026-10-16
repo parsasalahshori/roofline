@@ -2127,10 +2127,19 @@ export type WindowGeometry = {
   ring: LngLat[];
   /** Where the Street View camera stood, [lng, lat] (null without imagery). */
   camera: LngLat | null;
-  /** The eave's height above the ground from Google's height map, metres (null when unknown). */
+  /** The main eave's height above the ground from Google's height map, metres (null when unknown). */
   eaveHeightM: number | null;
-  /** Where the outline came from. */
-  outlineSource: 'footprint' | 'solar-box';
+  /**
+   * Where the outline came from: a Microsoft footprint, else Google's roof: the outline of its roof mask (the roof in 3D's,
+   * overhangs included), else Google Solar's box for the building (older rows; a last resort).
+   */
+  outlineSource: 'footprint' | 'solar-mask' | 'solar-box';
+  /** Each outline edge's eave above the ground (edge i: ring[i] -> ring[i + 1]), metres; null where unread. Absent on older rows. */
+  wallEavesM?: (number | null)[];
+  /** The roof's top above the ground, metres. Absent on older rows. */
+  ridgeM?: number | null;
+  /** The whole outline's lowest eave (what older rows used for the walls), metres, kept for comparison. */
+  lowestEaveM?: number | null;
 };
 
 /**
