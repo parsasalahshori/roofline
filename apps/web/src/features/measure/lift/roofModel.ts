@@ -16,7 +16,11 @@ export function usableRoof(roof: RoofModel | null | undefined): RoofModel | null
   return roof !== null && roof !== undefined && Array.isArray(roof.facets) && roof.facets.length > 0 ? roof : null;
 }
 
-/** Line colours, as the reference draws them. Hips, flashing and flat edges only show when the roof has them. */
+/**
+ * Line colours, as the reference draws them. Hips, flashing and flat edges only show when the roof has them.
+ * The map draws these on its canvas over aerial photos, so they are literal and the same in light and dark (the CSS stays
+ * on tokens); the legend swatches in the page read them from here.
+ */
 export const LINE_COLORS: Record<RoofLineKind, string> = {
   ridge: '#ff5c50',
   hip: '#ff9a3d',

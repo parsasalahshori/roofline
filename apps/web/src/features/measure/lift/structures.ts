@@ -6,6 +6,7 @@ export const STRUCTURES_SOURCE = 'lift-structures-src';
 export const STRUCTURE_LAYERS = ['lift-structures-fill', 'lift-structures-line'] as const;
 /** The outline drawn round a building under the pointer (or its row): shown whatever else is showing. */
 export const STRUCTURE_HOVER_LAYER = 'lift-structures-hover';
+// Drawn on the map's canvas over aerial photos: literal, the same in light and dark
 const INCLUDED_COLOR = '#2563eb';
 const LEFT_OUT_COLOR = '#475569';
 const HOVER_COLOR = '#ffc21a';
