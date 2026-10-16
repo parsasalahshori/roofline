@@ -1,17 +1,19 @@
-import type { ScreenAgent } from '@roofline/shared';
+import type { Agent, ScreenAgent } from '@roofline/shared';
+import type { IconName } from '@roofline/ui';
 
-/** The order the dashboard lays the agents out, left to right along the roof. */
-export const DASH_ORDER: readonly ScreenAgent[] = ['storm_scout', 'front_desk', 'estimator', 'claims', 'scheduler', 'follow_up'];
-
-/** Each agent's own color (node ring, card tab, handoff dot). Colour tokens, so each follows the theme. */
-export const AGENT_COLOR: Record<ScreenAgent, string> = {
-  storm_scout: 'var(--hail-5)',
-  front_desk: 'var(--st-insp)',
-  estimator: 'var(--tape)',
-  claims: 'var(--st-won)',
-  scheduler: 'var(--st-prop)',
-  follow_up: 'var(--st-inst)',
+/** Each agent's glyph, from the kit's set. It is drawn ink on a sunken square wherever an agent is shown. */
+export const AGENT_ICON: Record<Agent, IconName> = {
+  storm_scout: 'storm',
+  front_desk: 'phone',
+  estimator: 'ruler',
+  claims: 'doc',
+  scheduler: 'cal',
+  follow_up: 'msg',
+  system: 'bolt',
 };
+
+/** The order the dashboard lays the agents out. */
+export const DASH_ORDER: readonly ScreenAgent[] = ['storm_scout', 'front_desk', 'estimator', 'claims', 'scheduler', 'follow_up'];
 
 /** Whole hours from minutes, never below zero. */
 export const wholeHours = (minutes: number): number => Math.max(0, Math.round(minutes / 60));

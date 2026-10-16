@@ -1,59 +1,17 @@
-.section {
-  display: grid;
-  gap: 8px;
-  margin-top: 24px;
-}
-
-.title {
-  margin: 0;
-}
-
+/* The breakdown and the recent work on an agent's page: both are panels; the rows run edge to edge */
 .empty {
   margin: 0;
   color: var(--ink-3);
 }
 
-.scroll {
-  overflow-x: auto;
-  max-width: 100%;
-}
-
-.table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.caption {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-.table th,
-.table td {
-  padding: 8px;
-  text-align: left;
-  border-bottom: 1px solid var(--line);
-  vertical-align: top;
-}
-
-.table th {
-  color: var(--ink-3);
-  font-weight: 600;
-}
-
 .list {
-  display: grid;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.row {
-  border-bottom: 1px solid var(--line);
+.row + .row {
+  border-top: 1px solid var(--line);
 }
 
 .link {
@@ -61,18 +19,34 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 12px;
-  min-height: 44px;
-  padding: 8px 0;
+  min-height: 52px;
+  padding: 10px 16px;
   color: var(--ink);
   text-decoration: none;
   overflow-wrap: anywhere;
 }
 
+a.link:hover {
+  background: var(--surface-2);
+}
+
+/* A task kind the screen has no words for is shown as its own name: its first letter is a capital, nothing more */
 .kind {
   font-weight: 600;
-  text-transform: capitalize;
+}
+
+.kind::first-letter {
+  text-transform: uppercase;
 }
 
 .meta {
   color: var(--ink-3);
+  font: 500 var(--font-size-min)/1.2 var(--f-mono);
+}
+
+/* What the work saved sits at the right of the row where the row is wide enough */
+.saved {
+  margin-left: auto;
+  color: var(--ink-3);
+  font-size: 13px;
 }

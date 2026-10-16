@@ -7,7 +7,7 @@
 
 .title {
   margin: 0;
-  font-size: var(--font-size-body);
+  font: 650 15px/1.3 var(--f-ui);
 }
 
 .note {

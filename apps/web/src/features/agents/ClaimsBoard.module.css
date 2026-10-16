@@ -1,43 +1,44 @@
-/* The claims board: a column per status side by side on wide screens, stacked on a phone. */
-.section {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-}
-
-.heading {
-  margin: 0;
-  font-size: var(--font-size-body);
-  color: var(--ink-3);
-}
-
+/* The claims board: a column per status side by side on wide screens, stacked on a phone. Each column sits on a lane. */
 .columns {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
+  gap: 12px;
   align-items: start;
 }
 
-@media (max-width: 600px) {
-  .columns {
-    grid-template-columns: 1fr;
-  }
-}
-
 .column {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 8px;
   min-width: 0;
+  padding: 10px;
+  border-radius: var(--r-2);
+  background: var(--surface-2);
+}
+
+.columnHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .columnHeading {
   margin: 0;
-  font-size: var(--font-size-body);
-  color: var(--ink);
+  color: var(--ink-3);
+  font: 600 var(--font-size-min)/1.2 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.count {
+  color: var(--ink-3);
+  font: 500 var(--font-size-min)/1 var(--f-mono);
 }
 
 .cards {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 8px;
   margin: 0;
   padding: 0;
@@ -46,35 +47,46 @@
 
 .empty {
   margin: 0;
-  font-size: var(--font-size-min);
   color: var(--ink-3);
+  font-size: 13px;
 }
 
 .card {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  min-height: 40px;
+  min-height: 44px;
   min-width: 0;
   padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-3);
+  border-radius: var(--r-2);
   background: var(--surface);
+  box-shadow: var(--e-1);
   color: var(--ink);
+  font-size: 13px;
   text-decoration: none;
-  font-size: 0.875rem;
   overflow-wrap: anywhere;
 }
 
+.card:hover {
+  box-shadow: var(--e-2);
+}
+
 .card:focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
 .name {
+  font-size: var(--font-size-body);
   font-weight: 600;
 }
 
 .meta {
   color: var(--ink-3);
+}
+
+.number {
+  color: var(--ink-2);
+  font-family: var(--f-mono);
+  font-size: var(--font-size-min);
 }

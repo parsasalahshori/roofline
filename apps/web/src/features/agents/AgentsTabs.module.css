@@ -1,16 +1,4 @@
-/* The row of tab links under the window title. It scrolls sideways on a phone rather than wrapping. */
+/* The tab row sits under the page's title, with room before what it switches */
 .tabs {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 8px;
-  overflow-x: auto;
-  margin: -4px -4px 16px;
-  padding: 4px;
-  border-bottom: 1px solid var(--line);
-}
-
-/* A tab is a whole target on a phone: at least 40px tall, and never squeezed to fit the row */
-.tab {
-  flex: none;
-  min-height: 40px;
+  margin-bottom: 16px;
 }

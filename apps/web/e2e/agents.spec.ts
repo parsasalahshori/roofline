@@ -63,9 +63,9 @@ test('agents window: totals tiles show tasks, hours and office time, marked as e
   await page.goto('/agents');
   const tiles = page.getByRole('region', { name: 'Totals for your agents' });
   await expect(tiles).toBeVisible({ timeout: 15_000 });
-  await expect(tiles.getByRole('heading', { name: 'Tasks today' })).toBeVisible();
-  await expect(tiles.getByRole('heading', { name: 'Hours saved this week' })).toBeVisible();
-  await expect(tiles.getByRole('heading', { name: 'Office time saved this week' })).toBeVisible();
+  await expect(tiles.getByText('Tasks today', { exact: true })).toBeVisible();
+  await expect(tiles.getByText('Hours saved this week', { exact: true })).toBeVisible();
+  await expect(tiles.getByText('Office time saved this week', { exact: true })).toBeVisible();
   // Estimated money and time say so.
   await expect(tiles.getByText(/^about \$[\d,]+$/)).toBeVisible();
   await expect(tiles).toContainText('(estimate)');

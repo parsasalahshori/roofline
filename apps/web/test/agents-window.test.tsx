@@ -6,7 +6,7 @@ import type { AgentCard, AgentsOverview } from '@roofline/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
-import { agentsCommon, agentsDash, agentsWindow } from '../src/copy/agents.ts';
+import { agents, agentsCommon, agentsDash, agentsWindow } from '../src/copy/agents.ts';
 import { WINDOW_COPY } from '../src/copy/rail.ts';
 import { ACCOUNT, AGENTS_DASH_ROUTES, DASH_BODY, dashDetail, type Routes, SHELL_ROUTES, stubApi } from './helpers.tsx';
 
@@ -53,7 +53,7 @@ async function openWindow() {
 }
 
 describe('Agents window', () => {
-  it('shows the tiles from real numbers and the six cards in roof order', async () => {
+  it('shows the tiles from real numbers and the six cards in order', async () => {
     renderApp({ 'GET /api/agents': () => ({ body: OVERVIEW }) });
     const dialog = await openWindow();
     const tiles = within(dialog).getByRole('region', { name: agentsDash.tilesLabel });
@@ -64,22 +64,71 @@ describe('Agents window', () => {
     expect(within(tiles).getByText('$3,080')).toBeInTheDocument();
     // Every estimated figure carries the estimate mark (hours, staff, dollars).
     expect(within(tiles).getAllByText(agentsDash.about)).toHaveLength(3);
-    expect(within(tiles).getByRole('heading', { name: agentsDash.officeSaved })).toBeInTheDocument();
+    expect(within(tiles).getByText(agentsDash.officeSaved)).toBeInTheDocument();
     expect(within(tiles).getByText(`6 ${agentsDash.agentsOf} 6 ${agentsDash.agentsRunning}`)).toBeInTheDocument();
     expect(within(tiles).getByRole('img', { name: new RegExp(agentsDash.perHourChart) })).toBeInTheDocument();
 
     const grid = within(dialog).getByRole('region', { name: agentsWindow.gridLabel });
-    const names = within(grid).getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
-    expect(names).toEqual(['Storm Scout', 'Front Desk', 'Estimator', 'Claims', 'Scheduler', 'Follow-up'].map((n) => `${agentsDash.selectHint} ${n}`));
-    expect(within(dialog).getByText(agentsDash.handoffsSuffix).parentElement?.textContent).toBe(`3${agentsDash.handoffsSuffix}`);
+    const order = ['Storm Scout', 'Front Desk', 'Estimator', 'Claims', 'Scheduler', 'Follow-up'];
+    expect(within(grid).getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual(order);
+    // Each name is a button that says what it does: "Show details for Storm Scout"
+    for (const name of order) expect(within(grid).getByRole('button', { name: `${agentsDash.selectHint} ${name}` })).toBeInTheDocument();
+    // The latest hour is the number; the twelve bars are the picture
+    expect(within(tiles).getByText('25')).toBeInTheDocument();
+    expect(within(tiles).getByText(agentsDash.perHourUnit)).toBeInTheDocument();
   });
 
-  it('puts the real handoff tags on the roof', async () => {
+  it('counts the jobs handed between agents today in a panel of their own', async () => {
     renderApp({ 'GET /api/agents': () => ({ body: OVERVIEW }) });
     const dialog = await openWindow();
-    const roof = await within(dialog).findByRole('img', { name: agentsDash.diagramLabel });
-    expect(within(roof as unknown as HTMLElement).getByText('504 Transom Ct')).toBeInTheDocument();
-    expect(within(roof as unknown as HTMLElement).getByText('603 Cornice Dr')).toBeInTheDocument();
+    const panel = await within(dialog).findByRole('region', { name: agentsDash.handoffsTitle });
+    expect(within(panel).getByText('3')).toBeInTheDocument();
+  });
+
+  it('lists the real handoffs: the job, who passed it, who took it', async () => {
+    renderApp({ 'GET /api/agents': () => ({ body: OVERVIEW }) });
+    const dialog = await openWindow();
+    const list = await within(dialog).findByRole('list', { name: agentsDash.handoffsListLabel });
+    const rows = within(list).getAllByRole('listitem');
+    expect(rows).toHaveLength(2);
+    expect(within(rows[0]!).getByText('504 Transom Ct')).toBeInTheDocument();
+    expect(within(rows[0]!).getByText(`Storm Scout ${agentsDash.handedTo} Front Desk`, { exact: false })).toBeInTheDocument();
+    expect(within(rows[1]!).getByText('603 Cornice Dr')).toBeInTheDocument();
+    expect(within(rows[1]!).getByText(`Front Desk ${agentsDash.handedTo} Estimator`, { exact: false })).toBeInTheDocument();
+  });
+
+  it('says so when no job has been handed on yet', async () => {
+    renderApp({
+      'GET /api/agents': () => ({ body: OVERVIEW }),
+      'GET /api/agents/dashboard': () => ({ body: { ...DASH_BODY, handoffsToday: 0, handoffs: [] } }),
+    });
+    const dialog = await openWindow();
+    expect(await within(dialog).findByText(agentsDash.handoffsEmpty)).toBeInTheDocument();
+  });
+
+  it('marks the picked card with its own ring and a pressed name, and moves it with the pick', async () => {
+    const { user } = renderApp({
+      'GET /api/agents': () => ({ body: OVERVIEW }),
+      'GET /api/agents/storm_scout?period=week': () => ({ body: dashDetail('storm_scout') }),
+      'GET /api/agents/feed?agent=storm_scout': () => ({ body: { items: [], nextCursor: null } }),
+    });
+    const dialog = await openWindow();
+    const front = within(dialog).getByRole('article', { name: /Front Desk/ });
+    const storm = within(dialog).getByRole('article', { name: /Storm Scout/ });
+    expect(front).toHaveAttribute('data-selected', 'true');
+    expect(storm).not.toHaveAttribute('data-selected');
+    await user.click(within(storm).getByRole('button', { name: /Storm Scout/ }));
+    expect(storm).toHaveAttribute('data-selected', 'true');
+    expect(front).not.toHaveAttribute('data-selected');
+  });
+
+  it('the tabs are pages: Overview is the current one', async () => {
+    renderApp({ 'GET /api/agents': () => ({ body: OVERVIEW }) });
+    const dialog = await openWindow();
+    const tabs = within(dialog).getByRole('navigation', { name: agents.tabsLabel });
+    expect(within(tabs).getByRole('link', { name: agents.tabs.overview })).toHaveAttribute('aria-current', 'page');
+    expect(within(tabs).getByRole('link', { name: agents.tabs.feed })).toHaveAttribute('href', '/agents/feed');
+    expect(within(tabs).getByRole('link', { name: agents.tabs.waiting })).toHaveAttribute('href', '/agents/waiting');
   });
 
   it('shows a card with its numbers and latest action', async () => {
@@ -116,6 +165,9 @@ describe('Agents window', () => {
     const panel = await within(dialog).findByRole('complementary', { name: /Storm Scout/ });
     expect(await within(panel).findByRole('button', { name: agentsDash.runNow })).toBeInTheDocument();
     expect(within(panel).getByText(`4 ${agentsDash.agentsOf} 5 ${agentsDash.allowedOf}`)).toBeInTheDocument();
+    // What it may not do says so in words, not only with its lock
+    expect(within(panel).getByText(agentsDash.notAllowedWord)).toBeInTheDocument();
+    expect(within(panel).getByText('Spend ad money without approval').closest('li')).toHaveAttribute('data-on', 'false');
   });
 
   it('the switch on a card pauses after a confirmation', async () => {

@@ -16,6 +16,8 @@ export type ReviewStep = {
   result: StepResult | null;
   errorPlain: string | null;
   editable: boolean;
+  /** The screen shows what the step says (its message, its lines) somewhere else: the row keeps its title, cost and facts. */
+  compact?: boolean;
 };
 
 /** What pressing Approve would do right now. */

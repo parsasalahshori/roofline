@@ -9,6 +9,7 @@ import { createAppRouter } from '../src/app/router.tsx';
 import type { CompanyBody } from '../src/api/types.ts';
 import { agentsCommon, agentsDash } from '../src/copy/agents.ts';
 import { WINDOW_COPY } from '../src/copy/rail.ts';
+import { AGENT_LABEL } from '../src/copy/status.ts';
 import { ACCOUNT, AGENTS_DASH_ROUTES, DASH_BODY, type Routes, SHELL_ROUTES, stubApi } from './helpers.tsx';
 
 vi.mock('../src/shell/map/MapView.tsx', async () => {
@@ -63,7 +64,7 @@ function renderApp(path: string, role: 'owner' | 'office' | 'rep', overrides: Ro
 describe('the money line', () => {
   it('owner sees the rate and a link to change it on the agent page', async () => {
     renderApp('/agents/storm-scout', 'owner', { 'GET /api/agents/storm_scout?period=month': () => ({ body: detail(2800) }) });
-    const dialog = await screen.findByRole('main', { name: WINDOW_COPY.agents.title });
+    const dialog = await screen.findByRole('main', { name: AGENT_LABEL.storm_scout });
     expect(await within(dialog).findByText(LINE)).toBeInTheDocument();
     const link = within(dialog).getByRole('link', { name: agentsCommon.changeRate });
     expect(link).toHaveAttribute('href', agentsCommon.changeRateHref);
@@ -71,14 +72,14 @@ describe('the money line', () => {
 
   it('office sees the text but no link on the agent page', async () => {
     renderApp('/agents/storm-scout', 'office', { 'GET /api/agents/storm_scout?period=month': () => ({ body: detail(2800) }) });
-    const dialog = await screen.findByRole('main', { name: WINDOW_COPY.agents.title });
+    const dialog = await screen.findByRole('main', { name: AGENT_LABEL.storm_scout });
     expect(await within(dialog).findByText(new RegExp(LINE.replace(/[$()]/g, '\\$&')))).toBeInTheDocument();
     expect(within(dialog).queryByRole('link', { name: agentsCommon.changeRate })).toBeNull();
   });
 
   it('shows no money at all without a rate on the agent page', async () => {
     renderApp('/agents/storm-scout', 'owner', { 'GET /api/agents/storm_scout?period=month': () => ({ body: detail(null) }) });
-    const dialog = await screen.findByRole('main', { name: WINDOW_COPY.agents.title });
+    const dialog = await screen.findByRole('main', { name: AGENT_LABEL.storm_scout });
     await within(dialog).findByText(/Time saved in this period/);
     expect(dialog.textContent).not.toContain('≈');
     expect(dialog.textContent).not.toContain('staff time');

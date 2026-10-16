@@ -24,7 +24,7 @@ function fixture(over: Partial<AgentCardData> = {}): AgentCardData {
   };
 }
 
-function show(card: AgentCardData, over: { isOwner?: boolean; selected?: boolean; onSelect?: () => void; minutes?: number | null; latest?: { text: string; at: string } | null } = {}) {
+function show(card: AgentCardData, over: { isOwner?: boolean; selected?: boolean; onSelect?: () => void; minutes?: number | null; latest?: { text: string; at: string } | null; href?: string } = {}) {
   stubApi({ ...SHELL_ROUTES, 'GET /api/auth/me': () => ({ body: ACCOUNT }) });
   const router = createMemoryRouter([
     {
@@ -39,6 +39,7 @@ function show(card: AgentCardData, over: { isOwner?: boolean; selected?: boolean
             onSelect={over.onSelect ?? (() => undefined)}
             isOwner={over.isOwner ?? true}
             now={NOW}
+            href={over.href}
           />
         </ul>
       ),
@@ -109,6 +110,34 @@ describe('AgentCard', () => {
   it('shows no switch to someone who cannot change it', () => {
     show(fixture(), { isOwner: false });
     expect(screen.queryByRole('switch')).toBeNull();
+  });
+
+  it('draws its state as a tag with a word and a glyph, and a tone for each state', () => {
+    const tone = (word: string) => screen.getByText(word).closest('[data-tone]')?.getAttribute('data-tone');
+    show(fixture());
+    expect(tone(agentsDash.running)).toBe('ok');
+    expect(screen.getByText(agentsDash.running).querySelector('svg')).not.toBeNull();
+    cleanup();
+    show(fixture({ status: 'waiting', waitingCount: 1 }));
+    expect(tone(agentsDash.waiting)).toBe('tape');
+    cleanup();
+    show(fixture({ status: 'paused' }));
+    expect(tone(agentsDash.paused)).toBe('neutral');
+    cleanup();
+    show(fixture({ status: 'coming_soon', agent: 'claims' }));
+    expect(tone(agentsDash.comingSoon)).toBe('neutral');
+  });
+
+  it('keeps the number first in the card, ahead of the words under it', () => {
+    show(fixture());
+    expect(screen.getByRole('article').querySelector('p')?.textContent).toBe('636');
+  });
+
+  it('on a phone the name is a link to the agent page, not a button that picks it', () => {
+    show(fixture(), { href: '/agents/storm-scout' });
+    const link = screen.getByRole('link', { name: `${agentsDash.openAgent} Storm Scout` });
+    expect(link.getAttribute('href')).toBe('/agents/storm-scout');
+    expect(screen.queryByRole('button', { name: /Storm Scout/ })).toBeNull();
   });
 
   it('a coming soon card has no switch and no numbers beyond zero', () => {

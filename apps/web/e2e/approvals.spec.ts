@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures.ts';
+import { seedOldLead, seedTextsPlan, seedWeatherMovePlan } from './g1-seeds.ts';
 
 /*
  * The review window (R2): approving a draft in two clicks from the map pill or the Storm window,
@@ -73,4 +74,133 @@ test('office approves two, the ad waits for the owner', async ({ page, loginAs, 
   await page.goto('/');
   await page.getByRole('link', { name: '1 need your OK' }).click();
   await expect(page.getByRole('button', { name: 'Approve 1 step · up to $270' })).toBeVisible();
+});
+
+/*
+ * The queue (/approvals): the plans as cards, and the keys of a triage list. A plan with one step to decide is approved
+ * right on the queue; a plan with several opens its review, where each step has its switch.
+ */
+
+const WEATHER_TITLE = 'Rain on the install day: move 1 install?';
+
+test('queue: the keys move between cards, 1 approves a one-step plan and opens the review of a bigger one', async ({
+  page,
+  loginAs,
+  markTodaySeen,
+  scenario,
+  db,
+  pools,
+}) => {
+  const move = await seedWeatherMovePlan(pools, db, scenario.a.companyId);
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/approvals');
+
+  const list = page.getByRole('list', { name: 'Plans waiting for your OK' });
+  const weather = list.getByRole('article', { name: WEATHER_TITLE });
+  await expect(weather).toBeVisible({ timeout: 15_000 });
+  // The storm plan has three steps to decide: its main button opens the review
+  const storm = list.getByRole('article').filter({ has: page.getByRole('link', { name: 'Review 3 steps' }) });
+  await expect(storm.getByRole('link', { name: 'Review 3 steps' })).toHaveAttribute('href', new RegExp('/approvals/' + scenario.taskId + '$'));
+  // What it reaches and what it costs, from the plan itself
+  await expect(storm).toContainText('31 texts');
+  await expect(storm).toContainText('Up to $270');
+
+  // J goes to the first card (the newest plan, the weather move), J again to the next, K back
+  await page.keyboard.press('j');
+  await expect(weather.getByRole('button', { name: 'Approve' })).toBeFocused();
+  await page.keyboard.press('j');
+  await expect(storm.getByRole('link', { name: 'Review 3 steps' })).toBeFocused();
+  await page.keyboard.press('k');
+  await expect(weather.getByRole('button', { name: 'Approve' })).toBeFocused();
+
+  // 1 on the one-step plan approves it: the card leaves the queue and says so
+  await page.keyboard.press('1');
+  await expect(page.getByText('Approved: ' + WEATHER_TITLE)).toBeVisible({ timeout: 15_000 });
+  await expect(list.getByRole('article', { name: WEATHER_TITLE })).toHaveCount(0, { timeout: 15_000 });
+  await expect
+    .poll(async () => (await db.query<{ status: string }>('select status from agent_tasks where id = $1', [move.taskId])).rows[0]?.status, {
+      timeout: 20_000,
+    })
+    .not.toBe('draft');
+
+  // The focus went to the plan that took its place; 1 there opens its review
+  await expect(storm.getByRole('link', { name: 'Review 3 steps' })).toBeFocused();
+  await page.keyboard.press('1');
+  await expect(page).toHaveURL(new RegExp('/approvals/' + scenario.taskId + '$'));
+  await expect(page.getByRole('button', { name: 'Approve 3 steps · up to $270' })).toBeVisible();
+});
+
+test('queue: H sets a plan aside with a reason, E edits a plan with one text to change', async ({
+  page,
+  loginAs,
+  markTodaySeen,
+  scenario,
+  db,
+  pools,
+}) => {
+  const lead = await seedOldLead(db, scenario.a.companyId);
+  const texts = await seedTextsPlan(pools, scenario.a.companyId, lead.customerId);
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/approvals');
+
+  const card = page.getByRole('article', { name: 'Follow up with 1 lead' });
+  await expect(card).toBeVisible({ timeout: 15_000 });
+
+  // E fetches the plan and opens the step's own sheet right there
+  await card.getByRole('button', { name: 'Approve' }).focus();
+  await page.keyboard.press('e');
+  const edit = page.getByRole('dialog', { name: 'Edit this step' });
+  await expect(edit).toBeVisible({ timeout: 15_000 });
+  await expect(edit.getByRole('textbox').first()).toHaveValue(/Would Tuesday at 10 AM/);
+  await edit.getByRole('button', { name: 'Cancel' }).click();
+  await expect(edit).toHaveCount(0);
+
+  // H asks for a reason, then sets the plan aside
+  await card.getByRole('button', { name: 'Approve' }).focus();
+  await page.keyboard.press('h');
+  const sheet = page.getByRole('dialog', { name: 'Set this plan aside?' });
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole('textbox', { name: 'Why not? (optional)' }).fill('Customer called to reschedule');
+  await sheet.getByRole('button', { name: 'Not now' }).click();
+  await expect(page.getByText("Okay, we've set this plan aside.")).toBeVisible({ timeout: 15_000 });
+  await expect(card).toHaveCount(0, { timeout: 15_000 });
+  const row = await db.query<{ status: string }>('select status from agent_tasks where id = $1', [texts.taskId]);
+  expect(row.rows[0]?.status).toBe('declined');
+});
+
+test.describe('queue on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test('cards run the full width, their buttons are 44px tall and nothing scrolls sideways', async ({
+    page,
+    loginAs,
+    markTodaySeen,
+    scenario,
+    db,
+    pools,
+  }) => {
+    await seedWeatherMovePlan(pools, db, scenario.a.companyId);
+    await loginAs(page, 'owner');
+    await markTodaySeen('owner@a.test');
+    await page.goto('/approvals');
+
+    const cards = page.getByRole('list', { name: 'Plans waiting for your OK' }).getByRole('article');
+    await expect(cards.first()).toBeVisible({ timeout: 15_000 });
+    expect(await cards.count()).toBeGreaterThanOrEqual(2);
+
+    for (const card of await cards.all()) {
+      const box = await card.boundingBox();
+      // The screen's 16px margins on both sides, give or take a rounded edge
+      expect(box?.width ?? 0).toBeGreaterThanOrEqual(390 - 2 * 16 - 2);
+      for (const button of await card.getByRole('button').all()) {
+        expect((await button.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+      }
+      for (const link of await card.getByRole('link', { name: /^Review/ }).all()) {
+        expect((await link.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+      }
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  });
 });

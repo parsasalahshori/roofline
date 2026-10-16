@@ -1,5 +1,7 @@
 import type { ReviewStep } from '@roofline/ui';
 import type { StepView, TaskView } from '../../api/types.ts';
+import { review } from '../../copy/review.ts';
+import { TASK_KIND_LABEL } from '../../copy/status.ts';
 import { editableText } from './editable.ts';
 import { kitFor } from './steps/index.ts';
 
@@ -22,7 +24,10 @@ export function isOpen(step: StepView, task: TaskView): boolean {
 /** The step as the kit's review screen takes it. */
 export function toReviewStep(step: StepView, task: TaskView): ReviewStep {
   const kit = kitFor(step);
-  const preview = kit?.review(step) ?? step.preview;
+  const stored = kit?.review(step) ?? step.preview;
+  // A stored preview can lack its title or its lines (a plan from before they were kept, one written by hand): the row
+  // falls back to the step's own name, and a screen never fails over a line it does not have
+  const preview = { ...stored, title: stored.title || TASK_KIND_LABEL[step.type] || review.stepFallback(step.position), lines: stored.lines ?? [] };
   return {
     id: step.id,
     title: preview.title,
@@ -35,6 +40,8 @@ export function toReviewStep(step: StepView, task: TaskView): ReviewStep {
     result: step.result,
     errorPlain: step.errorPlain,
     editable: editableText(step) !== null || (kit?.editFields(step).length ?? 0) > 0,
+    // A step with a review kit has its words in the details beside the steps: the row keeps its title, cost and facts
+    compact: kit !== undefined,
   };
 }
 

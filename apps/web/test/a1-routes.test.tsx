@@ -114,8 +114,9 @@ describe('A1 windows', () => {
     });
     renderApp('/agents/' + agentSlug(agent));
 
-    const dialog = await screen.findByRole('main', { name: WINDOW_COPY.agents.title });
-    expect(await within(dialog).findByRole('heading', { name: AGENT_LABEL[agent] })).toBeInTheDocument();
+    // The page is named for the agent, with the Agents page one step back in the trail
+    const dialog = await screen.findByRole('main', { name: AGENT_LABEL[agent] });
+    expect(await within(dialog).findByRole('heading', { level: 1, name: AGENT_LABEL[agent] })).toBeInTheDocument();
     if (!isLaunched(agent)) {
       expect(await within(dialog).findByText(agents.agentComingSoon)).toBeInTheDocument();
       expect(api.count('GET /api/agents/' + agent + '?period=month')).toBe(0);

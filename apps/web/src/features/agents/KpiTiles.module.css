@@ -1,110 +1,49 @@
-/* The header tiles: four numbers and the tasks-per-hour trend. Wide: one row. Phone: numbers scroll sideways, the trend sits below. */
+/*
+ * The header tiles: four numbers and the tasks-per-hour bars. They answer to the width of the page (a container), not
+ * the screen: wide is one row, middle two to a row, narrow two to a row with the bars across both.
+ */
 .tiles {
   display: grid;
-  grid-template-columns: minmax(0, 4fr) minmax(0, 1.5fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 1.6fr);
   gap: 12px;
 }
 
-.row {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  gap: 12px;
-  min-width: 0;
+/*
+ * The kit's tile sits its words at the bottom (its bars are at the bottom). Here the words start at the top of every tile
+ * and the labels take two lines' room, so the numbers line up across the row; the bars keep the bottom.
+ */
+.tiles > div {
+  align-items: flex-start;
 }
 
-.tile {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 130px;
-  padding: 14px 16px;
-  border-radius: var(--r-3);
-  background: var(--surface);
-  box-shadow: var(--e-2);
-  color: var(--ink);
-  font-family: var(--f-ui);
+.tiles dt {
+  min-height: 2.4em;
 }
 
-.label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  color: var(--ink-2);
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
+.trend [role="img"] {
+  align-self: flex-end;
 }
 
-.live {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--ok);
-  box-shadow: 0 0 0 4px var(--ok-tint);
-}
-
-.value {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 6px;
-  margin: 6px 0 0;
-  font-size: 34px;
-  font-weight: 700;
-  line-height: 1.1;
-  letter-spacing: -0.01em;
-  font-variant-numeric: tabular-nums;
-}
-
-.unit {
-  font-size: 20px;
-  font-weight: 600;
-}
-
-/* The estimate mark before a number: small, so the figure still reads first. */
+/* "about" before an estimated figure: the figure is what reads first */
 .about {
-  font-size: 14px;
-  font-weight: 500;
   color: var(--ink-3);
+  font: 500 14px/1 var(--f-ui);
+  font-stretch: 100%;
+  letter-spacing: 0;
 }
 
-.sub {
-  margin: auto 0 0;
-  padding-top: 8px;
-  overflow: hidden;
-  color: var(--ink-3);
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.plot {
-  margin-top: 6px;
-}
-
-.axis {
-  display: flex;
-  justify-content: space-between;
-  margin: 4px 0 0;
-  color: var(--ink-3);
-  font-size: 13px;
-}
-
-@container (max-width: 49.99rem) {
+@container (max-width: 63.99rem) {
   .tiles {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .row {
-    grid-auto-columns: minmax(15rem, 1fr);
-    overflow-x: auto;
-    padding-bottom: 4px;
-    scroll-snap-type: x proximity;
+  .trend {
+    grid-column: 1 / -1;
   }
+}
 
-  .tile {
-    min-height: 104px;
+@container (max-width: 29.99rem) {
+  .tiles {
+    gap: 8px;
   }
 }

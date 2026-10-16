@@ -1,74 +1,95 @@
-/* The filter chips and the list of what the agents did. Chips scroll sideways on a phone; rows stack when narrow. */
+/* The filter chips, then what the agents did as rows in one panel. Chips wrap; rows stack their button under the words on a phone. */
 .filters {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 8px;
-  overflow-x: auto;
-  margin: -4px -4px 12px;
-  padding: 4px;
-}
-
-.chip {
-  flex: none;
-  min-height: 40px;
+  margin-bottom: 16px;
 }
 
 .list {
-  display: flex;
-  flex-direction: column;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .row {
-  display: grid;
-  grid-template-columns: 8rem 1fr auto;
-  align-items: center;
-  gap: 4px 12px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+}
+
+.row + .row {
+  border-top: 1px solid var(--line);
+}
+
+.row > :first-child {
+  margin-top: 1px;
+}
+
+.text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sentence {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 13px;
 }
 
 .agent {
   font-weight: 600;
-  color: var(--ink);
-}
-
-.text {
-  min-width: 0;
-  color: var(--ink);
-  overflow-wrap: anywhere;
 }
 
 .time {
-  color: var(--ink-3);
-  font-size: var(--font-size-min);
+  font: 500 var(--font-size-min)/1.2 var(--f-mono);
   white-space: nowrap;
 }
 
 .open {
-  grid-column: 2 / -1;
-  justify-self: start;
-  min-height: 40px;
+  flex: none;
 }
 
 .more {
+  align-self: flex-start;
   margin-top: 16px;
-  min-height: 40px;
 }
 
-@media (max-width: 40rem) {
-  .row {
-    grid-template-columns: 1fr auto;
-  }
+.loading {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+}
 
-  .text {
-    grid-column: 1 / -1;
-    grid-row: 2;
+.skeletonRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+}
+
+@media (max-width: 767.98px) {
+  .row {
+    flex-wrap: wrap;
   }
 
   .open {
-    grid-column: 1 / -1;
+    margin-left: 34px;
   }
 }
