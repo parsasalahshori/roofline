@@ -105,9 +105,10 @@ describe('/estimator is the Measure window', () => {
     await waitFor(() => expect(where(router)).toBe('/estimator/measure/m1'));
     // Back does not land on the redirect again: /estimator was replaced
     expect(router.state.historyAction).toBe('REPLACE');
-    const dialog = screen.getByRole('main', { name: WINDOW_COPY.estimator.title });
+    // The page is named for the street it is open on; the trail starts at Measure
+    const dialog = await screen.findByRole('main', { name: '12 Oak St' });
     expect(within(dialog).getByRole('searchbox', { name: measure.requestsSearch })).toBeInTheDocument();
-    expect(within(dialog).getAllByText(measure.subtitle).length).toBeGreaterThan(0);
+    expect(within(dialog).getByText(measure.requestsSubtitle)).toBeInTheDocument();
     expect(within(dialog).getByText('Dana Fox')).toBeInTheDocument();
     // None of the old page
     expect(screen.queryByText('Find a proposal')).toBeNull();

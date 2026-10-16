@@ -1,4 +1,4 @@
-import { Button } from '@roofline/ui';
+import { Button, Icon } from '@roofline/ui';
 import { quotedTotals, type InstantEstimate } from '@roofline/shared';
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { legal } from '../../../copy/legal.ts';
@@ -115,7 +115,7 @@ function Sections({ model, quote, locked, editing }: { model: RoofModel; quote: 
     <p className={styles.sections} data-sections="some" role="status">
       <strong>{liftMeasure.sectionsInQuote(total - out, total)}</strong>
       {!locked ? (
-        <Button variant="ghost" className={styles.includeAll} onClick={quote.includeAll}>
+        <Button variant="ghost" size="sm" className={styles.includeAll} onClick={quote.includeAll}>
           {liftMeasure.includeAll}
         </Button>
       ) : null}
@@ -258,7 +258,7 @@ export function MeasureCard({
         {open ? (
           <div id={adjustId} className={styles.adjust}>
             {panels}
-            <Button variant="ghost" className={styles.done} onClick={done}>
+            <Button variant="default" size="sm" className={styles.done} onClick={done}>
               {liftMeasure.done}
             </Button>
           </div>
@@ -276,15 +276,14 @@ export function MeasureCard({
             <Button
               ref={toggleRef}
               variant="ghost"
+              size="sm"
               className={styles.footButton}
               aria-expanded={open}
               aria-controls={open ? adjustId : undefined}
               onClick={() => onEdit(!editing)}
             >
               {liftMeasure.adjust}
-              <svg className={styles.chevron} viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
-                <path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+              <Icon name="chevd" size={16} className={styles.chevron} />
             </Button>
           ) : null}
           <span className={styles.kind} data-kind={m.kind}>

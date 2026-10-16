@@ -1,4 +1,8 @@
-/* The roof view and what sits over it, matched to the reference app. */
+/*
+ * The roof view and what sits over it. The photo is an aerial photograph, so the few marks drawn straight on it (white
+ * scale bar and credits) cannot follow the theme: their colours are literal on purpose, in the first rule. Every other
+ * colour is a token, so the chips, the legend, the labels and the card follow light and dark.
+ */
 .frame {
   display: flex;
   flex: 1 1 auto;
@@ -8,16 +12,20 @@
   max-width: 100%;
   color: var(--ink);
   font-family: var(--f-ui);
-  font-size: 14px;
+  font-size: var(--font-size-body);
 }
 
 .mapBox {
+  /* literal: white marks and a dark halo read on any photograph */
+  --over-white: #fff;
+  --over-halo: rgb(0 0 0 / 0.6);
+  --over-halo-strong: rgb(0 0 0 / 0.95);
   position: relative;
   flex: 1 1 auto;
   min-height: 420px;
-  border-radius: 14px;
-  background: #6d8446;
-  box-shadow: 0 0 0 1px rgba(21, 28, 34, 0.12);
+  border-radius: var(--r-3);
+  background: var(--sunken);
+  box-shadow: var(--e-1);
   overflow: hidden;
   container-type: inline-size;
 }
@@ -45,26 +53,26 @@
   pointer-events: none;
 }
 
-/* "Aerial imagery captured ...": a glass chip with a green dot; yellow "Estimator is measuring" while it scans */
+/* "Aerial imagery captured ...": a chip with a green dot; tape yellow "Estimator is measuring" while it scans */
 .chip {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--raised);
+  box-shadow: var(--e-2);
   color: var(--ink-2);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   white-space: nowrap;
-  box-shadow: 0 0 0 1px rgba(21, 28, 34, 0.08), 0 2px 6px rgba(21, 28, 34, 0.12);
 }
 
 .chip[data-tone="measuring"] {
   padding-left: 6px;
   background: var(--tape-tint);
-  box-shadow: inset 0 0 0 1px rgba(217, 158, 0, 0.45), 0 2px 6px rgba(21, 28, 34, 0.12);
-  color: #5c3d00;
+  box-shadow: inset 0 0 0 1px var(--tape-line), var(--e-2);
+  color: var(--tape-ink);
   font-weight: 600;
 }
 
@@ -86,9 +94,9 @@
   gap: 12px;
   margin: 0;
   padding: 8px 12px;
-  border-radius: 12px;
+  border-radius: var(--r-3);
   background: var(--raised);
-  box-shadow: 0 0 0 1px rgba(21, 28, 34, 0.08), 0 2px 6px rgba(21, 28, 34, 0.12);
+  box-shadow: var(--e-2);
   list-style: none;
   pointer-events: none;
 }
@@ -98,15 +106,15 @@
   align-items: center;
   gap: 6px;
   color: var(--ink-2);
-  font-size: 12px;
+  font-size: var(--font-size-min);
   font-weight: 500;
 }
 
 .legendDash {
   width: 16px;
   height: 3px;
-  border-radius: 999px;
-  box-shadow: 0 0 0 1px rgba(21, 28, 34, 0.25);
+  border-radius: var(--r-pill);
+  box-shadow: 0 0 0 1px var(--line-ctl);
 }
 
 /* The scale bar and north arrow, white over the photo, bottom right */
@@ -118,8 +126,8 @@
   display: flex;
   align-items: flex-end;
   gap: 12px;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  color: var(--over-white);
+  text-shadow: 0 1px 2px var(--over-halo);
   pointer-events: none;
 }
 
@@ -131,24 +139,21 @@
 
 .scaleLabel {
   margin-bottom: 4px;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
+  font: 600 var(--font-size-min) / 1 var(--f-mono);
 }
 
 .scaleBar {
   display: block;
   height: 7px;
-  border: 2px solid #fff;
+  border: 2px solid var(--over-white);
   border-top: 0;
   box-sizing: border-box;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 1px 2px var(--over-halo);
 }
 
 .north {
   display: block;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+  filter: drop-shadow(0 1px 2px var(--over-halo));
 }
 
 .credits {
@@ -162,14 +167,13 @@
   align-items: flex-end;
   max-width: min(260px, calc(100% - 28px));
   margin: 0;
-  color: #fff;
-  font-size: 12px;
+  color: var(--over-white);
+  font-size: var(--font-size-min);
   line-height: 1.3;
   text-align: right;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95);
+  text-shadow: 0 1px 2px var(--over-halo-strong);
   pointer-events: none;
 }
-
 
 /* A facet's label card: the letter in a blue disc, the area and the pitch. It is a button (in or out of the quote). */
 .facetLabel {
@@ -179,9 +183,9 @@
   margin: 0;
   padding: 4px 9px 4px 6px;
   border: 0;
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 0 0 1px rgba(21, 28, 34, 0.12), 0 2px 0 rgba(21, 28, 34, 0.22);
+  border-radius: var(--r-3);
+  background: var(--raised);
+  box-shadow: 0 0 0 1px var(--line-2), 0 2px 0 var(--line-ctl);
   color: var(--ink);
   font: inherit;
   font-family: var(--f-ui);
@@ -192,12 +196,12 @@
 }
 
 .facetLabel:hover:not(:disabled) {
-  box-shadow: 0 0 0 2px var(--info), 0 2px 0 rgba(21, 28, 34, 0.22);
+  box-shadow: 0 0 0 2px var(--info), 0 2px 0 var(--line-ctl);
 }
 
 .facetLabel:focus-visible {
-  outline: 3px solid var(--tape);
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: var(--focus);
 }
 
 .facetLabel:disabled {
@@ -206,7 +210,7 @@
 
 /* Left out of the quote: greyed, the letter's disc hollow, "Left out" for the pitch */
 .facetLabel[data-excluded="true"] {
-  background: rgba(226, 230, 234, 0.9);
+  background: var(--surface-2);
   color: var(--ink-3);
 }
 
@@ -249,9 +253,8 @@
   height: 20px;
   border-radius: 50%;
   background: var(--info);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
+  color: var(--ink-inv);
+  font: 700 var(--font-size-min) / 1 var(--f-mono);
 }
 
 .facetLabel[data-layout="tall"] .facetLetter {
@@ -266,15 +269,12 @@
 }
 
 .facetText strong {
-  font-size: 12px;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
+  font: 600 var(--font-size-min) / 1.2 var(--f-mono);
 }
 
 .facetText span {
   color: var(--ink-3);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
+  font: 500 var(--font-size-min) / 1.2 var(--f-mono);
 }
 
 /*
@@ -317,7 +317,7 @@
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: var(--r-3);
   background: var(--raised);
   box-shadow: var(--e-2);
 }
@@ -329,11 +329,8 @@
   font-size: 13px;
 }
 
-@media (max-width: 899.98px) {
-  .mapBox {
-    min-height: 0;
-  }
-
+/* Narrow: the legend moves under the imagery chip and wraps, the credits under it */
+@container (max-width: 640px) {
   .legend {
     top: 52px;
     left: 14px;
@@ -343,5 +340,11 @@
 
   .credits {
     top: 96px;
+  }
+}
+
+@container measure (max-width: 979.98px) {
+  .mapBox {
+    min-height: 0;
   }
 }

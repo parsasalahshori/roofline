@@ -110,7 +110,6 @@ export const measureWindows = {
   measuring: 'Finding the house',
   measureFailed: 'We could not measure the windows at that address.',
   opened: 'Open now',
-  pickAddress: 'Type an address to measure its windows.',
   loading: 'Loading the windows…',
   loadFailed: 'We could not load these windows.',
 
