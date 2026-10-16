@@ -134,4 +134,10 @@
     flex: 1 1 100%;
     margin-left: 0;
   }
+
+  /* "Storm Scout drafted · 22 min ago" shares the row with the tag: it takes two lines before it is cut short */
+  .drafted {
+    white-space: normal;
+    line-height: 1.25;
+  }
 }

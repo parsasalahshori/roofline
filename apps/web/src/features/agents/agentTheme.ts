@@ -1,4 +1,16 @@
-import type { ScreenAgent } from '@roofline/shared';
+import type { Agent, ScreenAgent } from '@roofline/shared';
+import type { IconName } from '@roofline/ui';
+
+/** Each agent's glyph, from the kit's set. It is drawn ink on a sunken square wherever an agent is shown. */
+export const AGENT_ICON: Record<Agent, IconName> = {
+  storm_scout: 'storm',
+  front_desk: 'phone',
+  estimator: 'ruler',
+  claims: 'doc',
+  scheduler: 'cal',
+  follow_up: 'msg',
+  system: 'bolt',
+};
 
 /** The order the dashboard lays the agents out, left to right along the roof. */
 export const DASH_ORDER: readonly ScreenAgent[] = ['storm_scout', 'front_desk', 'estimator', 'claims', 'scheduler', 'follow_up'];
