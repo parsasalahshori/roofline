@@ -4,10 +4,11 @@ import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationDetail } from '@roofline/shared';
-import { ConversationWindow } from '../src/features/front-desk/ConversationWindow.tsx';
+import { useMarkReadOnOpen } from '../src/features/front-desk/conversation-api.ts';
+import { CallDetail } from '../src/features/front-desk/detail/CallDetail.tsx';
 import { conversationCopy } from '../src/copy/front-desk-conversation.ts';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
-import { ACCOUNT, stubApi } from './helpers.tsx';
+import { ACCOUNT, COMPANY, stubApi } from './helpers.tsx';
 
 let api: ReturnType<typeof stubApi> | undefined;
 
@@ -17,6 +18,15 @@ afterEach(() => {
   expect(api?.unexpected ?? []).toEqual([]);
   api = undefined;
 });
+
+/** The open call the way the Front Desk page holds it: it marks the call read when it opens, and shows it. */
+function OpenCall() {
+  useMarkReadOnOpen('conv1');
+  return <CallDetail conversationId="conv1" />;
+}
+
+/** Quiet hours are kept on the company's own clock, so a held reply says when it goes out on that clock. */
+const COMPANY_ZONE = 'America/Chicago';
 
 function makeConversation(overrides: Partial<ConversationDetail> = {}): ConversationDetail {
   return {
@@ -44,12 +54,13 @@ function renderWindow(conversation: ConversationDetail, replyRoute?: () => { sta
     'GET /api/conversations/conv1': () => ({ body: conversation }),
     'POST /api/conversations/conv1/read': () => ({ body: {} }),
     'GET /api/auth/me': () => ({ body: ACCOUNT }),
+    'GET /api/company': () => ({ body: { ...COMPANY, timezone: COMPANY_ZONE } }),
     ...(replyRoute ? { 'POST /api/conversations/conv1/reply': replyRoute } : {}),
   });
   const queryClient = createQueryClient();
   queryClient.setDefaultOptions({ queries: { retry: false } });
   const router = createMemoryRouter(
-    [{ path: '/front-desk/:conversationId', element: <ConversationWindow /> }],
+    [{ path: '/front-desk/:conversationId', element: <OpenCall /> }],
     { initialEntries: ['/front-desk/conv1'] },
   );
   render(
@@ -60,7 +71,7 @@ function renderWindow(conversation: ConversationDetail, replyRoute?: () => { sta
   return { user: userEvent.setup() };
 }
 
-describe('ConversationWindow read receipt', () => {
+describe('Open call read receipt', () => {
   it('marks the conversation read exactly once when it opens', async () => {
     renderWindow(makeConversation());
     await waitFor(() => expect(api?.count('POST /api/conversations/conv1/read')).toBeGreaterThan(0));
@@ -70,7 +81,7 @@ describe('ConversationWindow read receipt', () => {
   });
 });
 
-describe('ConversationWindow polling', () => {
+describe('Open call polling', () => {
   const GET = 'GET /api/conversations/conv1';
 
   it('asks for the conversation again every 30 s, so new texts show without a reload', async () => {
@@ -80,10 +91,11 @@ describe('ConversationWindow polling', () => {
       [GET]: () => ({ body: makeConversation({ turns }) }),
       'POST /api/conversations/conv1/read': () => ({ body: {} }),
       'GET /api/auth/me': () => ({ body: ACCOUNT }),
+      'GET /api/company': () => ({ body: { ...COMPANY, timezone: COMPANY_ZONE } }),
     });
     const queryClient = createQueryClient();
     queryClient.setDefaultOptions({ queries: { retry: false } });
-    const router = createMemoryRouter([{ path: '/front-desk/:conversationId', element: <ConversationWindow /> }], {
+    const router = createMemoryRouter([{ path: '/front-desk/:conversationId', element: <OpenCall /> }], {
       initialEntries: ['/front-desk/conv1'],
     });
     render(
@@ -123,7 +135,7 @@ describe('ConversationWindow polling', () => {
   });
 });
 
-describe('ConversationWindow reply box', () => {
+describe('Reply box', () => {
   it('shows the reply box for a text conversation', async () => {
     renderWindow(makeConversation({ canReply: true }));
     expect(await screen.findByLabelText(conversationCopy.replyLabel)).toBeInTheDocument();
@@ -154,7 +166,8 @@ describe('ConversationWindow reply box', () => {
     await user.type(box, 'On our way');
     await user.click(screen.getByRole('button', { name: conversationCopy.replySend }));
 
-    const when = new Intl.DateTimeFormat('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(at));
+    // 13:00 UTC on Thursday the 15th is 8:00 AM in Chicago, whatever clock the browser is on
+    const when = 'Thu 8:00 AM';
     expect(await screen.findByText(conversationCopy.replyScheduled(when))).toBeInTheDocument();
     expect(screen.getByLabelText(conversationCopy.replyLabel)).toHaveValue('');
   });

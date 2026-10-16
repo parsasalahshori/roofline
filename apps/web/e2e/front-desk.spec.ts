@@ -11,9 +11,9 @@ import {
 
 /*
  * Front Desk from the browser, on the FAKE_PROVIDERS stack (D1 Task 27): the inbox, a call's
- * transcript with its action cards, a text reply through the send gate, "Team is handling", Mark as
- * spam, Settings (company facts, the transfer phone, the forwarding guide and test) and the dock
- * badge. The conversations are seeded rows (front-desk-seed.ts); nothing here reaches a provider.
+ * transcript with its action cards, a text reply through the send gate, the hand-off between the
+ * assistant and the team, Mark as spam, Settings (company facts, the transfer phone, the forwarding
+ * guide and test) and the dock badge. The conversations are seeded rows (front-desk-seed.ts); nothing here reaches a provider.
  * Banners and toasts are found by their text (several role="status" regions are always mounted).
  */
 
@@ -42,10 +42,11 @@ test('the inbox lists calls and texts, newest first, with live, unread and urgen
   await page.goto('/front-desk');
 
   const dialog = page.getByRole('main', { name: FRONT_DESK });
-  await expect(dialog.getByRole('heading', { name: 'This week' })).toBeVisible({ timeout: 20_000 });
-  // The AI minutes tile is this week's minutes alone, never set against the monthly allowance.
-  for (const tile of ['Answered', 'Booked', 'Transferred', 'Messages', 'Spam', 'AI minutes this week']) {
-    await expect(dialog.getByText(tile, { exact: true }).first()).toBeVisible();
+  // Today's numbers: one tile each, from what the server counted
+  const numbers = dialog.getByRole('region', { name: "Today's numbers" });
+  await expect(numbers).toBeVisible({ timeout: 20_000 });
+  for (const tile of ['Calls today', 'Answered', 'Inspections booked', 'After-hours calls', 'Average answer time']) {
+    await expect(numbers.getByText(tile, { exact: true })).toBeVisible();
   }
 
   // Newest first; the spam pitch is not in "All".
@@ -59,22 +60,22 @@ test('the inbox lists calls and texts, newest first, with live, unread and urgen
   await expect(rows.nth(3)).toContainText('Urgent');
   await expect(rows.nth(3)).toContainText('Message');
 
-  const filter = (name: string) => dialog.getByRole('group', { name: 'Filter calls and texts' }).getByRole('button', { name, exact: true });
+  // A chip is its name and then today's count, so it is found by the name it starts with
+  const filter = (name: string) =>
+    dialog.getByRole('group', { name: 'Filter calls and texts' }).getByRole('button', { name: new RegExp(`^${name}`) });
 
-  await filter('Needs attention').click();
-  await expect(filter('Needs attention')).toHaveAttribute('aria-pressed', 'true');
-  await expect(rows).toHaveCount(3);
-  await expect(dialog.getByText('Live now')).toHaveCount(0);
+  await expect(filter('All')).toHaveAttribute('aria-pressed', 'true');
 
   await filter('Booked').click();
+  await expect(filter('Booked')).toHaveAttribute('aria-pressed', 'true');
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText(MARIA.name);
 
-  await filter('Messages').click();
+  await filter('Text-backs').click();
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText(TOM.name);
 
-  await filter('Spam').click();
+  await filter('Blocked').click();
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText('Spam');
 
@@ -100,7 +101,7 @@ test('a call opens with its disclosure, transcript, action cards and summary, an
   await expect(page).toHaveURL(new RegExp(`/front-desk/${ids.maria}$`));
 
   await expect(dialog.getByRole('heading', { name: MARIA.name })).toBeVisible({ timeout: 20_000 });
-  await expect(dialog.getByRole('heading', { name: 'What was said' })).toBeVisible();
+  await expect(dialog.getByRole('heading', { name: 'Transcript' })).toBeVisible();
   // The call opens with the recording disclosure, then the caller and the assistant take turns.
   await expect(dialog.getByText('this call is recorded', { exact: false })).toBeVisible();
   await expect(dialog.getByText('I found shingles in my yard', { exact: false })).toBeVisible();
@@ -111,7 +112,7 @@ test('a call opens with its disclosure, transcript, action cards and summary, an
   await expect(dialog.getByText('Maria booked an inspection for Thursday at 10:00 AM.', { exact: true })).toBeVisible();
   await expect(dialog.getByRole('link', { name: 'Call back' })).toHaveAttribute('href', `tel:${MARIA.phone}`);
   // No stored recording was seeded, so there is nothing to play.
-  await expect(dialog.getByRole('button', { name: 'Play recording' })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Listen' })).toHaveCount(0);
 
   await expect
     .poll(async () => (await db.query(`select unread_count from conversations where id = $1`, [ids.maria])).rows[0]?.unread_count, {
@@ -160,8 +161,12 @@ test('a staff reply to a text goes out through the gate and leaves the assistant
 
   const dialog = page.getByRole('main', { name: FRONT_DESK });
   await expect(dialog.getByText('Hi, can someone look at my roof this week?')).toBeVisible({ timeout: 20_000 });
-  const handling = dialog.getByRole('switch', { name: 'Team is handling' });
-  await expect(handling).toHaveAttribute('aria-checked', 'false');
+  // Who is handling it: two choices, the assistant (the one the conversation starts with) or the team
+  const handling = dialog.getByRole('radiogroup', { name: 'Who is handling this' });
+  const withAssistant = handling.getByRole('radio', { name: 'With the assistant' });
+  const withTeam = handling.getByRole('radio', { name: 'With the team' });
+  await expect(withAssistant).toHaveAttribute('aria-checked', 'true');
+  await expect(withTeam).toHaveAttribute('aria-checked', 'false');
 
   const reply = 'We can be there Thursday morning.';
   await dialog.getByLabel('Your reply').fill(reply);
@@ -183,19 +188,19 @@ test('a staff reply to a text goes out through the gate and leaves the assistant
     .toEqual({ status: 'sent', to_e164: TOM.phone });
 
   // A reply does not hand the conversation over: the assistant only keeps quiet for a while after a
-  // team text. The switch stays off once the conversation reloads after the reply.
+  // team text. The assistant stays chosen once the conversation reloads after the reply.
   await page.reload();
   await expect(dialog.getByText('Hi, can someone look at my roof this week?')).toBeVisible({ timeout: 20_000 });
-  await expect(handling).toHaveAttribute('aria-checked', 'false');
+  await expect(withAssistant).toHaveAttribute('aria-checked', 'true');
   const kept = await db.query<{ handled_by: string; team_until: Date | null }>(
     `select handled_by, team_until from conversations where id = $1`,
     [ids.tom],
   );
   expect(kept.rows[0]).toEqual({ handled_by: 'assistant', team_until: null });
 
-  // The manual switch still hands it to the team (for two hours), and back.
-  await handling.click();
-  await expect(handling).toHaveAttribute('aria-checked', 'true', { timeout: 20_000 });
+  // Choosing the team still hands it to them (for two hours), and choosing the assistant hands it back.
+  await withTeam.click();
+  await expect(withTeam).toHaveAttribute('aria-checked', 'true', { timeout: 20_000 });
   await expect
     .poll(
       async () => {
@@ -209,8 +214,8 @@ test('a staff reply to a text goes out through the gate and leaves the assistant
     )
     .toEqual({ handledBy: 'team', hasUntil: true });
 
-  await handling.click();
-  await expect(handling).toHaveAttribute('aria-checked', 'false', { timeout: 20_000 });
+  await withAssistant.click();
+  await expect(withAssistant).toHaveAttribute('aria-checked', 'true', { timeout: 20_000 });
   await expect
     .poll(async () => (await db.query(`select handled_by from conversations where id = $1`, [ids.tom])).rows[0]?.handled_by, {
       timeout: 20_000,
@@ -218,8 +223,8 @@ test('a staff reply to a text goes out through the gate and leaves the assistant
     .toBe('assistant');
 
   // The inbox row shows who is handling a conversation.
-  await handling.click();
-  await expect(handling).toHaveAttribute('aria-checked', 'true', { timeout: 20_000 });
+  await withTeam.click();
+  await expect(withTeam).toHaveAttribute('aria-checked', 'true', { timeout: 20_000 });
   await page.goto('/front-desk');
   await expect(
     page
@@ -229,7 +234,7 @@ test('a staff reply to a text goes out through the gate and leaves the assistant
   ).toBeVisible({ timeout: 20_000 });
 });
 
-test('Mark as spam blocks the number and moves the call to the Spam filter', async ({
+test('Mark as spam blocks the number and moves the call to the Blocked filter', async ({
   page,
   loginAs,
   markTodaySeen,
@@ -257,7 +262,7 @@ test('Mark as spam blocks the number and moves the call to the Spam filter', asy
   await page.goto('/front-desk');
   const filters = dialog.getByRole('group', { name: 'Filter calls and texts' });
   await expect(dialog.getByRole('link')).toHaveCount(3, { timeout: 20_000 });
-  await filters.getByRole('button', { name: 'Spam', exact: true }).click();
+  await filters.getByRole('button', { name: /^Blocked/ }).click();
   await expect(dialog.getByRole('link')).toHaveCount(2);
 });
 

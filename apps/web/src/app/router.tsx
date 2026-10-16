@@ -75,7 +75,7 @@ const routes: RouteObject[] = [
           { path: 'storm/routes', element: <AppPage app="storm"><RoutesWindow /></AppPage> },
           { path: 'storm/routes/:routeId', element: <AppPage app="storm"><RouteDetail /></AppPage> },
           { path: 'storm/:id', element: <AppPage app="storm"><StormDetail /></AppPage> },
-          { path: 'front-desk/:conversationId?', element: <AppPage app="front-desk"><FrontDeskWindow /></AppPage> },
+          { path: 'front-desk/:conversationId?', element: <FrontDeskWindow /> },
           { path: 'estimator', element: <AppPage app="estimator" bare><MeasureWindow /></AppPage> },
           { path: 'estimator/measure/:measurementId', element: <AppPage app="estimator" bare><MeasureWindow /></AppPage> },
           { path: 'estimator/measure/:measurementId/gutters', element: <AppPage app="estimator" bare><GuttersWindow /></AppPage> },

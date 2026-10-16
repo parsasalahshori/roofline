@@ -1,11 +1,23 @@
 import { useState, type FormEvent } from 'react';
-import { Button, Field } from '@roofline/ui';
+import { Button, Field, Icon } from '@roofline/ui';
 import { ApiError } from '../../api/client.ts';
 import { conversationCopy } from '../../copy/front-desk-conversation.ts';
+import { browserZone } from '../calendar/time.ts';
+import { useCompany } from '../settings/api.ts';
 import { useSendReply } from './conversation-api.ts';
 import styles from './ReplyBox.module.css';
 
-const scheduledFormat = new Intl.DateTimeFormat('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+const scheduledFormats = new Map<string, Intl.DateTimeFormat>();
+
+/** "Thu 8:00 AM" on the company's own clock, which is the clock quiet hours are kept on. */
+function scheduledLabel(iso: string, zone: string): string {
+  let format = scheduledFormats.get(zone);
+  if (format === undefined) {
+    format = new Intl.DateTimeFormat('en-US', { timeZone: zone, weekday: 'short', hour: 'numeric', minute: '2-digit' });
+    scheduledFormats.set(zone, format);
+  }
+  return format.format(new Date(iso)).replace(/[\u00a0\u202f]/g, ' ');
+}
 
 /**
  * The text reply box for a text conversation. A send-gate refusal (or a text that could not be sent)
@@ -16,6 +28,7 @@ export function ReplyBox({ conversationId }: { conversationId: string }) {
   const [text, setText] = useState('');
   const [scheduledFor, setScheduledFor] = useState<string | null>(null);
   const send = useSendReply(conversationId);
+  const zone = useCompany().data?.timezone ?? browserZone();
   const trimmed = text.trim();
   const errorSentence = send.error
     ? send.error instanceof ApiError
@@ -40,25 +53,29 @@ export function ReplyBox({ conversationId }: { conversationId: string }) {
 
   return (
     <form className={styles.form} onSubmit={onSubmit}>
-      <Field
-        label={conversationCopy.replyLabel}
-        placeholder={conversationCopy.replyPlaceholder}
-        multiline
-        rows={3}
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-        error={errorSentence}
-      />
-      {scheduledFor !== null ? (
-        <p className={styles.note} role="status">
-          {conversationCopy.replyScheduled(scheduledFormat.format(new Date(scheduledFor)))}
-        </p>
-      ) : null}
-      <div className={styles.actions}>
-        <Button type="submit" busy={send.isPending} disabled={trimmed === ''}>
+      <div className={styles.composer}>
+        <Field
+          label={conversationCopy.replyLabel}
+          labelHidden
+          placeholder={conversationCopy.replyPlaceholder}
+          multiline
+          rows={2}
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+          error={errorSentence}
+          className={styles.field}
+        />
+        <Button type="submit" busy={send.isPending} disabled={trimmed === ''} className={styles.send}>
           {conversationCopy.replySend}
+          <Icon name="arrow" size={16} />
         </Button>
       </div>
+      {scheduledFor !== null ? (
+        <p className={styles.note} role="status">
+          <Icon name="clock" size={16} />
+          {conversationCopy.replyScheduled(scheduledLabel(scheduledFor, zone))}
+        </p>
+      ) : null}
     </form>
   );
 }

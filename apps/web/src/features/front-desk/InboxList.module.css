@@ -1,0 +1,140 @@
+/*
+ * "Latest calls": a panel whose rows scroll under its filter chips. On a desktop the panel is the height the page gives it
+ * and the rows scroll inside it; on a phone it is as tall as its rows and the page scrolls.
+ */
+.panel {
+  min-height: 0;
+  overflow: hidden;
+  /* The chips fit the panel's own width, not the screen's */
+  container-type: inline-size;
+}
+
+/* The panel's body is the one flexible box, so the rows scroll while the header and the chips stay put */
+.panel > :last-child {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.inner {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* One row of chips, 12px from the panel's edges; on a phone it slides sideways rather than wrapping */
+.chips {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  padding: 12px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+  scrollbar-width: none;
+}
+
+.chips::-webkit-scrollbar {
+  display: none;
+}
+
+/* A narrow panel: the four chips tighten so all of them fit side by side */
+@container (max-width: 400px) {
+  .chips {
+    gap: 6px;
+  }
+
+  .chips > * {
+    padding: 0 10px;
+  }
+}
+
+.scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.more {
+  display: flex;
+  justify-content: center;
+  padding: 8px 16px 12px;
+  border-top: 1px solid var(--line);
+}
+
+.empty,
+.error {
+  padding: 8px 0 0;
+}
+
+.error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 16px;
+  padding: 12px 16px;
+  border-radius: var(--r-2);
+  background: var(--bad-tint);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--bad) 30%, transparent);
+  color: var(--bad-text);
+}
+
+.errorText {
+  flex: 1 1 200px;
+  margin: 0;
+  font-weight: 600;
+}
+
+/* The shape of the rows that will be here: a circle for the person, a wide and a narrow line */
+.ghosts {
+  display: flex;
+  flex-direction: column;
+}
+
+.ghost {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ghost:last-child {
+  border-bottom: 0;
+}
+
+.ghostAvatar {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border: 1px dashed var(--line-2);
+  border-radius: 50%;
+}
+
+.ghostLines {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ghostLine {
+  display: block;
+  width: 45%;
+  height: 12px;
+  border-radius: var(--r-1);
+  background: var(--sunken);
+}
+
+.ghostLine[data-wide="true"] {
+  width: 65%;
+}
