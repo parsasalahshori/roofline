@@ -2112,8 +2112,11 @@ export type StoredFacadePhoto = FacadePhoto & {
   measure: boolean;
   /** Compass bearings [from, to] of the front this photo counts windows on. */
   range: [number, number];
-  /** The automatic line-up's result: heading correction (degrees) and best eave height (metres), when it was good. */
-  lineup: { headingCorrectionDeg: number; eaveM: number | null } | null;
+  /**
+   * The automatic line-up's result: heading, pitch and roll corrections (degrees; pitch and roll absent on older rows:
+   * 0) and best eave height (metres), when it was good.
+   */
+  lineup: { headingCorrectionDeg: number; pitchCorrectionDeg?: number; rollCorrectionDeg?: number; eaveM: number | null } | null;
   /** A person's corner fit (wins over the line-up). */
   personFit: { headingCorrectionDeg: number; distanceScale: number; eaveM: number; errorPx: number } | null;
 };

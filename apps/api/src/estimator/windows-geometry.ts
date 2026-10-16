@@ -154,20 +154,28 @@ function round1(v: number): number {
   return Math.round(v * 10) / 10;
 }
 
-/** A pinhole camera: its plan position, height, heading, pitch (up positive), horizontal fov and image size. */
-export type Camera = { pos: Vec; heightM: number; heading: number; pitch: number; fov: number; widthPx: number; heightPx: number };
+/**
+ * A pinhole camera: its plan position, height, heading, pitch (up positive), horizontal fov and image size; `roll`
+ * (degrees, absent = 0) turns it about its line of sight, its right side up for positive roll (the photo's content then
+ * turns clockwise). Street View's camera can sit a few degrees off level, which the wall line-up finds.
+ */
+export type Camera = { pos: Vec; heightM: number; heading: number; pitch: number; fov: number; widthPx: number; heightPx: number; roll?: number };
 
 function basis(cam: Camera): { f: number; F: Vec3; U: Vec3; R: Vec3 } {
   const h = cam.heading * DEG;
   const p = cam.pitch * DEG;
   const fwd: Vec = [Math.sin(h), Math.cos(h)];
   const right: Vec = [Math.cos(h), -Math.sin(h)];
-  return {
-    f: cam.widthPx / 2 / Math.tan((cam.fov * DEG) / 2),
-    F: [fwd[0] * Math.cos(p), fwd[1] * Math.cos(p), Math.sin(p)],
-    U: [-fwd[0] * Math.sin(p), -fwd[1] * Math.sin(p), Math.cos(p)],
-    R: [right[0], right[1], 0],
-  };
+  const f = cam.widthPx / 2 / Math.tan((cam.fov * DEG) / 2);
+  const F: Vec3 = [fwd[0] * Math.cos(p), fwd[1] * Math.cos(p), Math.sin(p)];
+  const U: Vec3 = [-fwd[0] * Math.sin(p), -fwd[1] * Math.sin(p), Math.cos(p)];
+  const R: Vec3 = [right[0], right[1], 0];
+  const r = (cam.roll ?? 0) * DEG;
+  if (r === 0) return { f, F, U, R };
+  // Roll: the right and up axes turned about the line of sight.
+  const c = Math.cos(r);
+  const s = Math.sin(r);
+  return { f, F, U: [U[0] * c - R[0] * s, U[1] * c - R[1] * s, U[2] * c - R[2] * s], R: [R[0] * c + U[0] * s, R[1] * c + U[1] * s, R[2] * c + U[2] * s] };
 }
 
 const dot3 = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
