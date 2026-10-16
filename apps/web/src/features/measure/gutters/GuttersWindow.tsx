@@ -1,10 +1,18 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Banner, Button, Checkbox, EmptyState } from '@roofline/ui';
+import { Banner, Button, Checkbox, EmptyState, Field } from '@roofline/ui';
 import {
   DEFAULT_GUTTER_TIERS,
   gutterView,
+  MAX_ADDED_GUTTER_RUNS,
+  MAX_ADDED_RUN_FT,
   MAX_DOWNSPOUTS_PER_RUN,
+  MAX_GUTTER_TOTAL_FT,
+  MAX_RUN_LABEL,
+  nextAddedRunId,
+  type AddedGutterRunView,
+  type GutterAdjustedBy,
   type GutterAdjustments,
+  type GutterAdjustmentsPatch,
   type GutterMeasurementView,
   type GutterQuote,
   type GutterRun,
@@ -12,7 +20,7 @@ import {
   type LngLat,
 } from '@roofline/shared';
 import { Map as MapLibreMap } from 'maplibre-gl';
-import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState, type FormEvent } from 'react';
 import { useParams } from 'react-router';
 import { legal } from '../../../copy/legal.ts';
 import { liftProposal } from '../../../copy/liftMeasure.ts';
@@ -342,6 +350,22 @@ function GutterMap({
   );
 }
 
+function Stepper({ name, n, set, off, onChange }: { name: string; n: number; set: boolean; off: boolean; onChange: (n: number) => void }) {
+  return (
+    <div className={styles.stepper} role="group" aria-label={copy.downspoutsFor(name)}>
+      <Button variant="ghost" className={styles.stepButton} aria-label={copy.fewer(name)} disabled={off || n <= 0} onClick={() => onChange(n - 1)}>
+        {copy.minus}
+      </Button>
+      <output className={styles.stepValue} data-changed={set ? 'true' : undefined} aria-live="polite">
+        {off ? 0 : n}
+      </output>
+      <Button variant="ghost" className={styles.stepButton} aria-label={copy.more(name)} disabled={off || n >= MAX_DOWNSPOUTS_PER_RUN} onClick={() => onChange(n + 1)}>
+        {copy.plus}
+      </Button>
+    </div>
+  );
+}
+
 function RunRow({
   run,
   index,
@@ -354,28 +378,121 @@ function RunRow({
   onDownspouts: (n: number) => void;
 }) {
   const name = copy.runName(index + 1, copy.side[run.side], run.kind === 'low-attachment');
-  const n = run.downspouts.length;
   return (
     <li className={styles.runRow} data-run-row={run.id}>
       <Checkbox label={name} description={copy.runDetail(run.lengthFt, run.designSqFt)} checked={!run.excluded} onChange={onToggle} />
-      <div className={styles.stepper} role="group" aria-label={copy.downspoutsFor(name)}>
-        <Button variant="ghost" className={styles.stepButton} aria-label={copy.fewer(name)} disabled={run.excluded || n <= 0} onClick={() => onDownspouts(n - 1)}>
-          {copy.minus}
-        </Button>
-        <output className={styles.stepValue} data-changed={run.downspoutsSet ? 'true' : undefined} aria-live="polite">
-          {run.excluded ? 0 : n}
-        </output>
+      <Stepper name={name} n={run.downspouts.length} set={run.downspoutsSet} off={run.excluded} onChange={onDownspouts} />
+    </li>
+  );
+}
+
+function AddedRow({ run, index, onRemove, onDownspouts }: { run: AddedGutterRunView; index: number; onRemove: () => void; onDownspouts: (n: number) => void }) {
+  const name = copy.addedName(run.label, index + 1);
+  return (
+    <li className={styles.runRow} data-added-row={run.id}>
+      <div className={styles.addedText}>
+        <span className={styles.addedName}>{name}</span>
+        <span className={styles.small}>{copy.addedDetail(run.lengthFt)}</span>
+      </div>
+      <Stepper name={name} n={run.downspouts} set={run.downspoutsSet} off={false} onChange={onDownspouts} />
+      <Button variant="ghost" className={styles.removeButton} aria-label={copy.removeAdded(name)} onClick={onRemove}>
+        {copy.remove}
+      </Button>
+    </li>
+  );
+}
+
+/** Add a run the map missed: a label and a length typed in. */
+function AddRunForm({ full, onAdd }: { full: boolean; onAdd: (label: string, lengthFt: number) => void }) {
+  const [label, setLabel] = useState('');
+  const [length, setLength] = useState('');
+  const [error, setError] = useState<string | undefined>(undefined);
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const n = Number(length.trim());
+    if (length.trim() === '' || !Number.isFinite(n) || n < 1 || n > MAX_ADDED_RUN_FT) {
+      setError(copy.addLengthError);
+      return;
+    }
+    onAdd(label.trim().slice(0, MAX_RUN_LABEL), Math.round(n * 10) / 10);
+    setLabel('');
+    setLength('');
+    setError(undefined);
+  };
+  return (
+    <form className={styles.addForm} onSubmit={submit} noValidate data-add-run="">
+      <Field
+        label={copy.addLabel}
+        placeholder={copy.addLabelHint}
+        value={label}
+        maxLength={MAX_RUN_LABEL}
+        onChange={(e) => setLabel(e.target.value)}
+        className={styles.addLabel}
+      />
+      <Field
+        label={copy.addLength}
+        inputMode="decimal"
+        value={length}
+        error={error}
+        onChange={(e) => {
+          setLength(e.target.value);
+          setError(undefined);
+        }}
+        className={styles.addLength}
+      />
+      <Button type="submit" variant="ghost" className={styles.addButton} disabled={full}>
+        {copy.addRun}
+      </Button>
+      {full ? <p className={styles.small}>{copy.addFull}</p> : null}
+    </form>
+  );
+}
+
+/** Type the total gutter length (measured on site), or go back to the runs. */
+function TotalForm({ totalFt, runsFt, onTotal }: { totalFt: number | null; runsFt: number; onTotal: (ft: number | null) => void }) {
+  const [value, setValue] = useState(totalFt === null ? '' : String(totalFt));
+  const [error, setError] = useState<string | undefined>(undefined);
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const n = Number(value.trim());
+    if (value.trim() === '' || !Number.isFinite(n) || n < 1 || n > MAX_GUTTER_TOTAL_FT) {
+      setError(copy.totalError);
+      return;
+    }
+    setError(undefined);
+    onTotal(Math.round(n * 10) / 10);
+  };
+  return (
+    <form className={styles.addForm} onSubmit={submit} noValidate data-total-form="">
+      <Field
+        label={copy.totalLabel}
+        inputMode="decimal"
+        value={value}
+        error={error}
+        help={totalFt === null ? copy.totalHint(runsFt) : copy.totalIsSet(totalFt)}
+        onChange={(e) => {
+          setValue(e.target.value);
+          setError(undefined);
+        }}
+        className={styles.addLength}
+      />
+      <Button type="submit" variant="ghost" className={styles.addButton}>
+        {copy.totalSet}
+      </Button>
+      {totalFt !== null ? (
         <Button
           variant="ghost"
-          className={styles.stepButton}
-          aria-label={copy.more(name)}
-          disabled={run.excluded || n >= MAX_DOWNSPOUTS_PER_RUN}
-          onClick={() => onDownspouts(n + 1)}
+          className={styles.addButton}
+          onClick={() => {
+            setValue('');
+            setError(undefined);
+            onTotal(null);
+          }}
         >
-          {copy.plus}
+          {copy.totalClear}
         </Button>
-      </div>
-    </li>
+      ) : null}
+    </form>
   );
 }
 
@@ -387,6 +504,10 @@ function GuttersCard({
   onToggle,
   onDownspouts,
   onSize,
+  onAddRun,
+  onRemoveAdded,
+  onTotal,
+  adjustedBy,
   saveFailed,
 }: {
   view: GutterMeasurementView;
@@ -396,12 +517,16 @@ function GuttersCard({
   onToggle: (runId: string) => void;
   onDownspouts: (runId: string, n: number) => void;
   onSize: (size: GutterSize | null) => void;
+  onAddRun: (label: string, lengthFt: number) => void;
+  onRemoveAdded: (runId: string) => void;
+  onTotal: (totalFt: number | null) => void;
+  adjustedBy: GutterAdjustedBy | null;
   saveFailed: boolean;
 }) {
   const adjustId = useId();
   const scanning = scan.phase === 'scanning';
   const share = scanning ? shownShare(scan.progress) : 1;
-  const title = scanning ? copy.stage[stageAt(scan.progress)] : copy.measuredBy;
+  const title = scanning ? copy.stage[stageAt(scan.progress)] : copy.cardTitle[view.confidence];
   const t = view.totals;
   const open = editing && !scanning;
   const corners = t.insideCorners + t.outsideCorners;
@@ -422,6 +547,11 @@ function GuttersCard({
               </span>
               <span className={cardStyles.sqft}>{copy.runsLine(Math.round(t.runs * share), Math.round(corners * share))}</span>
             </div>
+            {!scanning && t.lengthSource !== 'measured' ? (
+              <p className={styles.small} data-length-source={t.lengthSource}>
+                {copy.lengthFrom[t.lengthSource](t.measuredFt)}
+              </p>
+            ) : null}
             <dl className={cardStyles.grid}>
               <div className={cardStyles.cell}>
                 <dt>{copy.downspoutsCell}</dt>
@@ -448,10 +578,24 @@ function GuttersCard({
                   <strong>{copy.reasonLabel}</strong> {view.size.reason}
                 </p>
                 {view.check.reasons.includes('gutters-check') ? (
-                  <div data-review="gutters-check">
+                  <div data-review="gutters-check" className={styles.check}>
                     <Banner tone="warning">{copy.checkLow}</Banner>
+                    <Button variant="ghost" className={styles.checkButton} onClick={() => onEdit(true)}>
+                      {copy.checkAddRuns}
+                    </Button>
                   </div>
+                ) : view.confidence === 'estimate' ? (
+                  <p className={styles.small} data-draft="">
+                    {copy.draftNote}
+                  </p>
                 ) : null}
+                {adjustedBy !== null ? (
+                  <p className={styles.adjustedBy} data-adjusted-by="">
+                    {copy.adjustedBy(adjustedBy.name, adjustedBy.at)}
+                  </p>
+                ) : null}
+                {t.addedFt > 0 && t.lengthSource !== 'override' ? <p className={styles.small}>{copy.addedNote(t.addedFt)}</p> : null}
+                {t.unplacedDownspouts > 0 ? <p className={styles.small}>{copy.unplacedNote(t.unplacedDownspouts)}</p> : null}
                 <p className={styles.small} data-coverage="">
                   {copy.coverage(view.check.perimeterFt, view.check.share)}
                 </p>
@@ -476,6 +620,26 @@ function GuttersCard({
                   <RunRow key={r.id} run={r} index={i} onToggle={() => onToggle(r.id)} onDownspouts={(n) => onDownspouts(r.id, n)} />
                 ))}
               </ul>
+            </section>
+            <section className={styles.panel} aria-labelledby={`${adjustId}-added`} data-added-runs="">
+              <h3 id={`${adjustId}-added`} className={styles.panelTitle}>
+                {copy.addedTitle}
+              </h3>
+              <p className={styles.small}>{copy.addedHint}</p>
+              {view.addedRuns.length > 0 ? (
+                <ul className={styles.runList}>
+                  {view.addedRuns.map((a, i) => (
+                    <AddedRow key={a.id} run={a} index={i} onRemove={() => onRemoveAdded(a.id)} onDownspouts={(n) => onDownspouts(a.id, n)} />
+                  ))}
+                </ul>
+              ) : null}
+              <AddRunForm full={view.addedRuns.length >= MAX_ADDED_GUTTER_RUNS} onAdd={onAddRun} />
+            </section>
+            <section className={styles.panel} aria-labelledby={`${adjustId}-total`}>
+              <h3 id={`${adjustId}-total`} className={styles.panelTitle}>
+                {copy.totalTitle}
+              </h3>
+              <TotalForm totalFt={view.adjustments.totalFt} runsFt={view.totals.measuredFt + view.totals.addedFt} onTotal={onTotal} />
             </section>
             <section className={styles.panel}>
               <h3 className={styles.panelTitle}>{copy.sizeTitle}</h3>
@@ -514,8 +678,8 @@ function GuttersCard({
               <path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </Button>
-          <span className={cardStyles.kind} data-kind="estimate">
-            {copy.estimateTag}
+          <span className={cardStyles.kind} data-kind={view.confidence}>
+            {copy.confidenceTag[view.confidence]}
           </span>
         </div>
       ) : null}
@@ -555,7 +719,7 @@ function Loaded({ m, server, onQuoteReady }: { m: MeasurementView; server: Gutte
   const [editing, setEditing] = useState(false);
 
   // Saves: 500 ms after the last change, one PATCH carries the whole set of adjustments
-  const pending = useRef<GutterAdjustments | null>(null);
+  const pending = useRef<GutterAdjustmentsPatch | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const mutateRef = useRef(patch.mutate);
   useEffect(() => {
@@ -571,7 +735,14 @@ function Loaded({ m, server, onQuoteReady }: { m: MeasurementView; server: Gutte
   useEffect(() => flush, [flush]);
   const change = (next: GutterAdjustments) => {
     setAdj(next);
-    pending.current = next;
+    // Who changed it is the server's to write
+    pending.current = {
+      excludedRunIds: next.excludedRunIds,
+      downspouts: next.downspouts,
+      size: next.size,
+      addedRuns: next.addedRuns,
+      totalFt: next.totalFt,
+    };
     clearTimeout(timer.current);
     timer.current = setTimeout(flush, SAVE_DEBOUNCE_MS);
   };
@@ -579,7 +750,10 @@ function Loaded({ m, server, onQuoteReady }: { m: MeasurementView; server: Gutte
   // The numbers follow each change at once: the same pure rules the server uses, on the roof already loaded
   const roof = usableRoof(m.roof);
   const view = useMemo(
-    () => (roof === null ? server : gutterView(m.id, roof, server.eave, adj, server.quotes === null ? null : DEFAULT_GUTTER_TIERS)),
+    () =>
+      roof === null
+        ? server
+        : gutterView(m.id, roof, server.eave, adj, server.quotes === null ? null : DEFAULT_GUTTER_TIERS, { reportEaveFt: server.reportEaveFt }),
     [m.id, roof, server, adj],
   );
   const toggle = (runId: string) => {
@@ -590,6 +764,14 @@ function Loaded({ m, server, onQuoteReady }: { m: MeasurementView; server: Gutte
   };
   const setDownspouts = (runId: string, n: number) => change({ ...adj, downspouts: { ...adj.downspouts, [runId]: Math.max(0, Math.min(MAX_DOWNSPOUTS_PER_RUN, n)) } });
   const setSize = (size: GutterSize | null) => change({ ...adj, size });
+  const addRun = (label: string, lengthFt: number) => change({ ...adj, addedRuns: [...adj.addedRuns, { id: nextAddedRunId(adj.addedRuns), label, lengthFt }] });
+  const removeAdded = (runId: string) => {
+    const downspouts = Object.fromEntries(Object.entries(adj.downspouts).filter(([id]) => id !== runId));
+    change({ ...adj, addedRuns: adj.addedRuns.filter((a) => a.id !== runId), downspouts });
+  };
+  const setTotal = (totalFt: number | null) => change({ ...adj, totalFt });
+  // Only a draft (an estimated length nobody checked) loses the Recommended and Built by Estimator marks
+  const vouched = view.confidence !== 'estimate';
 
   const t = view.totals;
   return (
@@ -608,6 +790,10 @@ function Loaded({ m, server, onQuoteReady }: { m: MeasurementView; server: Gutte
                 onToggle={toggle}
                 onDownspouts={setDownspouts}
                 onSize={setSize}
+                onAddRun={addRun}
+                onRemoveAdded={removeAdded}
+                onTotal={setTotal}
+                adjustedBy={server.adjustments.adjustedBy}
                 saveFailed={patch.isError}
               />
             )}
@@ -623,10 +809,16 @@ function Loaded({ m, server, onQuoteReady }: { m: MeasurementView; server: Gutte
               <>
                 <p className={panelStyles.squares}>{copy.quoteLine(t.gutterFt, t.downspouts)}</p>
                 <p className={styles.small}>{copy.accessories(t.endCaps, t.hangers, t.outlets, t.elbows)}</p>
+                {vouched ? null : (
+                  <p className={styles.quoteDraft} data-quote-draft="">
+                    {copy.quoteDraft}
+                  </p>
+                )}
               </>
             }
             options={view.quotes === null ? [] : quoteOptions(view.quotes)}
             recommended={view.size.recommended === '6in' ? 'better' : 'good'}
+            vouched={vouched}
             pending={false}
             emptyNote={view.quotes === null ? copy.noMoney : copy.noQuote}
             footer={

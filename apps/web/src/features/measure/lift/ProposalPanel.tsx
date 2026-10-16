@@ -46,7 +46,19 @@ export type TierOption = {
   finance: ReactNode;
 };
 
-function TierCard({ option, checked, onPick, recommended = RECOMMENDED }: { option: TierOption; checked: boolean; onPick: () => void; recommended?: Tier }) {
+function TierCard({
+  option,
+  checked,
+  onPick,
+  recommended = RECOMMENDED,
+  badge = true,
+}: {
+  option: TierOption;
+  checked: boolean;
+  onPick: () => void;
+  recommended?: Tier;
+  badge?: boolean;
+}) {
   const tierName = liftProposal.tier[option.tier];
   return (
     <Button
@@ -63,7 +75,7 @@ function TierCard({ option, checked, onPick, recommended = RECOMMENDED }: { opti
       <span className={styles.tierText}>
         <span className={styles.tierHead}>
           <span className={styles.tierName}>{tierName}</span>
-          {option.tier === recommended ? (
+          {badge && option.tier === recommended ? (
             <span className={styles.recommended}>
               <AiMark size={11} />
               {liftProposal.recommended}
@@ -95,6 +107,7 @@ export function TierPanel({
   controls = null,
   footer,
   recommended = RECOMMENDED,
+  vouched = true,
 }: {
   title: string;
   /** The lines under the title; may follow the tier picked. */
@@ -107,6 +120,11 @@ export function TierPanel({
   footer: ReactNode;
   /** The tier marked Recommended and chosen first (the better tier unless the measurement says otherwise). */
   recommended?: Tier;
+  /**
+   * Whether the numbers are good enough to vouch for: the "Built by Estimator" mark and the Recommended badge. False for
+   * a draft (an estimated gutter length nobody checked); the recommended tier is still the one picked first.
+   */
+  vouched?: boolean;
 }) {
   const [picked, setPicked] = useState<Tier | null>(null);
   const selected = options.find((o) => o.tier === picked) ?? options.find((o) => o.tier === recommended) ?? options[0];
@@ -115,10 +133,12 @@ export function TierPanel({
       <div className={styles.head}>
         <div className={styles.titleRow}>
           <h2 className={styles.title}>{title}</h2>
-          <span className={styles.built}>
-            <AiMark size={13} />
-            {liftProposal.builtBy}
-          </span>
+          {vouched ? (
+            <span className={styles.built}>
+              <AiMark size={13} />
+              {liftProposal.builtBy}
+            </span>
+          ) : null}
         </div>
         {typeof subline === 'function' ? subline(selected?.tier) : subline}
       </div>
@@ -126,7 +146,7 @@ export function TierPanel({
         {options.length > 0 ? (
           <div className={styles.tiers} role="radiogroup" aria-label={liftProposal.tiersLabel}>
             {options.map((o) => (
-              <TierCard key={o.tier} option={o} checked={o.tier === selected?.tier} onPick={() => setPicked(o.tier)} recommended={recommended} />
+              <TierCard key={o.tier} option={o} checked={o.tier === selected?.tier} onPick={() => setPicked(o.tier)} recommended={recommended} badge={vouched} />
             ))}
           </div>
         ) : pending ? (
