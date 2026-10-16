@@ -1,9 +1,15 @@
-/* The Setup tab: the progress line, the owner note, then the checklist as a stack of cards */
-.page {
+/* The progress at the head of the checklist: the ring, the words beside it, and the note for anyone but the owner */
+.summary {
   display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ring {
+  display: flex;
 }
 
 .progress {
@@ -12,14 +18,13 @@
 }
 
 .note {
+  flex-basis: 100%;
   margin: 0;
   color: var(--ink-3);
 }
 
+/* The steps, one under another, divided by the hairlines of their own rows */
 .list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
   margin: 0;
   padding: 0;
   list-style: none;

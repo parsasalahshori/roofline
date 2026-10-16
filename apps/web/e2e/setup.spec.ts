@@ -30,15 +30,21 @@ test('skip the import and the ring moves', async ({ page }) => {
   await expect(page.getByRole('link', { name: `${before + 1} of 5 setup steps done` })).toBeVisible();
 });
 
-test('no step says Coming with, and the ad accounts step links to Connections', async ({ page }) => {
+/** One checklist step, found by its title. */
+const stepRow = (page: import('@playwright/test').Page, title: string) =>
+  page.getByRole('listitem').filter({ hasText: title });
+
+test('no step says Coming with, and the ad accounts step leads to Connections', async ({ page }) => {
   // Every step is real: calendar since C1 Task 12, phone number since D1 Task 24, prices since E1 Task 8, ads since S1.
   await expect(page.getByText(/Coming with/)).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'Connect ad accounts' })).toHaveAttribute('href', '/settings/connections');
+  // While no account is linked the step says Connect ad accounts; once one is (the scenario links one) it is Done and says
+  // Review. Either way its way in is a link to Connections, so the row is found by its title and not by the words of the link.
+  await expect(stepRow(page, 'Connect your ad accounts').getByRole('link')).toHaveAttribute('href', '/settings/connections');
 });
 
 test('the phone number step opens the forwarding guide', async ({ page }) => {
   await expect(page.getByText('Coming with Front Desk', { exact: true })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'Forward your calls' })).toHaveAttribute(
+  await expect(stepRow(page, 'Your Roofline phone number').getByRole('link')).toHaveAttribute(
     'href',
     '/settings/front-desk#forwarding',
   );

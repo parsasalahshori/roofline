@@ -219,7 +219,10 @@ describe('setup tab', () => {
     await user.click(within(dialog).getByRole('button', { name: setup.sheet.placeOnMap }));
     await waitFor(() => expect(api.count('POST /api/company/locate')).toBe(1));
 
-    await user.selectOptions(within(dialog).getByLabelText(setup.sheet.radiusLabel), setup.radius(20));
+    // The area is a track of choices inside the sheet; the one in use (40 miles when none is set) is picked
+    const area = within(dialog).getByRole('radiogroup', { name: setup.sheet.radiusLabel });
+    expect(within(area).getByRole('radio', { name: setup.radius(40) })).toHaveAttribute('aria-checked', 'true');
+    await user.click(within(area).getByRole('radio', { name: setup.radius(20) }));
     await waitFor(() => expect(api.sent('PUT /api/company/service-area')).toEqual([{ radiusMiles: 20 }]));
   });
 
@@ -239,7 +242,79 @@ describe('setup tab', () => {
     await user.click(within(dialog).getByRole('button', { name: setup.sheet.placeOnMap }));
     await waitFor(() => expect(mapAreaCalls()).toBe(1));
 
-    await user.selectOptions(within(dialog).getByLabelText(setup.sheet.radiusLabel), setup.radius(20));
+    await user.click(within(dialog).getByRole('radio', { name: setup.radius(20) }));
     await waitFor(() => expect(mapAreaCalls()).toBe(2));
+  });
+
+  it('the first step still to do carries the one primary action; the others are outlined', async () => {
+    signedInApi(viewOf());
+    renderApp('/settings/setup');
+
+    // company basics is done, so the import is next
+    const next = within(await rowOf(setupItems.import_customers.title)).getByRole('link', { name: setup.actions.importCustomers });
+    expect(next).toHaveAttribute('data-variant', 'primary');
+    const later = within(await rowOf(setupItems.invite_team.title)).getByRole('link', { name: setup.actions.invite });
+    expect(later).toHaveAttribute('data-variant', 'default');
+    expect(document.querySelectorAll('[data-variant="primary"]').length).toBe(1);
+  });
+
+  it('every step shows its state as a tag with its words', async () => {
+    signedInApi(
+      viewOf(undefined, {
+        invite_team: { status: 'in_progress' },
+        prices_and_tiers: { status: 'skipped' },
+        texting_registration: { status: 'in_progress', data: { rejected: true } },
+      }),
+    );
+    renderApp('/settings/setup');
+
+    const tagOf = async (title: string, words: string) => expect(within(await rowOf(title)).getByText(words)).toBeInTheDocument();
+    await tagOf(setupItems.company_basics.title, setup.chips.done);
+    await tagOf(setupItems.import_customers.title, setup.chips.todo);
+    await tagOf(setupItems.invite_team.title, setup.chips.in_progress);
+    await tagOf(setupItems.prices_and_tiers.title, setup.chips.skipped);
+    await tagOf(setupItems.texting_registration.title, setup.chips.rejected);
+  });
+
+  it('a done step leads on to where it can be looked at, with a Review that names the step', async () => {
+    signedInApi(viewOf());
+    const { user } = renderApp('/settings/setup');
+
+    // Payment is done: its row has no Add a card, and a Review to Billing
+    const payment = await rowOf(setupItems.payment_method.title);
+    expect(within(payment).queryByRole('link', { name: setup.actions.addCard })).toBeNull();
+    expect(within(payment).getByRole('link', { name: setup.actions.reviewFor(setupItems.payment_method.title) })).toHaveAttribute(
+      'href',
+      '/settings/billing',
+    );
+    // A registration waiting on the carriers has nothing to press, but can be looked at
+    const texting = await rowOf(setupItems.texting_registration.title);
+    expect(within(texting).queryByRole('link', { name: setup.actions.start })).toBeNull();
+    expect(within(texting).getByRole('link', { name: setup.actions.reviewFor(setupItems.texting_registration.title) })).toHaveAttribute(
+      'href',
+      '/settings/setup/texting',
+    );
+    // The company on the map is done too: its Review opens the same sheet as Check details
+    const basics = await rowOf(setupItems.company_basics.title);
+    await user.click(within(basics).getByRole('button', { name: setup.actions.reviewFor(setupItems.company_basics.title) }));
+    expect(await screen.findByRole('dialog', { name: setup.sheet.title })).toBeInTheDocument();
+  });
+
+  it('office has no Review, only the calendar step that is every member\'s own', async () => {
+    signedInApi(viewOf(), {}, 'office');
+    renderApp('/settings/setup');
+
+    await stepList();
+    expect(screen.queryByRole('link', { name: /^Review / })).toBeNull();
+    expect(screen.getByRole('link', { name: setup.actions.connectCalendar })).toBeInTheDocument();
+  });
+
+  it('the checklist is a panel with the ring and its words at the head', async () => {
+    signedInApi(viewOf({ done: 2, total: 5 }));
+    renderApp('/settings/setup');
+
+    const panel = await screen.findByRole('region', { name: setup.heading });
+    expect(within(panel).getByText('2 of 5 setup steps done')).toBeInTheDocument();
+    expect(within(panel).getByRole('list', { name: setup.listLabel })).toBeInTheDocument();
   });
 });

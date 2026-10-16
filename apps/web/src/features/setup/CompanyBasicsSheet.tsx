@@ -1,4 +1,4 @@
-import { Button, Select, Sheet, Skeleton, type SelectOption } from '@roofline/ui';
+import { Button, Segmented, Sheet, Skeleton, type SegmentedOption } from '@roofline/ui';
 import { ApiError } from '../../api/client.ts';
 import { errors } from '../../copy/errors.ts';
 import { setup } from '../../copy/setup.ts';
@@ -54,7 +54,7 @@ function BasicsBody({ onClose }: { onClose: () => void }) {
   }
 
   const current = data.serviceAreaMiles ?? DEFAULT_RADIUS;
-  const radiusOptions: SelectOption[] = RADIUS_OPTIONS.map((miles) => ({ value: String(miles), label: setup.radius(miles) }));
+  const radiusOptions: SegmentedOption[] = RADIUS_OPTIONS.map((miles) => ({ value: String(miles), label: setup.radius(miles) }));
   // A radius the company already has, but that is not on the list, still shows as the current choice
   if (!RADIUS_OPTIONS.some((miles) => miles === current)) {
     radiusOptions.unshift({ value: String(current), label: setup.radius(current) });
@@ -80,13 +80,23 @@ function BasicsBody({ onClose }: { onClose: () => void }) {
           ) : null}
         </div>
       )}
-      <Select
-        label={setup.sheet.radiusLabel}
-        value={String(current)}
-        onChange={(value) => area.mutate(Number(value))}
-        options={radiusOptions}
-        error={messageOf(area.error)}
-      />
+      {/* A few fixed choices, so a track of segments rather than a list that opens: the sheet is a modal dialog, and a list
+          opens in a popover outside it */}
+      <div className={styles.radius}>
+        <p className={styles.radiusLabel}>{setup.sheet.radiusLabel}</p>
+        <Segmented
+          label={setup.sheet.radiusLabel}
+          value={String(current)}
+          onChange={(value) => area.mutate(Number(value))}
+          options={radiusOptions}
+          className={styles.track}
+        />
+        {messageOf(area.error) ? (
+          <p role="alert" className={styles.alert}>
+            {messageOf(area.error)}
+          </p>
+        ) : null}
+      </div>
       <Button variant="ghost" href="/settings/company" onClick={onClose}>
         {setup.sheet.editDetails}
       </Button>
