@@ -604,3 +604,33 @@
   color: var(--ds-text-label, #505b64);
   font-size: 12px;
 }
+
+/* A phone turned sideways: the photo stays on screen (left, pinned) and the controls scroll beside it. */
+@media (orientation: landscape) and (max-height: 540px) {
+  .measure,
+  .measure[data-method] {
+    display: grid;
+    flex: none;
+    height: auto;
+    min-height: 100%;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    align-content: start;
+    grid-auto-flow: row dense;
+    column-gap: 12px;
+    align-items: start;
+  }
+
+  .measure > * {
+    grid-column: 2;
+  }
+
+  .measure > .area,
+  .measure[data-method="sheet"] > .area {
+    position: sticky;
+    top: 0;
+    grid-column: 1;
+    grid-row: 1 / span 30;
+    height: calc(100dvh - 120px);
+    min-height: 0;
+  }
+}

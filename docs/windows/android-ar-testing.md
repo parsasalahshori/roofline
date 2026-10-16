@@ -15,13 +15,13 @@ on a phone, safely, against the app already running on your Mac.
   first time an AR page asks).
 - Chrome for Android, recent.
 - A USB cable, and Chrome on the Mac.
-- The app running on the Mac at `http://localhost:4600`.
+- The app running on the Mac at `http://localhost:4500`.
 
 ## Why USB port forwarding (and not a tunnel or the Mac's IP)
 
 WebXR only runs in a **secure context**: `https://`, or `http://localhost`. Opening the Mac's LAN address
-(`http://192.168.x.x:4600`) on the phone is NOT a secure context, so the AR tab will never show. Chrome's USB port
-forwarding makes the phone's own `localhost:4600` reach the Mac's `localhost:4600` over the cable. The phone then
+(`http://192.168.x.x:4500`) on the phone is NOT a secure context, so the AR tab will never show. Chrome's USB port
+forwarding makes the phone's own `localhost:4500` reach the Mac's `localhost:4500` over the cable. The phone then
 treats the page as localhost (secure), with no certificates, and nothing is exposed to the network or the internet.
 Do not set up public tunnels (ngrok, Cloudflare tunnels and the like) for this.
 
@@ -33,9 +33,9 @@ Do not set up public tunnels (ngrok, Cloudflare tunnels and the like) for this.
    computer").
 3. **Mac: open `chrome://inspect/#devices`** in desktop Chrome. Make sure "Discover USB devices" is ticked. The phone
    appears in the list (open Chrome on the phone if it does not).
-4. **Port forwarding.** Click "Port forwarding…", add a rule: port `4600` -> `localhost:4600`. Tick "Enable port
+4. **Port forwarding.** Click "Port forwarding…", add a rule: port `4500` -> `localhost:4500`. Tick "Enable port
    forwarding" and press Done. Keep this `chrome://inspect` tab open while you test; forwarding stops when it closes.
-5. **Phone: open Chrome at `http://localhost:4600`.** Sign in as usual, open a job's windows screen, "Add windows
+5. **Phone: open Chrome at `http://localhost:4500`.** Sign in as usual, open a job's windows screen, "Add windows
    from photos".
 6. **Take a photo of a window, tap Measure.** The method tabs start with **AR (Android)**. Or use "Measure with AR"
    on the photos screen to start in AR without a photo first.
@@ -56,7 +56,7 @@ You can watch the phone's console from the Mac: on `chrome://inspect`, click "in
 
 The tab shows only where `navigator.xr.isSessionSupported('immersive-ar')` says yes. Check, in that order:
 
-1. **The address is `http://localhost:4600`** on the phone (port forwarding), not the Mac's IP. In the remote
+1. **The address is `http://localhost:4500`** on the phone (port forwarding), not the Mac's IP. In the remote
    inspector console, `window.isSecureContext` must be `true`.
 2. **WebXR is there:** in the remote console run `await navigator.xr?.isSessionSupported('immersive-ar')`.
    - `undefined`: no WebXR in this browser (not Chrome, a very old Chrome, or an in-app browser). Use Chrome.
