@@ -1,6 +1,7 @@
 import {
   DEFAULT_FOCAL_35MM,
   focalPxFrom35mm,
+  INCHES_PER_METRE,
   sizeFromArPoints,
   sizeFromKnownSide,
   sizeFromReference,
@@ -55,7 +56,12 @@ const round1 = (v: number) => Math.round(v * 10) / 10;
 export function sizePhotoWindow(input: Pick<PhotoWindowInput, 'corners' | 'scale'>, upload: Pick<WindowPhotoUpload, 'widthPx' | 'heightPx' | 'focal35mm'>): { widthIn: number; heightIn: number } | null {
   const s = input.scale;
   let size: { widthIn: number; heightIn: number } | null;
-  if (s.kind === 'reference') {
+  if (s.kind === 'roomplan') {
+    // The iPhone's room scan gives the size directly (0.1 in like the server); no photo needed.
+    return { widthIn: round1(s.widthM * INCHES_PER_METRE), heightIn: round1(s.heightM * INCHES_PER_METRE) };
+  } else if (input.corners === undefined) {
+    return null;
+  } else if (s.kind === 'reference') {
     const ref = WINDOW_PHOTO_REFERENCES[s.reference];
     size = sizeFromReference(input.corners, s.corners, ref.widthIn, ref.heightIn);
   } else if (s.kind === 'known-side') {
@@ -64,7 +70,7 @@ export function sizePhotoWindow(input: Pick<PhotoWindowInput, 'corners' | 'scale
     size = sizeFromKnownSide(input.corners, upload.widthPx, upload.heightPx, s.side, s.inches, focalPx);
   } else if (s.kind === 'ar') {
     // AR: the distance between the tapped 3D points (the photo only carries the thumbnail); 0.01 in like the server.
-    const m = sizeFromArPoints(s.pointsM);
+    const m = sizeFromArPoints(s.pointsM, { device: s.device, cornerSpreadM: s.cornerSpreadM });
     if (m === null) return null;
     return { widthIn: Math.round(m.widthIn * 100) / 100, heightIn: Math.round(m.heightIn * 100) / 100 };
   } else {
@@ -96,6 +102,11 @@ export function livePhotoWindows(
     if (mine !== undefined && mine.key === sizingKey(input)) {
       const m = { widthIn: mine.widthIn, heightIn: mine.heightIn, uncertaintyIn: mine.uncertaintyIn, distanceIn: mine.distanceIn, viewAngleDeg: mine.viewAngleDeg };
       return [{ ...input, ...m, sizeClass: windowSizeClass(m.widthIn, m.heightIn), quality: 'good' as const, fromServer: false }];
+    }
+    if (input.scale.kind === 'roomplan') {
+      // A room-scan window is never order-grade: 'check' here too, like the server.
+      const size = sizePhotoWindow(input, { widthPx: 0, heightPx: 0, focal35mm: null });
+      return size === null ? [] : [{ ...input, ...size, sizeClass: windowSizeClass(size.widthIn, size.heightIn), quality: 'check' as const, fromServer: false }];
     }
     const upload = uploads.find((u) => u.id === input.uploadId);
     if (upload === undefined) return [];

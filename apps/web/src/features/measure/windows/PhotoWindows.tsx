@@ -403,6 +403,7 @@ export function PhotoWindowsList({
   excluded: ReadonlySet<string>;
   coverAll: boolean;
   srcFor: (uploadId: string) => string;
+  /** Opens a window on its photo (a room-scan window with no photo has none to open: the caller ignores it). */
   onOpen: (w: PhotoWindowInput) => void;
   /** Leave a window (all its photos) out of the quote, or put it back. */
   onToggle: (ids: string[]) => void;
@@ -422,6 +423,8 @@ export function PhotoWindowsList({
         {groups.map((g) => {
           const members = inputs.filter((w) => photoWindowKey(w) === g.key);
           const first = members[0]!;
+          // A room-scan window from the iPhone may have no photo: the first member that has one is the thumbnail
+          const withPhoto = members.find((w) => w.uploadId !== undefined);
           const ids = members.map((w) => w.id);
           const sized = members.flatMap((m) => windows.filter((w) => w.id === m.id));
           const shown = groupSize(sized, engine.cv === null ? null : (ms) => engine.cv!.combine(ms));
@@ -429,8 +432,8 @@ export function PhotoWindowsList({
           const out = ids.every((id) => excluded.has(id));
           return (
             <li key={g.key} className={flow.row} data-photo-window={first.id} data-photos={members.length} data-out={out ? 'true' : undefined}>
-              <Button variant="ghost" className={flow.rowOpen} aria-label={copy.rowLabel(g.name, size)} onClick={() => onOpen(first)}>
-                <img className={flow.rowThumb} src={srcFor(first.uploadId)} alt="" />
+              <Button variant="ghost" className={flow.rowOpen} aria-label={copy.rowLabel(g.name, size)} onClick={() => onOpen(withPhoto ?? first)}>
+                {withPhoto?.uploadId !== undefined ? <img className={flow.rowThumb} src={srcFor(withPhoto.uploadId)} alt="" /> : <span className={flow.rowThumb} aria-hidden="true" />}
                 <span className={flow.rowText}>
                   <span className={flow.rowName}>
                     {g.name}

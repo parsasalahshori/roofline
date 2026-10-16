@@ -137,6 +137,23 @@ describe('check status', () => {
   it('an error is never made orderable by confirming', () => {
     expect(checkLine(line({ confirmed: true, style: null }), S).orderable).toBe(false);
   });
+
+  it('a window measured only by the room scan (quote-grade) is an error, never orderable, even confirmed', () => {
+    const room = m(36.3, 60.2, { quality: 'check', uncertaintyIn: { width: 1, height: 1 }, quoteOnly: true });
+    const c = checkLine(line({ confirmed: true, measured: [room] }), S);
+    expect(c.status).toBe('error');
+    expect(c.orderable).toBe(false);
+    expect(c.reasons[0]!.message).toMatch(/room scan only/);
+    // The uncertainty gate flags it too
+    expect(c.reasons.some((r) => r.level === 'check' && /off by 1 in/.test(r.message))).toBe(true);
+  });
+
+  it('a room-scan measurement next to an order-grade one is left out of the order size and the checks', () => {
+    const room = m(35, 59, { quality: 'check', uncertaintyIn: { width: 1, height: 1 }, quoteOnly: true });
+    const c = checkLine(line({ measured: [room, m(36.3, 60.2)] }), S);
+    expect(c.status).toBe('ready');
+    expect(c.order).toEqual({ widthIn: 36, heightIn: 59.875 });
+  });
 });
 
 describe('safety glass suggestions (IRC R308.4)', () => {
@@ -230,6 +247,17 @@ describe('lines from photo windows', () => {
     const edited = applyLinePatches([first!], [{ id: 'p1', style: 'slider-2', location: 'Den' }])!;
     const [again] = linesFromPhotoWindows([pw('p1', { widthIn: 40 })], new Set(), edited);
     expect(again).toMatchObject({ style: 'slider-2', location: 'Den', measured: [expect.objectContaining({ widthIn: 40 })] });
+  });
+
+  it('a room-scan window (no photo) is a quote-only line with no thumbnail; another photo of it gives the thumbnail', () => {
+    const scan = { id: 'r1', windowKey: 'den', widthIn: 36, heightIn: 60, quality: 'check' as const, uncertaintyIn: { width: 1, height: 1 }, scale: { kind: 'roomplan' } };
+    const [only] = linesFromPhotoWindows([scan], new Set());
+    expect(only).toMatchObject({ id: 'den', uploadId: null, measured: [expect.objectContaining({ quoteOnly: true })] });
+    expect(checkLine({ ...only!, style: 'picture' }, S).status).toBe('error');
+    const [both] = linesFromPhotoWindows([scan, pw('a1', { windowKey: 'den', scale: { kind: 'ar' } })], new Set());
+    expect(both!.uploadId).toBe('u-a1');
+    expect(both!.measured.map((x) => x.quoteOnly === true)).toEqual([true, false]);
+    expect(checkLine({ ...both!, style: 'picture' }, S).status).toBe('ready');
   });
 
   it('a patch naming a line that is not there is refused', () => {
