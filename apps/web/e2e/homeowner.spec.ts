@@ -38,8 +38,9 @@ test('the homeowner signs with the keyboard only', async ({ page, browser, login
     const total = (await better.getByText(DOLLARS).first().innerText()).match(DOLLARS)?.[0];
     expect(total).toBeTruthy();
 
-    // Choose the option and sign without a pointer: focus, Tab, Space and Enter only.
-    const choose = better.getByRole('button', { name: `Choose ${BETTER_NAME}`, exact: true });
+    // Choose the option and sign without a pointer: focus, Tab, Space and Enter only. Better is the tile that is picked when the
+    // page opens; its button says the tier and the one all-in price.
+    const choose = better.getByRole('button', { name: `Choose Better \u00b7 ${total}`, exact: true });
     await choose.focus();
     await home.keyboard.press('Enter');
 
@@ -48,13 +49,19 @@ test('the homeowner signs with the keyboard only', async ({ page, browser, login
     const submit = sheet.getByRole('button', { name: new RegExp(`^Sign and accept \\${total}$`) });
     await expect(submit).toBeVisible();
 
+    // The sheet reads: the name, then the drawing's Clear, then the one consent, then the main button.
+    const name = sheet.getByLabel('Your full name');
+    await name.focus();
+    await home.keyboard.type('Pat Homeowner');
+    await home.keyboard.press('Tab');
+    await expect(sheet.getByRole('button', { name: 'Clear' })).toBeFocused();
+    await home.keyboard.press('Tab');
     const consent = sheet.getByRole('checkbox');
-    await consent.focus();
+    await expect(consent).toBeFocused();
     await home.keyboard.press('Space');
     await expect(consent).toBeChecked();
     await home.keyboard.press('Tab');
-    await expect(sheet.getByLabel('Your full name')).toBeFocused();
-    await home.keyboard.type('Pat Homeowner');
+    await expect(submit).toBeFocused();
     await home.keyboard.press('Enter');
 
     await expect(home.getByRole('heading', { name: 'Thank you, your proposal is signed' })).toBeVisible({
