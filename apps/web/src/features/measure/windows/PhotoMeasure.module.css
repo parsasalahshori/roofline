@@ -487,16 +487,17 @@
   pointer-events: none;
 }
 
+/* Clear of the 44px corner handle: diagonally out from the outline's corner */
 .candidateTag[data-corner="0"] {
-  transform: translate(-110%, -110%);
+  transform: translate(calc(-50% - 26px), calc(-50% - 26px));
 }
 
 .candidateTag[data-corner="1"] {
-  transform: translate(10%, -110%);
+  transform: translate(calc(-50% + 26px), calc(-50% - 26px));
 }
 
 .candidateTag[data-corner="2"] {
-  transform: translate(10%, 10%);
+  transform: translate(calc(-50% + 26px), calc(-50% + 26px));
 }
 
 .candidateTag[data-picked="true"] {
