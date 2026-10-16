@@ -498,7 +498,7 @@ function Done({ config, firstName, booked }: { config: PublicQuoteConfig; firstN
       <h1 ref={ref} tabIndex={-1} className={styles.title}>
         {quote.doneTitle(firstName)}
       </h1>
-      <p className={styles.text}>{quote.doneBody}</p>
+      <p className={styles.text}>{when === null ? quote.doneBody : quote.doneBodyBooked}</p>
       {when !== null ? <p className={styles.text}>{quote.doneBooked(when)}</p> : null}
       {config.phone ? <p className={styles.small}>{quote.doneCall(formatPhone(config.phone))}</p> : null}
     </section>

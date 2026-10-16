@@ -91,6 +91,7 @@ export const quote = {
   doneTitle: (first: string): string => `Thanks, ${first}!`,
   doneBody: 'We have your request. Someone from our team will contact you shortly to confirm your free in-home visit.',
   doneBooked: (when: string): string => `Your free in-home visit is booked for ${when}.`,
+  doneBodyBooked: 'We have your request and your visit time. If you need to change it, just give us a call.',
   doneCall: (phone: string): string => `Questions? Call us at ${phone}.`,
 } as const;
 
