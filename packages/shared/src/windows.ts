@@ -63,6 +63,12 @@ export type FacadePhoto = {
     fitScore: number | null;
     /** Heading correction the line-up found, degrees (Street View headings can be off by a few degrees). */
     headingCorrectionDeg: number;
+    /**
+     * Pitch and roll corrections the line-up found, degrees (Street View's camera pitch reference sits a few degrees
+     * off; a car on a cambered road rolls). Absent on older rows and when the line-up is not good: 0.
+     */
+    pitchCorrectionDeg?: number;
+    rollCorrectionDeg?: number;
     /** The wall height read from this photo (eave line), feet, to compare with the height from Google's heights. */
     wallHeightFromPhotoFt: number | null;
   };

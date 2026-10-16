@@ -51,9 +51,22 @@ export function rawCamera(plan: Plan, photo: StoredFacadePhoto): Camera | null {
   return { pos: plan.camera, heightM: CAMERA_HEIGHT_M, heading: photo.heading, pitch: photo.pitch, fov: photo.fov, widthPx: photo.widthPx, heightPx: photo.heightPx };
 }
 
-/** The camera to size windows with: the person's corner fit, else the line-up's heading correction, else as stored. */
-export function sizingCamera(plan: Plan, photo: StoredFacadePhoto): Camera | null {
+/**
+ * The stored camera levelled by the line-up: its pitch and roll corrections added (heading as stored). A person's corner
+ * fit is fitted on this camera (it fits heading, distance and wall height, not pitch or roll).
+ */
+export function levelledCamera(plan: Plan, photo: StoredFacadePhoto): Camera | null {
   const cam = rawCamera(plan, photo);
+  if (cam === null || photo.lineup === null) return cam;
+  return { ...cam, pitch: cam.pitch + (photo.lineup.pitchCorrectionDeg ?? 0), roll: photo.lineup.rollCorrectionDeg ?? 0 };
+}
+
+/**
+ * The camera to size windows with: the person's corner fit, else the line-up's heading correction, on the camera
+ * levelled by the line-up's pitch and roll; else as stored.
+ */
+export function sizingCamera(plan: Plan, photo: StoredFacadePhoto): Camera | null {
+  const cam = levelledCamera(plan, photo);
   if (cam === null) return null;
   const wall = mainWall(plan.walls, cam.pos);
   if (photo.personFit !== null && wall !== null) return correctedCamera(cam, wall, photo.personFit.headingCorrectionDeg, photo.personFit.distanceScale);
@@ -218,6 +231,7 @@ function overlayOf(plan: Plan | null, geometry: WindowGeometry | null, photo: St
     fit: 'good',
     fitScore: stored?.fitScore ?? null,
     headingCorrectionDeg: photo.personFit.headingCorrectionDeg,
+    ...(photo.lineup !== null ? { pitchCorrectionDeg: photo.lineup.pitchCorrectionDeg ?? 0, rollCorrectionDeg: photo.lineup.rollCorrectionDeg ?? 0 } : {}),
     wallHeightFromPhotoFt: Math.round(photo.personFit.eaveM * M_TO_FT * 10) / 10,
   };
 }

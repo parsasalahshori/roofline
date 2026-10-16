@@ -170,10 +170,11 @@ export async function takePhoto(
       fit: r.fit,
       fitScore: r.fitScore,
       headingCorrectionDeg: r.headingCorrectionDeg,
+      ...(r.fit === 'good' ? { pitchCorrectionDeg: r.pitchCorrectionDeg, rollCorrectionDeg: r.rollCorrectionDeg } : {}),
       wallHeightFromPhotoFt: r.eaveM === null ? null : Math.round(r.eaveM * M_TO_FT * 10) / 10,
     };
   }
-  base.lineup = r.fit === 'good' ? { headingCorrectionDeg: r.headingCorrectionDeg, eaveM: r.eaveM } : null;
+  base.lineup = r.fit === 'good' ? { headingCorrectionDeg: r.headingCorrectionDeg, pitchCorrectionDeg: r.pitchCorrectionDeg, rollCorrectionDeg: r.rollCorrectionDeg, eaveM: r.eaveM } : null;
   return { stored: base, bytes, blurred: r.blurred, outside: r.failed.includes('outside') };
 }
 

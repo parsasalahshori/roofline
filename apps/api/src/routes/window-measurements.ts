@@ -9,7 +9,7 @@ import { arProblem, readImageInfo, sheetProblem, sizePhotoWindow } from '../esti
 import type { AppDeps } from '../app.ts';
 import { measureWindows } from '../estimator/measure-windows.ts';
 import { fitCorners, mainWall, type Quad } from '../estimator/windows-lineup.ts';
-import { applyRuler, planOf, rawCamera, toWindowView } from '../estimator/windows-view.ts';
+import { applyRuler, levelledCamera, planOf, toWindowView } from '../estimator/windows-view.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { can } from '../permissions.ts';
 import { assertKnownFields, noNul, parse, UUID } from '../validate.ts';
@@ -203,7 +203,8 @@ function personFitFor(row: { geometry: Parameters<typeof planOf>[0] | null }, ph
   if (row.geometry === null) return null;
   const plan = planOf(row.geometry);
   if (plan === null) return null;
-  const cam = rawCamera(plan, photo);
+  // On the camera the line-up levelled (pitch and roll), as sizingCamera uses it.
+  const cam = levelledCamera(plan, photo);
   if (cam === null) return null;
   const wall = mainWall(plan.walls, cam.pos);
   if (wall === null) return null;
