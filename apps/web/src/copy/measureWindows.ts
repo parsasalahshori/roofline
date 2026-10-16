@@ -259,6 +259,7 @@ export const windowPhotos = {
   size: (w: number, h: number) => `${w.toFixed(1)} × ${h.toFixed(1)} in`,
   sizeLabel: 'Size',
   noSize: 'Move the corners to size the window.',
+  cornersFirst: (placed: number, of: number) => `Place every corner to see the size (${placed} of ${of}).`,
   typeSide: 'Type the side you measured.',
   check: 'Check the corners: the photo is at a steep angle or the corners are nearly in a line.',
   fromServer: 'Checked by Estimator',

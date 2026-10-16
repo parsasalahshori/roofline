@@ -85,9 +85,11 @@ describe('Measure a window on its photo (PhotoMeasure)', () => {
     renderMeasure();
     for (let i = 0; i < 4; i++) dragTo('paper', i, PAPER[i]!);
     for (let i = 0; i < 3; i++) dragTo('window', i, WIN[i]!);
-    // Part way: the size already follows the corners
+    // Part way: no size yet (a corner still where it started is a guess, not the window)
     const partial = sizeFromReference([WIN[0], WIN[1], WIN[2], seedWindowQuad(1200, 1600)[3]], PAPER, 8.5, 11)!;
-    expect(liveSize()).toContain(sizeText(partial));
+    expect(liveSize()).not.toContain(sizeText(partial));
+    expect(liveSize()).toContain(copy.cornersFirst(7, 8));
+    expect((screen.getByRole('button', { name: copy.save }) as HTMLButtonElement).disabled).toBe(true);
     dragTo('window', 3, WIN[3]);
     const expected = sizeFromReference(WIN, PAPER, 8.5, 11)!;
     expect(liveSize()).toContain(sizeText(expected));

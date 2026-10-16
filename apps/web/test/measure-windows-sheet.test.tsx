@@ -294,6 +294,24 @@ describe('Measuring sheet: corners snapped onto the frame', () => {
     expect(cornerAt(0)).toEqual(pctOf([340, 410]));
   });
 
+  it('shows no size and cannot be saved until all four corners are placed (the starting corners are a guess)', async () => {
+    renderMeasure();
+    await screen.findByText(copy.sheetFound);
+    const save = () => screen.getByRole('button', { name: copy.save }) as HTMLButtonElement;
+    expect(save().disabled).toBe(true);
+    expect(liveSize()).toContain(copy.cornersFirst(0, 4));
+    expect(liveSize()).not.toContain(copy.sizeExact('35 7/8', '59 3/4'));
+    expect(cv.measure).not.toHaveBeenCalled();
+    for (let i = 0; i < 3; i++) dragTo(i, ROUGH[i]!);
+    await act(async () => {});
+    expect(save().disabled).toBe(true);
+    expect(liveSize()).toContain(copy.cornersFirst(3, 4));
+    dragTo(3, ROUGH[3]);
+    await waitFor(() => expect(document.querySelector('[data-snap="snapped"]')).not.toBeNull());
+    expect(save().disabled).toBe(false);
+    expect(liveSize()).toContain(copy.sizeExact('35 7/8', '59 3/4'));
+  });
+
   it('a corner moved with the keys is not snapped (fine adjustment), and the size follows', async () => {
     renderMeasure();
     await ready();
