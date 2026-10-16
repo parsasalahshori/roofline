@@ -4,7 +4,7 @@ import { type Capability, CAPABILITIES, can } from '../src/permissions.ts';
 
 /** Spec 3.2, written out by hand so a change to the matrix has to change this table too. */
 const OWNER: readonly Capability[] = CAPABILITIES;
-const OFFICE: readonly Capability[] = ['approve_message', 'approve_internal', 'view_money_totals'];
+const OFFICE: readonly Capability[] = ['approve_message', 'approve_internal', 'view_money_totals', 'approve_factory_order'];
 const OFFICE_WITH_SPEND: readonly Capability[] = [...OFFICE, 'approve_spend'];
 const REP: readonly Capability[] = [];
 
@@ -35,9 +35,10 @@ describe('can(): every role against every capability', () => {
     for (const role of [...ROLES, 'system']) expect(covered.has(role as (typeof ROLES)[number] | 'system')).toBe(true);
   });
 
-  test('there are exactly the seven capabilities the spec names', () => {
+  test('there are exactly the seven capabilities the spec names, plus marking a window factory order ready', () => {
     expect([...CAPABILITIES].sort()).toEqual(
       [
+        'approve_factory_order',
         'approve_internal',
         'approve_message',
         'approve_spend',
