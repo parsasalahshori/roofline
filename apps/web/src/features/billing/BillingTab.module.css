@@ -6,6 +6,18 @@
   border-top: 1px solid var(--line);
 }
 
+/* With no usage above it the button is the first thing in the panel: no divider to hang from */
+.footer:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* The panel's only content is its header: the hairline under it would be a second edge at the bottom */
+.statusOnly > :first-child {
+  border-bottom: 0;
+}
+
 @media (max-width: 767.98px) {
   .footer > * {
     width: 100%;

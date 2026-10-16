@@ -11,8 +11,9 @@ const METER_KEY: Record<Entry['meter'], 'smsSegment' | 'aiCallMinute'> = {
   ai_call_minute: 'aiCallMinute',
 };
 
-/** This period's use of each meter. A meter with an included amount shows a bar; one without shows the count alone. */
+/** This period's use of each meter. A meter with an included amount shows a bar; one without shows the count alone. A company with no meters has nothing to show, not an empty heading. */
 export function UsageMeters({ usage }: { usage: BillingView['usage'] }) {
+  if (usage.length === 0) return null;
   return (
     <section className={styles.section}>
       <h3 className={styles.heading}>{billing.usageHeading}</h3>

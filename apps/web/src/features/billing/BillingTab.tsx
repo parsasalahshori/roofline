@@ -85,10 +85,14 @@ export function BillingTab() {
 
   const data = view.data;
   const look = STATUS_LOOK[data.status];
+  // A company with no meters and no invoices page has only its status to show: a strip, not a panel with an empty body
+  const hasBody = data.usage.length > 0 || data.canOpenPortal;
   return (
     <>
       <Panel
         title={data.planName ?? billing.noPlan}
+        padded={hasBody}
+        className={hasBody ? undefined : styles.statusOnly}
         actions={
           <Tag tone={look.tone} icon={look.icon}>
             {statusText(data)}
