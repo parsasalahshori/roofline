@@ -4,9 +4,10 @@ import { join } from 'node:path';
 import pg from 'pg';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, inject, test, vi } from 'vitest';
-import { QUOTE_CONSENT_VERSION, quoteConsentText, type PublicQuoteEstimate, type Ring } from '@roofline/shared';
+import { insertFootprints } from '@roofline/db/system';
+import { QUOTE_CONSENT_VERSION, quadkeyOf, quoteConsentText, quoteTextConsentText, type PublicQuoteEstimate, type Ring } from '@roofline/shared';
 import { MESSAGES } from '../src/errors.ts';
-import { QUOTE_RATE_LIMITS } from '../src/public/quote.ts';
+import { QUOTE_RATE_LIMITS, QUOTE_TOO_MANY } from '../src/public/quote.ts';
 import { seedFootprintFixture } from '../src/scripts/footprint-fixture.ts';
 import { loginAs, makeTestApp, type TestApp } from './helpers.ts';
 
@@ -45,18 +46,27 @@ async function enable(companyId: string, slug: string, extra: Record<string, unk
   );
 }
 
-/** A house about 25 m by 22 m round the point the fake geocoder gives `address`. */
-async function houseAt(address: string): Promise<void> {
+/**
+ * A house about 20 m by 18 m (about 3,900 sq ft) round the point the fake geocoder gives `address`; `scale` 2 makes it
+ * a 40 m by 36 m building (about 15,500 sq ft: a commercial one, for the size check).
+ */
+async function houseAt(address: string, scale = 1): Promise<void> {
   const found = await t.deps.geocoder.geocode(address);
   const [lng, lat] = [found!.lng, found!.lat];
+  const [dx, dy] = [0.00012 * scale, 0.00008 * scale];
   const ring: Ring = [
-    [lng - 0.00015, lat - 0.0001],
-    [lng + 0.00015, lat - 0.0001],
-    [lng + 0.00015, lat + 0.0001],
-    [lng - 0.00015, lat + 0.0001],
-    [lng - 0.00015, lat - 0.0001],
+    [lng - dx, lat - dy],
+    [lng + dx, lat - dy],
+    [lng + dx, lat + dy],
+    [lng - dx, lat + dy],
+    [lng - dx, lat - dy],
   ];
-  await seedFootprintFixture(t.deps.pools, [{ sourceRef: `house-${address}`, ring }]);
+  // The first house claims its tile; a later one in a ready tile is added to it directly.
+  const first = ring[0]!;
+  const tile = quadkeyOf(first[0], first[1]);
+  const [ready] = await q(`select 1 from building_footprint_tiles where quadkey = $1`, [tile]);
+  if (ready) await insertFootprints(t.deps.pools.system, { tile, state: 'NE' }, [{ sourceRef: `house-${address}`, ring }]);
+  else await seedFootprintFixture(t.deps.pools, [{ sourceRef: `house-${address}`, ring }]);
 }
 
 beforeEach(async () => {
@@ -123,9 +133,20 @@ describe('GET /api/public/quote/:slug', () => {
       companyName: expect.any(String),
       products: ['windows', 'roof', 'gutters'],
       booking: false,
-      consent: { version: QUOTE_CONSENT_VERSION, text: quoteConsentText(res.body.companyName) },
+      consent: {
+        version: QUOTE_CONSENT_VERSION,
+        text: quoteConsentText(res.body.companyName),
+        textingText: quoteTextConsentText(res.body.companyName),
+        privacyUrl: expect.stringMatching(/\/privacy$/),
+        termsUrl: expect.stringMatching(/\/terms$/),
+      },
       turnstileSiteKey: null,
     });
+    // The links go to the company's own policy pages, which answer.
+    const slug = String((await q(`select slug from companies where id = $1`, [t.seed.a.companyId]))[0]!.slug);
+    expect(res.body.consent.privacyUrl).toContain(slug);
+    expect((await request(t.app).get(`/policies/${slug}/privacy`)).status).toBe(200);
+    expect((await request(t.app).get(`/policies/${slug}/terms`)).status).toBe(200);
     expect(JSON.stringify(res.body)).not.toMatch(/cents|price|pricebook/i);
   });
 
@@ -140,16 +161,14 @@ describe('GET /api/public/quote/:slug', () => {
 });
 
 describe('POST /api/public/quote/:slug/estimate', () => {
-  test('measures the home and answers ranges only: no prices, price book, measurement or other ids', async () => {
+  test('measures the home and answers ranges only: no prices, price book, measurement or other ids; gutters never priced', async () => {
     const e = await estimated();
     expect(e.status).toBe('ready');
     expect(Object.keys(e).sort()).toEqual(['address', 'formToken', 'gutters', 'outline', 'quoteId', 'roof', 'status', 'windows']);
     expect(e.roof).not.toBeNull();
     expect(e.windows).not.toBeNull();
-    expect(e.gutters).not.toBeNull();
-    expect(Object.keys(e.gutters!).sort()).toEqual(['feet', 'range']);
-    expect(e.gutters!.feet % 10).toBe(0);
-    for (const range of [e.roof!.range, e.windows!.range, e.gutters!.range]) {
+    expect(e.gutters).toBeNull();
+    for (const range of [e.roof!.range, e.windows!.range]) {
       expect(range.lowCents % 10_000).toBe(0);
       expect(range.highCents % 10_000).toBe(0);
       expect(range.highCents).toBeGreaterThan(range.lowCents);
@@ -158,7 +177,10 @@ describe('POST /api/public/quote/:slug/estimate', () => {
     expect(Object.keys(e.windows!).sort()).toEqual(['count', 'range']);
     expect(e.outline!.ring.length).toBeGreaterThanOrEqual(3);
     const text = JSON.stringify(e);
-    expect(text).not.toMatch(/totalCents|unitCents|pricebook|calculation|tier|measurementId|propertyId|companyId/);
+    expect(text).not.toMatch(/totalCents|unitCents|pricebook|calculation|tier|measurementId|propertyId|companyId|callback|lookup|windowMix|accuracy/);
+    // What the lookup said is kept with the estimate (not sent).
+    const [row] = await q(`select result from quote_estimates where id = $1`, [e.quoteId]);
+    expect(row!.result.lookup).toEqual({ accuracy: 1, accuracyType: 'rooftop', unit: null });
   });
 
   test('the widened range brackets the company options and never equals one of them', async () => {
@@ -227,7 +249,9 @@ describe('POST /api/public/quote/:slug/estimate', () => {
     for (let i = 0; i < QUOTE_RATE_LIMITS.estimatesPerIpPerHour; i++) expect((await estimate(ACME, { address: ADDRESS }, { ip })).status).toBe(200);
     const res = await estimate(ACME, { address: ADDRESS }, { ip });
     expect(res.status).toBe(429);
-    expect(res.body).toEqual({ error: MESSAGES.tooFast });
+    // The limit is hourly, and the message says so (not "in a minute").
+    expect(res.body).toEqual({ error: QUOTE_TOO_MANY });
+    expect(QUOTE_TOO_MANY).toMatch(/hour/);
   });
 
   test('a filled honeypot answers the same shape and measures nothing', async () => {
@@ -424,6 +448,205 @@ describe('GET /slots and booking', () => {
     const [req] = await q(`select appointment_id, job_id from quote_requests where company_id = $1`, [t.seed.a.companyId]);
     expect(req!.appointment_id).not.toBeNull();
     expect(appt!.job_id).toBe(req!.job_id);
+  });
+});
+
+describe("the page's checks: a call back instead of a doubtful price", () => {
+  const FLAT = '2200 Riverfront Dr Apt 1203, Omaha, NE 68102';
+  const BIG = '2587 Linwood Ave, Omaha, NE 68105';
+
+  test('an apartment (a unit in the address) is a call back: nothing measured, the unit kept, the answer reused', async () => {
+    const e = await estimated(ACME, FLAT);
+    expect(e).toMatchObject({ status: 'fallback', roof: null, windows: null, gutters: null, outline: null });
+    expect(e.address).toContain('Apt 1203');
+    expect(t.solar.calls).toHaveLength(0);
+    expect(await count('measurements', t.seed.a.companyId)).toBe(0);
+    const [row] = await q(`select measured, result from quote_estimates where id = $1`, [e.quoteId]);
+    expect(row).toMatchObject({ measured: false, result: { callback: 'unit', lookup: { unit: 'Apt 1203' } } });
+    const [home] = await q(`select address_line from properties where company_id = $1`, [t.seed.a.companyId]);
+    expect(home!.address_line).toBe('2200 Riverfront Dr Apt 1203');
+    // The same address again: the stored call back, no second lookup.
+    const geocodes = t.geocoder.calls.length;
+    expect((await estimated(ACME, FLAT)).quoteId).toBe(e.quoteId);
+    expect(t.geocoder.calls.length).toBe(geocodes);
+    // The request is still taken, filed under the flat.
+    t.clock.advance(8000);
+    expect((await lead(ACME, leadBody(e))).status).toBe(201);
+    const [job] = await q(`select p.address_line from jobs j join properties p on p.id = j.property_id where j.company_id = $1`, [t.seed.a.companyId]);
+    expect(job!.address_line).toBe('2200 Riverfront Dr Apt 1203');
+  });
+
+  test('a lookup that did not land on the house, or found another street, is a call back with nothing measured', async () => {
+    const real = t.deps.geocoder.geocode.bind(t.deps.geocoder);
+    const spy = vi.spyOn(t.deps.geocoder, 'geocode');
+    spy.mockImplementationOnce(async (a, o) => ({ ...(await real(a, o))!, accuracyType: 'range_interpolation' }));
+    const between = await estimated(ACME, '18 Elm St, Omaha, NE 68102');
+    spy.mockImplementationOnce(async (a, o) => ({ ...(await real(a, o))!, streetName: 'Elmwood St' }));
+    const renamed = await estimated(ACME, '19 Elm St, Omaha, NE 68102');
+    for (const e of [between, renamed]) expect(e.status).toBe('fallback');
+    const reasons = await q(`select result->>'callback' as reason from quote_estimates where company_id = $1 order by created_at`, [t.seed.a.companyId]);
+    expect(reasons.map((r) => r.reason).sort()).toEqual(['not-rooftop', 'street-changed']);
+    expect(t.solar.calls).toHaveLength(0);
+  });
+
+  test('a call back for how the address was typed is not handed to a visitor who typed it right', async () => {
+    const RIGHT = '19 Elmwood St, Omaha, NE 68102';
+    await houseAt(RIGHT);
+    const real = t.deps.geocoder.geocode.bind(t.deps.geocoder);
+    // The lookup "corrects" Elm St to Elmwood St: a call back, filed under Elmwood St.
+    vi.spyOn(t.deps.geocoder, 'geocode').mockImplementationOnce(async (_a, o) => real(RIGHT, o));
+    const wrong = await estimated(ACME, '19 Elm St, Omaha, NE 68102');
+    expect(wrong.status).toBe('fallback');
+    const right = await estimated(ACME, RIGHT);
+    expect(right.quoteId).not.toBe(wrong.quoteId);
+    expect(right.status).toBe('ready');
+  });
+
+  test("a commercial building is measured, then a call back that does not use up the daily cap; every measurement stays under twice the cap", async () => {
+    await q(`update company_settings set quote_daily_cap = 1 where company_id = $1`, [t.seed.a.companyId]);
+    await houseAt(BIG, 2);
+    const big = await estimated(ACME, BIG);
+    expect(big).toMatchObject({ status: 'fallback', roof: null, windows: null });
+    const [row] = await q(`select measured, measurement_id, result from quote_estimates where id = $1`, [big.quoteId]);
+    expect(row).toMatchObject({ measured: true, result: { callback: 'too-big' } });
+    expect(row!.measurement_id).not.toBeNull();
+    // The cap of one priced estimate is still free for a house.
+    expect((await estimated()).status).toBe('ready');
+    // Now the cap is used: a new address is a call back without measuring.
+    const measurements = await count('measurements', t.seed.a.companyId);
+    const third = await estimated(ACME, '901 Other Rd, Omaha, NE 68102');
+    expect(third.status).toBe('fallback');
+    expect(await count('measurements', t.seed.a.companyId)).toBe(measurements);
+    // The big building asked again is the stored call back (no new measurement).
+    expect((await estimated(ACME, BIG)).quoteId).toBe(big.quoteId);
+  });
+
+  test('the ceiling: with the cap at 1, two call backs measured use up the day', async () => {
+    await q(`update company_settings set quote_daily_cap = 1 where company_id = $1`, [t.seed.a.companyId]);
+    await houseAt(BIG, 2);
+    await houseAt('2601 Linwood Ave, Omaha, NE 68105', 2);
+    expect((await estimated(ACME, BIG)).status).toBe('fallback');
+    expect((await estimated(ACME, '2601 Linwood Ave, Omaha, NE 68105')).status).toBe('fallback');
+    const before = await count('measurements', t.seed.a.companyId);
+    expect((await estimated()).status).toBe('fallback');
+    expect(await count('measurements', t.seed.a.companyId)).toBe(before);
+  });
+});
+
+describe('POST /api/public/quote/:slug/windows (the homeowner sets the count)', () => {
+  test('re-prices for the count asked, within 1 to 80; another company or a bad count is refused', async () => {
+    const e = await estimated();
+    const more = await request(t.app).post(`/api/public/quote/${ACME}/windows`).send({ quoteId: e.quoteId, count: e.windows!.count + 10 });
+    expect(more.status, JSON.stringify(more.body)).toBe(200);
+    expect(more.body.count).toBe(e.windows!.count + 10);
+    expect(more.body.range.lowCents).toBeGreaterThan(e.windows!.range.lowCents);
+    expect(Object.keys(more.body).sort()).toEqual(['count', 'range']);
+    const same = await request(t.app).post(`/api/public/quote/${ACME}/windows`).send({ quoteId: e.quoteId, count: e.windows!.count });
+    expect(same.body.range).toEqual(e.windows!.range);
+    for (const count of [0, 81, 2.5, '9']) {
+      expect((await request(t.app).post(`/api/public/quote/${ACME}/windows`).send({ quoteId: e.quoteId, count })).status, String(count)).toBe(400);
+    }
+    expect((await request(t.app).post(`/api/public/quote/${BOLT}/windows`).send({ quoteId: e.quoteId, count: 10 })).status).toBe(404);
+    // The stored estimate is not changed.
+    expect((await estimated()).windows).toEqual(e.windows);
+  });
+
+  test("the homeowner's count goes on the job's line", async () => {
+    const e = await estimated();
+    t.clock.advance(8000);
+    expect((await lead(ACME, leadBody(e, { windowCount: e.windows!.count + 3 }))).status).toBe(201);
+    const [line] = await q(`select summary from activities where company_id = $1 and kind = 'job.created' and summary like 'Instant quote%'`, [t.seed.a.companyId]);
+    expect(line!.summary).toContain(`about ${e.windows!.count + 3} windows (their count; we estimated ${e.windows!.count})`);
+  });
+});
+
+describe('consent: two boxes', () => {
+  test('the optional text box is kept only when ticked, and never changes the customer\'s texting consent (Ruling BF)', async () => {
+    const e = await estimated();
+    t.clock.advance(8000);
+    expect((await lead(ACME, leadBody(e, { textConsent: true }))).status).toBe(201);
+    expect((await lead(ACME, leadBody(e, { phone: '(402) 555-0177' }))).status).toBe(201);
+    const rows = await q(`select phone_e164, text_consent, text_consent_text, consent_text from quote_requests where company_id = $1 order by phone_e164`, [t.seed.a.companyId]);
+    const name = String((await q(`select name from companies where id = $1`, [t.seed.a.companyId]))[0]!.name);
+    expect(rows).toEqual([
+      { phone_e164: '+14025550142', text_consent: true, text_consent_text: quoteTextConsentText(name), consent_text: quoteConsentText(name) },
+      { phone_e164: '+14025550177', text_consent: false, text_consent_text: null, consent_text: quoteConsentText(name) },
+    ]);
+    expect(quoteConsentText(name)).not.toMatch(/text message/i);
+    const customers = await q(`select sms_consent_status from customers where company_id = $1`, [t.seed.a.companyId]);
+    expect(customers.map((c) => c.sms_consent_status)).toEqual(['none', 'none']);
+    expect((await lead(ACME, leadBody(e, { phone: '(402) 555-0178', textConsent: 'yes' }))).status).toBe(400);
+  });
+});
+
+describe('the office sees each new request', () => {
+  test("a note on Home's feed, and the call-back step on the owner's and office's My Day", async () => {
+    const e = await estimated();
+    t.clock.advance(8000);
+    expect((await lead(ACME, leadBody(e))).status).toBe(201);
+    const [job] = await q(`select id, next_step from jobs where company_id = $1`, [t.seed.a.companyId]);
+    const notes = await q(`select agent, kind, title, subject_id, status from agent_tasks where company_id = $1 and kind = 'instant_quote_lead'`, [t.seed.a.companyId]);
+    expect(notes).toEqual([{ agent: 'system', kind: 'instant_quote_lead', title: 'New instant quote request', subject_id: job!.id, status: expect.any(String) }]);
+    // A repeat makes no second note.
+    expect((await lead(ACME, leadBody(e))).status).toBe(201);
+    expect(await q(`select id from agent_tasks where company_id = $1 and kind = 'instant_quote_lead'`, [t.seed.a.companyId])).toHaveLength(1);
+    const agent = await loginAs(t.app, t.seed.a.owner);
+    const today = await agent.get('/api/today');
+    expect(today.status).toBe(200);
+    expect((today.body.followUps as { id: string }[]).map((j) => j.id)).toContain(job!.id);
+  });
+});
+
+describe('booking from the page', () => {
+  async function bookingOn(): Promise<{ id: string; start: string; end: string }[]> {
+    await q(`update company_settings set quote_booking = true where company_id = $1`, [t.seed.a.companyId]);
+    const on = await request(t.app).get(`/api/public/quote/${ACME}/slots`);
+    expect(on.status).toBe(200);
+    return on.body.slots as { id: string; start: string; end: string }[];
+  }
+
+  test('times start tomorrow in the company zone, never the same day', async () => {
+    const slots = await bookingOn();
+    expect(slots.length).toBeGreaterThan(0);
+    const zone = String((await q(`select timezone from companies where id = $1`, [t.seed.a.companyId]))[0]!.timezone ?? 'America/Chicago');
+    const today = t.clock.now().toLocaleDateString('en-CA', { timeZone: zone });
+    for (const sl of slots) expect(new Date(sl.start).toLocaleDateString('en-CA', { timeZone: zone }) > today).toBe(true);
+  });
+
+  test("a booked visit makes the inspector the job's rep and clears the call-back step", async () => {
+    const slots = await bookingOn();
+    const e = await estimated();
+    t.clock.advance(8000);
+    const res = await lead(ACME, leadBody(e, { slotId: slots[slots.length - 1]!.id }));
+    expect(res.body.booked).not.toBeNull();
+    const [appt] = await q(`select assigned_user_id, job_id from appointments where company_id = $1`, [t.seed.a.companyId]);
+    const [job] = await q(`select assigned_user_id, next_step, next_step_on, stage from jobs where id = $1`, [appt!.job_id]);
+    expect(job).toMatchObject({ assigned_user_id: appt!.assigned_user_id, next_step: null, next_step_on: null, stage: 'inspection' });
+  });
+
+  test('a repeat send with a picked time books it; once booked, a repeat answers the visit already booked', async () => {
+    const slots = await bookingOn();
+    const e = await estimated();
+    t.clock.advance(8000);
+    expect((await lead(ACME, leadBody(e))).body.booked).toBeNull();
+    const pick = slots[slots.length - 1]!;
+    const again = await lead(ACME, leadBody(e, { slotId: pick.id }));
+    expect(again.body.booked).toEqual({ start: pick.start, end: pick.end });
+    const third = await lead(ACME, leadBody(e, { slotId: slots[0]!.id }));
+    expect(third.body.booked).toEqual({ start: pick.start, end: pick.end });
+    expect(await count('appointments', t.seed.a.companyId)).toBe(1);
+    expect(await count('jobs', t.seed.a.companyId)).toBe(1);
+  });
+
+  test('a time that cannot be booked (today, or taken) says so: slotTaken', async () => {
+    await bookingOn();
+    const e = await estimated();
+    t.clock.advance(8000);
+    const sameDay = new Date(t.clock.now().getTime() + 3 * 60 * 60 * 1000).toISOString();
+    const res = await lead(ACME, leadBody(e, { slotId: sameDay }));
+    expect(res.status).toBe(201);
+    expect(res.body).toEqual({ ok: true, booked: null, slotTaken: true });
+    expect(await count('appointments', t.seed.a.companyId)).toBe(0);
   });
 });
 

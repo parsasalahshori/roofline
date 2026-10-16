@@ -3,7 +3,11 @@ import { DemoGeocoder, FakeGeocoder } from './fakes/geocoder.ts';
 import { geocodioFor } from './geocodio.ts';
 
 export type GeocodeResult = { lng: number; lat: number; street: string | null; city: string | null; state: string | null; zip: string | null;
-  timezone: string | null; accuracy: number; accuracyType: string; source: 'geocodio' | 'fake' };
+  timezone: string | null; accuracy: number; accuracyType: string; source: 'geocodio' | 'fake';
+  /** The unit the geocoder read in the address ("Apt 1203", "Ste 200"), when there is one. Absent from older fakes. */
+  unit?: string | null;
+  /** The house number and the street name as the geocoder found them, apart ("701", "W 112th St"). */
+  number?: string | null; streetName?: string | null };
 export interface Geocoder { readonly configured: boolean;
   geocode(address: string, opts?: { timeoutMs?: number }): Promise<GeocodeResult | null>;
   geocodeMany(addresses: readonly string[]): Promise<(GeocodeResult | null)[]>;

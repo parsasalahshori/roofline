@@ -41,19 +41,28 @@ export const QUOTE_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 export const QUOTE_ORIGIN_RE = /^https?:\/\/[a-z0-9.-]+(?::\d{1,5})?$/;
 
 /**
- * The consent shown next to the box. Changing these words means a new version: the server records the version the
- * page showed with its exact text, the time and a hash of the address the request came from.
+ * The consent shown next to the two boxes. Changing these words means a new version: the server records the version
+ * the page showed with the exact text of each box ticked, the time and a hash of the address the request came from.
+ * 2026-10-16: one box became two, a required one for calls and email and an optional one for texts.
  */
-export const QUOTE_CONSENT_VERSION = '2026-10-15';
+export const QUOTE_CONSENT_VERSION = '2026-10-16';
 
-/** The full consent sentence for one company. Ticking it is required to send the form. */
+/** The required box: calls and email about the estimate. Ticking it is required to send the form. */
 export function quoteConsentText(companyName: string): string {
   return (
-    `By checking this box and clicking "Get my estimate", I agree that ${companyName} may contact me about my estimate ` +
-    'and appointment at the phone number and email I provided, including by calls and text messages that may be sent ' +
-    'using automated technology or prerecorded or artificial voices. Consent is not a condition of purchase. ' +
-    'Message frequency varies. Message and data rates may apply. Reply STOP to stop texts or HELP for help. ' +
-    'I also agree to the Privacy Policy and Terms.'
+    `By checking this box and clicking "Send my request", I agree that ${companyName} may contact me about my estimate ` +
+    'and appointment by phone call and email at the phone number and email I provided, including calls that may use ' +
+    'automated technology or a prerecorded or artificial voice. Consent is not a condition of purchase. ' +
+    'I agree to the Privacy Policy and Terms.'
+  );
+}
+
+/** The optional box, unticked to start: text messages. Its sentence is kept only when it is ticked. */
+export function quoteTextConsentText(companyName: string): string {
+  return (
+    `Text me too: ${companyName} may send text messages about my estimate and appointment to the phone number I ` +
+    'provided, which may be sent using automated technology. Consent is not a condition of purchase. Message ' +
+    'frequency varies. Message and data rates may apply. Reply STOP to stop texts or HELP for help.'
   );
 }
 
@@ -103,7 +112,11 @@ export type PublicQuoteConfig = {
   phone: string | null;
   products: QuoteProduct[];
   booking: boolean;
-  consent: { version: string; text: string };
+  /**
+   * `text`: the required calls-and-email box; `textingText`: the optional "text me" box; the company's privacy and
+   * terms pages, linked under the boxes.
+   */
+  consent: { version: string; text: string; textingText: string; privacyUrl: string; termsUrl: string };
   /** Cloudflare Turnstile site key when the page asks for it; null when it does not. */
   turnstileSiteKey: string | null;
 };
@@ -118,7 +131,9 @@ export type PublicQuoteEstimate = {
   /** The address as found (street, city, state and ZIP), or as typed when it was not looked up. */
   address: string;
   roof: { squares: number; range: PriceRange } | null;
+  /** The window count is a guess from the outside: the homeowner may change it (POST .../windows re-prices it). */
   windows: { count: number; range: PriceRange } | null;
+  /** Always null since October 2026: gutters are priced at the visit, never on the page (kept for older stored rows). */
   gutters: { feet: number; range: PriceRange } | null;
   /** The main roof's outline for the picture, and the point the picture is centred on. */
   outline: { center: LngLat; ring: LngLat[] } | null;
@@ -128,5 +143,14 @@ export type PublicQuoteEstimate = {
 export type PublicQuoteSlot = { id: string; start: string; end: string };
 export type PublicQuoteSlots = { timeZone: string; slots: PublicQuoteSlot[] };
 
-/** POST /api/public/quote/:slug/lead answer. */
-export type PublicQuoteLeadResult = { ok: true; booked: { start: string; end: string } | null };
+/** The window counts a homeowner may set on the page. */
+export const QUOTE_WINDOW_COUNT = { min: 1, max: 80 } as const;
+
+/** POST /api/public/quote/:slug/windows { quoteId, count } answer: the windows range for that count. */
+export type PublicQuoteWindows = { count: number; range: PriceRange };
+
+/**
+ * POST /api/public/quote/:slug/lead answer. `booked`: the visit booked (or already booked by an earlier send of the
+ * same request). `slotTaken`: a time was picked but could not be booked (taken meanwhile): the office calls instead.
+ */
+export type PublicQuoteLeadResult = { ok: true; booked: { start: string; end: string } | null; slotTaken?: boolean };

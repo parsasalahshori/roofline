@@ -64,6 +64,7 @@ function accept(entry: unknown): GeocodeResult | null {
 
   const parts: JsonRecord = isRecord(entry.address_components) ? entry.address_components : {};
   const streetText = `${partText(parts.number)} ${partText(parts.formatted_street)}`.trim();
+  const unitText = `${partText(parts.secondaryunit)} ${partText(parts.secondarynumber)}`.trim();
 
   const fields: JsonRecord = isRecord(entry.fields) ? entry.fields : {};
   const timezone: unknown = fields.timezone;
@@ -80,6 +81,9 @@ function accept(entry: unknown): GeocodeResult | null {
     accuracy,
     accuracyType,
     source: 'geocodio',
+    unit: unitText === '' ? null : unitText,
+    number: partText(parts.number) === '' ? null : partText(parts.number),
+    streetName: partText(parts.formatted_street) === '' ? null : partText(parts.formatted_street),
   };
 }
 

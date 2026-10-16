@@ -1,5 +1,5 @@
 import type { LngLat } from '@roofline/shared';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import styles from './QuotePage.module.css';
 
 /*
@@ -52,11 +52,18 @@ export function thumbLayout(ring: readonly LngLat[], center: LngLat): ThumbLayou
   return { tiles, points: pts.map(([x, y]) => [((x - x0) / W) * 100, ((y - y0) / H) * 100]) };
 }
 
+/**
+ * The photo. Until every tile has come in (or failed) the box shows a soft moving placeholder instead of a blank,
+ * and each tile fades in as it lands: the free imagery can take a few seconds on a phone.
+ */
 export function RoofThumb({ ring, center, alt, showOutline, children }: { ring: readonly LngLat[]; center: LngLat; alt: string; showOutline: boolean; children?: ReactNode }) {
   const layout = thumbLayout(ring, center);
   const polygon = layout.points.map(([x, y]) => `${(x / 100) * W},${(y / 100) * H}`).join(' ');
+  const [settled, setSettled] = useState<ReadonlySet<string>>(() => new Set());
+  const settle = (key: string) => setSettled((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+  const loading = layout.tiles.some((t) => !settled.has(t.key));
   return (
-    <div className={styles.thumb} role="img" aria-label={alt}>
+    <div className={styles.thumb} role="img" aria-label={alt} data-loading={loading ? true : undefined}>
       {layout.tiles.map((t) => (
         <img
           key={t.key}
@@ -64,12 +71,14 @@ export function RoofThumb({ ring, center, alt, showOutline, children }: { ring: 
           alt=""
           className={styles.tile}
           style={{ left: `${t.left}%`, top: `${t.top}%`, width: `${(TILE / W) * 100}%`, height: `${(TILE / H) * 100}%` }}
-          loading="lazy"
           decoding="async"
           referrerPolicy="no-referrer"
           draggable={false}
+          data-loaded={settled.has(t.key) ? true : undefined}
+          onLoad={() => settle(t.key)}
           onError={(e) => {
             e.currentTarget.style.visibility = 'hidden';
+            settle(t.key);
           }}
         />
       ))}
