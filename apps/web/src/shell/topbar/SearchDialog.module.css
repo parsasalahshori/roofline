@@ -47,7 +47,7 @@
 
 /* Inset by 2px rather than the kit's 2px outside: the field spans the dialog, which clips what sits outside it */
 .input:focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
 
