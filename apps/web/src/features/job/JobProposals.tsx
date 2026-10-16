@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router';
-import type { JobView, ProposalOptionView, ProposalStatus, ProposalView } from '@roofline/shared';
-import { Button, Icon, Panel, Tag, UiLink, useToast, type IconName, type TagTone } from '@roofline/ui';
+import type { JobView, ProposalOptionView, ProposalView } from '@roofline/shared';
+import { Button, Icon, Panel, Tag, UiLink, useToast } from '@roofline/ui';
 import { useMe } from '../../api/hooks.ts';
 import { job } from '../../copy/job.ts';
 import { proposals } from '../../copy/proposals.ts';
@@ -9,24 +9,13 @@ import { useMeasure } from '../estimator/api.ts';
 import { EmptyPanel, LoadError, RowsSkeleton } from '../jobs/states.tsx';
 import { useCompanyZone } from '../jobs/useCompanyToday.ts';
 import { useCopyLink } from '../proposals/api.ts';
-import { formatLastOpened, formatWhen } from '../proposals/format.ts';
+import { ProposalEvents, proposalEventLines } from '../proposals/ProposalEvents.tsx';
+import { StatusTag } from '../proposals/StatusTag.tsx';
 import { useJobProposals } from './api.ts';
 import styles from './JobProposals.module.css';
 
 /** The option the pages call out: the one most people choose. The measure screen follows the same rule. */
 const RECOMMENDED_TIER = 'better';
-
-/** The status tag: its tone, and the glyph that goes with the word so the status is never only a colour. */
-const STATUS_TAG: Record<ProposalStatus, { tone: TagTone; icon: IconName }> = {
-  draft: { tone: 'neutral', icon: 'pen' },
-  ready: { tone: 'tape', icon: 'clock' },
-  sent: { tone: 'info', icon: 'arrow' },
-  viewed: { tone: 'info', icon: 'doc' },
-  signed: { tone: 'ok', icon: 'check' },
-  declined: { tone: 'warn', icon: 'x' },
-  expired: { tone: 'warn', icon: 'alert' },
-  replaced: { tone: 'neutral', icon: 'refresh' },
-};
 
 /** The lowest enabled option's total as a line, or null when there is none. Instant numbers say Estimate. */
 function proposalFromText(proposal: ProposalView): string | null {
@@ -34,17 +23,6 @@ function proposalFromText(proposal: ProposalView): string | null {
   if (totals.length === 0) return null;
   const money = proposals.money(Math.min(...totals));
   return proposal.basis === 'exact' ? job.proposalExactFrom(money) : job.proposalFrom(money);
-}
-
-/** "Sent", or "Opened 2×" once the customer has looked: the word, a glyph and a tone. */
-function StatusTag({ proposal }: { proposal: ProposalView }) {
-  const { tone, icon } = STATUS_TAG[proposal.status];
-  const opened = proposal.status === 'viewed' && proposal.views.count > 0;
-  return (
-    <Tag tone={tone} icon={icon}>
-      {opened ? job.openedTag(proposal.views.count) : proposals.statusLabelFor(proposal.status)}
-    </Tag>
-  );
 }
 
 /** One option as a tile: its tier, its price in Archivo, what it is. The recommended one is ringed, tinted and says so. */
@@ -64,37 +42,10 @@ function TierTile({ option, showPrice }: { option: ProposalOptionView; showPrice
   );
 }
 
-/** What has happened to the proposal, from the facts the server keeps: sent, opened, signed or declined. */
-function ProposalEvents({ proposal }: { proposal: ProposalView }) {
+/** The proposal's events for the newest row, in the company's time zone. */
+function RowEvents({ proposal }: { proposal: ProposalView }) {
   const zone = useCompanyZone();
-  const now = new Date();
-  const lines: { key: string; icon: IconName; text: string }[] = [];
-  if (proposal.sentAt !== null) lines.push({ key: 'sent', icon: 'arrow', text: proposals.sentOn(formatWhen(proposal.sentAt, now, zone)) });
-  if (proposal.views.count > 0 && proposal.views.last !== null) {
-    lines.push({ key: 'opened', icon: 'doc', text: proposals.eventsLine(proposal.views.count, formatLastOpened(proposal.views.last, now, zone)) });
-  } else if (proposal.sentAt !== null) {
-    lines.push({ key: 'unopened', icon: 'clock', text: proposals.eventsNone });
-  }
-  if (proposal.signed !== null) {
-    lines.push({ key: 'signed', icon: 'check', text: proposals.signedLine(proposal.signed.name, formatWhen(proposal.signed.at, now, zone)) });
-  }
-  if (proposal.declined !== null) {
-    lines.push({ key: 'declined', icon: 'x', text: proposals.declinedLine(formatWhen(proposal.declined.at, now, zone)) });
-    if (proposal.declined.reason !== null && proposal.declined.reason !== '') {
-      lines.push({ key: 'reason', icon: 'msg', text: proposals.declinedReason(proposal.declined.reason) });
-    }
-  }
-  if (lines.length === 0) return null;
-  return (
-    <ul className={styles.events}>
-      {lines.map((line) => (
-        <li key={line.key}>
-          <Icon name={line.icon} size={16} />
-          <span>{line.text}</span>
-        </li>
-      ))}
-    </ul>
-  );
+  return <ProposalEvents lines={proposalEventLines(proposal, new Date(), zone)} />;
 }
 
 type RowProps = { proposal: ProposalView; open: boolean; seeValue: boolean; canCopy: boolean };
@@ -126,7 +77,7 @@ function ProposalRow({ proposal, open, seeValue, canCopy }: RowProps) {
           ))}
         </ul>
       ) : null}
-      {open ? <ProposalEvents proposal={proposal} /> : null}
+      {open ? <RowEvents proposal={proposal} /> : null}
     </li>
   );
 }

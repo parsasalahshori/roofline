@@ -82,7 +82,7 @@ const routes: RouteObject[] = [
           { path: 'estimator/windows', element: <AppPage app="estimator" bare><WindowsWindow /></AppPage> },
           { path: 'estimator/windows/:windowMeasurementId', element: <AppPage app="estimator" bare><WindowsWindow /></AppPage> },
           { path: 'estimator/windows/:windowMeasurementId/order', element: <AppPage app="estimator" bare><OrderWindow /></AppPage> },
-          { path: 'estimator/proposals/:proposalId', element: <AppPage app="estimator"><ProposalWindow /></AppPage> },
+          { path: 'estimator/proposals/:proposalId', element: <ProposalWindow /> },
           { path: 'agents', element: <AppPage app="agents"><AgentsWindow /></AppPage> },
           { path: 'agents/feed', element: <AppPage app="agents"><FeedWindow /></AppPage> },
           { path: 'agents/waiting', element: <AppPage app="agents"><WaitingWindow /></AppPage> },

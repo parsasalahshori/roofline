@@ -8,6 +8,8 @@ const dollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'U
  */
 export const proposals = {
   // --- loading and errors ---
+  pageTitle: 'Proposal',
+  errorTag: "Couldn't load",
   loadFailed: "We couldn't open this proposal. Try again.",
   retry: 'Try again',
   notFound: "We couldn't find this proposal.",
@@ -97,16 +99,25 @@ export const proposals = {
   saveFailed: "We couldn't save your change. Try again.",
   saving: 'Saving',
 
+  // --- the options as rows and, on a phone, tabs ---
+  tiersLabel: 'Options',
+  recommended: 'Recommended',
+  optionLeftOut: 'Left out',
+  /** The one line under an option's name: what it is made of and the waste it allows for. */
+  specLine: (material: string, wastePercent: number): string => `${material} · ${wastePercent}% waste`,
+  activityHeading: 'Activity',
+
   // --- option cards ---
   optionHeading: (tier: Tier): string => proposals.tierName[tier],
   tierName: { good: 'Good', better: 'Better', best: 'Best' } satisfies Record<Tier, string>,
   optionOn: 'Include this option',
-  optionOff: 'Left out of this proposal',
   fieldName: 'Option name',
   fieldMaterial: 'Material',
   fieldWaste: 'Waste (percent)',
   fieldMarkup: 'Markup (percent)',
   totalLabel: 'Total',
+  lineItem: 'Item',
+  lineAmount: 'Amount',
   includes: 'Includes',
   linesHeading: 'Price lines',
   pricesUnavailable: 'Live prices are not available to you. The saved total is shown.',

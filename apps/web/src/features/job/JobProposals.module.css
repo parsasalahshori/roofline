@@ -113,26 +113,6 @@
   margin-top: 4px;
 }
 
-.events {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  color: var(--ink-2);
-  font-size: 13px;
-  list-style: none;
-}
-
-.events li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.events svg {
-  color: var(--ink-3);
-}
-
 /* On a phone the options are rows, not columns: the tier and what it is at the left, the price at the right */
 @media (max-width: 767.98px) {
   .tiers {
