@@ -340,7 +340,10 @@ describe('the first step: what are you looking for', () => {
     expect(await screen.findByText(quote.servicesLooking(quote.productName('roof')))).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: quote.servicesChange }));
     expect(await screen.findByRole('heading', { name: quote.servicesTitle })).toBeInTheDocument();
-    await pick(user, ['roof']);
+    // What they picked is still ticked
+    expect(screen.getByRole('checkbox', { name: quote.productName('roof') })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: quote.productName('windows') })).not.toBeChecked();
+    await user.click(screen.getByRole('button', { name: quote.servicesContinue }));
     await user.type(await screen.findByLabelText(quote.addressLabel), READY.address);
     await user.click(screen.getByRole('button', { name: quote.measureButton }));
     await screen.findByRole('heading', { name: quote.resultsTitle });

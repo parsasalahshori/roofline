@@ -57,6 +57,8 @@ export function QuotePage({ slug }: { slug: string }) {
   const [typed, setTyped] = useState('');
   // What the homeowner is looking for; null until they pick (a company that offers one thing is not asked).
   const [picked, setPicked] = useState<QuoteProduct[] | null>(null);
+  // The last picks, still ticked when they come back with "Change".
+  const [lastPicked, setLastPicked] = useState<QuoteProduct[]>([]);
 
   useEffect(() => {
     if (config.data) document.title = quote.pageTitle(config.data.companyName);
@@ -97,7 +99,16 @@ export function QuotePage({ slug }: { slug: string }) {
         ) : null}
       </header>
       <main className={styles.column}>
-        {services === null ? <ServicesStep products={c.products} onPick={setPicked} /> : null}
+        {services === null ? (
+          <ServicesStep
+            products={c.products}
+            initial={lastPicked}
+            onPick={(p) => {
+              setLastPicked(p);
+              setPicked(p);
+            }}
+          />
+        ) : null}
         {services !== null && step.kind === 'address' ? (
           <AddressStep
             slug={slug}
@@ -156,8 +167,8 @@ export function hasRanges(answer: EstimateAnswer, services: readonly QuoteProduc
 }
 
 /** The first step: what are you looking for? One or more of what the company offers. */
-function ServicesStep({ products, onPick }: { products: readonly QuoteProduct[]; onPick: (p: QuoteProduct[]) => void }) {
-  const [chosen, setChosen] = useState<QuoteProduct[]>([]);
+function ServicesStep({ products, initial, onPick }: { products: readonly QuoteProduct[]; initial: readonly QuoteProduct[]; onPick: (p: QuoteProduct[]) => void }) {
+  const [chosen, setChosen] = useState<QuoteProduct[]>(() => products.filter((p) => initial.includes(p)));
   const headingId = useId();
   const toggle = (p: QuoteProduct, on: boolean) => setChosen(products.filter((x) => (x === p ? on : chosen.includes(x))));
   return (
