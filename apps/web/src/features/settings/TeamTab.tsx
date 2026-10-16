@@ -1,104 +1,166 @@
 import { ROLES, type Role } from '@roofline/shared';
-import { Button, Card, EmptyState, Field, Select, Skeleton, Toggle, useToast } from '@roofline/ui';
-import { useId, useState, type FormEvent } from 'react';
+import { Avatar, Button, EmptyState, Field, Listbox, Panel, Skeleton, Table, Tag, Td, Th, Toggle, Tr, useToast, type ListboxOption } from '@roofline/ui';
+import { useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
 import { errors } from '../../copy/errors.ts';
 import { settings } from '../../copy/settings.ts';
+import { useIsPhone } from '../../shell/useIsPhone.ts';
 import { formErrors } from '../auth/formErrors.ts';
 import { useInvite, useTeam, useUpdateMember, type MemberChanges, type TeamMember } from './api.ts';
+import form from './form.module.css';
 import styles from './TeamTab.module.css';
 
 /*
  * The Team tab of Settings: who is on the team and what each may do. The owner changes roles,
  * spending approval and status, and invites people; everyone else gets the same list read-only.
+ * A desktop shows the members as a table; a phone shows each one as a card, so nothing scrolls sideways.
  */
 
-const ROLE_OPTIONS = ROLES.map((role) => ({ value: role, label: settings.roles[role] }));
-
-/** A Select's text back to a role. Anything else is not a role, and is ignored. */
-const toRole = (value: string): Role | undefined => ROLES.find((role) => role === value);
+const ROLE_OPTIONS: ListboxOption<Role>[] = ROLES.map((role) => ({ value: role, label: settings.roles[role] }));
 
 /** The date an invite expires, in the viewer's time zone, written out like Oct 18, 2026. */
 const formatDate = (iso: string) => new Date(iso).toLocaleDateString('en-US', { dateStyle: 'medium' });
 
-type MemberRowProps = {
+type MemberProps = {
   member: TeamMember;
   isOwner: boolean;
   updating: boolean;
   change: (changes: MemberChanges) => void;
 };
 
-/** One line of the members table. Only the owner gets controls; everyone else reads the words. */
-function MemberRow({ member, isOwner, updating, change }: MemberRowProps) {
+/** The role: a list for the owner to pick from, the plain word for everyone else. */
+function RoleControl({ member, isOwner, updating, change }: MemberProps) {
+  if (!isOwner) return <>{settings.roles[member.role]}</>;
+  return (
+    <Listbox
+      label={settings.team.roleFor(member.name)}
+      value={member.role}
+      options={ROLE_OPTIONS}
+      className={styles.roleSelect}
+      disabled={updating}
+      onChange={(role) => change({ role })}
+    />
+  );
+}
+
+/** Spending delegation is for office members; an owner always may and a field rep never may. */
+function SpendControl({ member, isOwner, updating, change }: MemberProps) {
+  if (member.role === 'owner') return <>{settings.team.spendAlways}</>;
+  if (member.role !== 'office') return <>{settings.team.spendNever}</>;
+  return (
+    <Toggle
+      label={settings.team.spendFor(member.name)}
+      labelHidden
+      checked={member.canApproveSpend}
+      disabled={!isOwner || updating}
+      onChange={(next) => change({ canApproveSpend: next })}
+    />
+  );
+}
+
+/** Storm alert emails go to owners and office members; a field rep never gets them. */
+function StormControl({ member, isOwner, updating, change }: MemberProps) {
+  if (member.role === 'rep') return <>{settings.team.stormAlertsNever}</>;
+  return (
+    <Toggle
+      label={settings.team.stormAlertsFor(member.name)}
+      labelHidden
+      checked={member.stormAlertEmail}
+      disabled={!isOwner || updating}
+      onChange={(next) => change({ stormAlertEmail: next })}
+    />
+  );
+}
+
+/** Active or turned off, always as an icon and a word. */
+function StatusTag({ member }: { member: TeamMember }) {
+  return member.status === 'active' ? (
+    <Tag tone="ok" icon="check">
+      {settings.team.statusActive}
+    </Tag>
+  ) : (
+    <Tag icon="minus">{settings.team.statusOff}</Tag>
+  );
+}
+
+/** The owner's button that turns a member off, or back on. */
+function StatusButton({ member, updating, change, size }: MemberProps & { size: 'sm' | 'md' }) {
   const active = member.status === 'active';
   return (
-    <tr>
-      <td>{member.name}</td>
-      <td>{member.email}</td>
-      <td>
-        {isOwner ? (
-          <Select
-            label={settings.team.roleFor(member.name)}
-            value={member.role}
-            options={ROLE_OPTIONS}
-            className={styles.roleSelect}
-            disabled={updating}
-            onChange={(value) => {
-              const role = toRole(value);
-              if (role) change({ role });
-            }}
-          />
-        ) : (
-          settings.roles[member.role]
-        )}
-      </td>
-      <td>
-        {/* Spending delegation is for office members; an owner always may and a field rep never may */}
-        {member.role === 'office' ? (
-          <Toggle
-            label={settings.team.spendFor(member.name)}
-            labelHidden
-            checked={member.canApproveSpend}
-            disabled={!isOwner || updating}
-            onChange={(next) => change({ canApproveSpend: next })}
-          />
-        ) : member.role === 'owner' ? (
-          settings.team.spendAlways
-        ) : (
-          settings.team.spendNever
-        )}
-      </td>
-      <td>
-        {/* Storm alert emails go to owners and office members; a field rep never gets them */}
-        {member.role === 'rep' ? (
-          settings.team.stormAlertsNever
-        ) : (
-          <Toggle
-            label={settings.team.stormAlertsFor(member.name)}
-            labelHidden
-            checked={member.stormAlertEmail}
-            disabled={!isOwner || updating}
-            onChange={(next) => change({ stormAlertEmail: next })}
-          />
-        )}
-      </td>
-      <td>
-        <div className={styles.statusCell}>
-          <span data-status={member.status}>{active ? settings.team.statusActive : settings.team.statusOff}</span>
-          {isOwner ? (
-            <Button
-              variant="ghost"
-              aria-label={active ? settings.team.turnOffFor(member.name) : settings.team.turnBackOnFor(member.name)}
-              disabled={updating}
-              onClick={() => change({ status: active ? 'disabled' : 'active' })}
-            >
-              {active ? settings.team.turnOff : settings.team.turnBackOn}
-            </Button>
-          ) : null}
+    <Button
+      variant="default"
+      size={size}
+      aria-label={active ? settings.team.turnOffFor(member.name) : settings.team.turnBackOnFor(member.name)}
+      disabled={updating}
+      onClick={() => change({ status: active ? 'disabled' : 'active' })}
+    >
+      {active ? settings.team.turnOff : settings.team.turnBackOn}
+    </Button>
+  );
+}
+
+/** A person: their initials, their name, and their email under it. */
+function Person({ member }: { member: TeamMember }) {
+  return (
+    <div className={styles.person}>
+      <Avatar name={member.name} size={32} />
+      <div className={styles.who}>
+        <span className={styles.name}>{member.name}</span>
+        <span className={styles.email}>{member.email}</span>
+      </div>
+    </div>
+  );
+}
+
+/** One line of the members table. Only the owner gets controls; everyone else reads the words. */
+function MemberRow(props: MemberProps) {
+  return (
+    <Tr>
+      <Td>
+        <Person member={props.member} />
+      </Td>
+      <Td>
+        <RoleControl {...props} />
+      </Td>
+      <Td>
+        <SpendControl {...props} />
+      </Td>
+      <Td>
+        <StormControl {...props} />
+      </Td>
+      <Td>
+        <div className={styles.status}>
+          <StatusTag member={props.member} />
+          {props.isOwner ? <StatusButton {...props} size="sm" /> : null}
         </div>
-      </td>
-    </tr>
+      </Td>
+    </Tr>
+  );
+}
+
+/** One member as a card, for a phone: the person and their status on top, then each setting on a line of its own. */
+function MemberCard(props: MemberProps) {
+  return (
+    <li className={styles.card}>
+      <div className={styles.cardHead}>
+        <Person member={props.member} />
+        <StatusTag member={props.member} />
+      </div>
+      <div className={styles.fact}>
+        <span className={styles.caption}>{settings.team.columns.role}</span>
+        <RoleControl {...props} />
+      </div>
+      <div className={styles.line}>
+        <span className={styles.caption}>{settings.team.columns.spend}</span>
+        <SpendControl {...props} />
+      </div>
+      <div className={styles.line}>
+        <span className={styles.caption}>{settings.team.columns.stormAlerts}</span>
+        <StormControl {...props} />
+      </div>
+      {props.isOwner ? <StatusButton {...props} size="md" /> : null}
+    </li>
   );
 }
 
@@ -108,12 +170,11 @@ export function TeamTab() {
   const updateMember = useUpdateMember();
   const invite = useInvite();
   const toast = useToast();
+  const phone = useIsPhone();
   const [email, setEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<Role>('rep');
   // The members whose change is still being saved; every change reports its own failure
   const [saving, setSaving] = useState<readonly string[]>([]);
-  const inviteHeadingId = useId();
-  const pendingHeadingId = useId();
 
   // Shown only while there is nothing to show instead: a failed read with no earlier answer to keep
   const failure = team.error ?? me.error;
@@ -178,85 +239,90 @@ export function TeamTab() {
     );
   }
 
+  const propsFor = (member: TeamMember): MemberProps => ({
+    member,
+    isOwner,
+    updating: saving.includes(member.id),
+    change: (changes) => changeMember(member.id, changes),
+  });
+
   return (
-    <div className={styles.page}>
-      <Card padded={false}>
-        <div className={styles.tableWrap}>
-          <table className={styles.table} aria-label={settings.team.tableLabel}>
+    <>
+      <Panel title={settings.team.heading} tag={settings.team.count(members.length)} padded={false}>
+        {phone ? (
+          <ul className={styles.cards} aria-label={settings.team.tableLabel}>
+            {members.map((member) => (
+              <MemberCard key={member.id} {...propsFor(member)} />
+            ))}
+          </ul>
+        ) : (
+          <Table regionLabel={settings.team.tableLabel}>
             <thead>
               <tr>
-                <th scope="col">{settings.team.columns.name}</th>
-                <th scope="col">{settings.team.columns.email}</th>
-                <th scope="col">{settings.team.columns.role}</th>
-                <th scope="col">{settings.team.columns.spend}</th>
-                <th scope="col">{settings.team.columns.stormAlerts}</th>
-                <th scope="col">{settings.team.columns.status}</th>
+                <Th>{settings.team.columns.name}</Th>
+                <Th>{settings.team.columns.role}</Th>
+                <Th>{settings.team.columns.spend}</Th>
+                <Th>{settings.team.columns.stormAlerts}</Th>
+                <Th>{settings.team.columns.status}</Th>
               </tr>
             </thead>
             <tbody>
               {members.map((member) => (
-                <MemberRow
-                  key={member.id}
-                  member={member}
-                  isOwner={isOwner}
-                  updating={saving.includes(member.id)}
-                  change={(changes) => changeMember(member.id, changes)}
-                />
+                <MemberRow key={member.id} {...propsFor(member)} />
               ))}
             </tbody>
-          </table>
-        </div>
-      </Card>
+          </Table>
+        )}
+      </Panel>
 
       {isOwner ? (
-        <Card as="section" aria-labelledby={inviteHeadingId}>
-          <h2 id={inviteHeadingId} className={styles.heading}>
-            {settings.team.inviteHeading}
-          </h2>
-          <form onSubmit={submitInvite} noValidate className={styles.inviteForm}>
-            <Field
-              label={settings.team.inviteEmail}
-              name="email"
-              type="email"
-              autoComplete="email"
-              className={styles.inviteEmail}
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              error={problems.forField('email')}
-            />
-            <Select
-              label={settings.team.inviteRole}
-              value={inviteRole}
-              options={ROLE_OPTIONS}
-              className={styles.inviteRole}
-              onChange={(value) => {
-                const role = toRole(value);
-                if (role) setInviteRole(role);
-              }}
-            />
-            <Button type="submit" variant="primary" busy={invite.isPending}>
-              {settings.team.sendInvite}
-            </Button>
-          </form>
-        </Card>
+        <form onSubmit={submitInvite} noValidate>
+          <Panel title={settings.team.inviteHeading}>
+            <div className={form.grid}>
+              <Field
+                label={settings.team.inviteEmail}
+                name="email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                error={problems.forField('email')}
+              />
+              <Listbox label={settings.team.inviteRole} value={inviteRole} options={ROLE_OPTIONS} onChange={setInviteRole} />
+              <div className={form.span}>
+                <Button type="submit" variant="primary" busy={invite.isPending}>
+                  {settings.team.sendInvite}
+                </Button>
+              </div>
+            </div>
+          </Panel>
+        </form>
       ) : null}
 
       {isOwner && invites.length > 0 ? (
-        <Card as="section" aria-labelledby={pendingHeadingId}>
-          <h2 id={pendingHeadingId} className={styles.heading}>
-            {settings.team.pendingHeading}
-          </h2>
-          <ul className={styles.pendingList}>
-            {invites.map((pending) => (
-              <li key={pending.id} className={styles.pendingItem}>
-                <span className={styles.pendingEmail}>{pending.email}</span>
-                <span>{settings.roles[pending.role]}</span>
-                <span>{settings.team.pendingExpires(formatDate(pending.expiresAt))}</span>
-              </li>
-            ))}
-          </ul>
-        </Card>
+        <Panel title={settings.team.pendingHeading} tag={String(invites.length)} padded={false}>
+          <Table regionLabel={settings.team.pendingTableLabel}>
+            <thead>
+              <tr>
+                <Th>{settings.team.pendingColumns.email}</Th>
+                <Th>{settings.team.pendingColumns.role}</Th>
+                <Th numeric>{settings.team.pendingColumns.expires}</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {invites.map((pending) => (
+                <Tr key={pending.id}>
+                  <Td className={styles.pendingEmail}>{pending.email}</Td>
+                  <Td>{settings.roles[pending.role]}</Td>
+                  <Td numeric>
+                    <time dateTime={pending.expiresAt}>{formatDate(pending.expiresAt)}</time>
+                  </Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        </Panel>
       ) : null}
-    </div>
+    </>
   );
 }

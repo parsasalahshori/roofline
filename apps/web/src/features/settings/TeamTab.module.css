@@ -1,45 +1,34 @@
-/* The Team tab: the members table, then the invite form and the invites still waiting, one under another */
-.page {
+/* A person: their initials, then their name with their email under it */
+.person {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.who {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 2px;
+  min-width: 0;
 }
 
-.heading {
-  margin: 0 0 12px;
-  font-size: var(--font-size-body);
+.name {
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
-/* A wide table scrolls sideways inside its card rather than pushing the window wider */
-.tableWrap {
-  overflow-x: auto;
-}
-
-.table {
-  width: 100%;
-  min-width: 640px;
-  border-collapse: collapse;
-}
-
-.table th,
-.table td {
-  text-align: left;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--line);
-  vertical-align: middle;
-}
-
-.table th {
-  font-size: var(--font-size-min);
+.email {
   color: var(--ink-3);
-  font-weight: 600;
+  font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
-/* The row's role Select keeps its label for screen readers but does not draw it: the cell shows the picker alone */
+/* The row's role list keeps its label for screen readers but does not draw it: the cell shows the picker alone */
 .roleSelect {
   position: relative;
   min-width: 140px;
+  max-width: 200px;
 }
 
 .roleSelect label {
@@ -55,65 +44,72 @@
   white-space: nowrap;
 }
 
-/* The status words and the turn-off button sit side by side, and wrap on a narrow screen */
-.statusCell {
+/* The status tag and the turn-off button side by side, wrapping on a narrow screen */
+.status {
   display: flex;
-  align-items: center;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
 }
 
-.inviteForm {
+/* A wide email may break anywhere rather than push the table wider */
+.pendingEmail {
+  overflow-wrap: anywhere;
+}
+
+/* A phone: one card per member, divided by hairlines inside the panel */
+.cards {
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: flex-end;
-}
-
-.inviteEmail {
-  flex: 1 1 240px;
-  min-width: 0;
-}
-
-.inviteRole {
-  flex: 0 1 180px;
-  min-width: 0;
-}
-
-.pendingList {
+  flex-direction: column;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.pendingItem {
+.card {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 12px;
-  padding: 8px 0;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
   border-bottom: 1px solid var(--line);
 }
 
-.pendingItem:last-child {
+.card:last-child {
   border-bottom: 0;
 }
 
-.pendingEmail {
-  font-weight: 600;
-  overflow-wrap: anywhere;
+/* The person at the left, their status tag at the right */
+.cardHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-/* On a phone the invite fields stack, each as wide as the card */
-@media (max-width: 767.98px) {
-  .inviteForm {
-    flex-direction: column;
-    align-items: stretch;
-  }
+/* A caption over a control, or beside a switch: the small mono line the table's head would have been */
+.caption {
+  color: var(--ink-3);
+  font: 600 var(--font-size-min)/1.2 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 
-  .inviteEmail,
-  .inviteRole {
-    flex: none;
-    width: 100%;
-  }
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+}
+
+.card .roleSelect {
+  max-width: none;
+  width: 100%;
 }

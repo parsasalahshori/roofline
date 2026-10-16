@@ -1,40 +1,6 @@
-/* Two details to a row on a desktop, the Save button on a row of its own under them */
-.form {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  max-width: 720px;
-}
-
-/* Spans both columns and is only as wide as its word */
-.save {
-  grid-column: 1 / -1;
-  justify-self: start;
-}
-
-/* The hourly rate form sits under the details, as wide as they are */
-.rate {
-  display: grid;
-  gap: 12px;
-  max-width: 720px;
-  margin-top: 24px;
-}
-
+/* The line shown instead of the hourly rate when it cannot be read */
 .problem {
   margin: 0;
   color: var(--bad-text);
   font-size: var(--font-size-body);
-}
-
-/* Who may change the details, shown above the read-only fields */
-.note {
-  margin: 0 0 16px;
-  color: var(--ink-3);
-  font-size: var(--font-size-body);
-}
-
-@media (max-width: 767.98px) {
-  .form {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }

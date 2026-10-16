@@ -26,6 +26,14 @@ export const settings = {
   // While a tab's information loads
   loading: 'Loading…',
 
+  // The way back from a screen under Setup, and the bar that waits at the foot of a form while it has changes
+  subpages: { import: 'Import customers', texting: 'Texting registration' },
+  saveBar: {
+    label: 'Unsaved changes',
+    unsaved: 'You have unsaved changes',
+    discard: 'Discard',
+  },
+
   // Who a person is on the team. Passed to the role Selects and shown as text to people who cannot change them.
   roles: {
     owner: 'Owner',
@@ -34,6 +42,7 @@ export const settings = {
   } satisfies Record<Role, string>,
 
   company: {
+    panels: { details: 'Company details', rate: 'Time saved' },
     fields: {
       name: 'Company name',
       phone: 'Phone',
@@ -74,6 +83,9 @@ export const settings = {
   },
 
   team: {
+    heading: 'Team',
+    /** Beside the heading: how many people are on the team. */
+    count: (people: number) => (people === 1 ? '1 person' : `${people} people`),
     tableLabel: 'Team members',
     columns: {
       name: 'Name',
@@ -106,6 +118,9 @@ export const settings = {
     inviteSent: (email: string) => `Invite sent to ${email}`,
 
     pendingHeading: 'Waiting to join',
+    pendingTableLabel: 'Invites waiting to be accepted',
+    /** The heads of the invites table: who was invited, as what, and when the invite stops working. */
+    pendingColumns: { email: 'Invited', role: 'Role', expires: 'Expires' },
     /** `date` is already written out, like Oct 18, 2026. */
     pendingExpires: (date: string) => `Invite expires ${date}`,
   },
