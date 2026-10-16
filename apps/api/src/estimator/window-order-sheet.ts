@@ -167,14 +167,17 @@ export function renderOrderPdf(i: OrderSheetInput, opts?: { compress?: boolean }
   if (d.y + 60 > BOTTOM) d.addPage();
   d.moveDown(1).font('Helvetica-Bold').fontSize(10).text('Windows as measured on site', LEFT, d.y);
   d.font('Helvetica').fontSize(8).fillColor(muted);
+  const onSheet = new Set(v.groups.flatMap((g) => g.lineIds));
   v.lines.forEach((l, k) => {
     const s = smallestMeasured(l.measured);
     const c = v.checked[k];
     const measured = s === null ? 'not measured' : `${fractionInches(s.widthIn)} x ${fractionInches(s.heightIn)}${s.uncertaintyIn !== null ? ` (+/- ${fractionInches(s.uncertaintyIn)})` : ''}`;
     const order = c?.order ? `${fractionInches(c.order.widthIn)} x ${fractionInches(c.order.heightIn)}` : '-';
     const photos = l.measured.length > 1 ? `, smallest of ${l.measured.length} photos` : '';
+    // A window that is not on a sheet line yet (a draft with no style, say) says why, so nothing goes missing silently.
+    const missing = onSheet.has(l.id) ? '' : `  [NOT ON THE SHEET: ${c?.reasons.find((r) => r.level === 'error')?.message ?? 'not ready'}]`;
     if (d.y + 12 > BOTTOM) d.addPage();
-    d.text(`${l.location || '(no location)'}: measured ${measured}${photos}  ->  order ${order}${l.tempered ? ', tempered' : ''}`, LEFT, d.y, { width: CONTENT_W });
+    d.fillColor(missing === '' ? muted : '#c0392b').text(`${l.location || '(no location)'}: measured ${measured}${photos}  ->  order ${order}${l.tempered ? ', tempered' : ''}${missing}`, LEFT, d.y, { width: CONTENT_W });
   });
 
   // Footer and the DRAFT mark on every page.
@@ -185,6 +188,8 @@ export function renderOrderPdf(i: OrderSheetInput, opts?: { compress?: boolean }
       d.save().rotate(-20, { origin: [PAGE_W / 2, 306] }).fillColor('#c0392b').opacity(0.12).font('Helvetica-Bold').fontSize(120).text('DRAFT', 0, 250, { width: PAGE_W, align: 'center', lineBreak: false }).restore();
       d.opacity(1);
     }
+    // The footer sits in the bottom margin: without this pdfkit would start a new (blank) page for it.
+    d.page.margins.bottom = 0;
     d.fillColor(muted).font('Helvetica').fontSize(7.5).text(`Page ${p - range.start + 1} of ${range.count}`, LEFT, 612 - 30, { width: CONTENT_W, align: 'right', lineBreak: false });
   }
   d.end();
