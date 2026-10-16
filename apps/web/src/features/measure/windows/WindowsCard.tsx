@@ -124,9 +124,9 @@ export function WindowsCard({
           <div className={cardStyles.big}>
             <span className={cardStyles.label}>{fromPhotos ? windowPhotos.fromPhotos : t.measured === 0 ? copy.fromWalls : t.estimated === 0 ? copy.measuredOnly(Math.round(t.measured * share)) : copy.toReplace}</span>
             <span className={cardStyles.squaresRow}>
-              {t.measured === 0 && !fromPhotos ? <span className={styles.about}>{copy.about}</span> : null}
+              {t.measured === 0 && !fromPhotos && range === null ? <span className={styles.about}>{copy.about}</span> : null}
               <span className={cardStyles.squares} data-stat="windows" data-range={range !== null ? `${range.low}-${range.high}` : undefined}>
-                {range !== null ? copy.range(range.low, range.high) : shown}
+                {range !== null ? <span className={styles.rangeStat}>{copy.range(range.low, range.high)}</span> : shown}
               </span>
               <span className={cardStyles.unit}>{copy.windowsUnit(range !== null ? range.high : total)}</span>
             </span>

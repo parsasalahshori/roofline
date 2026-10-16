@@ -557,14 +557,19 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
         <div className={styles.stage} data-phase={scan.phase} data-editing={editing ? 'true' : 'false'} data-photo={photo === null ? 'none' : undefined}>
           <div className={styles.stageTop}>
             <div className={styles.chips}>
-              <span className={styles.chip} data-tone={scan.phase === 'scanning' || patch.isPending ? 'measuring' : undefined}>
-                {scan.phase === 'scanning' ? copy.measuringChip : captured !== null ? copy.imageryCaptured(captured) : copy.imageryPlain}
+              <span
+                className={styles.chip}
+                data-tone={scan.phase === 'scanning' || patch.isPending ? 'measuring' : undefined}
+                data-right-house={!tools && photo !== null && done ? '' : undefined}
+              >
+                {scan.phase === 'scanning'
+                  ? copy.measuringChip
+                  : !tools && photo !== null && done
+                    ? copy.rightHouse(captured)
+                    : captured !== null
+                      ? copy.imageryCaptured(captured)
+                      : copy.imageryPlain}
               </span>
-              {!tools && photo !== null && done ? (
-                <span className={styles.chip} data-right-house="">
-                  {copy.rightHouse}
-                </span>
-              ) : null}
               {fitChip}
               {tools && v.ruler != null && done ? (
                 <span className={styles.chip} data-ruler-chip="" role="status">

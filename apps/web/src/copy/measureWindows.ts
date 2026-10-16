@@ -37,7 +37,8 @@ export const measureWindows = {
   noPhoto: 'No street-level photo of this house',
   imageryCaptured: (when: string) => `Street-level imagery captured ${when}`,
   imageryPlain: 'Street-level imagery',
-  rightHouse: 'Is this the right house?',
+  /** The street photo without the Street View tools: a check that it is the house, with the photo's date. */
+  rightHouse: (when: string | null) => (when === null ? 'Is this the right house?' : `Is this the right house? Photo from ${when}`),
   measuringChip: 'Estimator is measuring',
   wallsTitle: 'Walls',
   wallsPlanLabel: (perimeterFt: number, frontFt: number | null) =>
@@ -155,7 +156,8 @@ export const measureWindows = {
       .filter((part): part is string => part !== null)
       .join('. '),
   floorsWithSource: (floors: number, from: 'height-map' | 'photo' | 'assumed') => measureWindowsFloors(floors, from),
-  range: (low: number, high: number) => `${low}\u2013${high}`,
+  // Word joiners round the dash: the range never breaks over two lines.
+  range: (low: number, high: number) => `${low}\u2060\u2013\u2060${high}`,
   mostLikely: (n: number) => `Most likely ${n}`,
   basisLabel: 'How it was worked out',
   tableLabel: 'Windows by size',

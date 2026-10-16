@@ -119,6 +119,15 @@ describe('floors, wings and ranges', () => {
     expect(treed.windowWallSqFt).toBe(w.windowWallSqFt);
   });
 
+  it('one storey under a very tall roof: still one floor, but the range allows for rooms in the roof', () => {
+    const w = houseWalls(70, null, 3.6, { ridgeM: 9.5 });
+    expect(w.floors).toBe(1);
+    expect(w.roofRiseM).toBeCloseTo(5.9, 5);
+    const e = estimateAllSides(w);
+    expect(e.range!.high).toBe(Math.round(total(e) * 1.3));
+    expect(estimateAllSides(houseWalls(70, null, 3.6, { ridgeM: 7 })).range).toBeNull();
+  });
+
   it('a one-storey house has no low wings, and a confident estimate has no range', () => {
     const walls = [
       { lengthM: 15, eaveM: 3 },

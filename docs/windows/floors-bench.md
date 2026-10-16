@@ -46,7 +46,7 @@ kc-brookside                      label=2  before=1 (3.4 m)  now=2 (6.3 m, ridge
 lr-305-ridgeway                   label=2  before=1 (2.2 m)  now=2 (6.1 m, ridge 8.5, shift 1.5)  windows 8 -> 14 (14-16)  low wing 31 ft
 lr-tyler                          label=1  before=1 (3.6 m)  now=1 (4.2 m, ridge 6.2, shift 1.5)  windows 13 -> 10
 omaha-roland                      label=2  before=1 (4.1 m)  now=2 (6.7 m, ridge 9.1, shift 1.0)  windows 28 -> 28
-orlando-college-park              label=1  before=1 (2.4 m)  now=1 (3.9 m, ridge 9.8, shift 0.0)  windows 16 -> 19
+orlando-college-park              label=1  before=1 (2.4 m)  now=1 (3.9 m, ridge 9.8, shift 0.0)  windows 16 -> 19 (19-25)
 phx-arcadia                       label=1  before=1 (2.4 m)  now=1 (2.6 m, ridge 3.9, shift 0.0)  windows 12 -> 14
 rogers-pecan                      label=1  before=1 (2.8 m)  now=1 (2.8 m, ridge 5.4, shift 0.0)  windows 16 -> 16
 seattle-wallingford               label=1  before=1 (- m)  now=1 (2.1 m, ridge 3.6, shift 0.0)  windows 13 -> 13

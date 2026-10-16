@@ -374,8 +374,7 @@ describe('Measure windows: Street View tools off (the default)', () => {
 
   it('keeps the photo as an "is this the right house?" picture with its date; no wall, no marking, no ruler', async () => {
     await off();
-    expect(screen.getByText(copy.rightHouse)).toBeTruthy();
-    expect(screen.getByText(copy.imageryCaptured('Jun 2025'))).toBeTruthy();
+    expect(screen.getByText(copy.rightHouse('Jun 2025'))).toBeTruthy();
     expect(screen.queryByRole('img', { name: copy.wallOutlineLabel })).toBeNull();
     expect(document.querySelector('[data-fit="good"], [data-fit="off"], [data-fit="unknown"]')).toBeNull();
     // The review note points at on-site photos, not at marking the street photo.

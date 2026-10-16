@@ -43,6 +43,11 @@ export const HALF_STOREY_MAX_EAVE_M = 5.2;
 export const HALF_STOREY_MIN_RISE_M = 2.5;
 export const HALF_STOREY_MAX_RIDGE_M = 9.5;
 /**
+ * A one-storey reading under a roof this tall (ridge above the eave, metres) may hide rooms in the roof (a Cape Cod with
+ * low eaves, dormers) or be a wide hip roof: the floors stay one, the range's top allows for a half storey.
+ */
+export const ROOM_IN_ROOF_RISE_M = 5;
+/**
  * A low wing: a wall whose eave is at most this high (metres) and at least LOW_WING_DROP_M below the main eave of a house
  * of two floors or more. That is a one-storey part beside a taller house: an attached garage, a carport or a porch most
  * often (few or no windows), sometimes a one-storey room. Left out of the window wall; the range's top puts it back.
@@ -78,6 +83,8 @@ export type HouseWalls = {
   heightSource: 'google' | 'photo' | 'assumed';
   /** Where the outline came from: a building footprint, else Google's roof (its mask's outline, or its box). */
   outlineFrom: 'footprint' | 'google-roof';
+  /** The ridge's height above the main eave, metres (null without heights). */
+  roofRiseM: number | null;
 };
 
 const plausibleEave = (m: number | null | undefined): m is number => m !== null && m !== undefined && Number.isFinite(m) && m >= MIN_EAVE_M && m <= MAX_EAVE_M;
@@ -155,6 +162,7 @@ export function houseWalls(perimeterM: number, frontWallM: number | null, eaveHe
     floors,
     heightSource: !known ? 'assumed' : more.fromPhoto === true ? 'photo' : 'google',
     outlineFrom,
+    roofRiseM: known && ridge !== null && Number.isFinite(ridge) ? Math.round((ridge - eaveHeightM) * 100) / 100 : null,
   };
 }
 
@@ -183,6 +191,7 @@ export function windowsOnWall(sqft: number): number {
  * shaky widen it. Null when none is (or the spread is under MIN_RANGE_SPREAD).
  *   - No height data: one floor is assumed; the house may have two (the top doubles).
  *   - A storey and a half: from one floor's wall (the eave's) to a second full floor (a third more).
+ *   - One storey under a roof at least ROOM_IN_ROOF_RISE_M tall: perhaps rooms in the roof (a third more at the top).
  *   - Low wings: left out of the count; the top puts them back (they may be rooms, not a garage).
  *   - An outline from Google's roof: plus or minus ROOF_OUTLINE_SHARE.
  */
@@ -194,6 +203,7 @@ export function rangeOf(w: HouseWalls, count: number, share = 1): { low: number;
     low = Math.min(low, Math.round(count * 0.8));
     high = Math.max(high, Math.round(count * 1.3));
   }
+  if (w.floors === 1 && w.roofRiseM !== null && w.roofRiseM >= ROOM_IN_ROOF_RISE_M) high = Math.max(high, Math.round(count * 1.3));
   if (w.lowWingSqFt > 0) high += windowsOnWall(w.lowWingSqFt * share);
   if (w.outlineFrom === 'google-roof') {
     low = Math.min(low, Math.round(count * (1 - ROOF_OUTLINE_SHARE)));
