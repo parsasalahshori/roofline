@@ -617,4 +617,9 @@ contact without the box ticked        400  {"error":"Please check the box so we 
 contact with old consent words        409  {"error":"The wording on this screen was updated. Please go back and try again.","code":"consent_changed"}
 other phone for a filed request       409  {"error":"We already have your details for this request. Please call us to change them.","field":"phone","code":"contact_filed"}
 windows call on a gutters request     409  {"error":"This request is not about windows.","code":"windows_not_requested"}
+a key the API does not know           400  {"error":"Please check this field.","code":"invalid_request"}   (no field: it is the whole body)
+a photo that claims too many pixels   415  {"error":"Upload a JPEG or PNG photo.","field":"photo","code":"unsupported_media"}
+a path that is not in the API         404  {"error":"We couldn't find that.","code":"not_found"}
+the sixth contact call in an hour     429  Retry-After: 3600
+                                           {"error":"That's a lot of tries from this connection. Please try again in an hour, or give us a call.","code":"rate_limited"}
 ```
