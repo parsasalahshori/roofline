@@ -47,7 +47,7 @@ export const measureGutters = {
   heightCell: 'Eave height',
   heightValue: (heightFt: number, floors: number) => `${ft(heightFt)} · ${plural(floors, 'floor', 'floors')}`,
   heightSource: {
-    google: 'From Google’s height map of the house',
+    google: 'From the aerial height map of the house',
     floors: 'Floors times 10 ft (no height data)',
     assumed: 'One floor assumed (no height data)',
   },
