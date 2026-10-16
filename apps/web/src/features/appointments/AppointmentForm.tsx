@@ -1,13 +1,13 @@
 import { APPOINTMENT_KINDS, DEFAULT_DURATION_MINUTES, type AppointmentKind } from '@roofline/shared';
 import { useQuery } from '@tanstack/react-query';
-import { Banner, Button, Field, Select, Skeleton, useToast } from '@roofline/ui';
+import { Avatar, Banner, Button, Field, Listbox, Panel, Skeleton, useToast } from '@roofline/ui';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { ApiError, apiFetch } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
 import type { Account } from '../../api/types.ts';
 import { appointments } from '../../copy/appointments.ts';
-import { addZonedDays, dateKeyToInstant, zonedDateKey, zonedParts } from '../calendar/time.ts';
+import { addZonedDays, dateKeyToInstant, formatTime, zonedDateKey, zonedParts } from '../calendar/time.ts';
 import { useCompany, useTeam } from '../settings/api.ts';
 import { ConflictWarnings } from './ConflictWarnings.tsx';
 import { SuggestedTimes } from './SuggestedTimes.tsx';
@@ -20,6 +20,9 @@ const FALLBACK_ZONE = 'America/Chicago';
 
 /** Kinds that get suggested times. An install is a set of days, so it never gets them. */
 const SUGGESTED_KINDS: ReadonlyArray<AppointmentKind> = ['inspection', 'adjuster', 'other'];
+
+/** The lengths a visit can be given, in minutes; a length that is not one of these (a moved appointment's own) is added to the list. */
+const DURATIONS: ReadonlyArray<number> = [15, 30, 45, 60, 90, 120, 180, 240];
 
 /** GET /api/search?q= (only the fields the form reads). */
 type SearchCustomer = { id: string; displayName: string };
@@ -80,15 +83,26 @@ function hhmmOf(date: Date, zone: string): string {
 
 type FormBodyProps = AppointmentFormProps & { account: Account; zone: string };
 
+/** The shape of the form that is on its way: a heading and a panel of fields. */
+function FormSkeleton() {
+  return (
+    <div className={styles.skeleton} role="status" aria-label={appointments.loading}>
+      <Skeleton width="30%" height="28px" />
+      <Skeleton height="180px" />
+      <Skeleton height="140px" />
+    </div>
+  );
+}
+
 /** The new or reschedule form. It waits for the signed-in person and the company's zone, so every date starts in the right zone. */
 export function AppointmentForm(props: AppointmentFormProps) {
   const me = useMe();
   const company = useCompany();
-  if (me.data === undefined || company.isPending) return <Skeleton height="8rem" />;
+  if (me.data === undefined || company.isPending) return <FormSkeleton />;
   return <FormBody {...props} account={me.data} zone={company.data?.timezone ?? FALLBACK_ZONE} />;
 }
 
-function FormBody({ existing, onDone, account, zone }: FormBodyProps) {
+function FormBody({ existing, onDone, onCancel, account, zone }: FormBodyProps) {
   const { user, role } = account;
   const isRep = role === 'rep';
   const [params] = useSearchParams();
@@ -193,6 +207,20 @@ function FormBody({ existing, onDone, account, zone }: FormBodyProps) {
   const isInstall = kind === 'install';
   const canSave = isInstall ? date !== '' && endKey >= date : date !== '' && time !== '';
 
+  // How long a timed visit is: what the person chose, else the length of the one being moved (same kind), else the kind's own
+  const [chosenMinutes, setChosenMinutes] = useState<number | null>(null);
+  const keptMinutes =
+    existing !== undefined && !existing.allDay && existing.kind === kind
+      ? Math.round((Date.parse(existing.endsAt) - Date.parse(existing.startsAt)) / 60_000)
+      : null;
+  const minutes = chosenMinutes ?? keptMinutes ?? (isInstall ? 0 : DEFAULT_DURATION_MINUTES[kind]);
+  const durationOptions = (DURATIONS.includes(minutes) || minutes <= 0 ? DURATIONS : [...DURATIONS, minutes].sort((a, b) => a - b)).map((value) => ({
+    value: String(value),
+    label: appointments.duration(value),
+  }));
+  const startInstant = !isInstall && date !== '' && time !== '' ? zonedWallToInstant(date, time, zone) : null;
+  const endsAtLabel = startInstant === null ? undefined : appointments.endsAt(formatTime(new Date(startInstant.getTime() + minutes * 60_000), zone));
+
   const [notes, setNotes] = useState<string>(existing?.notes ?? '');
 
   // Save: the first save creates; a save after the warnings were kept (or changed) updates the saved one
@@ -215,12 +243,7 @@ function FormBody({ existing, onDone, account, zone }: FormBodyProps) {
       };
     }
     const start = zonedWallToInstant(date, time, zone);
-    // Keep the length of the appointment being moved; otherwise the kind's default length
-    const lengthMs =
-      existing !== undefined && !existing.allDay && existing.kind === kind
-        ? Date.parse(existing.endsAt) - Date.parse(existing.startsAt)
-        : DEFAULT_DURATION_MINUTES[kind] * 60_000;
-    return { kind, allDay: false, startsAt: start.toISOString(), endsAt: new Date(start.getTime() + lengthMs).toISOString() };
+    return { kind, allDay: false, startsAt: start.toISOString(), endsAt: new Date(start.getTime() + minutes * 60_000).toISOString() };
   };
 
   const buildBody = (): AppointmentBody => {
@@ -273,115 +296,146 @@ function FormBody({ existing, onDone, account, zone }: FormBodyProps) {
   const kindOptions = APPOINTMENT_KINDS.map((option) => ({ value: option, label: appointments.kind[option] }));
   const hasPicked = picked.customerId !== null || picked.jobId !== null;
   const matches = results.data;
+  const suggested = SUGGESTED_KINDS.includes(kind);
 
   return (
-    <div className={styles.form}>
-      <h2 className={styles.title}>{existing ? appointments.rescheduleTitle : appointments.newTitle}</h2>
-
-      <Select
-        label={appointments.kindLabel}
-        value={kind}
-        onChange={(value) => {
-          if (isKind(value)) setKind(value);
-        }}
-        options={kindOptions}
-      />
-
-      {hasPicked ? (
-        <div className={styles.picked}>
-          <div className={styles.pickedText}>
-            <span className={styles.pickedName}>{picked.customerName}</span>
-            {picked.addressLine !== null ? (
-              <span className={styles.muted}>
-                <span>{appointments.homeLabel}</span> <span>{picked.addressLine}</span>
-              </span>
-            ) : null}
-          </div>
-          <Button type="button" variant="ghost" onClick={clearPicked}>
-            {appointments.customerClear}
-          </Button>
-        </div>
-      ) : (
-        <div className={styles.typeahead}>
-          <Field
-            label={appointments.customerLabel}
-            placeholder={appointments.customerPlaceholder}
-            value={query}
-            autoComplete="off"
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          {search.length >= 2 && matches !== undefined ? (
-            <ul className={styles.results} aria-label={appointments.customerResults}>
-              {matches.customers.map((customer) => (
-                <li key={`customer-${customer.id}`}>
-                  <Button type="button" variant="ghost" className={styles.option} onClick={() => pickCustomer(customer)}>
-                    <span className={styles.optionName}>{customer.displayName}</span>
-                  </Button>
-                </li>
-              ))}
-              {matches.jobs.map((job) => (
-                <li key={`job-${job.id}`}>
-                  <Button type="button" variant="ghost" className={styles.option} onClick={() => pickJob(job)}>
-                    <span className={styles.optionName}>{job.customerName}</span>
-                    <span className={styles.muted}>{job.addressLine}</span>
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      )}
-
-      <Select label={appointments.personLabel} value={person} onChange={setAssigned} options={personOptions} disabled={isRep} />
-
-      <div className={styles.dates}>
-        {isInstall ? (
-          <>
-            <Field type="date" label={appointments.startDateLabel} value={date} onChange={(event) => setDate(event.target.value)} />
-            <Field type="date" label={appointments.endDateLabel} value={endKey} onChange={(event) => setEndDate(event.target.value)} />
-          </>
-        ) : (
-          <>
-            <Field type="date" label={appointments.dateLabel} value={date} onChange={(event) => setDate(event.target.value)} />
-            <Field type="time" label={appointments.timeLabel} value={time} onChange={(event) => setTime(event.target.value)} />
-          </>
-        )}
+    <div className={styles.form} data-side={suggested ? 'true' : 'false'}>
+      <div className={styles.head}>
+        <h2 className={styles.title}>{existing ? appointments.rescheduleTitle : appointments.newTitle}</h2>
+        <p className={styles.sub}>{existing ? existing.title : appointments.newHint}</p>
       </div>
 
-      {SUGGESTED_KINDS.includes(kind) ? (
-        <SuggestedTimes
-          kind={kind}
-          userId={person}
-          propertyId={picked.propertyId ?? ''}
-          zone={zone}
-          onPick={pickSlot}
-        />
+      <div className={styles.main}>
+        <Panel title={appointments.groupWho} headingLevel={3}>
+          <div className={styles.fields}>
+            <Listbox<AppointmentKind>
+              label={appointments.kindLabel}
+              value={kind}
+              onChange={(value) => {
+                setKind(value);
+                setChosenMinutes(null);
+              }}
+              options={kindOptions}
+            />
+            <Listbox<string> label={appointments.personLabel} value={person} onChange={setAssigned} options={personOptions} disabled={isRep} />
+
+            <div className={styles.wide}>
+              {hasPicked ? (
+                <div className={styles.picked}>
+                  {picked.customerName !== null ? <Avatar name={picked.customerName} size={40} /> : null}
+                  <div className={styles.pickedText}>
+                    <span className={styles.pickedName}>{picked.customerName}</span>
+                    {picked.addressLine !== null ? (
+                      <span className={styles.muted}>
+                        <span>{appointments.homeLabel}</span> <span>{picked.addressLine}</span>
+                      </span>
+                    ) : null}
+                  </div>
+                  <Button type="button" variant="ghost" size="sm" onClick={clearPicked}>
+                    {appointments.customerClear}
+                  </Button>
+                </div>
+              ) : (
+                <div className={styles.typeahead}>
+                  <Field
+                    label={appointments.customerLabel}
+                    placeholder={appointments.customerPlaceholder}
+                    value={query}
+                    autoComplete="off"
+                    onChange={(event) => setQuery(event.target.value)}
+                  />
+                  {search.length >= 2 && matches !== undefined ? (
+                    <ul className={styles.results} aria-label={appointments.customerResults}>
+                      {matches.customers.map((customer) => (
+                        <li key={`customer-${customer.id}`}>
+                          <Button type="button" variant="ghost" className={styles.option} onClick={() => pickCustomer(customer)}>
+                            <span className={styles.optionName}>{customer.displayName}</span>
+                          </Button>
+                        </li>
+                      ))}
+                      {matches.jobs.map((job) => (
+                        <li key={`job-${job.id}`}>
+                          <Button type="button" variant="ghost" className={styles.option} onClick={() => pickJob(job)}>
+                            <span className={styles.optionName}>{job.customerName}</span>
+                            <span className={styles.muted}>{job.addressLine}</span>
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              )}
+            </div>
+          </div>
+        </Panel>
+
+        <Panel title={appointments.groupWhen} headingLevel={3}>
+          <div className={styles.fields}>
+            {isInstall ? (
+              <>
+                <Field type="date" label={appointments.startDateLabel} value={date} onChange={(event) => setDate(event.target.value)} />
+                <Field type="date" label={appointments.endDateLabel} value={endKey} onChange={(event) => setEndDate(event.target.value)} />
+              </>
+            ) : (
+              <>
+                <Field type="date" label={appointments.dateLabel} value={date} onChange={(event) => setDate(event.target.value)} />
+                <Field type="time" label={appointments.timeLabel} value={time} onChange={(event) => setTime(event.target.value)} />
+                <Listbox<string>
+                  label={appointments.durationLabel}
+                  value={String(minutes)}
+                  onChange={(value) => setChosenMinutes(Number(value))}
+                  options={durationOptions}
+                  help={endsAtLabel}
+                />
+              </>
+            )}
+          </div>
+        </Panel>
+
+        <Panel title={appointments.notesLabel} headingLevel={3}>
+          <Field label={appointments.notesLabel} labelHidden multiline rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} />
+        </Panel>
+      </div>
+
+      {suggested ? (
+        <div className={styles.side}>
+          <SuggestedTimes
+            kind={kind}
+            userId={person}
+            propertyId={picked.propertyId ?? ''}
+            zone={zone}
+            onPick={pickSlot}
+            pickedStart={startInstant === null ? null : startInstant.toISOString()}
+          />
+        </div>
       ) : null}
 
-      <Field
-        label={appointments.notesLabel}
-        multiline
-        rows={3}
-        value={notes}
-        onChange={(event) => setNotes(event.target.value)}
-      />
+      {warned !== null || saveFailed ? (
+        <div className={styles.banner}>
+          {warned !== null ? (
+            <ConflictWarnings warnings={warned.warnings} onKeep={() => onDone(warned.appointment)} onChange={() => setWarned(null)} />
+          ) : (
+            <Banner tone="danger">{saveError ?? appointments.saveError}</Banner>
+          )}
+        </div>
+      ) : null}
 
-      {saveFailed ? <Banner tone="danger">{saveError ?? appointments.saveError}</Banner> : null}
-
-      {warned !== null ? (
-        <ConflictWarnings
-          warnings={warned.warnings}
-          onKeep={() => onDone(warned.appointment)}
-          onChange={() => setWarned(null)}
-        />
-      ) : (
+      {warned === null ? (
         <div className={styles.actions}>
+          {onCancel !== undefined ? (
+            <Button type="button" variant="ghost" onClick={onCancel}>
+              {appointments.leaveForm}
+            </Button>
+          ) : (
+            <Button variant="ghost" href="/calendar">
+              {appointments.leaveForm}
+            </Button>
+          )}
           <Button type="button" disabled={!canSave || saving} onClick={() => void save()}>
             {saving ? appointments.saving : appointments.save}
           </Button>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
-

@@ -1,0 +1,21 @@
+.warning {
+  margin: 0;
+  font-weight: 600;
+}
+
+.warning + .warning {
+  margin-top: 4px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (max-width: 767.98px) {
+  .actions > * {
+    flex: 1 1 0;
+  }
+}

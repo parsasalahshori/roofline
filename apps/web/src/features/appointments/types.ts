@@ -21,7 +21,7 @@ export type SaveResult = { appointment: AppointmentView; warnings: string[]; job
 
 export type AvailabilityQuery = { userId?: string; kind: AppointmentKind; propertyId?: string; from: string; to: string };
 
-/** Props of SuggestedTimes.tsx (Package B). `onPick` receives the slot and the member chosen for it (the first of slot.userIds, or the asked-for userId). */
+/** Props of SuggestedTimes.tsx. `onPick` receives the slot and the member chosen for it (the first of slot.userIds, or the asked-for userId). */
 export type SuggestedTimesProps = {
   kind: AppointmentKind;
   /** Rep: their own id (only their times are asked). Owner/office: the person picked in the form, or '' for anyone. */
@@ -29,24 +29,28 @@ export type SuggestedTimesProps = {
   propertyId: string;
   zone: string;
   onPick: (slot: Slot, userId: string) => void;
+  /** The start the form holds now (an ISO instant), so the suggestion that matches it shows as picked. */
+  pickedStart?: string | null;
 };
 
-/** Props of ConflictWarnings.tsx (Package B): the post-save warning banner. */
+/** Props of ConflictWarnings.tsx: the post-save warning banner. */
 export type ConflictWarningsProps = {
   warnings: string[];
   onKeep: () => void;
   onChange: () => void;
 };
 
-/** Props of AppointmentForm.tsx (Package A). */
+/** Props of AppointmentForm.tsx. */
 export type AppointmentFormProps = {
   /** Present when rescheduling: the form starts from this appointment and saves with PATCH. */
   existing?: AppointmentView;
   /** Called after a successful save, once the warnings (if any) were answered (Keep it). */
   onDone: (appointment: AppointmentView) => void;
+  /** Cancel was pressed. Left out, Cancel is a link back to the calendar. */
+  onCancel?: () => void;
 };
 
-/** Props of AppointmentDetail.tsx (Package C). */
+/** Props of AppointmentDetail.tsx. */
 export type AppointmentDetailProps = {
   appointment: AppointmentView;
   /** "Reschedule" pressed: the window shows the form for this appointment. */

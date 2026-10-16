@@ -1,22 +1,6 @@
-/* The suggested times: a heading, then one touch-sized button per open slot. The list wraps and never scrolls the page sideways. */
-.box {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+/* The suggested times: a panel of five rows, each one press. The row that matches the form is ringed and checked. */
+.panel {
   min-width: 0;
-}
-
-.heading {
-  margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.line {
-  margin: 0;
-  font-size: var(--font-size-body);
-  color: var(--ink-3);
 }
 
 .list {
@@ -35,28 +19,98 @@
 
 .slot {
   width: 100%;
-  min-height: 40px;
+  min-height: 44px;
   justify-content: flex-start;
+  gap: 0;
+  padding: 0 12px;
   text-align: left;
-  border: 1px solid var(--line);
-  border-radius: var(--r-3);
-  background: var(--surface);
-  color: var(--ink);
-  font-size: var(--font-size-body);
-  overflow-wrap: anywhere;
 }
 
-@media (min-width: 768px) {
-  .list {
-    flex-direction: row;
-    flex-wrap: wrap;
-  }
+.when {
+  font-family: var(--f-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
 
-  .item {
-    flex: 0 1 auto;
-  }
+.sep {
+  color: var(--ink-3);
+  white-space: pre;
+}
 
-  .slot {
-    width: auto;
-  }
+.who {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-2);
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+
+.day {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--ink-3);
+  font: 500 var(--font-size-min)/1 var(--f-mono);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.check {
+  margin-left: 8px;
+  color: var(--ok-text);
+}
+
+/* The picked one: an ink ring and a tint, and its check, so the choice is never colour alone */
+.slot[data-picked="true"] {
+  border-color: var(--ink);
+  background: var(--sunken);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
+.line {
+  margin: 0;
+  color: var(--ink-3);
+}
+
+.note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--bad-text);
+  font-weight: 600;
+}
+
+.errorBox {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.loading,
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.emptyTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-weight: 650;
+}
+
+.ghosts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ghost {
+  display: block;
+  height: 44px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-2);
 }

@@ -1,0 +1,19 @@
+/* The appointment that is on its way: a title bar and the two panels it will have */
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1100px;
+}
+
+.skeletonGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  gap: 16px;
+}
+
+@media (max-width: 1099.98px) {
+  .skeletonGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
