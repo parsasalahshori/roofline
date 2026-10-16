@@ -53,9 +53,6 @@ export function useWindowPreview(id: string, version: string): UseQueryResult<{ 
 /** Where an on-site window photo is served (same origin, cookie auth). */
 export const uploadSrc = (id: string, uploadId: string) => `${windowsPath(id)}/uploads/${encodeURIComponent(uploadId)}`;
 
-/** The photo types and size the upload takes. */
-export const UPLOAD_TYPES = ['image/jpeg', 'image/png', 'image/heic', 'image/heif'] as const;
-export const UPLOAD_MAX_BYTES = 12 * 1024 * 1024;
 
 /**
  * POST /api/window-measurements/:id/uploads (multipart, field "photo") -> 201 WindowPhotoUpload. XHR, not fetch, so the

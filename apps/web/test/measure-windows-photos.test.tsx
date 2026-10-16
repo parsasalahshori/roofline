@@ -345,6 +345,19 @@ describe('Photograph windows on site', () => {
     expect(xhrSent).toHaveLength(0);
   });
 
+  it('a HEIC this browser cannot open: says what to change on the phone, no broken thumbnail, no useless retry', async () => {
+    await open();
+    fireEvent.click(within(card()).getByRole('button', { name: copy.add }));
+    const heic = new File([new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63, 0, 0, 0, 0])], 'IMG_0001.HEIC', { type: 'image/heic' });
+    fireEvent.change(screen.getByLabelText(copy.takeLabel), { target: { files: [heic] } });
+    const alert = await screen.findByText(copy.heicUnsupported);
+    const row = alert.closest('[data-upload]') as HTMLElement;
+    expect(row.querySelector('img')).toBeNull();
+    expect(within(row).queryByRole('button', { name: copy.retry })).toBeNull();
+    expect(within(row).getByRole('button', { name: copy.remove })).toBeTruthy();
+    expect(xhrSent).toHaveLength(0);
+  });
+
   it('"I photographed every window" zeroes the estimate and says the count is from photos', async () => {
     await open(savedView());
     expect(stat()).toBe('16');

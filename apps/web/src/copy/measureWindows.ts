@@ -230,8 +230,11 @@ export const windowPhotos = {
   uploading: (name: string) => `Uploading ${name}`,
   uploaded: 'Ready to measure',
   uploadFailed: 'This photo did not upload. Try again.',
-  tooBig: 'This photo is over 12 MB. Take it again at a smaller size.',
+  tooBig: 'This photo is too big to upload, even made smaller. Take it again at a smaller size.',
   wrongType: 'Use a JPEG, PNG or HEIC photo.',
+  heicUnsupported:
+    'This photo is in the HEIC (high efficiency) format, which this browser cannot open. Set the camera to save JPEG and take it again: on iPhone, Settings > Camera > Formats > Most Compatible; on Samsung, Camera settings > Advanced > High efficiency pictures off.',
+  preparing: 'Getting the photo ready…',
   retry: 'Try again',
   remove: 'Remove',
   measure: 'Measure',

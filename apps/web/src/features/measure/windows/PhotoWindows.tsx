@@ -3,7 +3,8 @@ import { photoWindowKey, type PhotoWindow, type PhotoWindowInput, type WindowPho
 import { createPortal } from 'react-dom';
 import { Suspense, useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { measureWindows, windowPhotos as copy } from '../../../copy/measureWindows.ts';
-import { UPLOAD_MAX_BYTES, UPLOAD_TYPES, uploadSrc, uploadWindowPhoto } from './api.ts';
+import { uploadSrc, uploadWindowPhoto } from './api.ts';
+import { preparePhoto, type PhotoCodec } from './preparePhoto.ts';
 import { PhotoMeasure, type WindowGroup } from './PhotoMeasure.tsx';
 import { usePhotoEngine } from './photoEngine.tsx';
 import { asMeasurement, inchesFraction, plusMinusFraction, type LocalSheetSize } from './photoModel.ts';
@@ -17,34 +18,47 @@ import flow from './PhotoWindows.module.css';
 export type UploadItem = {
   key: string;
   name: string;
+  /** The file as it uploads (converted from HEIC or made smaller where needed, once). */
   file: File;
+  /** Whether `file` is already the prepared one. */
+  prepared: boolean;
+  /** False when trying again cannot help (a format this phone's browser cannot open): only Remove is offered. */
+  retryable: boolean;
   /** A local copy to show at once (null where the browser cannot make one). */
   preview: string | null;
   progress: number;
-  status: 'uploading' | 'done' | 'error';
+  status: 'preparing' | 'uploading' | 'done' | 'error';
   error: string | null;
   upload: WindowPhotoUpload | null;
 };
 
-function checkFile(file: File): string | null {
-  const type = file.type.toLowerCase();
-  const heic = /\.(heic|heif)$/i.test(file.name);
-  if (!(UPLOAD_TYPES as readonly string[]).includes(type) && !heic) return copy.wrongType;
-  if (file.size > UPLOAD_MAX_BYTES) return copy.tooBig;
-  return null;
-}
+const REFUSED = { type: copy.wrongType, heic: copy.heicUnsupported, 'too-big': copy.tooBig } as const;
 
 /** The photos taken on this screen, uploading one by one with their progress, plus those the server already has. */
-export function useWindowUploads(measurementId: string, serverUploads: readonly WindowPhotoUpload[] | undefined) {
+export function useWindowUploads(measurementId: string, serverUploads: readonly WindowPhotoUpload[] | undefined, codec?: PhotoCodec) {
   const [items, setItems] = useState<UploadItem[]>([]);
   const seq = useRef(0);
   const patch = (key: string, next: Partial<UploadItem>) => setItems((list) => list.map((it) => (it.key === key ? { ...it, ...next } : it)));
-  /** Sends one row's file; resolves with the upload, or rejects (the row then shows why). */
-  const send = (key: string, file: File): Promise<WindowPhotoUpload> => {
-    const refused = checkFile(file);
-    if (refused !== null) {
-      patch(key, { status: 'error', error: refused });
-      return Promise.reject(new Error(refused));
+  /** Sends one row's file (made ready first: HEIC to JPEG, over 12 MB smaller); resolves with the upload, or rejects. */
+  const send = async (key: string, original: File, prepared: boolean): Promise<WindowPhotoUpload> => {
+    let file = original;
+    if (!prepared) {
+      patch(key, { status: 'preparing', error: null, progress: 0 });
+      const p = await preparePhoto(original, codec);
+      if (!p.ok) {
+        patch(key, { status: 'error', error: REFUSED[p.reason], retryable: false });
+        throw new Error(REFUSED[p.reason]);
+      }
+      file = p.file;
+      // The row keeps the ready file (a retry sends it again as it is) and shows it (a HEIC has no preview of its own)
+      const preview = p.converted !== 'none' && typeof URL.createObjectURL === 'function' ? URL.createObjectURL(file) : undefined;
+      setItems((list) =>
+        list.map((it) => {
+          if (it.key !== key) return it;
+          if (preview !== undefined && it.preview !== null) URL.revokeObjectURL?.(it.preview);
+          return { ...it, file, prepared: true, ...(preview !== undefined && { preview }) };
+        }),
+      );
     }
     patch(key, { status: 'uploading', error: null, progress: 0 });
     return uploadWindowPhoto(measurementId, file, (share) => patch(key, { progress: share })).then(
@@ -61,24 +75,26 @@ export function useWindowUploads(measurementId: string, serverUploads: readonly 
   };
   const rowFor = (file: File): UploadItem => {
     seq.current += 1;
-    const preview = typeof URL.createObjectURL === 'function' ? URL.createObjectURL(file) : null;
-    return { key: `u${seq.current}`, name: file.name, file, preview, progress: 0, status: 'uploading', error: null, upload: null };
+    // A HEIC cannot be shown by most browsers: no broken thumbnail, its JPEG replaces it once converted
+    const heic = /\.(heic|heif)$/i.test(file.name) || /heic|heif/i.test(file.type);
+    const preview = !heic && typeof URL.createObjectURL === 'function' ? URL.createObjectURL(file) : null;
+    return { key: `u${seq.current}`, name: file.name, file, prepared: false, retryable: true, preview, progress: 0, status: 'preparing', error: null, upload: null };
   };
   const add = (files: FileList | File[]) => {
     const made = [...files].map(rowFor);
     setItems((current) => [...current, ...made]);
     // After the rows exist, so each one's progress has somewhere to go
-    queueMicrotask(() => made.forEach((it) => void send(it.key, it.file).catch(() => undefined)));
+    queueMicrotask(() => made.forEach((it) => void send(it.key, it.file, false).catch(() => undefined)));
   };
   /** One file sent now (the picture AR keeps, or the photo taken for it), listed like the others. */
   const uploadFile = (file: File): Promise<WindowPhotoUpload> => {
     const it = rowFor(file);
     setItems((current) => [...current, it]);
-    return send(it.key, it.file);
+    return send(it.key, it.file, false);
   };
   const retry = (key: string) => {
     const it = items.find((x) => x.key === key);
-    if (it) void send(key, it.file).catch(() => undefined);
+    if (it && it.retryable) void send(key, it.file, it.prepared).catch(() => undefined);
   };
   const remove = (key: string) => setItems((list) => list.filter((x) => x.key !== key));
   useEffect(
@@ -327,7 +343,9 @@ function UploadList({ uploads, inputs, go }: { uploads: Uploads; inputs: readonl
           it.key,
           it.preview ?? (it.upload !== null ? uploads.srcFor(it.upload.id) : null),
           copy.photoNumber(n),
-          it.status === 'uploading' ? (
+          it.status === 'preparing' ? (
+            <span role="status">{copy.preparing}</span>
+          ) : it.status === 'uploading' ? (
             <ProgressBar value={Math.round(it.progress * 100)} max={100} label={copy.uploading(it.name)} />
           ) : it.status === 'error' ? (
             <div role="alert" className={flow.uploadError}>
@@ -342,9 +360,11 @@ function UploadList({ uploads, inputs, go }: { uploads: Uploads; inputs: readonl
             <Button onClick={() => go({ step: 'measure', uploadId: it.upload!.id, windowId: null })}>{copy.measure}</Button>
           ) : it.status === 'error' ? (
             <>
-              <Button variant="ghost" onClick={() => uploads.retry(it.key)}>
-                {copy.retry}
-              </Button>
+              {it.retryable ? (
+                <Button variant="ghost" onClick={() => uploads.retry(it.key)}>
+                  {copy.retry}
+                </Button>
+              ) : null}
               <Button variant="ghost" onClick={() => uploads.remove(it.key)}>
                 {copy.remove}
               </Button>
