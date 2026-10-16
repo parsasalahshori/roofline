@@ -376,6 +376,28 @@ private let homeownerOutboxChecks: [Check] = [
         ctx.expect(!FileManager.default.fileExists(atPath: dir.appendingPathComponent("\(b.id).jpg").path), "the removed request's photo is gone")
         ctx.equal(await ob.pendingCount, 0, "a-1 is done")
     },
+    Check("LocalWindowPreview: a card photo is sized by the card, and a size the phone is wildly unsure of is not shown") { ctx in
+        // A front-on photo at 40 px per inch: the card is 135 x 85 px, the window 1425 x 2385 px
+        let s = 40.0
+        let cw = CardLimits.widthIn * s, ch = CardLimits.heightIn * s
+        let card = [Vec2(800, 1000), Vec2(800 + cw, 1000), Vec2(800 + cw, 1000 + ch), Vec2(800, 1000 + ch)]
+        let frame = [Vec2(300, 400), Vec2(1725, 400), Vec2(1725, 2785), Vec2(300, 2785)]
+        let w = PhotoWindowInput(id: "c1", uploadId: "u", label: nil, windowKey: nil, corners: frame, scale: .card(CardScale(cardCorners: card)), room: "Kitchen", style: "double-hung")
+        let p = LocalWindowPreview.of(w, imageWidthPx: 2250, imageHeightPx: 3000)
+        ctx.near(p?.widthIn, 35.625, 0.05, "the nominal size is recovered on a front-on photo")
+        ctx.near(p?.heightIn, 59.625, 0.05)
+        ctx.equal(p?.needsCheck, true, "a card this small next to the window is a check")
+        ctx.expect(p?.isShowable == false, "and the doubt is too big to print")
+        // No photo size, or no frame corners: nothing to show
+        ctx.expect(LocalWindowPreview.of(w, imageWidthPx: 0, imageHeightPx: 0) == nil)
+        var noCorners = w
+        noCorners.corners = nil
+        ctx.expect(LocalWindowPreview.of(noCorners, imageWidthPx: 2250, imageHeightPx: 3000) == nil)
+        // The limit itself
+        ctx.expect(WindowPreview(widthIn: 36, heightIn: 60, uncertaintyIn: 4, needsCheck: true).isShowable)
+        ctx.expect(!WindowPreview(widthIn: 36, heightIn: 60, uncertaintyIn: 4.2, needsCheck: true).isShowable)
+        ctx.expect(WindowPreview(widthIn: 36, heightIn: 60, uncertaintyIn: nil, needsCheck: false).isShowable)
+    },
     Check("LocalWindowPreview: sizes from the phone's own math for AR and room scans") { ctx in
         let ar = hoWindow(scale: .ar(ArScale(pointsM: rect(w: 0.9, h: 1.5), trackingLostCount: 0, device: .arkitLidar, cornerSpreadM: [0.001, 0.001, 0.001, 0.001])))
         let p = LocalWindowPreview.of(ar, imageWidthPx: 1440, imageHeightPx: 1920)

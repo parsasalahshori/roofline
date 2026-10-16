@@ -12,6 +12,13 @@ public struct WindowPreview: Equatable, Sendable {
     /// Why it needs a check, in plain words.
     public var reasons: [String]
 
+    /// A size that is worth showing: one the phone is not wildly unsure about. A card photo taken far from the glass can come
+    /// out at "about 20 inches" of doubt; a number with that much doubt is noise, so the screens say the size comes after
+    /// upload (the server's own answer) instead of printing it.
+    public static let showableUncertaintyIn = 4.0
+
+    public var isShowable: Bool { (uncertaintyIn ?? 0) <= Self.showableUncertaintyIn }
+
     public init(widthIn: Double, heightIn: Double, uncertaintyIn: Double?, needsCheck: Bool, reasons: [String] = []) {
         self.widthIn = widthIn
         self.heightIn = heightIn
@@ -33,8 +40,12 @@ public enum LocalWindowPreview {
             let u = RoomPlanLimits.uncertaintyIn(s.confidence)
             return WindowPreview(widthIn: s.widthM * inchesPerMetre, heightIn: s.heightM * inchesPerMetre, uncertaintyIn: u,
                                  needsCheck: s.confidence == .low, reasons: s.confidence == .low ? ["The scan was not sure about this window."] : [])
-        case .card, .other:
-            // CARD: filled in with the card homography port
+        case .card(let c):
+            guard let corners = w.corners, imageWidthPx > 0, imageHeightPx > 0,
+                  let size = CardSizing.size(cardCorners: c.cardCorners, windowCorners: corners, imageWidthPx: Double(imageWidthPx), imageHeightPx: Double(imageHeightPx)) else { return nil }
+            return WindowPreview(widthIn: size.widthIn, heightIn: size.heightIn, uncertaintyIn: max(size.uncertaintyWidthIn, size.uncertaintyHeightIn),
+                                 needsCheck: size.quality == .check, reasons: size.reasons)
+        case .other:
             return nil
         }
     }
