@@ -12,40 +12,50 @@ import {
   JobLinkError,
   lockInspector,
   quoteCompany,
+  quoteVisitTimes,
   setQuoteRequestAppointment,
   type TenantContext,
   withTenant,
+  zoneDayAfter,
+  zoneDayStart,
 } from '@roofline/db';
 import { companyForQuoteSlug } from '@roofline/db/system';
 import {
   type InstantQuoteSettings,
   isTimeZone,
+  localDate,
   MAX_AVAILABILITY_DAYS,
   type PublicQuoteConfig,
   type PublicQuoteEstimate,
   type PublicQuoteLeadResult,
   type PublicQuoteSlots,
+  type PublicQuoteWindows,
   QUOTE_CONSENT_VERSION,
   QUOTE_LIMITS,
   QUOTE_PRODUCTS,
   QUOTE_SLUG_RE,
+  QUOTE_WINDOW_COUNT,
   quoteConsentText,
+  quoteTextConsentText,
   toE164,
   type QuoteProduct,
 } from '@roofline/shared';
+import { writeAgentNote } from '../agents/notes.ts';
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
-import { INSPECTION_MINUTES, openInspectionSlots, queueCalendarPush } from '../front-desk/tools/times.ts';
-import { estimateForAddress } from '../quote/estimate.ts';
+import { INSPECTION_MINUTES, openInspectionSlots, queueCalendarPush, zoneOf } from '../front-desk/tools/times.ts';
+import { estimateForAddress, windowsForCount } from '../quote/estimate.ts';
 import { checkFormToken, issueFormToken, quoteIpHash, turnstileOn, verifyTurnstile } from '../quote/guards.ts';
 import { publicRateLimit } from '../rate-limit.ts';
 import { emailField, noNul, parse, UUID } from '../validate.ts';
+import { policyUrls } from './policy-urls.ts';
 
 /*
  * The instant quote page's API, signed out, under /api/public/quote/:slug (the page is /q/:slug):
  *   GET  /:slug           the company's name, logo, colour, products, booking on/off and the consent text
  *   POST /:slug/estimate  { address } -> a quote id and price RANGES only (quote/estimate.ts)
- *   GET  /:slug/slots     the next open in-home visit times, when the company offers booking
+ *   POST /:slug/windows   { quoteId, count } -> the windows range for the homeowner's own count (1 to 80)
+ *   GET  /:slug/slots     the next open in-home visit times (from tomorrow), when the company offers booking
  *   POST /:slug/lead      the homeowner's details -> customer, address and Lead job, maybe a visit
  *
  * The slug is the only key: it is resolved through the system pool (app_system may read just the slug columns of
@@ -61,7 +71,10 @@ const BODY_LIMIT = '8kb';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 /** Per-IP limits (on top of the 60 a minute every /api/public route has). Per-IP limits need TRUST_PROXY set right. */
-export const QUOTE_RATE_LIMITS = { estimatesPerIpPerHour: 10, leadsPerIpPerHour: 5, slotsPerIpPerHour: 60 } as const;
+export const QUOTE_RATE_LIMITS = { estimatesPerIpPerHour: 10, leadsPerIpPerHour: 5, slotsPerIpPerHour: 60, windowsPerIpPerHour: 120 } as const;
+
+/** The page's per-IP limits are hourly: the answer says so (the app's own "in a minute" would be wrong here). */
+export const QUOTE_TOO_MANY = "That's a lot of tries from this connection. Please try again in an hour, or give us a call.";
 
 const ADDRESS_MESSAGE = 'Please enter the address of the home.';
 const FIRST_MESSAGE = 'Please enter your first name.';
@@ -69,11 +82,12 @@ const LAST_MESSAGE = 'Please enter your last name.';
 const PHONE_MESSAGE = "That doesn't look like a US phone number.";
 const ZIP_MESSAGE = 'Please enter a 5-digit ZIP code.';
 const PRODUCTS_MESSAGE = 'Pick at least one service.';
-const CONSENT_MESSAGE = 'Please check the box to agree to be contacted.';
+const CONSENT_MESSAGE = 'Please check the box so we can call or email you.';
 const RELOAD_MESSAGE = 'This page was updated. Please reload it and try again.';
 const RETRY_MESSAGE = 'Please wait a moment and try again.';
 const VERIFY_MESSAGE = "We couldn't confirm you're a person. Please try again.";
 const QUOTE_MESSAGE = 'Please get your estimate again.';
+const COUNT_MESSAGE = `Use ${QUOTE_WINDOW_COUNT.min} to ${QUOTE_WINDOW_COUNT.max} windows.`;
 
 const name = (message: string) => z.string({ error: message }).trim().min(1, message).max(60, 'That name is too long.').refine(noNul, message);
 
@@ -109,11 +123,22 @@ const LeadBody = z
       .max(QUOTE_PRODUCTS.length, PRODUCTS_MESSAGE)
       .transform((list) => QUOTE_PRODUCTS.filter((p) => list.includes(p))),
     consent: z.literal(true, { error: CONSENT_MESSAGE }),
+    /** The optional "text me" box. */
+    textConsent: z.boolean({ error: MESSAGES.checkField }).optional(),
+    /** The homeowner's own window count, when they changed it on the page. */
+    windowCount: z.number({ error: COUNT_MESSAGE }).int(COUNT_MESSAGE).min(QUOTE_WINDOW_COUNT.min, COUNT_MESSAGE).max(QUOTE_WINDOW_COUNT.max, COUNT_MESSAGE).optional(),
     consentVersion: z.string({ error: RELOAD_MESSAGE }).max(40, RELOAD_MESSAGE),
     slotId: z.iso.datetime({ offset: true, error: MESSAGES.checkField }).optional(),
     formToken: z.string({ error: RETRY_MESSAGE }).max(100, RETRY_MESSAGE),
     website: z.unknown().optional(),
     turnstileToken: z.string().max(2048).optional(),
+  })
+  .strict();
+
+const WindowsBody = z
+  .object({
+    quoteId: z.string({ error: QUOTE_MESSAGE }).regex(UUID, QUOTE_MESSAGE).transform((v) => v.toLowerCase()),
+    count: z.number({ error: COUNT_MESSAGE }).int(COUNT_MESSAGE).min(QUOTE_WINDOW_COUNT.min, COUNT_MESSAGE).max(QUOTE_WINDOW_COUNT.max, COUNT_MESSAGE),
   })
   .strict();
 
@@ -202,7 +227,7 @@ function perIpLimit(scope: string, limit: number, windowMs = HOUR_MS): RequestHa
     legacyHeaders: false,
     keyGenerator: (req) => `quote-${scope}:${ipKeyGenerator(req.ip ?? 'unknown')}`,
     handler: (_req, _res, next) => {
-      next(new AppError(429, MESSAGES.tooFast));
+      next(new AppError(429, QUOTE_TOO_MANY));
     },
   });
 }
@@ -227,6 +252,13 @@ async function openSlots(deps: AppDeps, ctx: TenantContext, propertyId: string |
 
 const MAX_SLOTS = 8;
 const OFFER_DAYS = 10;
+
+/** The earliest visit the page offers or books: midnight starting tomorrow in the company's zone (never same day). */
+async function earliestVisit(deps: AppDeps, ctx: TenantContext, now: Date): Promise<Date> {
+  const zone = await withTenant(deps.pools, ctx, (tx) => zoneOf(tx, ctx));
+  const tz = isTimeZone(zone) ? zone : 'UTC';
+  return zoneDayStart(zoneDayAfter(localDate(now, tz)), tz);
+}
 
 export function publicQuoteRoutes(deps: AppDeps): Router {
   const router = Router();
@@ -255,7 +287,12 @@ export function publicQuoteRoutes(deps: AppDeps): Router {
         phone: company.phoneE164,
         products: settings.products,
         booking: settings.booking,
-        consent: { version: QUOTE_CONSENT_VERSION, text: quoteConsentText(company.name) },
+        consent: {
+          version: QUOTE_CONSENT_VERSION,
+          text: quoteConsentText(company.name),
+          textingText: quoteTextConsentText(company.name),
+          ...(({ privacy, terms }) => ({ privacyUrl: privacy, termsUrl: terms }))(policyUrls(deps.config, company.slug)),
+        },
         turnstileSiteKey: turnstileOn(deps.config) ? deps.config.TURNSTILE_SITE_KEY! : null,
       };
       res.json(body);
@@ -280,6 +317,20 @@ export function publicQuoteRoutes(deps: AppDeps): Router {
     }),
   );
 
+  router.post(
+    '/:slug/windows',
+    perIpLimit('windows', QUOTE_RATE_LIMITS.windowsPerIpPerHour),
+    route(async (req, res) => {
+      const { ctx, settings } = await pageFor(deps, req.params.slug);
+      const body = parse(WindowsBody, req.body);
+      const row = await withTenant(deps.pools, ctx, (tx) => getQuoteEstimate(tx, ctx, body.quoteId));
+      const answer = row === null ? null : windowsForCount(row, body.count, settings.rangePct);
+      // Another company's quote, one with no windows, or none at all: the same answer.
+      if (answer === null) throw new AppError(404, QUOTE_MESSAGE);
+      res.json(answer satisfies PublicQuoteWindows);
+    }),
+  );
+
   router.get(
     '/:slug/slots',
     perIpLimit('slots', QUOTE_RATE_LIMITS.slotsPerIpPerHour),
@@ -290,7 +341,9 @@ export function publicQuoteRoutes(deps: AppDeps): Router {
         return;
       }
       const now = deps.clock.now();
-      const world = await openSlots(deps, ctx, null, now, new Date(now.getTime() + OFFER_DAYS * 24 * HOUR_MS));
+      // From tomorrow: a same-day visit a couple of hours out is more than an inspector's day can take on unseen.
+      const from = await earliestVisit(deps, ctx, now);
+      const world = await openSlots(deps, ctx, null, from, new Date(from.getTime() + OFFER_DAYS * 24 * HOUR_MS));
       // Spread over the days: at most two a day (the earliest, then one at least three hours later), up to MAX_SLOTS.
       const perDay = new Map<string, Date[]>();
       const picked: typeof world.slots = [];
@@ -344,6 +397,8 @@ export function publicQuoteRoutes(deps: AppDeps): Router {
           { addressLine: estimate.address.slice(0, 200), city: '', state: '', zip: body.postalCode.slice(0, 5), location: null, timezone: null };
 
       const result = estimate.result as Partial<PublicQuoteEstimate>;
+      // The homeowner's own window count, priced the way the page priced it (the summary says it was theirs).
+      const ownWindows = body.windowCount === undefined ? null : windowsForCount(estimate, body.windowCount, settings.rangePct);
       const ipHash = quoteIpHash(deps.config, req.ip ?? 'unknown', ctx.companyId);
       const filed = await withTenant(deps.pools, ctx, (tx) =>
         createQuoteRequest(tx, ctx, {
@@ -358,19 +413,28 @@ export function publicQuoteRoutes(deps: AppDeps): Router {
           products,
           consentText: quoteConsentText(company.name),
           consentVersion: QUOTE_CONSENT_VERSION,
+          textConsentText: body.textConsent === true ? quoteTextConsentText(company.name) : null,
           ipHash,
           measurementId: estimate.measurementId,
-          summary: shownSummary(result, products),
+          summary: shownSummary(result, products, ownWindows),
           now,
         }),
       );
 
+      // A picked time is booked for a new request and for a repeat of one with no visit yet (a second send after a
+      // first without a time, or a back button); a repeat of a booked request answers the visit already booked.
       let booked: PublicQuoteLeadResult['booked'] = null;
-      if (filed.created && settings.booking && body.slotId !== undefined) {
+      let slotTaken = false;
+      if (filed.appointmentId !== null) booked = await bookedTimes(deps, ctx, filed.appointmentId);
+      if (booked === null && settings.booking && body.slotId !== undefined) {
         booked = await bookVisit(deps, ctx, filed, new Date(body.slotId));
+        slotTaken = booked === null;
       }
-      if (filed.created) await startFollowUp(deps, ctx);
-      res.status(201).json({ ok: true, booked } satisfies PublicQuoteLeadResult);
+      if (filed.created) {
+        await officeAlert(deps, ctx, filed.jobId, { products, booked: booked !== null, priced: estimate.status === 'ready' });
+        await startFollowUp(deps, ctx);
+      }
+      res.status(201).json({ ok: true, booked, ...(slotTaken && { slotTaken: true }) } satisfies PublicQuoteLeadResult);
     }),
   );
 
@@ -379,20 +443,65 @@ export function publicQuoteRoutes(deps: AppDeps): Router {
 
 const dollars = (cents: number) => `$${Math.round(cents / 100).toLocaleString('en-US')}`;
 
-/** What the homeowner was shown, in one plain line for the job's timeline (ranges only, as on the page). */
-export function shownSummary(r: Partial<PublicQuoteEstimate>, products: readonly QuoteProduct[]): string {
+/**
+ * What the homeowner was shown, in one plain line for the job's timeline (ranges only, as on the page). `own`: the
+ * window count the homeowner set on the page, with its range, in place of the estimated one.
+ */
+export function shownSummary(r: Partial<PublicQuoteEstimate>, products: readonly QuoteProduct[], own: PublicQuoteWindows | null = null): string {
   const parts: string[] = [];
   if (products.includes('roof') && r.roof) parts.push(`Roof about ${r.roof.squares} squares, ${dollars(r.roof.range.lowCents)} to ${dollars(r.roof.range.highCents)}`);
-  if (products.includes('windows') && r.windows) parts.push(`about ${r.windows.count} windows, ${dollars(r.windows.range.lowCents)} to ${dollars(r.windows.range.highCents)}`);
-  if (products.includes('gutters') && r.gutters) parts.push(`gutters about ${r.gutters.feet} ft, ${dollars(r.gutters.range.lowCents)} to ${dollars(r.gutters.range.highCents)}`);
+  if (products.includes('windows') && r.windows) {
+    const w = own ?? r.windows;
+    const whose = own !== null && own.count !== r.windows.count ? ` (their count; we estimated ${r.windows.count})` : '';
+    parts.push(`about ${w.count} windows${whose}, ${dollars(w.range.lowCents)} to ${dollars(w.range.highCents)}`);
+  }
   const asked = `Asked about ${products.join(', ')}.`;
-  return parts.length > 0 ? `${asked} Shown: ${parts.join('; ')}.` : `${asked} No estimate was shown; call them.`;
+  const visit = products.includes('gutters') ? ' Gutters are priced at the visit.' : '';
+  return parts.length > 0 ? `${asked} Shown: ${parts.join('; ')}.${visit}` : `${asked} No estimate was shown; call them.${visit}`;
+}
+
+/** The start and end of a visit already booked for a request, or null when it is gone. */
+async function bookedTimes(deps: AppDeps, ctx: TenantContext, appointmentId: string): Promise<{ start: string; end: string } | null> {
+  const row = await withTenant(deps.pools, ctx, (tx) => quoteVisitTimes(tx, ctx, appointmentId));
+  return row === null ? null : { start: row.startsAt.toISOString(), end: row.endsAt.toISOString() };
 }
 
 /**
- * Books the visit the homeowner picked, when it is still open: re-checked on fresh busy data under the inspector's
- * lock, then made through createAppointment (so the job moves to Inspection and the calendar push runs, as for any
- * booking). A time taken meanwhile, or any booking problem, leaves the request standing with no visit (null).
+ * The office's alert for a new request: a note on the AI feed of Home ("New instant quote request"), linked to the
+ * job. With the job's next step (due today, on every owner's and office member's My Day until someone takes it) the
+ * office sees each new lead the day it comes in. Ids and products only, no name, phone or address. Never fails
+ * the request.
+ */
+async function officeAlert(deps: AppDeps, ctx: TenantContext, jobId: string, what: { products: QuoteProduct[]; booked: boolean; priced: boolean }): Promise<void> {
+  try {
+    const how = what.booked ? 'They booked a visit.' : what.priced ? 'They saw a price range; call them.' : 'No price was shown; call them.';
+    await withTenant(deps.pools, ctx, (tx) =>
+      writeAgentNote(
+        tx,
+        ctx,
+        {
+          agent: 'system',
+          kind: 'instant_quote_lead',
+          title: 'New instant quote request',
+          summary: `Asked about ${what.products.join(', ')}. ${how}`,
+          subjectType: 'job',
+          subjectId: jobId,
+          label: 'New request from the instant quote page',
+        },
+        deps.clock.now(),
+      ),
+    );
+  } catch (err) {
+    deps.logError?.(err, 'quote.office-alert');
+  }
+}
+
+/**
+ * Books the visit the homeowner picked, when it is still open and not before tomorrow: re-checked on fresh busy data
+ * under the inspector's lock, then made through createAppointment (so the job moves to Inspection and the calendar
+ * push runs, as for any booking); the job's rep becomes the inspector and the "Call the homeowner" next step goes.
+ * Any free inspector of the company may get it (no routing by area: the settings page says so). A time taken
+ * meanwhile, or any booking problem, leaves the request standing with no visit (null; the page says we will call).
  */
 async function bookVisit(
   deps: AppDeps,
@@ -401,7 +510,8 @@ async function bookVisit(
   start: Date,
 ): Promise<{ start: string; end: string } | null> {
   const now = deps.clock.now();
-  if (!(start.getTime() > now.getTime()) || start.getTime() > now.getTime() + MAX_AVAILABILITY_DAYS * 24 * HOUR_MS) return null;
+  const earliest = await earliestVisit(deps, ctx, now);
+  if (start.getTime() < earliest.getTime() || start.getTime() > now.getTime() + MAX_AVAILABILITY_DAYS * 24 * HOUR_MS) return null;
   const end = new Date(start.getTime() + INSPECTION_MINUTES * MINUTE_MS);
   // The slot search wants room round the visit (travel buffers), so it looks a few hours either side and matches the start.
   const from = new Date(start.getTime() - 3 * HOUR_MS);
@@ -430,7 +540,7 @@ async function bookVisit(
         },
         now,
       );
-      await setQuoteRequestAppointment(tx, ctx, filed.requestId, appt.row.id, now);
+      await setQuoteRequestAppointment(tx, ctx, { requestId: filed.requestId, appointmentId: appt.row.id, jobId: filed.jobId, inspectorId: inspector }, now);
       return appt;
     });
     if (made === null) return null;

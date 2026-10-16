@@ -181,6 +181,7 @@ function QuoteForm({ settings, canEdit }: { settings: InstantQuoteSettingsView; 
         />
         <div className={styles.switch}>
           <Toggle label={copy.booking} checked={form.booking} onChange={(v) => set('booking', v)} disabled={!canEdit} />
+          <p className={styles.help}>{copy.bookingHelp}</p>
         </div>
         {canEdit ? (
           <Button type="submit" variant="primary" className={styles.save} busy={save.isPending}>

@@ -281,6 +281,13 @@
       "when": 1792157831208,
       "tag": "0039_google_retention_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1792175826014,
+      "tag": "0040_quote_text_consent",
+      "breakpoints": true
     }
   ]
 }

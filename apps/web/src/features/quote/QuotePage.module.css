@@ -179,8 +179,42 @@
 .tile {
   position: absolute;
   max-width: none;
+  opacity: 0;
+  transition: opacity 240ms ease-out;
   user-select: none;
   pointer-events: none;
+}
+
+.tile[data-loaded] {
+  opacity: 1;
+}
+
+/* While the photo's tiles come in: a soft sweep, never a blank box */
+.thumb[data-loading] {
+  background:
+    linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.08) 50%, transparent 70%) 0 0 / 200% 100%,
+    repeating-linear-gradient(45deg, #24302a 0 12px, #1f2a24 12px 24px);
+  animation: thumb-sweep 1.4s linear infinite;
+}
+
+@keyframes thumb-sweep {
+  from {
+    background-position: 100% 0, 0 0;
+  }
+
+  to {
+    background-position: -100% 0, 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thumb[data-loading] {
+    animation: none;
+  }
+
+  .tile {
+    transition: none;
+  }
 }
 
 .outline {
@@ -346,4 +380,36 @@
   .title {
     font-size: 1.75rem;
   }
+}
+
+/* The window count: the label with its two buttons on one line */
+.windowsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.stepper {
+  display: flex;
+  gap: 6px;
+}
+
+.rangeValue[data-pending] {
+  opacity: 0.55;
+}
+
+.atVisit {
+  font-weight: 650;
+}
+
+.consent {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.policyLinks {
+  margin: 0;
+  font-size: 0.875rem;
 }

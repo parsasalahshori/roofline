@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gt, gte, isNull } from 'drizzle-orm';
+import { and, count, desc, eq, gt, gte, isNull, ne, or, sql } from 'drizzle-orm';
 import {
   type InstantQuoteSettings,
   localDate,
@@ -7,11 +7,11 @@ import {
   type QuoteProduct,
   QUOTE_PRODUCTS,
 } from '@roofline/shared';
-import { companies, companySettings, jobs, measurements, quoteEstimates, quoteRequests } from '../schema/index.ts';
+import { appointments, companies, companySettings, jobs, measurements, quoteEstimates, quoteRequests } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { addActivity } from './activities.ts';
 import { audit } from './audit.ts';
-import { createJob } from './jobs.ts';
+import { createJob, getJob, updateJob } from './jobs.ts';
 import { addressCustomerFor, addressRowFor, lockWebLead, phoneCustomerFor, webLeadZone, type WebLeadInput } from './web-lead.ts';
 
 /*
@@ -93,10 +93,13 @@ export async function saveQuoteSettings(tx: Tx, ctx: TenantContext, next: Instan
   return after;
 }
 
-/** The company's public face for the page: name, logo, phone. */
-export async function quoteCompany(tx: Tx, ctx: TenantContext): Promise<{ name: string; logoUrl: string | null; phoneE164: string | null } | null> {
+/** The company's public face for the page: name, logo, phone, and its slug (for the policy pages' addresses). */
+export async function quoteCompany(
+  tx: Tx,
+  ctx: TenantContext,
+): Promise<{ name: string; logoUrl: string | null; phoneE164: string | null; slug: string } | null> {
   const [row] = await tx
-    .select({ name: companies.name, logoUrl: companies.logoUrl, phoneE164: companies.phoneE164 })
+    .select({ name: companies.name, logoUrl: companies.logoUrl, phoneE164: companies.phoneE164, slug: companies.slug })
     .from(companies)
     .where(eq(companies.id, ctx.companyId))
     .limit(1);
@@ -115,8 +118,10 @@ export function quoteInputKey(address: string): string {
 }
 
 /**
- * The newest unexpired 'ready' estimate for this typed address (or, given `addressKey`, for the found address),
- * or null. Fallback rows are never reused: the next visit may have room under the cap.
+ * The newest unexpired estimate for this typed address (or, given `addressKey`, for the found address) that may be
+ * shown again, or null: a 'ready' one, or a call back the page's checks decided (result.callback: an apartment, a
+ * commercial building, a roof to check), which the same address would only decide again. A call back because the
+ * daily cap was reached is never reused: the next visit may have room under the cap.
  */
 export async function findCachedEstimate(
   tx: Tx,
@@ -130,7 +135,7 @@ export async function findCachedEstimate(
     .where(
       and(
         eq(quoteEstimates.companyId, ctx.companyId),
-        eq(quoteEstimates.status, 'ready'),
+        or(eq(quoteEstimates.status, 'ready'), sql`(${quoteEstimates.result} ->> 'callback') is not null`),
         gt(quoteEstimates.expiresAt, now),
         'inputKey' in by ? eq(quoteEstimates.inputKey, by.inputKey) : eq(quoteEstimates.addressKey, by.addressKey),
       ),
@@ -152,12 +157,23 @@ export async function expireQuoteEstimates(tx: Tx, ctx: TenantContext, now: Date
     .where(and(eq(quoteEstimates.companyId, ctx.companyId), gt(quoteEstimates.expiresAt, now)));
 }
 
-/** Estimates since `since` that spent paid calls: what the daily cap counts. */
-export async function countMeasuredSince(tx: Tx, ctx: TenantContext, since: Date): Promise<number> {
+/**
+ * Estimates since `since` that spent paid calls. `readyOnly`: only the ones that showed a price, which is what the
+ * daily cap counts (a measured home the page then sent to a call back does not use up the homeowner-facing cap; the
+ * caller bounds every measurement with a higher ceiling instead).
+ */
+export async function countMeasuredSince(tx: Tx, ctx: TenantContext, since: Date, o: { readyOnly?: boolean } = {}): Promise<number> {
   const [row] = await tx
     .select({ total: count() })
     .from(quoteEstimates)
-    .where(and(eq(quoteEstimates.companyId, ctx.companyId), eq(quoteEstimates.measured, true), gte(quoteEstimates.createdAt, since)));
+    .where(
+      and(
+        eq(quoteEstimates.companyId, ctx.companyId),
+        eq(quoteEstimates.measured, true),
+        gte(quoteEstimates.createdAt, since),
+        o.readyOnly === true ? eq(quoteEstimates.status, 'ready') : undefined,
+      ),
+    );
   return row?.total ?? 0;
 }
 
@@ -217,6 +233,8 @@ export type QuoteRequestInput = WebLeadInput & {
   products: QuoteProduct[];
   consentText: string;
   consentVersion: string;
+  /** The optional "text me" box: its sentence when ticked, null when not (then nothing about texting is recorded). */
+  textConsentText: string | null;
   ipHash: string | null;
   /** The measurement to attach to the new job (the estimate's), when there is one. */
   measurementId: string | null;
@@ -225,10 +243,19 @@ export type QuoteRequestInput = WebLeadInput & {
   now: Date;
 };
 
-export type QuoteRequestResult = { requestId: string; customerId: string; jobId: string; propertyId: string; created: boolean };
+export type QuoteRequestResult = {
+  requestId: string;
+  customerId: string;
+  jobId: string;
+  propertyId: string;
+  created: boolean;
+  /** The visit already booked for this request (a repeat of one that booked), or null. */
+  appointmentId: string | null;
+};
 
 /** The follow-up put on the new job, so it shows on Today the day the request came in. */
-const NEXT_STEP = 'Call the homeowner about their instant quote';
+export const QUOTE_NEXT_STEP = 'Call the homeowner about their instant quote';
+const NEXT_STEP = QUOTE_NEXT_STEP;
 /** A repeat from the same phone within this long goes to the job already made, with no second job. */
 const REPEAT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -251,7 +278,7 @@ export async function createQuoteRequest(tx: Tx, ctx: TenantContext, input: Quot
 
   // The same phone for the same home within a day (a double send, a back button) is the same request.
   const [repeat] = await tx
-    .select({ id: quoteRequests.id, customerId: quoteRequests.customerId, jobId: quoteRequests.jobId })
+    .select({ id: quoteRequests.id, customerId: quoteRequests.customerId, jobId: quoteRequests.jobId, appointmentId: quoteRequests.appointmentId })
     .from(quoteRequests)
     .innerJoin(jobs, eq(jobs.id, quoteRequests.jobId))
     .where(
@@ -266,7 +293,7 @@ export async function createQuoteRequest(tx: Tx, ctx: TenantContext, input: Quot
     .limit(1);
 
   if (repeat && repeat.customerId !== null && repeat.jobId !== null) {
-    return { requestId: repeat.id, customerId: repeat.customerId, jobId: repeat.jobId, propertyId: property.id, created: false };
+    return { requestId: repeat.id, customerId: repeat.customerId, jobId: repeat.jobId, propertyId: property.id, created: false, appointmentId: repeat.appointmentId };
   }
 
   const zone = await webLeadZone(tx, ctx);
@@ -308,6 +335,8 @@ export async function createQuoteRequest(tx: Tx, ctx: TenantContext, input: Quot
       consentText: input.consentText,
       consentVersion: input.consentVersion,
       consentAt: now,
+      textConsent: input.textConsentText !== null,
+      textConsentText: input.textConsentText,
       ipHash: input.ipHash,
       customerId: jobCustomer.id,
       jobId: job.id,
@@ -320,17 +349,50 @@ export async function createQuoteRequest(tx: Tx, ctx: TenantContext, input: Quot
     targetType: 'quote_request',
     targetId: row!.id,
     // Ids and products only: no name, phone, email or address in the audit trail.
-    after: { jobId: job.id, customerId: jobCustomer.id, products: input.products, consentVersion: input.consentVersion },
+    after: { jobId: job.id, customerId: jobCustomer.id, products: input.products, consentVersion: input.consentVersion, textConsent: input.textConsentText !== null },
     ip: null,
     at: now,
   });
-  return { requestId: row!.id, customerId: jobCustomer.id, jobId: job.id, propertyId: property.id, created: true };
+  return { requestId: row!.id, customerId: jobCustomer.id, jobId: job.id, propertyId: property.id, created: true, appointmentId: null };
 }
 
-/** Records the visit booked for a request. */
-export async function setQuoteRequestAppointment(tx: Tx, ctx: TenantContext, requestId: string, appointmentId: string, now: Date): Promise<void> {
+/**
+ * Records the visit booked for a request, and hands its job to the inspector: the job's rep becomes the inspector
+ * when it has none, and the page's "Call the homeowner" next step is cleared (the visit is set; a next step a person
+ * wrote meanwhile stays).
+ */
+export async function setQuoteRequestAppointment(
+  tx: Tx,
+  ctx: TenantContext,
+  booked: { requestId: string; appointmentId: string; jobId: string; inspectorId: string },
+  now: Date,
+): Promise<void> {
   await tx
     .update(quoteRequests)
-    .set({ appointmentId, updatedAt: now })
-    .where(and(eq(quoteRequests.id, requestId), eq(quoteRequests.companyId, ctx.companyId)));
+    .set({ appointmentId: booked.appointmentId, updatedAt: now })
+    .where(and(eq(quoteRequests.id, booked.requestId), eq(quoteRequests.companyId, ctx.companyId)));
+  const job = await getJob(tx, ctx, booked.jobId);
+  if (job === null) return;
+  const patch = {
+    ...(job.assignedUserId === null && { assignedUserId: booked.inspectorId }),
+    ...(job.nextStep === NEXT_STEP && { nextStep: null, nextStepOn: null }),
+  };
+  if (Object.keys(patch).length > 0) await updateJob(tx, ctx, booked.jobId, patch, { now });
+}
+
+/** A request's booked visit, when it is still on (not canceled or archived): its start and end. */
+export async function quoteVisitTimes(tx: Tx, ctx: TenantContext, appointmentId: string): Promise<{ startsAt: Date; endsAt: Date } | null> {
+  const [row] = await tx
+    .select({ startsAt: appointments.startsAt, endsAt: appointments.endsAt })
+    .from(appointments)
+    .where(
+      and(
+        eq(appointments.id, appointmentId),
+        eq(appointments.companyId, ctx.companyId),
+        ne(appointments.status, 'canceled'),
+        isNull(appointments.archivedAt),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
 }

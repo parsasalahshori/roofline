@@ -1,7 +1,7 @@
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { QUOTE_CONSENT_VERSION, quoteConsentText, type PublicQuoteConfig } from '@roofline/shared';
+import { QUOTE_CONSENT_VERSION, quoteConsentText, quoteTextConsentText, type PublicQuoteConfig } from '@roofline/shared';
 import { quote, quoteMoney } from '../src/copy/quote.ts';
 import type { EstimateAnswer } from '../src/features/quote/api.ts';
 import { embedSnippet, RESIZE_MESSAGE } from '../src/features/quote/embed.ts';
@@ -25,7 +25,13 @@ const CONFIG: PublicQuoteConfig = {
   phone: '+14025550100',
   products: ['windows', 'roof', 'gutters'],
   booking: false,
-  consent: { version: QUOTE_CONSENT_VERSION, text: quoteConsentText('Summit Ridge Roofing') },
+  consent: {
+    version: QUOTE_CONSENT_VERSION,
+    text: quoteConsentText('Summit Ridge Roofing'),
+    textingText: quoteTextConsentText('Summit Ridge Roofing'),
+    privacyUrl: 'https://app.roofline.test/policies/summit-ridge/privacy',
+    termsUrl: 'https://app.roofline.test/policies/summit-ridge/terms',
+  },
   turnstileSiteKey: null,
 };
 
@@ -97,6 +103,9 @@ describe('QuotePage', () => {
     expect(screen.getByText(quote.range(950_000, 2_400_000))).toBeInTheDocument();
     expect(screen.getByText(quote.finalNote)).toBeInTheDocument();
     expect(screen.getByRole('img', { name: quote.outlineAlt })).toBeInTheDocument();
+    // Gutters are on the page but never priced online.
+    expect(screen.getByText(quote.guttersLine)).toBeInTheDocument();
+    expect(screen.getByText(quote.guttersAtVisit)).toBeInTheDocument();
     expect(api.sent(`POST ${BASE}/estimate`)).toEqual([{ address: READY.address, website: '' }]);
 
     await user.click(screen.getByRole('button', { name: quote.continueButton }));
@@ -104,9 +113,14 @@ describe('QuotePage', () => {
     expect(screen.getByRole('checkbox', { name: quote.productName('windows') })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: quote.productName('roof') })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: quote.productName('gutters') })).not.toBeChecked();
-    // The ZIP is filled from the found address; the full consent text is shown.
+    // The ZIP is filled from the found address; both consent texts are shown, texting unticked, with the policy links.
     expect(screen.getByLabelText(quote.postalCode)).toHaveValue('68132');
     expect(screen.getByText(CONFIG.consent.text)).toBeInTheDocument();
+    expect(screen.getByText(CONFIG.consent.textingText)).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: quote.textConsentLabel })).not.toBeChecked();
+    expect(screen.getByRole('link', { name: quote.privacyLink })).toHaveAttribute('href', CONFIG.consent.privacyUrl);
+    expect(screen.getByRole('link', { name: quote.termsLink })).toHaveAttribute('href', CONFIG.consent.termsUrl);
+    expect(screen.getByRole('heading', { name: quote.formTitle })).toBeInTheDocument();
 
     await fillForm(user);
     await user.click(screen.getByRole('checkbox', { name: quote.consentLabel }));
@@ -123,6 +137,7 @@ describe('QuotePage', () => {
         postalCode: '68132',
         products: ['windows', 'roof'],
         consent: true,
+        textConsent: false,
         consentVersion: QUOTE_CONSENT_VERSION,
         formToken: READY.formToken,
         website: '',
@@ -130,6 +145,75 @@ describe('QuotePage', () => {
     ]);
     // Nothing personal ever went in a URL.
     for (const call of api.calls) expect(call.url).not.toMatch(/Dana|555|example|Underwood/);
+  });
+
+  it('the window count is a stepper: each change is priced by the server, and the count goes with the request', async () => {
+    const user = userEvent.setup();
+    setup({
+      [`POST ${BASE}/estimate`]: () => ({ body: READY }),
+      [`POST ${BASE}/windows`]: (r) => {
+        const { count } = r.body as { count: number };
+        return { body: { count, range: { lowCents: count * 50_000, highCents: count * 70_000 } } };
+      },
+      [`POST ${BASE}/lead`]: () => ({ status: 201, body: { ok: true, booked: null } }),
+    });
+    await getEstimate(user);
+    await screen.findByRole('heading', { name: quote.resultsTitle });
+    expect(screen.getByText(quote.windowsAdjust)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: quote.windowsMore }));
+    await user.click(screen.getByRole('button', { name: quote.windowsMore }));
+    expect(screen.getByText(quote.windowsLine(20))).toBeInTheDocument();
+    // Only the settled count is asked for, once the taps stop.
+    expect(await screen.findByText(quote.range(1_000_000, 1_400_000))).toBeInTheDocument();
+    expect(api.sent(`POST ${BASE}/windows`)).toEqual([{ quoteId: READY.quoteId, count: 20 }]);
+    await user.click(screen.getByRole('button', { name: quote.continueButton }));
+    await fillForm(user);
+    await user.click(screen.getByRole('checkbox', { name: quote.consentLabel }));
+    await user.click(screen.getByRole('checkbox', { name: quote.textConsentLabel }));
+    await user.click(screen.getByRole('button', { name: quote.submit }));
+    await screen.findByRole('heading', { name: quote.doneTitle('Dana') });
+    expect(api.sent(`POST ${BASE}/lead`)[0]).toMatchObject({ windowCount: 20, textConsent: true, consent: true });
+  });
+
+  it('the stepper stays between 1 and 80', async () => {
+    const user = userEvent.setup();
+    setup({
+      [`POST ${BASE}/estimate`]: () => ({ body: { ...READY, windows: { count: 1, range: { lowCents: 100_000, highCents: 200_000 } } } }),
+    });
+    await getEstimate(user);
+    await screen.findByRole('heading', { name: quote.resultsTitle });
+    expect(screen.getByRole('button', { name: quote.windowsFewer })).toBeDisabled();
+  });
+
+  it('the photo shows a placeholder until its tiles are in', async () => {
+    const user = userEvent.setup();
+    setup({ [`POST ${BASE}/estimate`]: () => ({ body: READY }) });
+    await getEstimate(user);
+    await screen.findByRole('heading', { name: quote.resultsTitle });
+    const thumb = screen.getByRole('img', { name: quote.outlineAlt });
+    expect(thumb).toHaveAttribute('data-loading');
+    for (const img of thumb.querySelectorAll('img')) fireEvent.load(img);
+    expect(thumb).not.toHaveAttribute('data-loading');
+  });
+
+  it('a picked time that was just taken says the office will call to set one', async () => {
+    const user = userEvent.setup();
+    const start = '2026-10-17T15:00:00.000Z';
+    api = stubApi({
+      [`GET ${BASE}`]: () => ({ body: { ...CONFIG, booking: true } }),
+      [`POST ${BASE}/estimate`]: () => ({ body: READY }),
+      [`GET ${BASE}/slots`]: () => ({ body: { timeZone: 'America/Chicago', slots: [{ id: start, start, end: '2026-10-17T16:00:00.000Z' }] } }),
+      [`POST ${BASE}/lead`]: () => ({ status: 201, body: { ok: true, booked: null, slotTaken: true } }),
+    });
+    render(<QuotePage slug={SLUG} />);
+    await getEstimate(user);
+    await user.click(await screen.findByRole('button', { name: quote.continueButton }));
+    const group = await screen.findByRole('group', { name: quote.slotsTitle });
+    await user.click((await within(group).findAllByRole('radio'))[1]!);
+    await fillForm(user);
+    await user.click(screen.getByRole('checkbox', { name: quote.consentLabel }));
+    await user.click(screen.getByRole('button', { name: quote.submit }));
+    expect(await screen.findByText(quote.doneSlotTaken)).toBeInTheDocument();
   });
 
   it('checks the form before sending: consent required, phone, email, ZIP and names', async () => {
@@ -243,7 +327,7 @@ describe('Turnstile on the page', () => {
 
 describe('quote helpers', () => {
   it('checkLead mirrors the server rules', () => {
-    const ok = { firstName: 'A', lastName: 'B', email: 'a@b.co', phone: '402-555-0142', postalCode: '68132', products: ['roof' as const], consent: true, slotId: '', website: '' };
+    const ok = { firstName: 'A', lastName: 'B', email: 'a@b.co', phone: '402-555-0142', postalCode: '68132', products: ['roof' as const], consent: true, textConsent: false, slotId: '', website: '' };
     expect(checkLead(ok)).toEqual({});
     expect(Object.keys(checkLead({ ...ok, consent: false, products: [], postalCode: '1' })).sort()).toEqual(['consent', 'postalCode', 'products']);
   });

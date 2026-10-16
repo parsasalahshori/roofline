@@ -2246,6 +2246,12 @@ export const quoteRequests = pgTable(
     consentText: text('consent_text').notNull(),
     consentVersion: text('consent_version').notNull(),
     consentAt: tstz('consent_at').notNull(),
+    /**
+     * The separate, optional "text me" box was ticked (its exact sentence in text_consent_text). Evidence only: the
+     * customer's texting consent is not changed by a form (Ruling BF).
+     */
+    textConsent: boolean('text_consent').notNull().default(false),
+    textConsentText: text('text_consent_text'),
     ipHash: text('ip_hash'),
     customerId: uuid('customer_id'),
     jobId: uuid('job_id'),

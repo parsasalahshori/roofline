@@ -21,19 +21,23 @@ import {
   type PriceRange,
   type PublicQuoteEstimate,
   QUOTE_LIMITS,
+  QUOTE_WINDOW_COUNT,
+  type PublicQuoteWindows,
   windowCounts,
+  type WindowCounts,
+  type WindowSizeClass,
   WINDOW_SIZE_CLASSES,
 } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError } from '../errors.ts';
 import { priceOptions } from '../estimator/build.ts';
-import { homeFromAddress, measureProperty } from '../estimator/measure.ts';
+import { lookUpHome, measureProperty } from '../estimator/measure.ts';
 import { heightLayersFor } from '../estimator/roof-3d.ts';
 import { solarForHome } from '../estimator/solar.ts';
 import { estimateAllSides } from '../estimator/windows-estimate.ts';
 import { eaveHeightAboveGround } from '../estimator/windows-heights.ts';
 import { wallsFor } from '../estimator/windows-view.ts';
-import { gutterRange } from './gutters.ts';
+import { type LookupFacts, lookupGate, measurementGate, type QuoteCallbackReason, rangePctFor, typedUnit } from './gates.ts';
 
 /*
  * POST /api/public/quote/:slug/estimate: one typed address in, RANGES out. The roof is measured the way the
@@ -41,9 +45,15 @@ import { gutterRange } from './gutters.ts';
  * own templates (priceOptions), then widened by the company's range and rounded to hundreds of dollars; windows are
  * the walls-only estimate (no Street View), priced with the window tiers. Only the ranges, a rounded roof size, a
  * window count and a small outline leave this file: never a tier's price, the price book or a measurement id.
+ * Gutters are never priced here (the roof's eaves read short): they are priced at the visit.
+ *
+ * Never a confident wrong price: the checks in gates.ts send an apartment, a commercial building, a lookup that
+ * missed the house or a roof that needs a person's look to 'fallback' (we'll call you); why is kept in the stored
+ * result (`callback`), with what the lookup said (`lookup`), and never sent to the page.
  *
  * Cost guard: an address measured in the last 30 days is answered from storage (no paid call); past the company's
- * daily cap of fresh measurements the page gets 'fallback' (we'll call you) and still takes the request.
+ * daily cap of priced measurements the page gets 'fallback' and still takes the request. A home measured and then
+ * sent to a call back does not use up the cap, but every measurement counts toward a ceiling of twice the cap.
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -52,6 +62,8 @@ const NOT_FOUND = "We couldn't find that address. Please check the street, city 
 const MAX_OUTLINE_POINTS = 80;
 /** How long the windows' wall height may wait for Google's height map (usually already bought for the roof). */
 const HEIGHTS_BUDGET_MS = 6000;
+/** Every measurement of a day (priced or sent to a call back) stays under this many times the daily cap. */
+const CEILING_TIMES_CAP = 2;
 
 /** Fresh measurements running now, per company: counted against the cap so a burst cannot overshoot it. */
 const inflight = new Map<string, number>();
@@ -124,32 +136,83 @@ async function eaveOf(deps: AppDeps, ctx: TenantContext, property: PropertyRow, 
   }
 }
 
-/** The walls estimate (every side, no photos) and its range, or null without an outline. */
-function windowsRange(ring: LngLat[], eaveHeightM: number | null, pct: number): { count: number; range: PriceRange } | null {
+type WindowMix = Record<WindowSizeClass, number>;
+
+/** The window tiers' range for a count of each size. */
+function rangeOfMix(mix: WindowMix, pct: number): PriceRange | null {
+  const counts = Object.fromEntries(WINDOW_SIZE_CLASSES.map((c) => [c, { measured: 0, estimated: mix[c] }])) as WindowCounts;
+  return priceRange(priceWindows(counts).map((q) => q.totalCents), pct);
+}
+
+/** The walls estimate (every side, no photos), its range and its mix of sizes, or null without an outline. */
+function windowsRange(ring: LngLat[], eaveHeightM: number | null, pct: number): { count: number; range: PriceRange; mix: WindowMix } | null {
   const walls = wallsFor({ ring, camera: null, eaveHeightM, outlineSource: 'footprint' }, []);
   if (walls === null) return null;
   const estimated = estimateAllSides(walls);
   const counts = windowCounts({ windows: [], estimated, adjustments: { excludedWindowIds: [], manualCounts: {} } });
-  const count = WINDOW_SIZE_CLASSES.reduce((n, c) => n + counts[c].estimated, 0);
+  const mix = Object.fromEntries(WINDOW_SIZE_CLASSES.map((c) => [c, counts[c].estimated])) as WindowMix;
+  const count = WINDOW_SIZE_CLASSES.reduce((n, c) => n + mix[c], 0);
   if (count === 0) return null;
-  const range = priceRange(priceWindows(counts).map((q) => q.totalCents), pct);
-  return range === null ? null : { count, range };
+  const range = rangeOfMix(mix, pct);
+  return range === null ? null : { count, range, mix };
 }
 
-type Place = { property: PropertyRow | null; addressKey: string | null; address: string };
+/** `mix` scaled to `count` windows in all, keeping its shares (largest remainders); all 'standard' with no mix. */
+export function scaleMix(mix: Partial<WindowMix> | null, count: number): WindowMix {
+  const base = Object.fromEntries(WINDOW_SIZE_CLASSES.map((c) => [c, Math.max(0, Math.round(mix?.[c] ?? 0))])) as WindowMix;
+  const total = WINDOW_SIZE_CLASSES.reduce((n, c) => n + base[c], 0);
+  if (total === 0) return { small: 0, standard: count, large: 0, picture: 0 };
+  const exact = WINDOW_SIZE_CLASSES.map((c) => ({ c, v: (base[c] * count) / total }));
+  const out = Object.fromEntries(exact.map(({ c, v }) => [c, Math.floor(v)])) as WindowMix;
+  let left = count - WINDOW_SIZE_CLASSES.reduce((n, c) => n + out[c], 0);
+  for (const { c } of [...exact].sort((a, b) => b.v - Math.floor(b.v) - (a.v - Math.floor(a.v)))) {
+    if (left <= 0) break;
+    out[c] += 1;
+    left -= 1;
+  }
+  return out;
+}
 
-/** The typed address looked up and saved as one of the company's addresses (Geocodio, no Google). */
+/**
+ * The windows range for the homeowner's own count (QUOTE_WINDOW_COUNT, 1 to 80), from a stored 'ready' estimate with
+ * windows: the estimate's mix of sizes scaled to that count, at the width the estimate was priced at. Null when the
+ * estimate has no windows. The stored estimate is never changed (another visitor of the address shares it).
+ */
+export function windowsForCount(row: QuoteEstimateRow, count: number, fallbackPct: number): PublicQuoteWindows | null {
+  const r = row.result as { windows?: { count: number } | null; windowMix?: Partial<WindowMix>; windowPct?: number };
+  if (row.status !== 'ready' || !r.windows) return null;
+  const n = Math.min(QUOTE_WINDOW_COUNT.max, Math.max(QUOTE_WINDOW_COUNT.min, Math.round(count)));
+  const range = rangeOfMix(scaleMix(r.windowMix ?? null, n), typeof r.windowPct === 'number' ? r.windowPct : fallbackPct);
+  return range === null ? null : { count: n, range };
+}
+
+type Place = { property: PropertyRow | null; addressKey: string | null; address: string; lookup: LookupFacts | null };
+
+/**
+ * The typed address looked up and saved as one of the company's addresses (Geocodio, no Google). A unit the lookup
+ * read (or one typed that it dropped) stays on the saved street line, so the request is filed under the flat.
+ */
 async function locate(deps: AppDeps, ctx: TenantContext, address: string): Promise<Place> {
   try {
-    const property = await homeFromAddress(deps, ctx, address, deps.clock.now());
-    return { property, addressKey: normalizeAddressKey(property.addressLine, property.zip), address: lineOf(property) };
+    const { property, found } = await lookUpHome(deps, ctx, address, deps.clock.now(), { keepUnit: (f) => f.unit ?? typedUnit(address) });
+    const lookup: LookupFacts = {
+      accuracy: found.accuracy,
+      accuracyType: found.accuracyType,
+      unit: found.unit ?? null,
+      number: found.number ?? null,
+      streetName: found.streetName ?? null,
+    };
+    return { property, addressKey: normalizeAddressKey(property.addressLine, property.zip), address: lineOf(property), lookup };
   } catch (err) {
     if (err instanceof AppError && err.status === 400) throw new AppError(422, NOT_FOUND, 'address');
     // The lookup is down: no estimate, but the request can still be taken (we call instead).
-    if (err instanceof AppError && err.status === 503) return { property: null, addressKey: null, address };
+    if (err instanceof AppError && err.status === 503) return { property: null, addressKey: null, address, lookup: null };
     throw err;
   }
 }
+
+/** Why a stored call back was decided (gates.ts), plus 'visit-only': the page offers nothing priced online. */
+export type StoredCallback = QuoteCallbackReason | 'visit-only';
 
 export type EstimateInput = { address: string; ipHash: string | null };
 
@@ -175,8 +238,10 @@ export async function estimateForAddress(
   if (typed) return estimateView(typed);
 
   const place = await locate(deps, ctx, input.address);
+  const lookup = place.lookup === null ? null : { accuracy: place.lookup.accuracy, accuracyType: place.lookup.accuracyType, unit: place.lookup.unit };
 
-  const fallback = async (): Promise<PublicQuoteEstimate> => {
+  /** A call back. `callback`: why, when the page's checks decided it (stored, and reused like a price). */
+  const fallback = async (o: { callback?: StoredCallback; measurementId?: string } = {}): Promise<PublicQuoteEstimate> => {
     const row = await withTenant(deps.pools, ctx, (tx) =>
       insertQuoteEstimate(
         tx,
@@ -186,10 +251,10 @@ export async function estimateForAddress(
           addressKey: place.addressKey,
           address: place.address,
           status: 'fallback',
-          measured: false,
+          measured: o.measurementId !== undefined,
           propertyId: place.property?.id ?? null,
-          measurementId: null,
-          result: { roof: null, windows: null, gutters: null, outline: null },
+          measurementId: o.measurementId ?? null,
+          result: { roof: null, windows: null, gutters: null, outline: null, ...(o.callback !== undefined && { callback: o.callback }), lookup },
           ipHash: input.ipHash,
           expiresAt,
         },
@@ -199,9 +264,18 @@ export async function estimateForAddress(
     return estimateView(row);
   };
 
-  if (place.property === null || place.addressKey === null) return fallback();
+  if (place.property === null || place.addressKey === null || place.lookup === null) return fallback();
   const property = place.property;
   const addressKey = place.addressKey;
+
+  // The lookup's own doubts first: nothing is measured for a flat, an office suite or a point off the house.
+  const before = lookupGate(input.address, place.lookup);
+  if (before !== null) return fallback({ callback: before });
+
+  const wantsRoof = settings.products.includes('roof');
+  const wantsWindows = settings.products.includes('windows');
+  // Only gutters on the page: they are priced at the visit, so there is nothing to measure.
+  if (!wantsRoof && !wantsWindows) return fallback({ callback: 'visit-only' });
 
   const found = await withTenant(deps.pools, ctx, async (tx) => {
     const hit = await findCachedEstimate(tx, ctx, { addressKey }, now);
@@ -210,28 +284,31 @@ export async function estimateForAddress(
   });
   if (found) return estimateView(found);
 
-  // The daily cap counts fresh measurements since the company's local midnight, plus the ones running now.
-  const measuredToday = await withTenant(deps.pools, ctx, async (tx) => {
+  // The daily cap counts priced measurements since the company's local midnight, plus the ones running now; every
+  // measurement of the day (call backs too) stays under the ceiling.
+  const { priced, all } = await withTenant(deps.pools, ctx, async (tx) => {
     const { day, zone } = await companyDayStart(tx, ctx, now);
-    return countMeasuredSince(tx, ctx, zoneDayStart(day, zone));
+    const since = zoneDayStart(day, zone);
+    return { priced: await countMeasuredSince(tx, ctx, since, { readyOnly: true }), all: await countMeasuredSince(tx, ctx, since) };
   });
   const running = inflight.get(ctx.companyId) ?? 0;
-  if (measuredToday + running >= settings.dailyCap) return fallback();
+  if (priced + running >= settings.dailyCap || all + running >= settings.dailyCap * CEILING_TIMES_CAP) return fallback();
 
   inflight.set(ctx.companyId, running + 1);
   try {
-    const wantsRoof = settings.products.includes('roof');
-    const wantsWindows = settings.products.includes('windows');
-    const wantsGutters = settings.products.includes('gutters');
     const view = await measureProperty(deps, ctx, { propertyId: property.id });
+    // The measurement's own doubts: a roof to check, a building too big for a home, a flat roof read without 3D.
+    const gate = measurementGate(view);
+    if (gate.callback !== null) return await fallback({ callback: gate.callback, measurementId: view.id });
+    const pct = rangePctFor(settings.rangePct, gate, QUOTE_LIMITS.rangePctMax);
     const ring = mainRing(view);
     const point: LngLat = property.geom ?? view.center;
-    const roof = wantsRoof ? await roofRange(deps, ctx, view, settings.rangePct) : null;
-    const eaveM = (wantsWindows || wantsGutters) && ring !== null ? await eaveOf(deps, ctx, property, point, ring) : null;
-    const windows = wantsWindows && ring !== null ? windowsRange(ring, eaveM, settings.rangePct) : null;
-    const gutters = wantsGutters ? gutterRange(view, settings.rangePct, eaveM) : null;
+    const roof = wantsRoof ? await roofRange(deps, ctx, view, pct) : null;
+    const eaveM = wantsWindows && ring !== null ? await eaveOf(deps, ctx, property, point, ring) : null;
+    const counted = wantsWindows && ring !== null ? windowsRange(ring, eaveM, pct) : null;
+    const windows = counted === null ? null : { count: counted.count, range: counted.range };
     const outline = ring === null ? null : { center: view.center, ring: thin(ring) };
-    const ready = roof !== null || windows !== null || gutters !== null;
+    const ready = roof !== null || windows !== null;
     const row = await withTenant(deps.pools, ctx, (tx) =>
       insertQuoteEstimate(
         tx,
@@ -244,7 +321,15 @@ export async function estimateForAddress(
           measured: true,
           propertyId: property.id,
           measurementId: view.id,
-          result: { roof, windows, gutters, outline },
+          result: {
+            roof,
+            windows,
+            gutters: null,
+            outline,
+            lookup,
+            ...(gate.widen && { widened: true }),
+            ...(counted !== null && { windowMix: counted.mix, windowPct: pct }),
+          },
           ipHash: input.ipHash,
           expiresAt,
         },
