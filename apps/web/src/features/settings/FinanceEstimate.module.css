@@ -70,3 +70,15 @@
   color: var(--ds-info-ink, #1f55b3);
   font-weight: 600;
 }
+
+/* A group of checkboxes spanning both columns, without the browser's fieldset frame */
+.group {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}

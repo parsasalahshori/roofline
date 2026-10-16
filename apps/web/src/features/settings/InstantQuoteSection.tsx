@@ -128,7 +128,7 @@ function QuoteForm({ settings, canEdit }: { settings: InstantQuoteSettingsView; 
           error={problems.forField('accentColor')}
           maxLength={7}
         />
-        <fieldset className={styles.switch}>
+        <fieldset className={styles.group}>
           <legend className={styles.heading}>{copy.products}</legend>
           {QUOTE_PRODUCTS.map((p) => (
             <Checkbox
