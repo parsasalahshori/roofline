@@ -74,8 +74,8 @@ export const windowOrder = {
   style: 'Style',
   pickStyle: 'Pick a style',
   styles: Object.fromEntries(WINDOW_STYLES.map((s) => [s, windowStyleName(s)])) as Record<WindowStyle, string>,
-  exterior: 'Exterior colour',
-  interior: 'Interior colour',
+  exterior: 'Exterior color',
+  interior: 'Interior color',
   colors: {
     white: 'White',
     almond: 'Almond',
