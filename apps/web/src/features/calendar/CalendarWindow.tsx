@@ -140,7 +140,7 @@ export function CalendarWindow() {
   // people means everyone. With every person unticked there is nobody to ask for: the query stays off and the answer is empty.
   const loading = company.isPending || me.isPending || team.isPending;
   const noOne = !isRep && peopleParam !== null && userIds.length === 0;
-  const appointments = useAppointments({ from: from.toISOString(), to: to.toISOString(), userIds, enabled: !noOne && !loading });
+  const appointments = useAppointments({ from: from.toISOString(), to: to.toISOString(), userIds, includeCanceled: showCanceled, enabled: !noOne && !loading });
   // keepPreviousData would otherwise show the last unfiltered answer while noOne holds.
   const data = noOne ? NO_APPOINTMENTS : appointments.data;
 
