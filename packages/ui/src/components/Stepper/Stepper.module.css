@@ -1,0 +1,105 @@
+.stepper {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.step:last-child {
+  flex: 0 0 auto;
+}
+
+/* The hairline from one step to the next; it takes the room the names leave */
+.step:not(:last-child)::after {
+  content: "";
+  flex: 1 1 16px;
+  height: 1px;
+  margin: 0 12px;
+  background: var(--line-2);
+}
+
+.step[data-state="done"]:not(:last-child)::after {
+  background: var(--ok);
+}
+
+.marker {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--line-ctl);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--ink-3);
+}
+
+.number {
+  font: 600 var(--font-size-min)/1 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.step[data-state="current"] .marker {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: var(--brand-ink);
+}
+
+.step[data-state="done"] .marker {
+  border-color: var(--ok);
+  background: var(--ok-tint);
+  color: var(--ok-text);
+}
+
+.label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-3);
+  font: 500 13px/1.2 var(--f-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.step[data-state="current"] .label {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.step[data-state="done"] .label {
+  color: var(--ink-2);
+}
+
+@media (max-width: 767.98px) {
+  /* Only the step in progress keeps its name on a phone; the numbers say how far along it is */
+  .step:not([data-state="current"]) .label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+  }
+
+  .step:not(:last-child)::after {
+    margin: 0 8px;
+  }
+
+  /* The step in progress is the one with a name, so it keeps the room the others gave up */
+  .step[data-state="current"] {
+    flex: 3 1 0;
+  }
+}

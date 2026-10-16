@@ -72,6 +72,8 @@ export { StageMenu } from './components/StageMenu/StageMenu.tsx';
 export type { StageMenuExtra, StageMenuProps, StageMenuStage } from './components/StageMenu/StageMenu.tsx';
 export { StatCard } from './components/StatCard/StatCard.tsx';
 export type { StatCardProps } from './components/StatCard/StatCard.tsx';
+export { Stepper } from './components/Stepper/Stepper.tsx';
+export type { StepperProps, StepperStep } from './components/Stepper/Stepper.tsx';
 export { Table, Td, Th, Tr } from './components/Table/Table.tsx';
 export type { TableProps, TrProps } from './components/Table/Table.tsx';
 export { Tabs } from './components/Tabs/Tabs.tsx';
