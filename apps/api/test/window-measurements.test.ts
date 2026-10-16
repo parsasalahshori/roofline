@@ -366,6 +366,59 @@ describe('on-site window photos', () => {
     expect((await owner.get(url)).body.adjustments.photoWindows).toBeUndefined();
   });
 
+  it('sizes a window from the measuring sheet: least squares, the frame 1.5 in in front of the glass, uncertainty, distance and angle', async () => {
+    const { owner, view } = await measuredHouse();
+    const photo = windowPhoto({ focal35mm: 26 });
+    const id = (await upload(owner, view.id, photo.bytes)).body.id as string;
+    const url = `/api/window-measurements/${view.id}`;
+    const scale = { kind: 'sheet', paper: 'letter', ...photo.sheet, planeOffsetIn: 1.5 };
+    const patched = await owner.patch(url).send({ photoWindows: [{ id: 'p1', uploadId: id, label: 'Bath', corners: photo.windowAt(1.5), scale }] });
+    expect(patched.status, JSON.stringify(patched.body)).toBe(200);
+    const w = (patched.body as WindowMeasurementView).photoWindows![0]!;
+    expect(Math.abs(w.widthIn - 36)).toBeLessThan(0.02);
+    expect(Math.abs(w.heightIn - 60)).toBeLessThan(0.02);
+    expect(w.quality).toBe('good');
+    expect(w.uncertaintyIn!.width).toBeGreaterThan(0);
+    expect(w.uncertaintyIn!.width).toBeLessThan(0.5);
+    expect(Math.abs(w.distanceIn! - 2.2 / 0.0254)).toBeLessThan(15);
+    expect(Math.abs(w.viewAngleDeg! - 25)).toBeLessThan(6);
+    // The uncorrected answer (offset 0) is visibly bigger: the frame is closer to the camera than the sheet.
+    const naive = await owner.patch(url).send({ photoWindows: [{ id: 'p1', uploadId: id, corners: photo.windowAt(1.5), scale: { ...scale, planeOffsetIn: 0 } }] });
+    expect(naive.body.photoWindows[0].widthIn - 36).toBeGreaterThan(0.4);
+  });
+
+  it('validates sheet points; too few or a bad fit is a 422 naming the window', async () => {
+    const { owner, view } = await measuredHouse();
+    const photo = windowPhoto();
+    const id = (await upload(owner, view.id, photo.bytes)).body.id as string;
+    const url = `/api/window-measurements/${view.id}`;
+    const scale = { kind: 'sheet', paper: 'letter', ...photo.sheet, planeOffsetIn: 0 };
+    const ok = { id: 'p1', uploadId: id, label: 'Den', corners: photo.window, scale };
+    const send = (scaleOver: Record<string, unknown>) => owner.patch(url).send({ photoWindows: [{ ...ok, scale: { ...scale, ...scaleOver } }] });
+    expect((await send({ planeOffsetIn: 6.5 })).status).toBe(400);
+    expect((await send({ paper: 'legal' })).status).toBe(400);
+    expect((await send({ sheetPointsIn: photo.sheet.sheetPointsIn.slice(1) })).status).toBe(400);
+    expect((await send({ sheetPointsIn: photo.sheet.sheetPointsIn.map(([x, y], i) => (i === 0 ? [x, 12] : [x, y])) })).status).toBe(400);
+    expect((await send({ imagePoints: photo.sheet.imagePoints.map(([x, y], i) => (i === 0 ? [x + 5000, y] : [x, y])) })).status).toBe(400);
+    expect((await send({ imagePoints: photo.sheet.imagePoints.map(([x], i) => (i === 0 ? [x, Number.NaN] : [x, 1])) })).status).toBe(400);
+    expect((await send({ imagePoints: Array.from({ length: 2001 }, () => [1, 1]), sheetPointsIn: Array.from({ length: 2001 }, () => [1, 1]) })).status).toBe(400);
+    const few = await send({ imagePoints: photo.sheet.imagePoints.slice(0, 7), sheetPointsIn: photo.sheet.sheetPointsIn.slice(0, 7) });
+    expect(few.status).toBe(422);
+    expect(few.body.error).toContain('"Den"');
+    expect(few.body.error).toContain('too few points');
+    // Points scattered by several pixels (a curled sheet, a blurred photo): refused, not sized wrong.
+    let seed = 3;
+    const jitter = () => {
+      seed = (seed * 16807) % 2147483647;
+      return (seed / 2147483647 - 0.5) * 16;
+    };
+    const blurred = await send({ imagePoints: photo.sheet.imagePoints.map(([x, y]) => [x + jitter(), y + jitter()]) });
+    expect(blurred.status).toBe(422);
+    expect(blurred.body.error).toContain('not flat');
+    expect((await owner.get(url)).body.adjustments.photoWindows).toBeUndefined();
+    expect((await send({})).status).toBe(200);
+  });
+
   it('another company cannot see, fetch or add photos', async () => {
     const { owner, view } = await measuredHouse();
     const id = (await upload(owner, view.id, windowPhoto({ widthPx: 100, heightPx: 100 }).bytes)).body.id as string;

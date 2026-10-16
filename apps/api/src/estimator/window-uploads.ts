@@ -2,10 +2,14 @@ import exifr from 'exifr';
 import {
   DEFAULT_FOCAL_35MM,
   focalPxFrom35mm,
+  measureWithSheet,
   type PhotoWindow,
   type PhotoWindowInput,
   type Pt,
   type Quad,
+  SHEET_MAX_RMS_PX,
+  SHEET_MIN_POINTS,
+  STEEP_CHECK_DEG,
   sizeFromKnownSide,
   sizeFromReference,
   WINDOW_PHOTO_REFERENCES,
@@ -174,16 +178,45 @@ export function sizePhotoWindow(input: PhotoWindowInput, photo: { widthPx: numbe
   const focalPx = focalPxFrom35mm(photo.focal35mm ?? DEFAULT_FOCAL_35MM, photo.widthPx, photo.heightPx);
   const angle = viewingAngleDeg(input.corners, photo.widthPx, photo.heightPx, focalPx);
   let good = quadIsGood(input.corners) && angle !== null && angle <= STEEP_VIEW_DEG;
+  let extra: Pick<PhotoWindow, 'uncertaintyIn' | 'distanceIn' | 'viewAngleDeg'> = {};
+  // The sheet method is exact to a few hundredths of an inch: kept to 0.01 in (the others to 0.1 in).
+  let step = 10;
   if (s.kind === 'reference') {
     const ref = referenceSize(s.reference, s.corners);
     size = sizeFromReference(input.corners, s.corners, ref.w, ref.h);
     good = good && quadIsGood(s.corners);
+  } else if (s.kind === 'sheet') {
+    if (sheetProblem(input, photo) !== null) return null;
+    const m = measureWithSheet({ widthPx: photo.widthPx, heightPx: photo.heightPx, focalPx, imagePoints: s.imagePoints, sheetPointsIn: s.sheetPointsIn, windowQuad: input.corners, planeOffsetIn: s.planeOffsetIn })!;
+    size = { widthIn: m.widthIn, heightIn: m.heightIn };
+    // The sheet's pose gives the true viewing angle (the quad-based estimate above is only a fallback).
+    good = quadIsGood(input.corners) && m.viewAngleDeg <= STEEP_CHECK_DEG;
+    const r2 = (v: number) => Math.round(v * 100) / 100;
+    extra = { uncertaintyIn: { width: r2(m.uncertaintyIn.width), height: r2(m.uncertaintyIn.height) }, distanceIn: Math.round(m.distanceIn), viewAngleDeg: Math.round(m.viewAngleDeg * 10) / 10 };
+    step = 100;
   } else {
     size = sizeFromKnownSide(input.corners, photo.widthPx, photo.heightPx, s.side, s.inches, focalPx);
   }
   if (size === null || !Number.isFinite(size.widthIn) || !Number.isFinite(size.heightIn)) return null;
   if (size.widthIn < 3 || size.heightIn < 3 || size.widthIn > 400 || size.heightIn > 400) return null;
-  const widthIn = Math.round(size.widthIn * 10) / 10;
-  const heightIn = Math.round(size.heightIn * 10) / 10;
-  return { ...input, widthIn, heightIn, sizeClass: windowSizeClass(widthIn, heightIn), quality: good ? 'good' : 'check' };
+  const widthIn = Math.round(size.widthIn * step) / step;
+  const heightIn = Math.round(size.heightIn * step) / step;
+  return { ...input, widthIn, heightIn, sizeClass: windowSizeClass(widthIn, heightIn), ...extra, quality: good ? 'good' : 'check' };
+}
+
+/**
+ * Why a window scaled by the measuring sheet cannot be sized, in words for the person; null when it can. The browser
+ * found the points; the server refits them: fewer than SHEET_MIN_POINTS matched points, or a homography whose RMS
+ * reprojection error is above SHEET_MAX_RMS_PX (2.5 px: a flat, sharp sheet fits to well under 1 px; more means a
+ * curled sheet, a blurred photo or points that are not the sheet's), is refused rather than sized wrong.
+ */
+export function sheetProblem(input: PhotoWindowInput, photo: { widthPx: number; heightPx: number; focal35mm: number | null }): string | null {
+  const s = input.scale;
+  if (s.kind !== 'sheet') return null;
+  if (s.imagePoints.length < SHEET_MIN_POINTS || s.imagePoints.length !== s.sheetPointsIn.length) return 'too few points of the measuring sheet were found';
+  const focalPx = focalPxFrom35mm(photo.focal35mm ?? DEFAULT_FOCAL_35MM, photo.widthPx, photo.heightPx);
+  const m = measureWithSheet({ widthPx: photo.widthPx, heightPx: photo.heightPx, focalPx, imagePoints: s.imagePoints, sheetPointsIn: s.sheetPointsIn, windowQuad: input.corners, planeOffsetIn: s.planeOffsetIn });
+  if (m === null) return 'the measuring sheet\'s points do not fit a flat sheet';
+  if (m.rmsPx > SHEET_MAX_RMS_PX) return `the measuring sheet is not flat or the photo is blurred (fit error ${m.rmsPx.toFixed(1)} px)`;
+  return null;
 }

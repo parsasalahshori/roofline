@@ -13,7 +13,17 @@ export const WINDOW_IN = { w: 36, h: 60 };
 const PAPER = { u0: 10, v0: 18, w: 8.5, h: 11 };
 const IN = 0.0254;
 
-export type WindowPhotoFixture = { bytes: Uint8Array; widthPx: number; heightPx: number; window: Quad; paper: Quad };
+export type WindowPhotoFixture = {
+  bytes: Uint8Array;
+  widthPx: number;
+  heightPx: number;
+  window: Quad;
+  paper: Quad;
+  /** The measuring sheet's matched points if it lay where the paper is (a 4 x 5 grid on the paper, inches from its corner). */
+  sheet: { imagePoints: [number, number][]; sheetPointsIn: [number, number][] };
+  /** The window's corners on a frame `offsetIn` in front of the glass (toward the camera). */
+  windowAt(offsetIn: number): Quad;
+};
 
 /** An EXIF APP1 segment: Orientation (IFD0), and in the Exif IFD FocalLengthIn35mmFilm and DateTimeOriginal. */
 export function exifSegment(o: { orientation?: number; focal35mm?: number; takenAt?: string }): Uint8Array {
@@ -72,6 +82,15 @@ export function windowPhoto(o: { widthPx?: number; heightPx?: number; yawDeg?: n
     return [W / 2 + (f * P[0]!) / P[2]!, H / 2 + (f * P[1]!) / P[2]!];
   };
   const quad = (u0: number, v0: number, w: number, h: number): Quad => [project(u0, v0), project(u0 + w, v0), project(u0 + w, v0 + h), project(u0, v0 + h)];
+  // Toward the camera from the wall is minus its normal e1 x e2 = (-sin, 0, cos).
+  const projectAt = (u: number, v: number, off: number): [number, number] => {
+    const P = [C[0]! + u * IN * e1[0]! + off * IN * Math.sin(yaw), C[1]! + v * IN, C[2]! + u * IN * e1[2]! - off * IN * Math.cos(yaw)];
+    return [W / 2 + (f * P[0]!) / P[2]!, H / 2 + (f * P[1]!) / P[2]!];
+  };
+  const sheetPointsIn: [number, number][] = [];
+  for (let r = 0; r < 5; r++) for (let c = 0; c < 4; c++) sheetPointsIn.push([0.75 + c * 2.3, 0.75 + r * 2.35]);
+  const sheet = { imagePoints: sheetPointsIn.map(([x, y]) => project(PAPER.u0 + x, PAPER.v0 + y)), sheetPointsIn };
+  const windowAt = (off: number): Quad => [projectAt(0, 0, off), projectAt(WINDOW_IN.w, 0, off), projectAt(WINDOW_IN.w, WINDOW_IN.h, off), projectAt(0, WINDOW_IN.h, off)];
   const shade = (x: number, y: number): number => {
     // Ray (a, b, 1) meets the plane C + u e1 + v e2: solve for u, v.
     const a = (x - W / 2) / f;
@@ -106,5 +125,5 @@ export function windowPhoto(o: { widthPx?: number; heightPx?: number; yawDeg?: n
   }
   let bytes: Uint8Array = new Uint8Array(jpeg.encode({ width: SW, height: SH, data }, 92).data);
   if (o.exif !== false) bytes = withExif(bytes, exifSegment({ orientation: o.orientation ?? 1, focal35mm: o.focal35mm === undefined ? undefined : focal35, takenAt: '2026:10:15 10:30:00' }));
-  return { bytes, widthPx: W, heightPx: H, window: quad(0, 0, WINDOW_IN.w, WINDOW_IN.h), paper: quad(PAPER.u0, PAPER.v0, PAPER.w, PAPER.h) };
+  return { bytes, widthPx: W, heightPx: H, window: quad(0, 0, WINDOW_IN.w, WINDOW_IN.h), paper: quad(PAPER.u0, PAPER.v0, PAPER.w, PAPER.h), sheet, windowAt };
 }

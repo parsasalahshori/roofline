@@ -4,8 +4,8 @@ import { Router } from 'express';
 import busboy from 'busboy';
 import { z } from 'zod';
 import { appendWindowUpload, getWindowMeasurement, type StoredFacadePhoto, type StoredWindowUpload, updateWindowMeasurement, type WindowMeasurementChange, withTenant } from '@roofline/db';
-import { type PhotoWindowInput, priceWindows, WINDOW_PHOTO_REFERENCES, WINDOW_SIZE_CLASSES, type WindowAdjustments, type WindowQuote, windowCounts } from '@roofline/shared';
-import { readImageInfo, sizePhotoWindow } from '../estimator/window-uploads.ts';
+import { type PhotoWindowInput, priceWindows, SHEET_MAX_OFFSET_IN, SHEET_MAX_POINTS, SHEET_PAPER_IN, WINDOW_PHOTO_REFERENCES, WINDOW_SIZE_CLASSES, type WindowAdjustments, type WindowQuote, windowCounts } from '@roofline/shared';
+import { readImageInfo, sheetProblem, sizePhotoWindow } from '../estimator/window-uploads.ts';
 import type { AppDeps } from '../app.ts';
 import { measureWindows } from '../estimator/measure-windows.ts';
 import { fitCorners, mainWall, type Quad } from '../estimator/windows-lineup.ts';
@@ -74,6 +74,18 @@ const QuadSchema = z.tuple([z.tuple([finite, finite]), z.tuple([finite, finite])
 const ScaleSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('reference'), reference: z.enum(Object.keys(WINDOW_PHOTO_REFERENCES) as [keyof typeof WINDOW_PHOTO_REFERENCES]), corners: QuadSchema }).strict(),
   z.object({ kind: z.literal('known-side'), side: z.enum(['width', 'height']), inches: z.number().finite().min(6).max(200) }).strict(),
+  // The measuring sheet: matched points (photo pixels <-> inches on the sheet, inside the paper), the frame's offset.
+  z
+    .object({
+      kind: z.literal('sheet'),
+      paper: z.enum(['letter', 'a4']),
+      imagePoints: z.array(z.tuple([finite, finite])).max(SHEET_MAX_POINTS),
+      sheetPointsIn: z.array(z.tuple([finite, finite])).max(SHEET_MAX_POINTS),
+      planeOffsetIn: z.number().finite().min(-SHEET_MAX_OFFSET_IN).max(SHEET_MAX_OFFSET_IN),
+    })
+    .strict()
+    .refine((v) => v.imagePoints.length === v.sheetPointsIn.length)
+    .refine((v) => v.sheetPointsIn.every(([x, y]) => x >= 0 && y >= 0 && x <= SHEET_PAPER_IN[v.paper].widthIn && y <= SHEET_PAPER_IN[v.paper].heightIn)),
 ]);
 const PhotoWindowsSchema = z
   .array(
@@ -232,9 +244,13 @@ export function windowMeasurementRoutes(deps: AppDeps): Router {
           const upload = found.uploads.find((u) => u.id === input.uploadId);
           if (upload === undefined) throw new AppError(400, PHOTO_WINDOWS_MESSAGE, 'photoWindows');
           // Corners are in the photo's displayed pixels (EXIF orientation applied), inside the photo.
-          const quads = input.scale.kind === 'reference' ? [input.corners, input.scale.corners] : [input.corners];
+          const quads: [number, number][][] = input.scale.kind === 'reference' ? [input.corners, input.scale.corners] : input.scale.kind === 'sheet' ? [input.corners, input.scale.imagePoints] : [input.corners];
           const inside = quads.every((q) => q.every(([x, y]) => x >= 0 && y >= 0 && x <= upload.widthPx && y <= upload.heightPx));
           if (!inside) throw new AppError(400, PHOTO_WINDOWS_MESSAGE, 'photoWindows');
+          const sheet = sheetProblem(input, upload);
+          if (sheet !== null) {
+            throw new AppError(422, `Window "${input.label ?? input.id}" could not be sized: ${sheet}. Take its photo again with the whole sheet flat on the glass and in view.`, 'photoWindows');
+          }
           if (sizePhotoWindow(input, upload) === null) {
             throw new AppError(422, `Window "${input.label ?? input.id}" could not be sized from its corners. Mark its four corners (and the paper's) again.`, 'photoWindows');
           }
