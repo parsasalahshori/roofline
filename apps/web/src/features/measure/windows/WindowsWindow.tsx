@@ -1,4 +1,4 @@
-import { Banner, Button, EmptyState, Field, Icon, Listbox, Panel, PrecisionLadder, Segmented, Skeleton, type SegmentedOption } from '@roofline/ui';
+import { Banner, Button, EmptyState, Field, Icon, Listbox, PageSlotsContext, Panel, PrecisionLadder, Segmented, Skeleton, type SegmentedOption } from '@roofline/ui';
 import {
   priceWindows,
   RULER_KINDS,
@@ -16,7 +16,7 @@ import {
   type WindowQuote,
   type WindowSizeClass,
 } from '@roofline/shared';
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ApiError } from '../../../api/client.ts';
 import { liftMeasure, liftProposal } from '../../../copy/liftMeasure.ts';
@@ -238,6 +238,7 @@ function QuotePlaceholder() {
 }
 
 function Loaded({ v }: { v: WindowMeasurementView }) {
+  const { phone } = useContext(PageSlotsContext);
   const handoff = readHandoff(useLocation().state);
   const scan = useScan(`windows:${v.id}`, true);
   const startScan = useRef(scan.start);
@@ -485,7 +486,8 @@ function Loaded({ v }: { v: WindowMeasurementView }) {
   const view: View = chosenView !== null && (chosenView !== 'photo' || photo !== null) && (chosenView !== 'plan' || walls !== null) ? chosenView : wantsPhoto ? 'photo' : 'drawing';
   const viewOptions: SegmentedOption<View>[] = [
     { value: 'drawing', label: copy.elevation.views.drawing },
-    ...(photo !== null ? [{ value: 'photo' as const, label: captured !== null ? copy.elevation.photoWhen(captured) : copy.elevation.views.photo }] : []),
+    // The imagery's date is on the photo itself, so a phone's narrow switch says just Photo
+    ...(photo !== null ? [{ value: 'photo' as const, label: captured !== null && !phone ? copy.elevation.photoWhen(captured) : copy.elevation.views.photo }] : []),
     ...(walls !== null ? [{ value: 'plan' as const, label: copy.elevation.views.plan }] : []),
   ];
 
@@ -747,7 +749,7 @@ function Loaded({ v }: { v: WindowMeasurementView }) {
                     {done ? (
                       <Button variant="quiet" size="sm" onClick={scan.restart}>
                         <Icon name="refresh" size={16} />
-                        {copy.replayScan}
+                        <span className={styles.replayText}>{copy.replayScan}</span>
                       </Button>
                     ) : null}
                   </div>

@@ -199,6 +199,7 @@ export const measureWindows = {
   size: (w: number, h: number) => `${inches(w)} × ${inches(h)} in`,
   sizing: 'Sizing…',
   autoFound: 'Auto-found',
+  autoFoundShort: 'Auto',
   windowLabel: (n: number, size: string, inQuote: boolean) => `Window ${n}, ${size}, ${inQuote ? 'in the quote' : 'left out'}`,
   markedLabel: (n: number, size: string) => `Marked window ${n}, ${size}`,
   leftOut: 'Left out',
