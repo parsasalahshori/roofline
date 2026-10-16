@@ -4,6 +4,9 @@ import { UiLink } from './link.tsx';
 export type PressableProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   /** Renders a link (through UiLink) instead of a button. */
   href?: string;
+  /** With an href: where the link opens, and its rel. */
+  target?: string;
+  rel?: string;
   /** Work in progress: the control stays on screen but cannot be used again until it finishes. */
   busy?: boolean;
   /** The focusable element: the button, or the anchor when there is an href. */

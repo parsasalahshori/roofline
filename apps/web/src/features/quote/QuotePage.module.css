@@ -413,3 +413,90 @@
   margin: 0;
   font-size: 0.875rem;
 }
+
+/* The service picker: one card per thing the company offers; the checkbox row is the hit area */
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.option {
+  padding: 8px 12px;
+  border: 1px solid var(--ds-hairline-strong, #c3cbd1);
+  border-radius: var(--ds-r-ctl, 9px);
+  background: var(--ds-surface, #fff);
+}
+
+.option[data-checked] {
+  border-color: var(--ds-accent-line, rgba(217, 158, 0, 0.55));
+  background: var(--ds-accent-tint, #fff1d1);
+}
+
+/* "Looking for: Windows, Roof" with its Change button, above the address form */
+.looking {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  color: var(--ds-text-2, #3a444d);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+/* "Measure with the app": the store button, and on a computer a QR code beside it */
+.appOffer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 12px;
+  border: 1px solid var(--ds-hairline-strong, #c3cbd1);
+  border-radius: var(--ds-r-ctl, 9px);
+}
+
+.appRow {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.qr {
+  display: none;
+}
+
+.qrImage {
+  display: block;
+  width: 132px;
+  height: 132px;
+  border: 1px solid var(--ds-hairline, rgba(21, 28, 34, 0.08));
+  border-radius: 8px;
+}
+
+@media (min-width: 720px) {
+  .appRow {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .appRow .primary {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .qr {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    max-width: 160px;
+    text-align: center;
+  }
+}

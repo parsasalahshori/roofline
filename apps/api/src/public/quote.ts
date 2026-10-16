@@ -169,6 +169,7 @@ export function publicQuoteRoutes(deps: AppDeps): Router {
           ...(({ privacy, terms }) => ({ privacyUrl: privacy, termsUrl: terms }))(policyUrls(deps.config, company.slug)),
         },
         turnstileSiteKey: turnstileOn(deps.config) ? deps.config.TURNSTILE_SITE_KEY! : null,
+        homeownerApp: deps.config.HOMEOWNER_APP_URL === undefined ? null : { url: deps.config.HOMEOWNER_APP_URL, name: deps.config.HOMEOWNER_APP_NAME ?? 'WinChoice' },
       };
       res.json(body);
     }),

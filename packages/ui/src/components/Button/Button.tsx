@@ -13,6 +13,9 @@ export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   busy?: boolean;
   /** Draws a link styled as a button. Use the button attributes (type, form...) only without it. */
   href?: string;
+  /** With an href: where the link opens (`_blank` is a new tab) and its rel (`noopener noreferrer` for another site). */
+  target?: string;
+  rel?: string;
   /** The rendered button, or the anchor when there is an href. */
   ref?: Ref<HTMLButtonElement | HTMLAnchorElement>;
 };

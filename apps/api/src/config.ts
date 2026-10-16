@@ -145,6 +145,12 @@ const ConfigSchema = z
     GEOCODIO_API_KEY: z.string().optional(),
     /** G1 agents: MapTiler server-side key for the static map in claim packets. Optional; unset: claim packets have no map image. */
     MAPTILER_SERVER_KEY: z.string().optional(),
+    /**
+     * The homeowner phone app for measuring windows: its App Store (or TestFlight) link and its name (default WinChoice). The instant quote
+     * page offers "Measure with the app" (a link, and a QR code on a computer) only when the link is set.
+     */
+    HOMEOWNER_APP_URL: httpUrl.optional(),
+    HOMEOWNER_APP_NAME: z.string().trim().min(1).max(40).optional(),
     /** Instant quote page: Cloudflare Turnstile secret. Set together with TURNSTILE_SITE_KEY; unset: no Turnstile check. */
     TURNSTILE_SECRET: z.string().optional(),
     /** Instant quote page: Cloudflare Turnstile site key the page renders the widget with. */

@@ -8,12 +8,15 @@ import { ScanOverlay } from '../measure/lift/ScanOverlay.tsx';
 import { readScanMs, stageAt, type ScanStage } from '../measure/lift/scan.ts';
 import { type EstimateAnswer, QuoteApiError, quoteApi } from './api.ts';
 import { RoofThumb } from './RoofThumb.tsx';
+import { QrCode } from './QrCode.tsx';
 import { Turnstile } from './Turnstile.tsx';
 import styles from './QuotePage.module.css';
 
 /*
- * The public instant quote page (/q/:slug), signed out and without the app's shell: address -> the scan while the
- * home is measured -> price ranges -> the request form -> thanks. Phone first; one column. The scan reuses the
+ * The public instant quote page (/q/:slug), signed out and without the app's shell: what are you looking for (roof,
+ * windows, gutters: one or more; skipped when the company offers one) -> address -> the scan while the home is
+ * measured -> price ranges for what was picked (with "Measure with the app" for windows, where the company has one) ->
+ * the request form -> thanks. Phone first; one column. The scan reuses the
  * Measure look (brackets and sweep, the same four stages and 4.8 s), over the home's satellite photo once the
  * answer is in. Nothing personal is ever put in the address bar.
  */
@@ -52,6 +55,8 @@ export function QuotePage({ slug }: { slug: string }) {
   const config = useConfig(slug);
   const [step, setStep] = useState<Step>({ kind: 'address' });
   const [typed, setTyped] = useState('');
+  // What the homeowner is looking for; null until they pick (a company that offers one thing is not asked).
+  const [picked, setPicked] = useState<QuoteProduct[] | null>(null);
 
   useEffect(() => {
     if (config.data) document.title = quote.pageTitle(config.data.companyName);
@@ -79,6 +84,7 @@ export function QuotePage({ slug }: { slug: string }) {
     );
   }
   const c = config.data;
+  const services = picked ?? (c.products.length === 1 ? c.products : null);
 
   return (
     <div className={styles.page} style={brandStyle(c.accentColor)}>
@@ -91,9 +97,12 @@ export function QuotePage({ slug }: { slug: string }) {
         ) : null}
       </header>
       <main className={styles.column}>
-        {step.kind === 'address' ? (
+        {services === null ? <ServicesStep products={c.products} onPick={setPicked} /> : null}
+        {services !== null && step.kind === 'address' ? (
           <AddressStep
             slug={slug}
+            services={services}
+            onChangeServices={c.products.length > 1 ? () => setPicked(null) : undefined}
             siteKey={c.turnstileSiteKey}
             address={typed}
             onAddress={setTyped}
@@ -103,14 +112,15 @@ export function QuotePage({ slug }: { slug: string }) {
             onFailed={(error) => setStep({ kind: 'address', error })}
           />
         ) : null}
-        {step.kind === 'measuring' ? (
-          <Measuring step={step} onDone={(answer) => setStep({ kind: 'results', answer, showForm: answer.status === 'fallback', windows: answer.windows })} />
+        {services !== null && step.kind === 'measuring' ? (
+          <Measuring step={step} onDone={(answer) => setStep({ kind: 'results', answer, showForm: !hasRanges(answer, services), windows: answer.windows })} />
         ) : null}
-        {step.kind === 'results' ? (
+        {services !== null && step.kind === 'results' ? (
           <>
             <Results
               slug={slug}
               config={c}
+              services={services}
               answer={step.answer}
               windows={step.windows}
               onWindows={(windows) => setStep((s) => (s.kind === 'results' ? { ...s, windows } : s))}
@@ -122,6 +132,7 @@ export function QuotePage({ slug }: { slug: string }) {
               <LeadForm
                 slug={slug}
                 config={c}
+                services={services}
                 answer={step.answer}
                 windowCount={step.windows !== null && step.windows.count !== step.answer.windows?.count ? step.windows.count : null}
                 onDone={(firstName, booked, slotTaken, timeZone) => setStep({ kind: 'done', firstName, booked, slotTaken, timeZone })}
@@ -135,9 +146,46 @@ export function QuotePage({ slug }: { slug: string }) {
   );
 }
 
+/**
+ * Whether the answer shows something for what the homeowner picked: a roof or windows price they asked for, or gutters
+ * (shown as "priced at your free visit"). A call back, or a home with nothing for their picks, goes straight to the form.
+ */
+export function hasRanges(answer: EstimateAnswer, services: readonly QuoteProduct[]): boolean {
+  if (answer.status === 'fallback') return false;
+  return (services.includes('roof') && answer.roof !== null) || (services.includes('windows') && answer.windows !== null) || services.includes('gutters');
+}
+
+/** The first step: what are you looking for? One or more of what the company offers. */
+function ServicesStep({ products, onPick }: { products: readonly QuoteProduct[]; onPick: (p: QuoteProduct[]) => void }) {
+  const [chosen, setChosen] = useState<QuoteProduct[]>([]);
+  const headingId = useId();
+  const toggle = (p: QuoteProduct, on: boolean) => setChosen(products.filter((x) => (x === p ? on : chosen.includes(x))));
+  return (
+    <section className={styles.card} aria-labelledby={headingId}>
+      <h1 id={headingId} className={styles.title}>
+        {quote.servicesTitle}
+      </h1>
+      <p className={styles.text}>{quote.servicesIntro}</p>
+      <fieldset className={styles.options}>
+        <legend className="visually-hidden">{quote.servicesTitle}</legend>
+        {products.map((p) => (
+          <div key={p} className={styles.option} data-checked={chosen.includes(p) ? true : undefined}>
+            <Checkbox checked={chosen.includes(p)} onChange={(on) => toggle(p, on)} label={quote.productName(p)} description={quote.servicesHint[p]} />
+          </div>
+        ))}
+      </fieldset>
+      <Button size="lg" className={styles.primary} disabled={chosen.length === 0} onClick={() => onPick(chosen)}>
+        {quote.servicesContinue}
+      </Button>
+    </section>
+  );
+}
+
 /** The estimate's request starts here; its answer is handed up while the scan plays, a failure brings the step back. */
 function AddressStep({
   slug,
+  services,
+  onChangeServices,
   siteKey,
   address,
   onAddress,
@@ -147,6 +195,10 @@ function AddressStep({
   onFailed,
 }: {
   slug: string;
+  /** What they picked, shown above the form. */
+  services: readonly QuoteProduct[];
+  /** Goes back to the picker; absent when the company offers one thing. */
+  onChangeServices: (() => void) | undefined;
   siteKey: string | null;
   address: string;
   onAddress: (v: string) => void;
@@ -185,6 +237,14 @@ function AddressStep({
         {quote.heading}
       </h1>
       <p className={styles.text}>{quote.intro}</p>
+      {onChangeServices !== undefined ? (
+        <p className={styles.looking}>
+          <span>{quote.servicesLooking(services.map(quote.productName).join(', '))}</span>
+          <Button variant="ghost" onClick={onChangeServices}>
+            {quote.servicesChange}
+          </Button>
+        </p>
+      ) : null}
       <form className={styles.addressForm} onSubmit={submit} noValidate>
         {error && error.field !== 'address' ? <Banner tone="danger">{error.message}</Banner> : null}
         <Field
@@ -277,6 +337,7 @@ const stageIndex = (s: ScanStage) => ['finding', 'tracing', 'reading', 'pricing'
 function Results({
   slug,
   config,
+  services,
   answer,
   windows,
   onWindows,
@@ -286,6 +347,8 @@ function Results({
 }: {
   slug: string;
   config: PublicQuoteConfig;
+  /** What the homeowner picked: only these are shown. */
+  services: readonly QuoteProduct[];
   answer: EstimateAnswer;
   windows: PublicQuoteWindows | null;
   onWindows: (w: PublicQuoteWindows) => void;
@@ -294,17 +357,19 @@ function Results({
   onStartOver: () => void;
 }) {
   const headingId = useId();
-  if (answer.status === 'fallback') {
+  if (!hasRanges(answer, services)) {
     return (
       <section className={styles.card} aria-labelledby={headingId}>
         <h1 id={headingId} className={styles.title}>
           {quote.fallbackTitle}
         </h1>
-        <p className={styles.text}>{quote.fallbackBody}</p>
+        <p className={styles.text}>{answer.status === 'fallback' ? quote.fallbackBody : quote.nothingShown}</p>
         {answer.address !== '' ? <p className={styles.small}>{quote.forAddress(answer.address)}</p> : null}
       </section>
     );
   }
+  // The phone app measures windows where the company has one: offered next to the free visit.
+  const app = services.includes('windows') && windows !== null ? config.homeownerApp : null;
   return (
     <section className={styles.card} aria-labelledby={headingId}>
       <h1 id={headingId} className={styles.title}>
@@ -318,14 +383,14 @@ function Results({
         </div>
       ) : null}
       <ul className={styles.ranges}>
-        {windows ? <WindowsLine slug={slug} quoteId={answer.quoteId} windows={windows} onWindows={onWindows} /> : null}
-        {answer.roof ? (
+        {services.includes('windows') && windows ? <WindowsLine slug={slug} quoteId={answer.quoteId} windows={windows} onWindows={onWindows} /> : null}
+        {services.includes('roof') && answer.roof ? (
           <li>
             <span className={styles.rangeLabel}>{quote.roofLine(answer.roof.squares)}</span>
             <span className={styles.rangeValue}>{quote.range(answer.roof.range.lowCents, answer.roof.range.highCents)}</span>
           </li>
         ) : null}
-        {config.products.includes('gutters') ? (
+        {services.includes('gutters') && config.products.includes('gutters') ? (
           <li>
             <span className={styles.rangeLabel}>{quote.guttersLine}</span>
             <span className={styles.atVisit}>{quote.guttersAtVisit}</span>
@@ -333,10 +398,12 @@ function Results({
         ) : null}
       </ul>
       <p className={styles.note}>{quote.finalNote}</p>
+      {app !== null ? <AppOffer app={app} /> : null}
       {showContinue ? (
         <div className={styles.actions}>
-          <Button size="lg" className={styles.primary} onClick={onContinue}>
-            {quote.continueButton}
+          {app !== null ? <p className={styles.small}>{quote.appOr}</p> : null}
+          <Button size="lg" className={app !== null ? undefined : styles.primary} variant={app !== null ? 'ghost' : 'primary'} onClick={onContinue}>
+            {app !== null ? quote.visitButton : quote.continueButton}
           </Button>
           <Button variant="ghost" onClick={onStartOver}>
             {quote.startOver}
@@ -344,6 +411,28 @@ function Results({
         </div>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * "Measure with the app": the company's phone app measures each window for a sharper price. A button to the store link
+ * everywhere, and a QR code beside it on a computer (hidden on a phone, where the button is the way).
+ */
+function AppOffer({ app }: { app: NonNullable<PublicQuoteConfig['homeownerApp']> }) {
+  return (
+    <div className={styles.appOffer} data-app-offer="">
+      <h2 className={styles.subtitle}>{quote.appTitle(app.name)}</h2>
+      <p className={styles.text}>{quote.appBody}</p>
+      <div className={styles.appRow}>
+        <Button href={app.url} size="lg" className={styles.primary} target="_blank" rel="noopener noreferrer">
+          {quote.appGet(app.name)}
+        </Button>
+        <div className={styles.qr}>
+          <QrCode value={app.url} label={quote.appQrAlt(app.name)} className={styles.qrImage} />
+          <p className={styles.small}>{quote.appQrHint}</p>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -452,26 +541,29 @@ const zipOf = (address: string) => /\b(\d{5})(?:-\d{4})?\s*$/.exec(address)?.[1]
 function LeadForm({
   slug,
   config,
+  services,
   answer,
   windowCount,
   onDone,
 }: {
   slug: string;
   config: PublicQuoteConfig;
+  /** What the homeowner picked: ticked in the form to start. */
+  services: readonly QuoteProduct[];
   answer: EstimateAnswer;
   /** The window count the homeowner set, when it is not the estimated one. */
   windowCount: number | null;
   onDone: (firstName: string, booked: { start: string; end: string } | null, slotTaken: boolean, timeZone: string) => void;
 }) {
-  // Products with a range shown are ticked; with nothing measured (fallback), every product the page offers is.
-  const shown: QuoteProduct[] = config.products.filter((p) => (p === 'roof' ? answer.roof : p === 'windows' ? answer.windows : answer.gutters) !== null);
+  // What they picked is ticked (in the page's order).
+  const picked: QuoteProduct[] = config.products.filter((p) => services.includes(p));
   const [form, setForm] = useState<FormState>({
     firstName: '',
     lastName: '',
     email: '',
     phone: '',
     postalCode: zipOf(answer.address),
-    products: shown.length > 0 ? shown : [...config.products],
+    products: picked.length > 0 ? picked : [...config.products],
     consent: false,
     textConsent: false,
     slotId: '',

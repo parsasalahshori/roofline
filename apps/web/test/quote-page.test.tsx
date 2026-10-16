@@ -1,11 +1,12 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { QUOTE_CONSENT_VERSION, quoteConsentText, quoteTextConsentText, type PublicQuoteConfig } from '@roofline/shared';
+import { QUOTE_CONSENT_VERSION, quoteConsentText, quoteTextConsentText, type PublicQuoteConfig, type QuoteProduct } from '@roofline/shared';
 import { quote, quoteMoney } from '../src/copy/quote.ts';
 import type { EstimateAnswer } from '../src/features/quote/api.ts';
 import { embedSnippet, RESIZE_MESSAGE } from '../src/features/quote/embed.ts';
-import { checkLead, QuotePage } from '../src/features/quote/QuotePage.tsx';
+import { qrPath } from '../src/features/quote/QrCode.tsx';
+import { checkLead, hasRanges, QuotePage } from '../src/features/quote/QuotePage.tsx';
 import { thumbLayout } from '../src/features/quote/RoofThumb.tsx';
 import { type Reply, stubApi } from './helpers.tsx';
 
@@ -33,7 +34,10 @@ const CONFIG: PublicQuoteConfig = {
     termsUrl: 'https://app.roofline.test/policies/summit-ridge/terms',
   },
   turnstileSiteKey: null,
+  homeownerApp: null,
 };
+
+const APP = { url: 'https://apps.apple.com/us/app/winchoice/id0000000000', name: 'WinChoice' };
 
 const READY: EstimateAnswer = {
   quoteId: '11111111-1111-4111-8111-111111111111',
@@ -74,7 +78,17 @@ afterEach(() => {
   expect(api?.unexpected ?? []).toEqual([]);
 });
 
-async function getEstimate(user: ReturnType<typeof userEvent.setup>) {
+type User = ReturnType<typeof userEvent.setup>;
+
+/** The first step: what are you looking for? Ticks the given services (all three by default) and goes on. */
+async function pick(user: User, names: QuoteProduct[] = ['windows', 'roof', 'gutters']) {
+  await screen.findByRole('heading', { name: quote.servicesTitle });
+  for (const p of names) await user.click(screen.getByRole('checkbox', { name: quote.productName(p) }));
+  await user.click(screen.getByRole('button', { name: quote.servicesContinue }));
+}
+
+async function getEstimate(user: User, names?: QuoteProduct[]) {
+  await pick(user, names);
   await user.type(await screen.findByLabelText(quote.addressLabel), READY.address);
   await user.click(screen.getByRole('button', { name: quote.measureButton }));
 }
@@ -94,7 +108,7 @@ describe('QuotePage', () => {
       [`POST ${BASE}/lead`]: () => ({ status: 201, body: { ok: true, booked: null } }),
     });
     expect(await screen.findByText(CONFIG.companyName)).toBeInTheDocument();
-    await getEstimate(user);
+    await getEstimate(user, ['windows', 'roof']);
 
     expect(await screen.findByRole('heading', { name: quote.resultsTitle })).toBeInTheDocument();
     expect(screen.getByText(quote.roofLine(24.5))).toBeInTheDocument();
@@ -103,13 +117,12 @@ describe('QuotePage', () => {
     expect(screen.getByText(quote.range(950_000, 2_400_000))).toBeInTheDocument();
     expect(screen.getByText(quote.finalNote)).toBeInTheDocument();
     expect(screen.getByRole('img', { name: quote.outlineAlt })).toBeInTheDocument();
-    // Gutters are on the page but never priced online.
-    expect(screen.getByText(quote.guttersLine)).toBeInTheDocument();
-    expect(screen.getByText(quote.guttersAtVisit)).toBeInTheDocument();
+    // Gutters were not picked, so they are not on the results.
+    expect(screen.queryByText(quote.guttersLine)).toBeNull();
     expect(api.sent(`POST ${BASE}/estimate`)).toEqual([{ address: READY.address, website: '' }]);
 
     await user.click(screen.getByRole('button', { name: quote.continueButton }));
-    // Products with a range shown are ticked; gutters (no range) is not.
+    // What they picked is ticked; gutters, not picked, is not.
     expect(screen.getByRole('checkbox', { name: quote.productName('windows') })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: quote.productName('roof') })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: quote.productName('gutters') })).not.toBeChecked();
@@ -303,6 +316,128 @@ describe('QuotePage', () => {
   });
 });
 
+describe('the first step: what are you looking for', () => {
+  it('asks first, offers only what the company offers, and waits for a pick', async () => {
+    const user = userEvent.setup();
+    setup({});
+    expect(await screen.findByRole('heading', { name: quote.servicesTitle })).toBeInTheDocument();
+    expect(screen.queryByLabelText(quote.addressLabel)).toBeNull();
+    for (const p of CONFIG.products) {
+      expect(screen.getByRole('checkbox', { name: quote.productName(p) })).not.toBeChecked();
+      expect(screen.getByText(quote.servicesHint[p])).toBeInTheDocument();
+    }
+    expect(screen.getByRole('button', { name: quote.servicesContinue })).toBeDisabled();
+    await user.click(screen.getByRole('checkbox', { name: quote.productName('roof') }));
+    expect(screen.getByRole('button', { name: quote.servicesContinue })).toBeEnabled();
+    await user.click(screen.getByRole('checkbox', { name: quote.productName('roof') }));
+    expect(screen.getByRole('button', { name: quote.servicesContinue })).toBeDisabled();
+  });
+
+  it('shows only what they picked on the results, and "Change" goes back to the picker', async () => {
+    const user = userEvent.setup();
+    setup({ [`POST ${BASE}/estimate`]: () => ({ body: READY }) });
+    await pick(user, ['roof']);
+    expect(await screen.findByText(quote.servicesLooking(quote.productName('roof')))).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: quote.servicesChange }));
+    expect(await screen.findByRole('heading', { name: quote.servicesTitle })).toBeInTheDocument();
+    await pick(user, ['roof']);
+    await user.type(await screen.findByLabelText(quote.addressLabel), READY.address);
+    await user.click(screen.getByRole('button', { name: quote.measureButton }));
+    await screen.findByRole('heading', { name: quote.resultsTitle });
+    expect(screen.getByText(quote.roofLine(24.5))).toBeInTheDocument();
+    expect(screen.queryByText(quote.windowsLine(18))).toBeNull();
+    expect(screen.queryByText(quote.guttersLine)).toBeNull();
+    await user.click(screen.getByRole('button', { name: quote.continueButton }));
+    expect(screen.getByRole('checkbox', { name: quote.productName('roof') })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: quote.productName('windows') })).not.toBeChecked();
+  });
+
+  it('gutters are "priced at your free visit" when picked', async () => {
+    const user = userEvent.setup();
+    setup({ [`POST ${BASE}/estimate`]: () => ({ body: READY }) });
+    await getEstimate(user, ['gutters']);
+    await screen.findByRole('heading', { name: quote.resultsTitle });
+    expect(screen.getByText(quote.guttersLine)).toBeInTheDocument();
+    expect(screen.getByText(quote.guttersAtVisit)).toBeInTheDocument();
+    expect(screen.queryByText(quote.roofLine(24.5))).toBeNull();
+  });
+
+  it('a company that offers one thing is not asked', async () => {
+    api = stubApi({ [`GET ${BASE}`]: () => ({ body: { ...CONFIG, products: ['windows'] } }) });
+    render(<QuotePage slug={SLUG} />);
+    expect(await screen.findByLabelText(quote.addressLabel)).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: quote.servicesTitle })).toBeNull();
+    expect(screen.queryByRole('button', { name: quote.servicesChange })).toBeNull();
+  });
+
+  it('a home with nothing for their picks goes straight to the form, like a call back', async () => {
+    const user = userEvent.setup();
+    setup({ [`POST ${BASE}/estimate`]: () => ({ body: { ...READY, roof: null } }) });
+    await getEstimate(user, ['roof']);
+    expect(await screen.findByRole('heading', { name: quote.fallbackTitle })).toBeInTheDocument();
+    expect(screen.getByText(quote.nothingShown)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: quote.formTitle })).toBeInTheDocument();
+    expect(hasRanges({ ...READY, roof: null }, ['roof'])).toBe(false);
+    expect(hasRanges(READY, ['roof'])).toBe(true);
+    expect(hasRanges(READY, ['gutters'])).toBe(true);
+    expect(hasRanges(FALLBACK, ['roof'])).toBe(false);
+  });
+});
+
+describe('Measure with the app', () => {
+  it('offers the app next to the free visit for windows: a store button, a QR code, and "Have us measure"', async () => {
+    const user = userEvent.setup();
+    api = stubApi({ [`GET ${BASE}`]: () => ({ body: { ...CONFIG, homeownerApp: APP } }), [`POST ${BASE}/estimate`]: () => ({ body: READY }) });
+    render(<QuotePage slug={SLUG} />);
+    await getEstimate(user, ['windows', 'roof']);
+    await screen.findByRole('heading', { name: quote.resultsTitle });
+    expect(screen.getByRole('heading', { name: quote.appTitle('WinChoice') })).toBeInTheDocument();
+    const link = screen.getByRole('link', { name: quote.appGet('WinChoice') });
+    expect(link).toHaveAttribute('href', APP.url);
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    const code = screen.getByRole('img', { name: quote.appQrAlt('WinChoice') });
+    expect(code.querySelector('path')!.getAttribute('d')!.length).toBeGreaterThan(200);
+    expect(screen.queryByRole('button', { name: quote.continueButton })).toBeNull();
+    // The free visit goes on to the form as before
+    await user.click(screen.getByRole('button', { name: quote.visitButton }));
+    expect(screen.getByRole('heading', { name: quote.formTitle })).toBeInTheDocument();
+  });
+
+  it('is hidden when the company has no app link, when windows were not picked, and for a call back', async () => {
+    const user = userEvent.setup();
+    setup({ [`POST ${BASE}/estimate`]: () => ({ body: READY }) });
+    await getEstimate(user, ['windows']);
+    await screen.findByRole('heading', { name: quote.resultsTitle });
+    expect(screen.queryByText(quote.appTitle('WinChoice'))).toBeNull();
+    expect(screen.queryByRole('img', { name: quote.appQrAlt('WinChoice') })).toBeNull();
+    expect(screen.getByRole('button', { name: quote.continueButton })).toBeInTheDocument();
+    cleanup();
+
+    api = stubApi({ [`GET ${BASE}`]: () => ({ body: { ...CONFIG, homeownerApp: APP } }), [`POST ${BASE}/estimate`]: () => ({ body: READY }) });
+    render(<QuotePage slug={SLUG} />);
+    await getEstimate(user, ['roof']);
+    await screen.findByRole('heading', { name: quote.resultsTitle });
+    expect(screen.queryByText(quote.appTitle('WinChoice'))).toBeNull();
+    cleanup();
+
+    api = stubApi({ [`GET ${BASE}`]: () => ({ body: { ...CONFIG, homeownerApp: APP } }), [`POST ${BASE}/estimate`]: () => ({ body: FALLBACK }) });
+    render(<QuotePage slug={SLUG} />);
+    await getEstimate(user, ['windows']);
+    await screen.findByRole('heading', { name: quote.fallbackTitle });
+    expect(screen.queryByText(quote.appTitle('WinChoice'))).toBeNull();
+  });
+
+  it('draws a QR code for the link: the same input, the same picture; a longer link, a bigger one', () => {
+    const a = qrPath(APP.url);
+    expect(qrPath(APP.url)).toEqual(a);
+    expect(a.size).toBeGreaterThanOrEqual(21);
+    expect(a.size).toBeLessThanOrEqual(61);
+    expect(qrPath(`${APP.url}?company=${'x'.repeat(120)}`).size).toBeGreaterThan(a.size);
+    expect(a.path.startsWith('M')).toBe(true);
+  });
+});
+
 describe('Turnstile on the page', () => {
   it('with a site key, the widget token goes with the estimate; the button waits for it', async () => {
     const user = userEvent.setup();
@@ -316,6 +451,7 @@ describe('Turnstile on the page', () => {
       [`POST ${BASE}/estimate`]: () => ({ body: READY }),
     });
     render(<QuotePage slug={SLUG} />);
+    await pick(user);
     await user.type(await screen.findByLabelText(quote.addressLabel), READY.address);
     await waitFor(() => expect(screen.getByRole('button', { name: quote.measureButton })).toBeEnabled());
     await user.click(screen.getByRole('button', { name: quote.measureButton }));

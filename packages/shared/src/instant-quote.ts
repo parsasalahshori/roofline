@@ -119,6 +119,11 @@ export type PublicQuoteConfig = {
   consent: { version: string; text: string; textingText: string; privacyUrl: string; termsUrl: string };
   /** Cloudflare Turnstile site key when the page asks for it; null when it does not. */
   turnstileSiteKey: string | null;
+  /**
+   * The company's phone app for measuring windows (the homeowner API): where to get it (the App Store link, from the
+   * server's HOMEOWNER_APP_URL) and its name. Null when the server has none set: the page then offers only the free visit.
+   */
+  homeownerApp: { url: string; name: string } | null;
 };
 
 /** How the estimate came out: measured, or the company's daily limit reached / the home not measurable (we call instead). */

@@ -1091,3 +1091,26 @@ describe('tenant isolation', () => {
     expect(await count('homeowner_requests', t.seed.a.companyId)).toBe(1);
   });
 });
+
+describe('the instant quote page and the app', () => {
+  test('the page config carries the app link and name only when the server has them', async () => {
+    const plain = await request(t.app).get(`/api/public/quote/${ACME}`);
+    expect(plain.status).toBe(200);
+    expect(plain.body.homeownerApp).toBeNull();
+    const link = 'https://apps.apple.com/us/app/winchoice/id0000000000';
+    const withApp = await makeTestApp({ TRUST_PROXY: 1, HOMEOWNER_APP_URL: link });
+    try {
+      const res = await request(withApp.app).get(`/api/public/quote/${ACME}`);
+      expect(res.status).toBe(200);
+      expect(res.body.homeownerApp).toEqual({ url: link, name: 'WinChoice' });
+    } finally {
+      await withApp.close();
+    }
+    const named = await makeTestApp({ TRUST_PROXY: 1, HOMEOWNER_APP_URL: link, HOMEOWNER_APP_NAME: 'Summit Measure' });
+    try {
+      expect((await request(named.app).get(`/api/public/quote/${ACME}`)).body.homeownerApp).toEqual({ url: link, name: 'Summit Measure' });
+    } finally {
+      await named.close();
+    }
+  });
+});

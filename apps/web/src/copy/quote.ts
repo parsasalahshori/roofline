@@ -20,6 +20,18 @@ export const quote = {
   loadFailed: "We couldn't load this page. Please check your connection and try again.",
   retry: 'Try again',
 
+  // Service picker (the first step)
+  servicesTitle: 'What are you looking for?',
+  servicesIntro: 'Pick one or more. Each one gets its own price.',
+  servicesHint: {
+    windows: 'A price from your home\'s size. Measure your windows for a sharper one.',
+    roof: 'Measured from above. A price range in seconds.',
+    gutters: 'Priced at your free visit.',
+  } as Record<QuoteProduct, string>,
+  servicesContinue: 'Continue',
+  servicesLooking: (names: string): string => `Looking for: ${names}`,
+  servicesChange: 'Change',
+
   // Address step
   heading: 'Get your free estimate in seconds',
   intro: 'Enter your home address. We measure your home from above and show you a price range right away.',
@@ -57,6 +69,16 @@ export const quote = {
   pickProducts: 'What would you like a price for?',
   productName: (p: QuoteProduct): string => PRODUCT_NAMES[p],
   continueButton: 'Get my exact price',
+  visitButton: 'Have us measure at a free visit',
+  nothingShown: 'We need a closer look to give a fair price for this. Leave your details and we will call you.',
+
+  // The phone app that measures windows (only where the company has one)
+  appTitle: (app: string): string => `Measure with the ${app} app`,
+  appBody: 'Measure each window with your iPhone, room by room, and get a sharper price in minutes. You can book your free visit in the app too.',
+  appGet: (app: string): string => `Get the ${app} app`,
+  appQrAlt: (app: string): string => `QR code that opens the ${app} app`,
+  appQrHint: 'On a computer? Scan this with your iPhone camera.',
+  appOr: 'Or let us do the measuring:',
   outlineAlt: 'Satellite photo of your home with the measured roof outline',
   imagery: 'Imagery: Esri, Maxar, Earthstar Geographics',
   startOver: 'Use a different address',
