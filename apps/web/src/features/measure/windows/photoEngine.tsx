@@ -1,7 +1,7 @@
 // The one seam between the photo screen and the measuring engine (WindowPhotoCv, @roofline/shared window-photo-cv.ts).
-// The screen never imports the engine directly: it asks this context for it. By default the engine is the module at
-// ./cv/index.ts (export `windowPhotoCv`, or a default export), lazy-loaded the first time a photo is measured with the
-// sheet, so its WASM stays out of the main bundle. Tests (and the visual check) provide a fake through the provider.
+// The screen never imports the engine directly: it asks this context for it. By default the engine is ./cv/index.ts
+// (loadWindowPhotoCv), lazy-loaded the first time a photo is measured with the sheet, so it is its own chunk.
+// Tests (and the visual check) provide a fake through the provider.
 import type { RgbaImage, WindowPhotoCv } from '@roofline/shared';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 
@@ -15,26 +15,16 @@ export type PhotoEngineSeam = {
   readPixels: (src: string, maxSide: number) => Promise<PhotoPixels>;
 };
 
-type CvModule = { windowPhotoCv?: WindowPhotoCv; default?: WindowPhotoCv };
-
-/** The engine module, when it is in the build (Vite finds it at build time; absent until the engine is merged). */
-const engineModules = import.meta.glob<CvModule>('./cv/index.{ts,tsx}');
-
 let defaultEngine: Promise<WindowPhotoCv | null> | null = null;
 export function loadDefaultEngine(): Promise<WindowPhotoCv | null> {
   if (defaultEngine === null) {
-    const loader = Object.values(engineModules)[0];
-    defaultEngine =
-      loader === undefined
-        ? Promise.resolve(null)
-        : loader().then(
-            (m) => m.windowPhotoCv ?? m.default ?? null,
-            () => {
-              // A failed load (offline, the WASM did not arrive) can be tried again next time
-              defaultEngine = null;
-              return null;
-            },
-          );
+    defaultEngine = import('./cv/index.ts')
+      .then((m) => m.loadWindowPhotoCv())
+      .catch(() => {
+        // A failed load (offline, the chunk did not arrive) can be tried again next time
+        defaultEngine = null;
+        return null;
+      });
   }
   return defaultEngine;
 }

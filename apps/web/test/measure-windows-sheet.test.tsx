@@ -117,8 +117,12 @@ function renderMeasure(props: Partial<Parameters<typeof PhotoMeasure>[0]> = {}) 
   return { onSave, onCancel };
 }
 /** The sheet found and the first snap applied. */
+/** Roughly on the frame: where a person drops the corners (a few pixels off). */
+const ROUGH = SNAPPED.map(([x, y]) => [x + 6, y + 6]) as Quad;
+/** The sheet found, the four corners dropped roughly on the frame, and the snap applied. */
 async function ready() {
   await screen.findByText(copy.sheetFound);
+  for (let i = 0; i < 4; i++) dragTo(i, ROUGH[i]!);
   await waitFor(() => expect(document.querySelector('[data-snap="snapped"]')).not.toBeNull());
 }
 
@@ -220,7 +224,7 @@ describe('Measuring sheet: finding it in the photo', () => {
     await ready();
     expect(lastMeasureInput().sheet.imagePoints).toEqual(DETECTION.imagePoints);
     // The rough corners go to the engine at its size
-    expect(cv.snapQuad.mock.calls[0]![1]).toEqual(seedWindowQuad(1200, 1600).map(([x, y]) => [x / 2, y / 2]));
+    expect(cv.snapQuad.mock.calls[0]![1]).toEqual(ROUGH.map(([x, y]) => [x / 2, y / 2]));
   });
 
   it('not found: explains why and how to fix it, offers to take the photo again, and cannot be saved', async () => {
@@ -247,11 +251,19 @@ describe('Measuring sheet: finding it in the photo', () => {
 });
 
 describe('Measuring sheet: corners snapped onto the frame', () => {
-  it('fits the starting corners once the photo is read, draws the fitted edges and flags the unsure one', async () => {
+  it('waits until all four corners are on the frame, then fits them, draws the fitted edges and flags the unsure one', async () => {
     renderMeasure();
-    await ready();
+    await screen.findByText(copy.sheetFound);
+    // No engine proposal: the corners start inset and nothing is snapped from there
+    expect(cornerAt(0)).toEqual(pctOf(seedWindowQuad(1200, 1600)[0]));
+    for (let i = 0; i < 3; i++) dragTo(i, ROUGH[i]!);
+    await act(async () => {});
+    expect(cv.snapQuad).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-snap]')!.textContent).toBe(copy.placeCorners(3));
+    dragTo(3, ROUGH[3]);
+    await waitFor(() => expect(document.querySelector('[data-snap="snapped"]')).not.toBeNull());
     expect(cv.snapQuad).toHaveBeenCalledTimes(1);
-    expect(cv.snapQuad.mock.calls[0]![1]).toEqual(seedWindowQuad(1200, 1600));
+    expect(cv.snapQuad.mock.calls[0]![1]).toEqual(ROUGH);
     for (let i = 0; i < 4; i++) expect(cornerAt(i)).toEqual(pctOf(SNAPPED[i]!));
     expect(document.querySelectorAll('line[data-edge]')).toHaveLength(4);
     expect(document.querySelector('line[data-edge="1"]')!.getAttribute('data-low')).toBe('true');

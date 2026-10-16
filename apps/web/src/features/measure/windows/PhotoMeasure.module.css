@@ -463,3 +463,110 @@
     transition: none;
   }
 }
+
+/* "Which outline are you measuring?": the other ranked outlines dashed in their colours, lettered on the photo */
+.candidate {
+  fill: none;
+  stroke-dasharray: 9 6;
+  stroke-width: 2.5;
+}
+
+.candidateTag {
+  position: absolute;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  color: #151c22;
+  font-size: 12px;
+  font-weight: 800;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+/* Clear of the 44px corner handle: diagonally out from the outline's corner */
+.candidateTag[data-corner="0"] {
+  transform: translate(calc(-50% - 26px), calc(-50% - 26px));
+}
+
+.candidateTag[data-corner="1"] {
+  transform: translate(calc(-50% + 26px), calc(-50% - 26px));
+}
+
+.candidateTag[data-corner="2"] {
+  transform: translate(calc(-50% + 26px), calc(-50% + 26px));
+}
+
+.candidateTag[data-picked="true"] {
+  box-shadow: 0 0 0 2px #151c22;
+}
+
+.pick {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 2px solid var(--ds-accent-ink, #8a5a00);
+  border-radius: 12px;
+  background: var(--ds-surface, #fff);
+}
+
+.pickOption {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 72px;
+  padding: 4px 8px;
+  border: 1px solid var(--line, #dde2e6);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.pickOption[data-checked="true"] {
+  border-color: var(--ds-accent-ink, #8a5a00);
+  box-shadow: inset 0 0 0 1px var(--ds-accent-ink, #8a5a00);
+}
+
+.pickOption:focus-within {
+  outline: 2px solid var(--ds-focus, #2f6fde);
+  outline-offset: 2px;
+}
+
+.pickOption input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--ds-accent-ink, #8a5a00);
+}
+
+.pickLetter {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: #151c22;
+  font-weight: 800;
+}
+
+.pickZoom {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  border: 3px solid;
+  border-radius: 50%;
+  background-color: #000;
+  background-repeat: no-repeat;
+}
+
+.sizeNote {
+  flex-basis: 100%;
+  color: var(--ds-text-label, #505b64);
+  font-size: 12px;
+}
