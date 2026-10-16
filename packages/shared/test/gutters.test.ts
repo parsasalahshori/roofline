@@ -54,8 +54,8 @@ function porchRoof(): RoofModel {
       line('eave', [0, 0], [10, 0], ['A']),
       line('eave', [10, 8], [0, 8], ['B']),
       line('ridge', [0, 4], [10, 4], ['A', 'B']),
-      line('rake', [10, 0], [10, 8], ['A']),
-      line('rake', [0, 8], [0, 0], ['A']),
+      { ...line('rake', [10, 0], [10, 8], ['A']), lengthFt: 8 * FT * 1.118 },
+      { ...line('rake', [0, 8], [0, 0], ['A']), lengthFt: 8 * FT * 1.118 },
       line('flat-edge', [2, -3], [8, -3], ['C']),
       line('flat-edge', [8, -3], [8, 0], ['C']),
       line('flat-edge', [2, 0], [2, -3], ['C']),
@@ -289,5 +289,30 @@ describe('gutterView', () => {
     expect(v.adjustments).toEqual({ excludedRunIds: ['G2'], downspouts: {}, size: null });
     expect(v.quotes).toBeNull();
     expect(gutterView('m1', null, ASSUMED, null).runs).toEqual([]);
+  });
+});
+
+describe('3D roof edges', () => {
+  it('a rake that is level is guttered like an eave; a sloped rake never is', () => {
+    const roof = roofOf(GABLE);
+    const rakes = roof.lines.filter((l) => l.kind === 'rake');
+    // Make one rake level: its true length equal to its plan length.
+    const planFt = (l: (typeof rakes)[number]) => {
+      const [a, b] = l.coords;
+      return Math.hypot((b[0] - a[0]) * K * COS, (b[1] - a[1]) * K) * FT;
+    };
+    const level = { ...rakes[0]!, lengthFt: planFt(rakes[0]!) };
+    const edited: RoofModel = { ...roof, lines: roof.lines.map((l) => (l === rakes[0] ? level : l)) };
+    expect(gutterRuns(roof).runs).toHaveLength(2);
+    expect(gutterRuns(edited).runs.length).toBeGreaterThan(2);
+  });
+
+  it('drops a lone eave piece under 4 ft (a jog) but keeps a short one that turns a corner', () => {
+    const roof = roofOf(GABLE);
+    const eave = roof.lines.find((l) => l.kind === 'eave')!;
+    const [a] = eave.coords;
+    const stub: [number, number] = [a[0], a[1] - 0.9 / K]; // 0.9 m south of the eave's start, alone
+    const lone = { ...eave, coords: [[stub[0] - 0.9 / (K * COS), stub[1]], stub] as [[number, number], [number, number]], lengthFt: 0.9 * FT };
+    expect(gutterRuns({ ...roof, lines: [...roof.lines, lone] }).runs).toHaveLength(2);
   });
 });

@@ -4,8 +4,9 @@
 // (and an eave height when one is known).
 //
 // How it works (local metres round the roof):
-// 1. Eave lines (never rakes, ridges, hips, valleys or flashing) are turned so their facet lies on their left, then
-//    touching collinear pieces are merged. Each straight run ends at a corner or an open end. Low porch or patio
+// 1. Eave lines (never rakes, ridges, hips, valleys or flashing; a "rake" of a 3D roof that is in fact level counts as
+//    an eave) are turned so their facet lies on their left, then touching collinear pieces are merged; pieces too
+//    short to gutter (under 2 ft, or under 4 ft and turning no corner) are dropped. Each straight run ends at a corner or an open end. Low porch or patio
 //    roofs (flat facets that are a small part of the roof: the reconstruction's 'low-attachment') give their own
 //    runs along their downhill edges, never merged with the house's.
 // 2. Two runs that meet end to start make a corner: a left turn is an outside (convex) corner, a right turn an
@@ -56,6 +57,10 @@ export const GUTTER_DESIGN = {
   shortRunFt: 8,
   /** Eave pieces shorter than this are noise in the drawing: no gutter. */
   minRunFt: 2,
+  /** A run this short with no corner into another run (a jog over a bay) gets no gutter of its own. */
+  minLoneRunFt: 4,
+  /** A line drawn as a rake that climbs less than this (x/12) is level: water leaves the roof there, so it is an eave. */
+  levelRakeMaxX12: 1.5,
   hangerSpacingFt: 2,
   elbowsPerDownspout: 3,
   floorHeightFt: 10,
@@ -186,7 +191,7 @@ type V = { x: number; y: number };
 const EARTH_RADIUS_M = 6371008.8;
 const FT_PER_M = 3.280839895;
 /** Endpoints this close (m) touch. */
-const JOIN_M = 0.35;
+const JOIN_M = 0.5;
 /** Pieces within this angle (deg) are collinear. */
 const COLLINEAR_DEG = 10;
 
@@ -338,7 +343,15 @@ export function gutterRuns(roof: RoofModel | null): { runs: GutterRunGeometry[];
   const facetById = new Map(roof.facets.map((f) => [f.id, f]));
 
   const isLow = (l: RoofLine) => (l.facets ?? []).length === 1 && low.has(l.facets![0]!);
-  const mainLines = roof.lines.filter((l) => l.kind === 'eave' && !isLow(l));
+  // A rake that is level (a 3D roof's edge drawn as a rake within its noise) drains like an eave.
+  const levelRake = (l: RoofLine) => {
+    if (l.kind !== 'rake') return false;
+    const planFt = len(sub(frame.toLocal(l.coords[1]), frame.toLocal(l.coords[0]))) * FT_PER_M;
+    if (planFt <= 0) return false;
+    const riseFt = Math.sqrt(Math.max(0, l.lengthFt * l.lengthFt - planFt * planFt));
+    return (riseFt / planFt) * 12 < GUTTER_DESIGN.levelRakeMaxX12;
+  };
+  const mainLines = roof.lines.filter((l) => (l.kind === 'eave' || levelRake(l)) && !isLow(l));
   const lowLines: RoofLine[] = [];
   for (const id of low) {
     const edges = roof.lines.filter((l) => (l.kind === 'eave' || l.kind === 'flat-edge') && (l.facets ?? []).length === 1 && l.facets![0] === id);
@@ -351,8 +364,14 @@ export function gutterRuns(roof: RoofModel | null): { runs: GutterRunGeometry[];
       return { a, b, facets: (l.facets ?? []).slice(0, 1).map((id) => ({ id, m: len(sub(b, a)) })) };
     });
   const minM = GUTTER_DESIGN.minRunFt / FT_PER_M;
-  const mainPieces = mergeCollinear(toPieces(mainLines)).filter((p) => len(sub(p.b, p.a)) >= minM);
-  const lowPieces = mergeCollinear(toPieces(lowLines)).filter((p) => len(sub(p.b, p.a)) >= minM);
+  const loneM = GUTTER_DESIGN.minLoneRunFt / FT_PER_M;
+  // Too short to gutter: noise, or a short piece that turns no corner into another run.
+  const keep = (all: Piece[]) => {
+    const long = all.filter((p) => len(sub(p.b, p.a)) >= minM);
+    return long.filter((p) => len(sub(p.b, p.a)) >= loneM || long.some((q) => q !== p && (near(p.b, q.a) || near(q.b, p.a))));
+  };
+  const mainPieces = keep(mergeCollinear(toPieces(mainLines)));
+  const lowPieces = keep(mergeCollinear(toPieces(lowLines)));
   const byLength = (p: Piece, q: Piece) => len(sub(q.b, q.a)) - len(sub(p.b, p.a)) || p.a.x - q.a.x || p.a.y - q.a.y;
   mainPieces.sort(byLength);
   lowPieces.sort(byLength);
