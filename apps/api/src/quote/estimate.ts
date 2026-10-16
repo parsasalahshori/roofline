@@ -112,23 +112,20 @@ async function roofRange(deps: AppDeps, ctx: TenantContext, view: MeasurementVie
   }
 }
 
-/** The walls estimate (every side, no photos) and its range, or null without an outline. */
-async function windowsRange(
-  deps: AppDeps,
-  ctx: TenantContext,
-  property: PropertyRow,
-  point: LngLat,
-  ring: LngLat[],
-  pct: number,
-): Promise<{ count: number; range: PriceRange } | null> {
-  let eaveHeightM: number | null = null;
+/** The eave's height above the ground from Google's height map (usually already bought for the roof), or null. */
+async function eaveOf(deps: AppDeps, ctx: TenantContext, property: PropertyRow, point: LngLat, ring: LngLat[]): Promise<number | null> {
   try {
     const solar = await solarForHome(deps, ctx, property.id, point);
     const layers = await heightLayersFor(deps, point, solar?.building ?? null, HEIGHTS_BUDGET_MS);
-    eaveHeightM = layers === null ? null : eaveHeightAboveGround(layers, ring);
+    return layers === null ? null : eaveHeightAboveGround(layers, ring);
   } catch (err) {
-    deps.logError?.(err, 'quote-window-heights');
+    deps.logError?.(err, 'quote-heights');
+    return null;
   }
+}
+
+/** The walls estimate (every side, no photos) and its range, or null without an outline. */
+function windowsRange(ring: LngLat[], eaveHeightM: number | null, pct: number): { count: number; range: PriceRange } | null {
   const walls = wallsFor({ ring, camera: null, eaveHeightM, outlineSource: 'footprint' }, []);
   if (walls === null) return null;
   const estimated = estimateAllSides(walls);
@@ -230,8 +227,9 @@ export async function estimateForAddress(
     const ring = mainRing(view);
     const point: LngLat = property.geom ?? view.center;
     const roof = wantsRoof ? await roofRange(deps, ctx, view, settings.rangePct) : null;
-    const windows = wantsWindows && ring !== null ? await windowsRange(deps, ctx, property, point, ring, settings.rangePct) : null;
-    const gutters = wantsGutters ? gutterRange(view, settings.rangePct) : null;
+    const eaveM = (wantsWindows || wantsGutters) && ring !== null ? await eaveOf(deps, ctx, property, point, ring) : null;
+    const windows = wantsWindows && ring !== null ? windowsRange(ring, eaveM, settings.rangePct) : null;
+    const gutters = wantsGutters ? gutterRange(view, settings.rangePct, eaveM) : null;
     const outline = ring === null ? null : { center: view.center, ring: thin(ring) };
     const ready = roof !== null || windows !== null || gutters !== null;
     const row = await withTenant(deps.pools, ctx, (tx) =>

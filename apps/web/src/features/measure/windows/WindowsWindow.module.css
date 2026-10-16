@@ -19,6 +19,14 @@
   font-weight: 600;
 }
 
+/* Three choices (Roof | Windows | Gutters) fit beside the close button on a phone */
+@media (max-width: 479.98px) {
+  .switchItem {
+    padding: 0 8px;
+    font-size: 12.5px;
+  }
+}
+
 .switchItem[data-selected="true"] {
   background: var(--ds-surface, #fff);
   color: var(--ds-text-1, #151c22);

@@ -47,4 +47,5 @@ export * from './agent-periods.ts';
 export * from './agents-api.ts';
 export * from './windows.ts';
 export * from './window-photo-math.ts';
+export * from './gutters.ts';
 export * from './instant-quote.ts';

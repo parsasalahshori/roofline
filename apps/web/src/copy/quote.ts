@@ -46,7 +46,6 @@ export const quote = {
   roofLine: (squares: number): string => `Roof: about ${squares.toLocaleString('en-US')} squares`,
   windowsLine: (count: number): string => `About ${count} ${count === 1 ? 'window' : 'windows'}`,
   guttersLine: (feet: number): string => `Gutters: about ${feet.toLocaleString('en-US')} ft`,
-  guttersNoRange: 'Gutters: priced at your free visit',
   range: (low: number, high: number): string => `from ${quoteMoney(low)} to ${quoteMoney(high)}`,
   finalNote: 'Final price after a free in-home visit.',
   pickProducts: 'What would you like a price for?',

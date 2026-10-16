@@ -1,5 +1,5 @@
 -- Custom migration (drizzle-kit generate --custom): grants and row-level security for the instant quote page
--- (0033_instant_quote_schema.sql). Run by the migration owner.
+-- (0034_instant_quote_schema.sql). Run by the migration owner.
 --
 -- A table a later migration adds gets no grants by default (see 0002): every grant below is deliberate, and
 -- test/rls.test.ts lists them.

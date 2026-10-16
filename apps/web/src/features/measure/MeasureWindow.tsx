@@ -828,6 +828,7 @@ export function MeasureWindow() {
           current="roof"
           roofHref="/estimator"
           windowsHref={query.data !== undefined ? `/estimator/windows?property=${encodeURIComponent(query.data.propertyId)}` : '/estimator/windows'}
+          guttersHref={query.data !== undefined && query.data.roof !== null ? `/estimator/measure/${encodeURIComponent(query.data.id)}/gutters` : null}
         />
         <span className={styles.subtitle}>{measure.subtitle}</span>
       </header>

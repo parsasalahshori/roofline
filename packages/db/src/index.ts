@@ -228,6 +228,7 @@ export * from './repos/export.ts';
 // E1 skeleton (Task 1): one line per new repo file; later E1 tasks fill the files in.
 export * from './repos/measurements.ts';
 export * from './repos/window-measurements.ts';
+export * from './repos/gutters.ts';
 export * from './repos/tier-templates.ts';
 export * from './repos/proposals.ts';
 export * from './repos/proposal-public.ts';

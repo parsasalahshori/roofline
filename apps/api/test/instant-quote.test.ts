@@ -146,8 +146,10 @@ describe('POST /api/public/quote/:slug/estimate', () => {
     expect(Object.keys(e).sort()).toEqual(['address', 'formToken', 'gutters', 'outline', 'quoteId', 'roof', 'status', 'windows']);
     expect(e.roof).not.toBeNull();
     expect(e.windows).not.toBeNull();
-    expect(e.gutters).toBeNull(); // the gutters seam: no range until the gutter estimate lands
-    for (const range of [e.roof!.range, e.windows!.range]) {
+    expect(e.gutters).not.toBeNull();
+    expect(Object.keys(e.gutters!).sort()).toEqual(['feet', 'range']);
+    expect(e.gutters!.feet % 10).toBe(0);
+    for (const range of [e.roof!.range, e.windows!.range, e.gutters!.range]) {
       expect(range.lowCents % 10_000).toBe(0);
       expect(range.highCents % 10_000).toBe(0);
       expect(range.highCents).toBeGreaterThan(range.lowCents);
