@@ -1,4 +1,4 @@
-import { and, desc, eq, notExists, sql } from 'drizzle-orm';
+import { and, desc, eq, notExists, type SQL, sql } from 'drizzle-orm';
 import type { EstimatedWindows, LngLat, MeasuredWindow, WindowAdjustments, WindowDetectorName, WindowsMissReason } from '@roofline/shared';
 import { homeownerRequests, properties, type StoredFacadePhoto, type StoredWindowUpload, type WindowGeometry, windowMeasurements } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
@@ -83,6 +83,27 @@ export async function getWindowMeasurement(tx: Tx, ctx: TenantContext, id: strin
 }
 
 /**
+ * Leaves out the window measurements that belong to a homeowner's app request (each request keeps the windows and photos
+ * the homeowner measured on one of its own; see repos/homeowner.ts). They are not the company's work: they have no walls
+ * or street photos, and a reader that wants the company's own measurement of an address must not see them (or find them
+ * crowding the company's out of its "newest few"). Use it in the `where` of a query over `window_measurements`.
+ */
+export function notHomeownerMeasurement(tx: Tx): SQL {
+  return notExists(
+    tx
+      .select({ one: sql`1` })
+      .from(homeownerRequests)
+      .where(
+        and(
+          eq(homeownerRequests.companyId, windowMeasurements.companyId),
+          eq(homeownerRequests.propertyId, windowMeasurements.propertyId),
+          eq(homeownerRequests.windowMeasurementId, windowMeasurements.id),
+        ),
+      ),
+  );
+}
+
+/**
  * The newest window measurement of a property the member may see; null when there is none (or they may not see it). The
  * windows a homeowner measured in the app are kept on a measurement of their own request: it is never the answer here
  * (it has no walls or street photos, and would hide the company's own earlier measurement); a new measurement of the
@@ -93,25 +114,7 @@ export async function getLatestWindowMeasurementForProperty(tx: Tx, ctx: TenantC
     .select({ row: windowMeasurements })
     .from(windowMeasurements)
     .innerJoin(properties, and(eq(properties.id, windowMeasurements.propertyId), eq(properties.companyId, windowMeasurements.companyId)))
-    .where(
-      and(
-        eq(windowMeasurements.propertyId, propertyId),
-        eq(windowMeasurements.companyId, ctx.companyId),
-        propertyScope(ctx),
-        notExists(
-          tx
-            .select({ one: sql`1` })
-            .from(homeownerRequests)
-            .where(
-              and(
-                eq(homeownerRequests.companyId, windowMeasurements.companyId),
-                eq(homeownerRequests.propertyId, windowMeasurements.propertyId),
-                eq(homeownerRequests.windowMeasurementId, windowMeasurements.id),
-              ),
-            ),
-        ),
-      ),
-    )
+    .where(and(eq(windowMeasurements.propertyId, propertyId), eq(windowMeasurements.companyId, ctx.companyId), propertyScope(ctx), notHomeownerMeasurement(tx)))
     .orderBy(desc(windowMeasurements.createdAt), desc(windowMeasurements.id))
     .limit(1);
   return found?.row ?? null;

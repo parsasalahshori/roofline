@@ -394,6 +394,21 @@ export async function setQuoteRequestAppointment(
   if (Object.keys(patch).length > 0) await updateJob(tx, ctx, booked.jobId, patch, { now });
 }
 
+/**
+ * Locks a request (FOR UPDATE, until the transaction ends) and says whether it already has a visit that is still on:
+ * its start and end, or null. Booking takes it so that two bookings of one request at once (a double tap) cannot each
+ * make a visit: the second waits, then finds the first one's.
+ */
+export async function lockedQuoteVisit(tx: Tx, ctx: TenantContext, requestId: string): Promise<{ startsAt: Date; endsAt: Date } | null> {
+  const [row] = await tx
+    .select({ appointmentId: quoteRequests.appointmentId })
+    .from(quoteRequests)
+    .where(and(eq(quoteRequests.id, requestId), eq(quoteRequests.companyId, ctx.companyId)))
+    .limit(1)
+    .for('update');
+  return row === undefined || row.appointmentId === null ? null : quoteVisitTimes(tx, ctx, row.appointmentId);
+}
+
 /** A request's booked visit, when it is still on (not canceled or archived): its start and end. */
 export async function quoteVisitTimes(tx: Tx, ctx: TenantContext, appointmentId: string): Promise<{ startsAt: Date; endsAt: Date } | null> {
   const [row] = await tx

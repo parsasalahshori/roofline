@@ -13,7 +13,7 @@ import { addActivity } from './activities.ts';
 import { audit } from './audit.ts';
 import { memberNames } from './appointments.ts';
 import { getProperty } from './properties.ts';
-import { createWindowMeasurement, type WindowMeasurementRow } from './window-measurements.ts';
+import { createWindowMeasurement, notHomeownerMeasurement, type WindowMeasurementRow } from './window-measurements.ts';
 import { US_MAP_CENTER } from './measurements.ts';
 
 /*
@@ -238,20 +238,25 @@ export type HomeownerProgress = {
   jobUpdatedAt: Date | null;
   visit: { startsAt: Date; endsAt: Date } | null;
   repName: string | null;
-  /** The newest time a person from the company put a window of their own on the address's window measurement. */
+  /** The newest time, since the request was sent, that a person from the company put a window of their own on the address's window measurement. */
   repMeasuredAt: Date | null;
-  /** A factory order for the address's windows: 'draft' | 'ready' | 'sent', and when it became ready / was sent. */
+  /** A factory order made since the request was sent for the address's windows: 'draft' | 'ready' | 'sent', and when it became ready / was sent. */
   order: { status: string; readyAt: Date | null; sentAt: Date | null } | null;
 };
 
+/** The newest few of the company's own window measurements of the address that the progress looks at. */
+const PROGRESS_MEASUREMENTS = 20;
+
 /**
  * The filed request's job, visit, the company's own measuring and factory order, so the app can say where things are.
- * Null before the request is filed (no job yet).
+ * Null before the request is filed (no job yet). The measuring and the order count only when they came after the
+ * request was sent: what the company did at this address earlier (for someone else, or for the people who lived there
+ * before) is not this homeowner's to see. The homeowners' own app measurements are never the company's work.
  */
 export async function homeownerProgress(tx: Tx, ctx: TenantContext, request: HomeownerRequestRow): Promise<HomeownerProgress | null> {
   if (request.quoteRequestId === null) return null;
   const [filed] = await tx
-    .select({ jobId: quoteRequests.jobId, appointmentId: quoteRequests.appointmentId })
+    .select({ jobId: quoteRequests.jobId, appointmentId: quoteRequests.appointmentId, filedAt: quoteRequests.createdAt })
     .from(quoteRequests)
     .where(and(eq(quoteRequests.id, request.quoteRequestId), eq(quoteRequests.companyId, ctx.companyId)))
     .limit(1);
@@ -275,7 +280,7 @@ export async function homeownerProgress(tx: Tx, ctx: TenantContext, request: Hom
   const repId = visit?.assignedUserId ?? job?.assignedUserId ?? null;
   const repName = repId === null ? null : ((await memberNames(tx)).get(repId) ?? null);
 
-  // The company's own measuring: any window on any measurement of this address that did not come from the app.
+  // The company's own measuring since the request was sent: a window on a measurement of this address that did not come from the app.
   const propertyId = job?.propertyId ?? request.propertyId;
   let repMeasuredAt: Date | null = null;
   let order: HomeownerProgress['order'] = null;
@@ -283,17 +288,24 @@ export async function homeownerProgress(tx: Tx, ctx: TenantContext, request: Hom
     const measurements = await tx
       .select({ id: windowMeasurements.id, adjustments: windowMeasurements.adjustments, updatedAt: windowMeasurements.updatedAt })
       .from(windowMeasurements)
-      .where(and(eq(windowMeasurements.propertyId, propertyId), eq(windowMeasurements.companyId, ctx.companyId)))
-      .orderBy(desc(windowMeasurements.createdAt));
+      .where(and(eq(windowMeasurements.propertyId, propertyId), eq(windowMeasurements.companyId, ctx.companyId), notHomeownerMeasurement(tx)))
+      .orderBy(desc(windowMeasurements.createdAt))
+      .limit(PROGRESS_MEASUREMENTS);
     for (const m of measurements) {
-      const own = (m.adjustments.photoWindows ?? []).some((w) => w.source !== HOMEOWNER_APP_SOURCE);
+      const own = m.updatedAt > filed.filedAt && (m.adjustments.photoWindows ?? []).some((w) => w.source !== HOMEOWNER_APP_SOURCE);
       if (own && (repMeasuredAt === null || m.updatedAt > repMeasuredAt)) repMeasuredAt = m.updatedAt;
     }
     if (measurements.length > 0) {
       const orders = await tx
         .select({ status: windowOrders.status, readyAt: windowOrders.readyAt, sentAt: windowOrders.sentAt })
         .from(windowOrders)
-        .where(and(eq(windowOrders.companyId, ctx.companyId), inArray(windowOrders.windowMeasurementId, measurements.map((m) => m.id))))
+        .where(
+          and(
+            eq(windowOrders.companyId, ctx.companyId),
+            inArray(windowOrders.windowMeasurementId, measurements.map((m) => m.id)),
+            gt(windowOrders.createdAt, filed.filedAt),
+          ),
+        )
         .orderBy(desc(windowOrders.updatedAt));
       // The furthest order wins: sent, then ready, then draft.
       order = orders.find((o) => o.status === 'sent') ?? orders.find((o) => o.status === 'ready') ?? orders[0] ?? null;
