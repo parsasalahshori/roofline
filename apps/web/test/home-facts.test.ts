@@ -121,6 +121,11 @@ describe('canQuickApprove', () => {
     expect(canQuickApprove(makeTask({ id: 't', steps: [step({ canApprove: false })] }))).toBe(false);
   });
 
+  it('is not for a step that sends words to a customer: its text is read first, on the review screen', () => {
+    expect(canQuickApprove(makeTask({ id: 't', steps: [step({ approvalClass: 'message' })] }))).toBe(false);
+    expect(canQuickApprove(makeTask({ id: 't', steps: [step({ approvalClass: 'spend' })] }))).toBe(true);
+  });
+
   it('is not for a plan that ran out of time, or a step already decided', () => {
     expect(canQuickApprove(makeTask({ id: 't', expired: true, steps: [step()] }))).toBe(false);
     expect(canQuickApprove(makeTask({ id: 't', steps: [step({ status: 'done' })] }))).toBe(false);

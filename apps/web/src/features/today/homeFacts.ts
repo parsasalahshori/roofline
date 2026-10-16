@@ -79,12 +79,13 @@ export function approvalFacts(task: TaskView): ApprovalFact[] {
 }
 
 /**
- * Can the card approve in one tap? Only a plan with exactly one decision to make and nothing to look at first: the person
- * sees everything the plan does in its title and facts. A longer plan sends them to its review screen.
+ * Can the card approve in one tap? Only a plan with exactly one decision to make, that the person may make, and nothing
+ * they need to read first: its title and facts say what it does. A step that sends words to a customer is read before it
+ * goes, so it (like a longer plan) sends them to the review screen, where the exact text is.
  */
 export function canQuickApprove(task: TaskView): boolean {
   if (task.expired) return false;
   const open = task.steps.filter((step) => isOpen(step, task));
   const [only] = open;
-  return open.length === 1 && only !== undefined && only.canApprove;
+  return open.length === 1 && only !== undefined && only.canApprove && only.approvalClass !== 'message';
 }

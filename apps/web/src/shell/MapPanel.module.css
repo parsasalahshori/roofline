@@ -8,6 +8,8 @@
   border-radius: var(--r-3);
   background: var(--map-land);
   box-shadow: var(--e-1);
+  /* What floats over the map follows the map's own width, not the screen's: a laptop with a side column has a narrow map too */
+  container: mappanel / inline-size;
 }
 
 .loading {
@@ -28,8 +30,8 @@
   pointer-events: none;
 }
 
-/* Phone: the layer switch takes the top right of a narrow map, so the callout sits under it, across the width */
-@media (max-width: 767.98px) {
+/* A narrow map (a phone, or a laptop with the side column open): the layer switch takes the top right, so the callout sits under it, across the width */
+@container mappanel (max-width: 640px) {
   .overlay {
     top: 68px;
     right: 12px;

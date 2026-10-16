@@ -14,7 +14,7 @@
 
 .top {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 404px;
+  grid-template-columns: minmax(0, 1fr) clamp(340px, 28vw, 404px);
   gap: 14px;
   align-items: start;
   min-width: 0;
