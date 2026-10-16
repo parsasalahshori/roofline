@@ -20,7 +20,7 @@ const MIN_MARKER_PX = 22;
 
 type Found = { marker: SheetMarker; corners: Pt[] };
 
-function findMarkers(img: RgbaImage): { layout: SheetLayout; found: Found[] } | null {
+function findMarkers(img: RgbaImage): { layouts: SheetLayout[]; found: Found[] } | null {
   const maxSide = Math.max(img.width, img.height);
   // Finder resolutions: about 1000 and 2000 px on the long side (plus full size for small photos).
   const factors = [...new Set([Math.max(1, Math.round(maxSide / 1000)), Math.max(1, Math.round(maxSide / 2000))])];
@@ -44,9 +44,9 @@ function findMarkers(img: RgbaImage): { layout: SheetLayout; found: Found[] } | 
   }
   if (byId.size === 0) return null;
   const paper: SheetPaper = (papers.get('letter') ?? 0) >= (papers.get('a4') ?? 0) ? 'letter' : 'a4';
-  const layout = sheetLayout(paper);
-  const found = [...byId.values()].filter((f) => layout.markers.includes(f.marker));
-  return { layout, found };
+  const layouts = ([0, 1] as const).map((i) => sheetLayout(paper, i)).filter((l) => [...byId.values()].some((f) => l.markers.includes(f.marker)));
+  const found = [...byId.values()].filter((f) => layouts.some((l) => l.markers.includes(f.marker)));
+  return { layouts, found };
 }
 
 type EdgeResult = { line: Line; contrast: number } | null;
@@ -158,17 +158,13 @@ function inside(p: Pt, w: number, h: number, pad: number): boolean {
 }
 
 /** The sheet in the photo with subpixel points, or null when it is not there or too small/blurred/bent to trust. */
-export function detectSheetSync(img: RgbaImage): SheetDetection | null {
-  const markers = findMarkers(img);
-  if (markers === null) return null;
-  const { layout, found } = markers;
-  const g = toGray(img);
+/** One sheet (A or B) refined to subpixel points; null when it cannot carry a plane. */
+function refineSheet(img: RgbaImage, g: Gray, layout: SheetLayout, found: Found[]): { sheet: Pt[]; image: Pt[]; H: number[]; rmsPx: number } | null {
   // A first plane from the finder's rough corners (several pixels off at the shrunken resolution).
-  let sheetPts: Pt[] = found.flatMap((f) => markerCornersIn(f.marker));
-  let imgPts: Pt[] = found.flatMap((f) => f.corners);
+  const sheetPts: Pt[] = found.flatMap((f) => markerCornersIn(f.marker));
+  const imgPts: Pt[] = found.flatMap((f) => f.corners);
   let fit = sheetPts.length >= 4 ? fitSheetHomography(sheetPts, imgPts, { inlierPx: Math.max(6, 0.004 * Math.max(img.width, img.height)) }) : null;
   if (fit === null) return null;
-  // One marker alone gives a poor first plane; still worth refining (its own edges are measured exactly).
   let reach = Math.max(4, 0.003 * Math.max(img.width, img.height));
   let result: { sheet: Pt[]; image: Pt[] } | null = null;
   for (let pass = 0; pass < 3; pass++) {
@@ -198,19 +194,41 @@ export function detectSheetSync(img: RgbaImage): SheetDetection | null {
     const next = fitSheetHomography(sheet, image, { inlierPx: Math.max(1.5, reach / 2) });
     if (next === null) break;
     fit = next;
-    sheetPts = sheet.filter((_, i) => next.inliers[i]);
-    imgPts = image.filter((_, i) => next.inliers[i]);
-    result = { sheet: sheetPts, image: imgPts };
+    result = { sheet: sheet.filter((_, i) => next.inliers[i]), image: image.filter((_, i) => next.inliers[i]) };
     reach = Math.max(1.5, Math.min(reach, 4 * next.rmsPx + 1));
   }
-  if (result === null || result.sheet.length < 8 || !(fit.rmsPx <= DETECT_MAX_RMS_PX)) return null;
+  if (result === null || result.sheet.length < 8 || !(fit.rmsPx <= DETECT_MAX_RMS_PX) || invert3(fit.H) === null) return null;
+  return { ...result, H: fit.H, rmsPx: fit.rmsPx };
+}
+
+/**
+ * The sheet (or sheets A and B) in the photo with subpixel points, or null when none is there or it is too
+ * small/blurred/bent to trust. With two sheets, `sheetIndex` tells which sheet each point is on.
+ */
+export function detectSheetSync(img: RgbaImage): SheetDetection | null {
+  const markers = findMarkers(img);
+  if (markers === null) return null;
+  const g = toGray(img);
+  const sheets = markers.layouts
+    .map((layout) => ({ layout, r: refineSheet(img, g, layout, markers.found.filter((f) => layout.markers.includes(f.marker))) }))
+    .filter((x): x is { layout: SheetLayout; r: NonNullable<ReturnType<typeof refineSheet>> } => x.r !== null);
+  if (sheets.length === 0) return null;
+  const main = sheets[0]!;
+  const l = main.layout;
   const outlineIn: Pt[] = [
     [0, 0],
-    [layout.widthIn, 0],
-    [layout.widthIn, layout.heightIn],
-    [0, layout.heightIn],
+    [l.widthIn, 0],
+    [l.widthIn, l.heightIn],
+    [0, l.heightIn],
   ];
-  const outline = outlineIn.map((p) => applyH(fit.H, p)) as Quad;
-  if (invert3(fit.H) === null) return null;
-  return { paper: layout.paper, imagePoints: result.image, sheetPointsIn: result.sheet, rmsErrorPx: fit.rmsPx, outline };
+  const outline = outlineIn.map((p) => applyH(main.r.H, p)) as Quad;
+  const imagePoints = sheets.flatMap((s) => s.r.image);
+  const sheetPointsIn = sheets.flatMap((s) => s.r.sheet);
+  const rms = Math.sqrt(sheets.reduce((a, s) => a + s.r.rmsPx ** 2 * s.r.sheet.length, 0) / sheetPointsIn.length);
+  const det: SheetDetection = { paper: l.paper, imagePoints, sheetPointsIn, rmsErrorPx: rms, outline };
+  if (sheets.length === 2 || main.layout.index === 1) {
+    det.sheets = sheets.length;
+    det.sheetIndex = sheets.flatMap((s) => s.r.sheet.map(() => s.layout.index));
+  }
+  return det;
 }

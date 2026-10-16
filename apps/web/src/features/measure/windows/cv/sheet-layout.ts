@@ -15,10 +15,12 @@ const ROWS = 4;
 const MARGIN_IN = 0.5;
 /** Markers fill the top 8.7 in below the margin; the ruler and the words go underneath. */
 const MARKER_BAND_IN = 8.7;
-const FIRST_ID: Record<SheetPaper, number> = { letter: 0, a4: 12 };
+/** Sheet A and sheet B (two sheets on one big window) use different markers, so the engine knows which is which. */
+const FIRST_ID: Record<SheetPaper, [number, number]> = { letter: [0, 24], a4: [12, 36] };
+export type SheetIndex = 0 | 1;
 
 export type SheetMarker = { id: number; x: number; y: number; size: number; bits: string };
-export type SheetLayout = { paper: SheetPaper; widthIn: number; heightIn: number; markers: SheetMarker[] };
+export type SheetLayout = { paper: SheetPaper; index: SheetIndex; widthIn: number; heightIn: number; markers: SheetMarker[] };
 
 let codes: string[] | null = null;
 /** The dictionary's codes as 36-character bit strings, row-major, '1' = white cell. */
@@ -30,9 +32,10 @@ function markerBits(id: number): string {
   return codes[id]!;
 }
 
-const layouts = new Map<SheetPaper, SheetLayout>();
-export function sheetLayout(paper: SheetPaper): SheetLayout {
-  const hit = layouts.get(paper);
+const layouts = new Map<string, SheetLayout>();
+export function sheetLayout(paper: SheetPaper, index: SheetIndex = 0): SheetLayout {
+  const key = `${paper}${index}`;
+  const hit = layouts.get(key);
   if (hit !== undefined) return hit;
   const { widthIn, heightIn } = SHEET_PAPER_IN[paper];
   const gapX = (widthIn - 2 * MARGIN_IN - COLS * MARKER_IN) / (COLS - 1);
@@ -40,21 +43,23 @@ export function sheetLayout(paper: SheetPaper): SheetLayout {
   const markers: SheetMarker[] = [];
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
-      const id = FIRST_ID[paper] + r * COLS + c;
+      const id = FIRST_ID[paper][index] + r * COLS + c;
       markers.push({ id, x: MARGIN_IN + c * (MARKER_IN + gapX), y: MARGIN_IN + r * (MARKER_IN + gapY), size: MARKER_IN, bits: markerBits(id) });
     }
   }
-  const layout = { paper, widthIn, heightIn, markers };
-  layouts.set(paper, layout);
+  const layout = { paper, index, widthIn, heightIn, markers };
+  layouts.set(key, layout);
   return layout;
 }
 
 /** Which paper (and which marker) an id belongs to; null for ids not on either sheet. */
 export function markerById(id: number): { layout: SheetLayout; marker: SheetMarker } | null {
   for (const paper of ['letter', 'a4'] as const) {
-    const layout = sheetLayout(paper);
-    const marker = layout.markers.find((m) => m.id === id);
-    if (marker !== undefined) return { layout, marker };
+    for (const index of [0, 1] as const) {
+      const layout = sheetLayout(paper, index);
+      const marker = layout.markers.find((m) => m.id === id);
+      if (marker !== undefined) return { layout, marker };
+    }
   }
   return null;
 }
@@ -96,8 +101,8 @@ export function rulerSpec(paper: SheetPaper): { x: number; y: number; lengthIn: 
 const fmt = (v: number) => String(Math.round(v * 10000) / 10000);
 
 /** The printable sheet as an SVG sized in real inches (print at 100%). */
-export function calibrationSheetSvg(paper: SheetPaper): CalibrationSheet {
-  const layout = sheetLayout(paper);
+export function calibrationSheetSvg(paper: SheetPaper, index: SheetIndex = 0): CalibrationSheet {
+  const layout = sheetLayout(paper, index);
   const parts: string[] = [];
   for (const m of layout.markers) {
     const cell = m.size / MARKER_CELLS;
@@ -125,7 +130,7 @@ export function calibrationSheetSvg(paper: SheetPaper): CalibrationSheet {
     .map((t, i) => `<text x="${fmt(r.x + t.at + 0.03)}" y="${fmt(r.y + 0.45)}" font-size="0.14">${i}${i === 0 ? ` ${unit}` : ''}</text>`);
   const textY = r.y + 0.8;
   const words = [
-    `<text x="${fmt(MARGIN_IN)}" y="${fmt(textY)}" font-size="0.15" font-weight="bold">Window measuring sheet (${paper === 'letter' ? 'US Letter' : 'A4'})</text>`,
+    `<text x="${fmt(MARGIN_IN)}" y="${fmt(textY)}" font-size="0.15" font-weight="bold">Window measuring sheet ${index === 0 ? 'A' : 'B'} (${paper === 'letter' ? 'US Letter' : 'A4'})${index === 1 ? ': tape it in the corner of the glass opposite sheet A' : ''}</text>`,
     `<text x="${fmt(MARGIN_IN)}" y="${fmt(textY + 0.24)}" font-size="0.13">${r.label}</text>`,
     `<text x="${fmt(MARGIN_IN)}" y="${fmt(textY + 0.44)}" font-size="0.13">Tape it flat on the glass with every square in view. Photograph the whole window with the 1x camera.</text>`,
   ];

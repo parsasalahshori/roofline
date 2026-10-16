@@ -24,6 +24,8 @@ export type SynthScene = {
   aim?: Pt;
   window: { widthIn: number; heightIn: number; offsetIn: number; trimIn: number; frameIn: number; sashIn: number; grille: boolean };
   sheet: { paper: SheetPaper; xIn: number; yIn: number; rotDeg: number; curlIn: number } | null;
+  /** A second sheet (B) on the same glass, for big windows. */
+  sheet2?: { paper: SheetPaper; xIn: number; yIn: number; rotDeg: number; curlIn: number } | null;
   k1: number;
   light: { gain: number; gradX: number; gradY: number; vignette: number };
   colors: { wall: [number, number, number]; trim: [number, number, number]; frame: [number, number, number]; sash: [number, number, number] };
@@ -43,7 +45,7 @@ export type SynthPhoto = {
   windowQuad: Quad;
   /** The sheet's four paper corners and every marker corner, photo pixels (null without a sheet). */
   paperQuad: Quad | null;
-  markerCorners: { imagePoints: Pt[]; sheetPointsIn: Pt[] } | null;
+  markerCorners: { imagePoints: Pt[]; sheetPointsIn: Pt[]; sheetIndex: number[] } | null;
   /** Projection of a point on a plane `offsetIn` in front of the glass (photo pixels, with the lens distortion). */
   project: (x: number, y: number, z: number) => Pt;
   /** Inches per pixel near a point on the frame plane (for click-noise models). */
@@ -129,25 +131,35 @@ export function renderScene(sc: SynthScene): SynthPhoto {
     return [cx + f * xd, cy + f * yd];
   };
 
-  // Sheet placement on the glass: sheet (u, v) inches -> glass (x, y).
-  const sheet = sc.sheet;
-  const layout = sheet === null ? null : sheetLayout(sheet.paper);
-  const rot = sheet === null ? 0 : (sheet.rotDeg * Math.PI) / 180;
-  const cr = Math.cos(rot);
-  const sr = Math.sin(rot);
-  const toGlass = (u: number, v: number): [number, number] => (sheet === null ? [u, v] : [sheet.xIn + u * cr - v * sr, sheet.yIn + u * sr + v * cr]);
-  const toSheet = (x: number, y: number): [number, number] => {
-    const dx = x - (sheet?.xIn ?? 0);
-    const dy = y - (sheet?.yIn ?? 0);
-    return [dx * cr + dy * sr, -dx * sr + dy * cr];
-  };
-  // Curl: a gentle cylinder along the sheet's width, its middle lifted off the glass toward the camera.
-  const curl = (u: number): number => {
-    if (sheet === null || layout === null) return 0;
-    const t = (2 * u) / layout.widthIn - 1;
-    return sheet.curlIn * Math.max(0, 1 - t * t);
-  };
-  const ruler = sheet === null ? null : rulerSpec(sheet.paper);
+  // Sheets on the glass (A, and B on big windows): sheet (u, v) inches -> glass (x, y), curled toward the camera.
+  type PlacedSheet = { layout: ReturnType<typeof sheetLayout>; toGlass: (u: number, v: number) => [number, number]; toSheet: (x: number, y: number) => [number, number]; curl: (u: number) => number; ruler: ReturnType<typeof rulerSpec>; index: 0 | 1 };
+  const placed: PlacedSheet[] = [];
+  for (const [spec, index] of [
+    [sc.sheet, 0],
+    [sc.sheet2 ?? null, 1],
+  ] as const) {
+    if (spec === null) continue;
+    const layout = sheetLayout(spec.paper, index);
+    const rot = (spec.rotDeg * Math.PI) / 180;
+    const cr = Math.cos(rot);
+    const sr = Math.sin(rot);
+    placed.push({
+      layout,
+      index,
+      toGlass: (u, v) => [spec.xIn + u * cr - v * sr, spec.yIn + u * sr + v * cr],
+      toSheet: (x, y) => {
+        const dx = x - spec.xIn;
+        const dy = y - spec.yIn;
+        return [dx * cr + dy * sr, -dx * sr + dy * cr];
+      },
+      // Curl: a gentle cylinder along the sheet's width, its middle lifted off the glass toward the camera.
+      curl: (u) => {
+        const t = (2 * u) / layout.widthIn - 1;
+        return spec.curlIn * Math.max(0, 1 - t * t);
+      },
+      ruler: rulerSpec(spec.paper),
+    });
+  }
   const noise1 = valueNoise(sc.seed);
   const noise2 = valueNoise(sc.seed + 7);
 
@@ -204,17 +216,19 @@ export function renderScene(sc: SynthScene): SynthPhoto {
       const s = sc.colors.sash;
       return [s[0] * 0.7, s[1] * 0.7, s[2] * 0.7];
     }
-    // The sheet (taped on the glass, curled toward the camera).
-    if (sheet !== null && layout !== null) {
-      let [u, v] = toSheet(x0, y0);
+    // The sheets (taped on the glass, curled toward the camera).
+    for (const ps of placed) {
+      const layout = ps.layout;
+      const ruler = ps.ruler;
+      let [u, v] = ps.toSheet(x0, y0);
       for (let it = 0; it < 2; it++) {
-        const h = curl(u);
+        const h = ps.curl(u);
         const t = (-h - C[2]) / dz;
-        [u, v] = toSheet(C[0] + t * dx, C[1] + t * dy);
+        [u, v] = ps.toSheet(C[0] + t * dx, C[1] + t * dy);
       }
       if (u >= 0 && v >= 0 && u <= layout.widthIn && v <= layout.heightIn) {
         let ink = markerInk(layout, u, v);
-        if (!ink && ruler !== null) {
+        if (!ink) {
           if (v >= ruler.y && v <= ruler.y + 0.012 && u >= ruler.x && u <= ruler.x + ruler.lengthIn) ink = true;
           for (const tk of ruler.ticks) if (Math.abs(u - ruler.x - tk.at) <= 0.006 && v >= ruler.y && v <= ruler.y + tk.len) ink = true;
           // The words: grey blocks.
@@ -299,14 +313,15 @@ export function renderScene(sc: SynthScene): SynthPhoto {
   const windowQuad: Quad = [project(0, 0, -off), project(win.widthIn, 0, -off), project(win.widthIn, win.heightIn, -off), project(0, win.heightIn, -off)];
   let paperQuad: Quad | null = null;
   let markerCorners: SynthPhoto['markerCorners'] = null;
-  if (sheet !== null && layout !== null) {
-    const onGlass = (u: number, v: number): Pt => {
-      const [x, y] = toGlass(u, v);
-      return project(x, y, -curl(u));
+  if (placed.length > 0) {
+    const onGlass = (ps: PlacedSheet, u: number, v: number): Pt => {
+      const [x, y] = ps.toGlass(u, v);
+      return project(x, y, -ps.curl(u));
     };
-    paperQuad = [onGlass(0, 0), onGlass(layout.widthIn, 0), onGlass(layout.widthIn, layout.heightIn), onGlass(0, layout.heightIn)];
-    const sheetPointsIn = layout.markers.flatMap((m) => markerCornersIn(m));
-    markerCorners = { sheetPointsIn, imagePoints: sheetPointsIn.map(([u, v]) => onGlass(u, v)) };
+    const a = placed[0]!;
+    paperQuad = [onGlass(a, 0, 0), onGlass(a, a.layout.widthIn, 0), onGlass(a, a.layout.widthIn, a.layout.heightIn), onGlass(a, 0, a.layout.heightIn)];
+    const pts = placed.flatMap((ps) => ps.layout.markers.flatMap((m) => markerCornersIn(m)).map((q) => ({ q, ps })));
+    markerCorners = { sheetPointsIn: pts.map((x) => x.q), imagePoints: pts.map(({ q, ps }) => onGlass(ps, q[0], q[1])), sheetIndex: pts.map((x) => x.ps.index) };
   }
   const c0 = project(win.widthIn / 2, win.heightIn / 2, -off);
   const c1 = project(win.widthIn / 2 + 1, win.heightIn / 2, -off);

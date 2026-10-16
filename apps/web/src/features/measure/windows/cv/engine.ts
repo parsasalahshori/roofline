@@ -9,17 +9,17 @@ import { snapQuadSync } from './snap-quad.ts';
 const yieldToBrowser = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 export const windowPhotoCv: WindowPhotoCv = {
-  calibrationSheet: (paper) => calibrationSheetSvg(paper),
+  calibrationSheet: (paper, which) => calibrationSheetSvg(paper, which === 'B' ? 1 : 0),
   async detectSheet(img: RgbaImage) {
     await yieldToBrowser();
     return detectSheetSync(img);
   },
-  async snapQuad(img, rough) {
+  async snapQuad(img, rough, opts) {
     await yieldToBrowser();
-    return snapQuadSync(img, rough);
+    return snapQuadSync(img, rough, { sheet: opts?.sheet, target: opts?.target });
   },
   measure(input) {
-    const m = measureWithSheet({ ...input, imagePoints: input.sheet.imagePoints, sheetPointsIn: input.sheet.sheetPointsIn });
+    const m = measureWithSheet({ ...input, printScale: input.printScale, imagePoints: input.sheet.imagePoints, sheetPointsIn: input.sheet.sheetPointsIn, sheetIndex: input.sheet.sheetIndex });
     if (m === null) return null;
     return { widthIn: m.widthIn, heightIn: m.heightIn, uncertaintyIn: m.uncertaintyIn, distanceIn: m.distanceIn, viewAngleDeg: m.viewAngleDeg, warnings: m.warnings };
   },

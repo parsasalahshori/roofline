@@ -61,7 +61,8 @@ export type WindowPhotoMeasurement = {
 };
 
 export type WindowPhotoCv = {
-  calibrationSheet(paper: SheetPaper): CalibrationSheet;
+  /** The printable sheet; 'B' prints the second sheet for big windows (different markers), 'A' by default. */
+  calibrationSheet(paper: SheetPaper, which?: 'A' | 'B'): CalibrationSheet;
   /** Finds the measuring sheet; null when it is not in the photo or too blurred/small to trust. */
   detectSheet(img: RgbaImage): Promise<SheetDetection | null>;
   /**
