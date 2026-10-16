@@ -244,8 +244,12 @@
 }
 
 .method {
+  min-width: 0;
+  font-size: 13px;
   line-height: 1.15;
   text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .status {
