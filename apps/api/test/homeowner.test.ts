@@ -428,6 +428,14 @@ describe('photos', () => {
     expect(await count('window_measurements', t.seed.a.companyId)).toBe(1);
   });
 
+  test('a JSON body sent to the upload route is refused as not a photo, not left waiting', async () => {
+    const s = await start();
+    const res = await request(t.app).post(`${base()}/requests/${s.id}/uploads`).set('X-Forwarded-For', nextIp()).set('Authorization', `Bearer ${s.token}`).set('Content-Type', 'application/json').send({ photo: 'x' });
+    expect(res.status).toBe(415);
+    expect(res.body.code).toBe('unsupported_media');
+    expect(await count('window_measurements', t.seed.a.companyId)).toBe(0);
+  }, 20_000);
+
   test('multipart works too; garbage, a HEIC and an oversized photo are refused with their codes and nothing is stored', async () => {
     const s = await start();
     const multi = await request(t.app).post(`${base()}/requests/${s.id}/uploads`).set(auth(s)).attach('photo', Buffer.from(greyJpeg(3024, 4032)), 'w.jpg');

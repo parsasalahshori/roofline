@@ -338,8 +338,13 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
     res.setHeader('X-Robots-Tag', 'noindex');
     next();
   });
-  // JSON bodies only; a photo is raw bytes (image/jpeg) or multipart and is read by the upload route itself.
-  router.use(express.json({ limit: BODY_LIMIT }));
+  // JSON bodies only; a photo is raw bytes (image/jpeg) or multipart and is read by the upload route itself (so the JSON
+  // parser must not touch that route: a stream it has read cannot be read again, and the upload would wait for ever).
+  const json = express.json({ limit: BODY_LIMIT });
+  router.use((req, res, next) => {
+    if (/\/requests\/[^/]+\/uploads\/?$/i.test(req.path)) next();
+    else json(req, res, next);
+  });
 
   router.get(
     '/:slug/company',
