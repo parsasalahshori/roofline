@@ -63,15 +63,19 @@ export type PriceRange = { lowCents: number; highCents: number };
 const ROUND_CENTS = 10_000;
 
 /**
- * The range shown for a set of option totals: the cheapest less `pct` percent to the dearest plus `pct` percent,
- * rounded out to whole hundreds of dollars. Null when there is nothing to price.
+ * The range shown for a set of option totals: the middle option (the recommended one when there are three; the
+ * median otherwise) less and plus `pct` percent, rounded out to whole hundreds of dollars. Spanning the cheapest to
+ * the dearest option gave ranges too wide to be useful (a $9,100-$23,300 window job). Null when there is nothing to
+ * price.
  */
 export function priceRange(totalsCents: readonly number[], pct: number): PriceRange | null {
-  const ok = totalsCents.filter((c) => Number.isFinite(c) && c > 0);
+  const ok = totalsCents.filter((c) => Number.isFinite(c) && c > 0).sort((a, b) => a - b);
   if (ok.length === 0) return null;
   const share = Math.min(Math.max(pct, 0), 90) / 100;
-  const low = Math.min(...ok) * (1 - share);
-  const high = Math.max(...ok) * (1 + share);
+  const mid = ok.length % 2 === 1 ? ok[(ok.length - 1) / 2]! : (ok[ok.length / 2 - 1]! + ok[ok.length / 2]!) / 2;
+  // Whole cents first: 1,500,000 x 1.1 is 1,650,000.0000000002 in floating point, which would round out a step too far.
+  const low = Math.round(mid * (1 - share));
+  const high = Math.round(mid * (1 + share));
   const lowCents = Math.max(ROUND_CENTS, Math.floor(low / ROUND_CENTS) * ROUND_CENTS);
   const highCents = Math.max(lowCents + ROUND_CENTS, Math.ceil(high / ROUND_CENTS) * ROUND_CENTS);
   return { lowCents, highCents };
