@@ -7,7 +7,7 @@ import {
   type QuoteProduct,
   QUOTE_PRODUCTS,
 } from '@roofline/shared';
-import { companies, companySettings, measurements, quoteEstimates, quoteRequests } from '../schema/index.ts';
+import { companies, companySettings, jobs, measurements, quoteEstimates, quoteRequests } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { addActivity } from './activities.ts';
 import { audit } from './audit.ts';
@@ -226,23 +226,32 @@ const REPEAT_WINDOW_MS = 24 * 60 * 60 * 1000;
  * 'none': the page's box is recorded here as evidence, Ruling BF), the address (an owned address keeps its owner),
  * a Lead job (source 'web', the next step for today) with a timeline line of the ranges shown, the estimate's
  * measurement attached to the job when it has none, and the request row with the consent text, version, time and
- * the IP hash. The same phone again within a day is the same request: no second customer or job.
+ * the IP hash. The same phone for the same home within a day is the same request: no second job.
  */
 export async function createQuoteRequest(tx: Tx, ctx: TenantContext, input: QuoteRequestInput): Promise<QuoteRequestResult> {
   const { now } = input;
   await lockWebLead(tx, ctx.companyId, `quote:${input.phoneE164}`);
-  const [repeat] = await tx
-    .select({ id: quoteRequests.id, customerId: quoteRequests.customerId, jobId: quoteRequests.jobId })
-    .from(quoteRequests)
-    .where(and(eq(quoteRequests.companyId, ctx.companyId), eq(quoteRequests.phoneE164, input.phoneE164), gte(quoteRequests.createdAt, new Date(now.getTime() - REPEAT_WINDOW_MS))))
-    .orderBy(desc(quoteRequests.createdAt))
-    .limit(1);
-
   const phoneCustomer = await phoneCustomerFor(tx, ctx, input, now);
   const addressKey = normalizeAddressKey(input.property.addressLine, input.property.zip);
   await lockWebLead(tx, ctx.companyId, `address:${addressKey}`);
   const jobCustomer = await addressCustomerFor(tx, ctx, addressKey, phoneCustomer);
   const property = await addressRowFor(tx, ctx, input, addressKey, jobCustomer, now);
+
+  // The same phone for the same home within a day (a double send, a back button) is the same request.
+  const [repeat] = await tx
+    .select({ id: quoteRequests.id, customerId: quoteRequests.customerId, jobId: quoteRequests.jobId })
+    .from(quoteRequests)
+    .innerJoin(jobs, eq(jobs.id, quoteRequests.jobId))
+    .where(
+      and(
+        eq(quoteRequests.companyId, ctx.companyId),
+        eq(quoteRequests.phoneE164, input.phoneE164),
+        eq(jobs.propertyId, property.id),
+        gte(quoteRequests.createdAt, new Date(now.getTime() - REPEAT_WINDOW_MS)),
+      ),
+    )
+    .orderBy(desc(quoteRequests.createdAt))
+    .limit(1);
 
   if (repeat && repeat.customerId !== null && repeat.jobId !== null) {
     return { requestId: repeat.id, customerId: repeat.customerId, jobId: repeat.jobId, propertyId: property.id, created: false };

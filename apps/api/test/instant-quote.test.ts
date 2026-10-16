@@ -325,13 +325,18 @@ describe('POST /api/public/quote/:slug/lead', () => {
     expect(await count('customers', t.seed.a.companyId)).toBe(0);
   });
 
-  test('the same phone again within a day files no second job', async () => {
+  test('the same phone for the same home within a day files no second job; another home does', async () => {
     const e = await estimated();
     t.clock.advance(8000);
     expect((await lead(ACME, leadBody(e))).status).toBe(201);
     expect((await lead(ACME, leadBody(e))).status).toBe(201);
     expect(await count('jobs', t.seed.a.companyId)).toBe(1);
     expect(await count('quote_requests', t.seed.a.companyId)).toBe(1);
+    await q(`update company_settings set quote_daily_cap = 0 where company_id = $1`, [t.seed.a.companyId]);
+    const other = await estimated(ACME, '77 Other Rd, Omaha, NE 68102');
+    t.clock.advance(8000);
+    expect((await lead(ACME, leadBody(other))).status).toBe(201);
+    expect(await count('jobs', t.seed.a.companyId)).toBe(2);
   });
 
   test(`one IP sends ${QUOTE_RATE_LIMITS.leadsPerIpPerHour} requests an hour, then 429`, async () => {
