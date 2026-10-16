@@ -1,4 +1,4 @@
-/* The Storm tab: one column on a phone; the settings sections sit two to a row on a desktop, the messages across both */
+/* The Storm tab: the form's panels, then the photos, one under another */
 .page {
   display: flex;
   flex-direction: column;
@@ -6,38 +6,18 @@
   min-width: 0;
 }
 
-.form {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
-  min-width: 0;
-}
-
-.heading {
-  margin: 0 0 12px;
-  font-size: var(--font-size-body);
-  font-weight: 600;
-}
-
+/* A line of explanation under a control or above the photos */
 .help {
-  margin: 0 0 8px;
+  margin: 8px 0 0;
   color: var(--ink-3);
   font-size: var(--font-size-body);
 }
 
-/* The budget and the days, side by side on a desktop */
-.pair {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
-}
-
-/* The Google share slider is full width; the two live values sit under it */
+/* The Google share: a slider the width of the panel, its two ends named under it */
 .share {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-top: 16px;
 }
 
 .share input[type='range'] {
@@ -47,40 +27,41 @@
   accent-color: var(--brand);
 }
 
-.shareLine {
+.split {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 16px;
   margin: 0;
   color: var(--ink-3);
   font-size: var(--font-size-body);
 }
 
-.shareLine span {
+/* The two shares: mono, so the digits do not jump while the slider moves */
+.figure {
   color: var(--ink);
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
 
-/* Each template is a text box with its standard-text button under it */
+/* Each message is a text box with its standard-text button under it */
+.templates {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin-top: 16px;
+}
+
 .template {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-top: 16px;
   min-width: 0;
 }
 
 .template > button {
   align-self: flex-start;
-  min-height: 40px;
-}
-
-/* The messages section spans both columns on a desktop */
-.wide {
-  grid-column: 1 / -1;
-}
-
-.saveRow {
-  grid-column: 1 / -1;
-  display: flex;
-  justify-content: flex-start;
 }
 
 /* The photos: thumbnails of 96px, each with its Remove button under it, wrapping on a phone */
@@ -88,7 +69,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
   gap: 16px;
-  margin: 0 0 16px;
+  margin: 16px 0;
   padding: 0;
   list-style: none;
 }
@@ -106,20 +87,11 @@
   width: 96px;
   height: 96px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--r-3);
   object-fit: cover;
 }
 
-.photo > button {
-  min-height: 40px;
-}
-
-@media (min-width: 768px) {
-  .form {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .pair {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+/* The photo picker: a drop box and its button, no wider than a few thumbnails need */
+.picker {
+  max-width: 420px;
 }
