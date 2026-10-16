@@ -10,8 +10,8 @@ import RooflineCore
 ///   -debugCaps lidar|corners|card|none   what this phone claims it can measure with (the simulator has no camera)
 ///   -debugLatency <seconds>     how long each fake call takes
 ///   -debugE2E                   with -debugServer: walk the whole journey with synthetic windows and print "E2E ..." lines to stderr
-///                               (-debugE2EAddress "<address>" and -debugE2EServices windows,roof,gutters pick what it asks for;
-///                               run it with `xcrun simctl launch --console`)
+///                               (-debugE2EAddress "<address>" and -debugE2EServices windows,roof,gutters pick what it asks for,
+///                               -debugE2EPause <seconds> holds each main screen for a screenshot; run it with `xcrun simctl launch --console`)
 ///   -debugGo <step>             show a step of the saved request after opening (welcome address results coaching rooms list styles quote contact book booked status)
 ///   -debugOpen <name>           open a measuring screen over the scenario's: hud, hud-done, label, scan, needs-iphone, needs-pro,
 ///                               card, card3, card4, window2, window4, windowdart (use with -debugScenario method)
@@ -30,6 +30,8 @@ enum HomeownerDebug {
         var go: String?
         /// `-debugE2EServices windows,roof,gutters` (any of them).
         var e2eServices: Set<HomeownerService> = [.windows, .roof, .gutters]
+        /// `-debugE2EPause <seconds>`: hold each main screen that long ("E2E show <screen>" is printed when it is up).
+        var e2ePause = 0.0
 
         init(arguments: [String]) {
             func value(_ name: String) -> String? {
@@ -45,6 +47,7 @@ enum HomeownerDebug {
             e2e = arguments.contains("-debugE2E")
             if let a = value("-debugE2EAddress") { e2eAddress = a }
             go = value("-debugGo")
+            e2ePause = value("-debugE2EPause").flatMap(Double.init) ?? 0
             if let list = value("-debugE2EServices") {
                 e2eServices = Set(list.split(separator: ",").compactMap { HomeownerService(rawValue: String($0)) })
             }

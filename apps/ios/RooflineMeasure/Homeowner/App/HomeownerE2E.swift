@@ -6,11 +6,18 @@ import UIKit
 /// `-debugServer <url> -debugE2E`: walks the whole journey against the server the app is pointed at, with synthetic windows (a
 /// drawn window, no camera), and prints what each step got ("E2E ..." lines on stdout). It is the way to try the app against the
 /// real API without a camera or a person: the same store calls the screens make, the real HTTP, the real Keychain. The request it
-/// makes stays saved, so the next launch opens on it (use `-debugGo list|styles|quote|contact|book|status` to look at a screen).
+/// makes stays saved (where the Keychain allows), so the next launch opens on it (use `-debugGo list|styles|quote|contact|book|status`
+/// to look at a screen). With `-debugE2EPause <seconds>` it holds each main screen that long and prints "E2E show <screen>" when it
+/// is up, so a script can take a screenshot of the app running on the real server's data.
 enum HomeownerE2E {
     @MainActor
-    static func run(store: HomeownerStore, address: String, services: Set<HomeownerService> = [.windows, .roof, .gutters]) async {
+    static func run(store: HomeownerStore, address: String, services: Set<HomeownerService> = [.windows, .roof, .gutters], pause: Double = 0) async {
         func say(_ line: String) { fputs("E2E \(line)\n", stderr) }
+        func beat(_ screen: String) async {
+            guard pause > 0 else { return }
+            say("show \(screen)")
+            try? await Task.sleep(nanoseconds: UInt64(pause * 1_000_000_000))
+        }
         func rows() -> String { store.windowRows.map { "\($0.number):\($0.room):\($0.sizeText):\(describe($0.send))" }.joined(separator: " | ") }
         func describe(_ s: WindowRow.Send) -> String {
             switch s {
@@ -34,6 +41,7 @@ enum HomeownerE2E {
         }
         say("keychain saved=\(store.vault.load() != nil) notice=\(store.notice?.text ?? "none")")
         say("request \(session.requestId) status=\(store.requestStatus.rawValue) reason=\(store.callbackReason ?? "-") address=\(store.address)")
+        await beat("results")
         say("estimate windows=\(store.windowEstimate.map { "\($0.low)-\($0.high) likely \($0.likely)" } ?? "none") roof=\(store.roofEstimate.map { "$\($0.low)-\($0.high) \($0.squares.map { String($0) } ?? "?") sq" } ?? "none") gutters=\(store.estimate?.gutters ?? "none") floors=\(store.home?.floors.map { String($0) } ?? "nil") outline=\(store.home?.outline == nil ? "none" : "yes")")
         let contact = HomeownerContact(firstName: "Alex", lastName: "Rivera", phone: "(402) 555-0147", email: "alex@example.com", zip: "68132", contactConsent: true, textConsent: false)
         guard store.requestStatus == .ready else {
@@ -90,10 +98,16 @@ enum HomeownerE2E {
         await save(.card, room: "Hall", name: "Mistap", scale: .card(CardScale(cardCorners: cardCorners)), corners: crossed, photo: cardPhoto)
         if let id = store.windowRows.last?.id { await store.setStyle("picture", for: id) }
         await store.outbox.syncAll()
+        store.outboxChanged(await store.outbox.items)
         say("a refused window: \(rows())")
+        await beat("list-refused")
         if let bad = store.windowRows.last(where: { if case .failed = $0.send { return true } else { return false } }) {
             await store.removeWindow(bad.id)
         }
+
+        store.showList()
+        await store.refresh()
+        await beat("list")
 
         // Styles: everything released, then the quote
         let kinds: [String: String] = ["Kitchen": "double-hung", "Bedroom 1": "slider-2", "Living room": "picture"]
@@ -101,6 +115,7 @@ enum HomeownerE2E {
         await store.outbox.syncAll()
         await store.finishStyles()
         say("windows after styles: \(rows())")
+        await beat("quote")
         if let q = store.quote {
             say("quote measured=\(q.measuredCount) estimated=\(q.estimatedCount) tiers=\(q.tiers.map { "\($0.key):\(Int($0.total))" }) hint=\(q.missingHint?.text ?? "none")")
         } else {
@@ -112,14 +127,20 @@ enum HomeownerE2E {
         // Contact, visit, status
         store.contactDraft = contact
         await store.prepareContact()
+        store.bookFromQuote()
+        await beat("contact")
         await store.submitContact()
         say("contact filed=\(store.hasContact) error=\(store.contactError ?? "none") errors=\(store.contactErrors.keys.map { $0.rawValue })")
         await store.loadSlots()
+        await beat("book")
         say("slots \(store.slots?.slots.count ?? 0) zone=\(store.slots?.timeZone ?? "?") first=\(store.slots?.slots.first?.start ?? "none")")
         store.pickedSlot = store.slots?.slots.first
         await store.bookPicked()
+        await beat("booked")
         say("booked root=\(store.root) visit=\(store.visitStart.map { "\($0)" } ?? "none") error=\(store.bookError ?? "none")")
         await store.loadStatus()
+        store.showStatus()
+        await beat("status")
         say("status stage=\(store.status?.stage.rawValue ?? "none") rep=\(store.repName ?? "none") dates=\(store.status?.dates ?? [:])")
         say("done")
     }

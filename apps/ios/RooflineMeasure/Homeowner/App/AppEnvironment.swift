@@ -32,8 +32,8 @@ enum AppEnvironment {
         if let server = options.server, let url = URL(string: server) {
             let store = makeLive(url: url, brand: brand, features: options.features)
             if options.e2e {
-                let address = options.e2eAddress, services = options.e2eServices
-                store.debugAfterLaunch = { store in await HomeownerE2E.run(store: store, address: address, services: services) }
+                let address = options.e2eAddress, services = options.e2eServices, pause = options.e2ePause
+                store.debugAfterLaunch = { store in await HomeownerE2E.run(store: store, address: address, services: services, pause: pause) }
             }
             if let go = options.go, let step = HomeownerStep(rawValue: go) { store.debugGo = step }
             return store
