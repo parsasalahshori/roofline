@@ -7,6 +7,7 @@ export const schedule = {
   loadFailed: 'We could not load the schedule.',
 
   companyTitle: 'Company hours',
+  rulesTitle: 'Scheduling rules',
   yourTitle: 'Your hours',
   useCompanyHours: 'Use the company hours',
   // Who may change the company hours, shown to everyone else

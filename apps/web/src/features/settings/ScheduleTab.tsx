@@ -1,12 +1,14 @@
-import { useId, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { WEEKDAYS, type ScheduleSettings, type WorkHours, type Weekday } from '@roofline/shared';
-import { Button, EmptyState, Field, Skeleton, Toggle, useToast } from '@roofline/ui';
+import { Button, EmptyState, Field, Icon, Panel, Skeleton, Toggle, useToast } from '@roofline/ui';
 import { ApiError } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
 import { errors } from '../../copy/errors.ts';
 import { schedule } from '../../copy/schedule.ts';
 import { useMyHours, useSaveMyHours, useSaveScheduleSettings, useScheduleSettings, type MyHours } from './crm-api.ts';
 import { WorkHoursEditor } from './WorkHoursEditor.tsx';
+import form from './form.module.css';
+import { SaveBar } from './SaveBar.tsx';
 import styles from './ScheduleTab.module.css';
 
 /** The three numbers of the company settings, as the API names them. */
@@ -106,8 +108,7 @@ function toCompanyForm(settings: ScheduleSettings): CompanyForm {
 
 /** Company work hours and settings. The owner edits them; everyone else reads them. */
 function CompanySection({ settings, canEdit }: { settings: ScheduleSettings; canEdit: boolean }) {
-  const headingId = useId();
-  const [form, setForm] = useState(() => toCompanyForm(settings));
+  const [values, setValues] = useState(() => toCompanyForm(settings));
   // The values the form was last loaded or saved with, so a background refresh does not look like a change
   const [baseline, setBaseline] = useState(() => toCompanyForm(settings));
   const [problems, setProblems] = useState<Problems>({ days: {} });
@@ -115,8 +116,8 @@ function CompanySection({ settings, canEdit }: { settings: ScheduleSettings; can
   const toast = useToast();
 
   const changed =
-    JSON.stringify(form.workHours) !== JSON.stringify(baseline.workHours) ||
-    NUMBER_KEYS.some((key) => form[key] !== baseline[key]);
+    JSON.stringify(values.workHours) !== JSON.stringify(baseline.workHours) ||
+    NUMBER_KEYS.some((key) => values[key] !== baseline[key]);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -124,21 +125,21 @@ function CompanySection({ settings, canEdit }: { settings: ScheduleSettings; can
     // Only the form's shape is checked here; whether the hours fit together is the server's call
     const numbers = {} as Record<NumberKey, number>;
     for (const key of NUMBER_KEYS) {
-      const text = form[key].trim();
+      const text = values[key].trim();
       if (!WHOLE_NUMBER.test(text)) {
         setProblems({ days: {}, number: { key, message: schedule.notWholeNumber } });
         return;
       }
       numbers[key] = Number(text);
     }
-    const body: ScheduleSettings = { workHours: form.workHours, ...numbers };
+    const body: ScheduleSettings = { workHours: values.workHours, ...numbers };
     setProblems({ days: {} });
     save.mutate(body, {
       onSuccess: (saved) => {
         // The server may have tidied the values: show those
         const next = toCompanyForm(saved);
         setBaseline(next);
-        setForm(next);
+        setValues(next);
         toast.show(schedule.saved, 'success');
       },
       onError: (error) => {
@@ -150,48 +151,59 @@ function CompanySection({ settings, canEdit }: { settings: ScheduleSettings; can
   }
 
   return (
-    <section className={styles.section} aria-labelledby={headingId}>
-      <h2 id={headingId} className={styles.heading}>
-        {schedule.companyTitle}
-      </h2>
-      {canEdit ? null : <p className={styles.note}>{schedule.ownerOnlyNote}</p>}
-      <form className={styles.form} onSubmit={submit} noValidate>
+    <form className={form.form} onSubmit={submit} noValidate>
+      <Panel title={schedule.companyTitle} padded={false}>
+        {canEdit ? null : (
+          <p className={`${form.note} ${styles.note}`}>
+            <Icon name="lock" size={16} />
+            {schedule.ownerOnlyNote}
+          </p>
+        )}
         <WorkHoursEditor
-          value={form.workHours}
-          onChange={(next) => setForm((current) => ({ ...current, workHours: next }))}
+          value={values.workHours}
+          onChange={(next) => setValues((current) => ({ ...current, workHours: next }))}
           disabled={!canEdit}
           errors={problems.days}
         />
-        <div className={styles.numbers}>
-          {NUMBER_KEYS.map((key) => (
-            <Field
-              key={key}
-              name={key}
-              type="number"
-              inputMode="numeric"
-              min={0}
-              step={1}
-              label={NUMBER_LABELS[key]}
-              value={form[key]}
-              readOnly={!canEdit}
-              error={problems.number?.key === key ? problems.number.message : undefined}
-              onChange={(event) => setForm((current) => ({ ...current, [key]: event.target.value }))}
-            />
-          ))}
+        <div className={styles.rules}>
+          <h3 className={form.group}>{schedule.rulesTitle}</h3>
+          <div className={styles.numbers}>
+            {NUMBER_KEYS.map((key) => (
+              <Field
+                key={key}
+                name={key}
+                type="number"
+                inputMode="numeric"
+                min={0}
+                step={1}
+                label={NUMBER_LABELS[key]}
+                value={values[key]}
+                readOnly={!canEdit}
+                error={problems.number?.key === key ? problems.number.message : undefined}
+                onChange={(event) => setValues((current) => ({ ...current, [key]: event.target.value }))}
+              />
+            ))}
+          </div>
         </div>
-        {canEdit ? (
-          <Button className={styles.save} type="submit" variant="primary" busy={save.isPending} disabled={!changed}>
-            {schedule.save}
-          </Button>
-        ) : null}
-      </form>
-    </section>
+      </Panel>
+      {canEdit ? (
+        <SaveBar
+          dirty={changed}
+          saving={save.isPending}
+          saveLabel={schedule.save}
+          onDiscard={() => {
+            save.reset();
+            setValues(baseline);
+            setProblems({ days: {} });
+          }}
+        />
+      ) : null}
+    </form>
   );
 }
 
 /** The person's own hours: the company hours, or their own when they turn that switch off. */
 function YourHours({ mine }: { mine: MyHours }) {
-  const headingId = useId();
   // The hours being edited. Null while the person follows the company hours or has no edits to save.
   const [draft, setDraft] = useState<WorkHours | null>(null);
   const [problems, setProblems] = useState<Problems>({ days: {} });
@@ -245,33 +257,29 @@ function YourHours({ mine }: { mine: MyHours }) {
   }
 
   return (
-    <section className={styles.section} aria-labelledby={headingId}>
-      <h2 id={headingId} className={styles.heading}>
-        {schedule.yourTitle}
-      </h2>
-      <div className={styles.switchRow}>
-        <Toggle
-          checked={!editing}
-          label={schedule.useCompanyHours}
-          disabled={save.isPending}
-          onChange={followCompany}
+    <form className={form.form} onSubmit={submit} noValidate>
+      <Panel
+        title={schedule.yourTitle}
+        padded={false}
+        actions={
+          <Toggle checked={!editing} label={schedule.useCompanyHours} disabled={save.isPending} onChange={followCompany} />
+        }
+      >
+        {editing ? (
+          <WorkHoursEditor value={shown} onChange={setDraft} disabled={save.isPending} errors={problems.days} />
+        ) : null}
+      </Panel>
+      {draft !== null ? (
+        <SaveBar
+          dirty
+          saving={save.isPending}
+          saveLabel={schedule.save}
+          onDiscard={() => {
+            setDraft(null);
+            setProblems({ days: {} });
+          }}
         />
-      </div>
-      {editing ? (
-        <form className={styles.form} onSubmit={submit} noValidate>
-          <WorkHoursEditor
-            value={shown}
-            onChange={setDraft}
-            disabled={save.isPending}
-            errors={problems.days}
-          />
-          {draft !== null ? (
-            <Button className={styles.save} type="submit" variant="primary" busy={save.isPending}>
-              {schedule.save}
-            </Button>
-          ) : null}
-        </form>
       ) : null}
-    </section>
+    </form>
   );
 }

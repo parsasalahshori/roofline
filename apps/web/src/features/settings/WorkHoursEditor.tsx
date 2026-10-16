@@ -1,5 +1,5 @@
 import { WEEKDAYS, type WorkHours, type Weekday } from '@roofline/shared';
-import { Button, Field, Toggle } from '@roofline/ui';
+import { Button, Field, Icon, Toggle } from '@roofline/ui';
 import { schedule } from '../../copy/schedule.ts';
 import styles from './WorkHoursEditor.module.css';
 
@@ -45,7 +45,7 @@ export type WorkHoursEditorProps = {
   errors?: Partial<Record<Weekday, string>>;
 };
 
-/** Weekly hours: per weekday an on/off switch and up to three time ranges. Fully controlled. */
+/** Weekly hours: per weekday an on/off switch and up to three time ranges, one day to a row. Fully controlled. */
 export function WorkHoursEditor({ value, onChange, disabled = false, errors }: WorkHoursEditorProps) {
   function setDay(day: Weekday, ranges: [string, string][]) {
     onChange({ ...value, [day]: ranges });
@@ -90,41 +90,54 @@ export function WorkHoursEditor({ value, onChange, disabled = false, errors }: W
                     <Field
                       type="time"
                       label={schedule.start}
+                      labelHidden
                       aria-label={`${name} ${schedule.start}`}
                       value={range[0]}
                       disabled={disabled}
                       onChange={(event) => setRange(day, index, 0, event.target.value)}
                       className={styles.time}
                     />
+                    <span className={styles.to} aria-hidden="true">
+                      {'–'}
+                    </span>
                     <Field
                       type="time"
                       label={schedule.end}
+                      labelHidden
                       aria-label={`${name} ${schedule.end}`}
                       value={range[1]}
                       disabled={disabled}
                       onChange={(event) => setRange(day, index, 1, event.target.value)}
                       className={styles.time}
                     />
-                    <Button
-                      variant="ghost"
-                      disabled={disabled || ranges.length === 1}
-                      onClick={() => setDay(day, ranges.filter((_, position) => position !== index))}
-                    >
-                      {schedule.removeRange}
-                    </Button>
+                    {/* A day's last range is not removed: the switch closes the day */}
+                    {ranges.length > 1 ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={disabled}
+                        onClick={() => setDay(day, ranges.filter((_, position) => position !== index))}
+                      >
+                        {schedule.removeRange}
+                      </Button>
+                    ) : null}
                   </div>
                 ))}
                 {ranges.length < MAX_RANGES ? (
                   <Button
                     variant="ghost"
+                    size="sm"
                     disabled={disabled}
                     onClick={() => setDay(day, [...ranges, nextRange(ranges)])}
                   >
+                    <Icon name="plus" size={16} />
                     {schedule.addRange}
                   </Button>
                 ) : null}
               </div>
-            ) : null}
+            ) : (
+              <span />
+            )}
             {problem ? (
               <p role="alert" className={styles.error}>
                 {problem}
