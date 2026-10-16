@@ -290,3 +290,10 @@
   font-size: 13px;
   line-height: 1.4;
 }
+
+.arNote {
+  margin: 8px 0 0;
+  color: var(--ds-text-2, #3a444d);
+  font-size: 13px;
+  line-height: 1.4;
+}

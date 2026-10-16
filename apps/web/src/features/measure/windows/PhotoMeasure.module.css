@@ -10,7 +10,8 @@
 .methods {
   display: grid;
   flex: none;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
   gap: 4px;
   padding: 4px;
   border-radius: 12px;
@@ -40,6 +41,17 @@
   font-weight: 600;
 }
 
+/* Four tabs (AR shown) on a phone: tighter, and "Recommended" never breaks mid-word */
+.methods:has(> :nth-child(4)) .method {
+  padding: 4px 2px;
+  font-size: 13px;
+}
+
+.methods:has(> :nth-child(4)) .recommended {
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
 .hint {
   flex: none;
   margin: 0;
@@ -58,6 +70,28 @@
   border-radius: 12px;
   background: #1d2329;
   container-type: size;
+}
+
+.area[hidden] {
+  display: none;
+}
+
+/* AR (Android): the intro / the session, and the measurement kept (its photo with the corners drawn in). */
+.arPanel {
+  display: grid;
+  flex: none;
+  gap: 10px;
+}
+
+.arKept {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.arThumb {
+  position: relative;
+  width: min(100%, 240px);
 }
 
 .frame {

@@ -10,6 +10,7 @@ import {
   SHEET_MAX_RMS_PX,
   SHEET_MIN_POINTS,
   STEEP_CHECK_DEG,
+  sizeFromArPoints,
   sizeFromKnownSide,
   sizeFromReference,
   WINDOW_PHOTO_REFERENCES,
@@ -194,6 +195,15 @@ export function sizePhotoWindow(input: PhotoWindowInput, photo: { widthPx: numbe
     const r2 = (v: number) => Math.round(v * 100) / 100;
     extra = { uncertaintyIn: { width: r2(m.uncertaintyIn.width), height: r2(m.uncertaintyIn.height) }, distanceIn: Math.round(m.distanceIn), viewAngleDeg: Math.round(m.viewAngleDeg * 10) / 10 };
     step = 100;
+  } else if (s.kind === 'ar') {
+    // AR: the size is the distance between the tapped points (metres in AR space); the photo only carries the thumbnail.
+    if (arProblem(input) !== null) return null;
+    const m = sizeFromArPoints(s.pointsM)!;
+    size = { widthIn: m.widthIn, heightIn: m.heightIn };
+    good = m.quality === 'good' && s.trackingLostCount <= AR_MAX_TRACKING_LOST;
+    const r2 = (v: number) => Math.round(v * 100) / 100;
+    extra = { uncertaintyIn: { width: r2(m.uncertaintyIn.width), height: r2(m.uncertaintyIn.height) }, distanceIn: null, viewAngleDeg: null };
+    step = 100;
   } else {
     size = sizeFromKnownSide(input.corners, photo.widthPx, photo.heightPx, s.side, s.inches, focalPx);
   }
@@ -218,5 +228,25 @@ export function sheetProblem(input: PhotoWindowInput, photo: { widthPx: number; 
   const m = measureWithSheet({ widthPx: photo.widthPx, heightPx: photo.heightPx, focalPx, imagePoints: s.imagePoints, sheetPointsIn: s.sheetPointsIn, sheetIndex: s.sheetIndex, printScale: s.printScale, windowQuad: input.corners, planeOffsetIn: s.planeOffsetIn });
   if (m === null) return 'the measuring sheet\'s points do not fit a flat sheet';
   if (m.rmsPx > SHEET_MAX_RMS_PX) return `the measuring sheet is not flat or the photo is blurred (fit error ${m.rmsPx.toFixed(1)} px)`;
+  return null;
+}
+
+/** AR sizes outside this (inches, either side) are not a window: refused with a 422 naming the window. */
+export const AR_MIN_IN = 6;
+export const AR_MAX_IN = 200;
+/** AR losing the wall more often than this while the corners were tapped: the window is 'check' (the points may have drifted). */
+export const AR_MAX_TRACKING_LOST = 3;
+
+/**
+ * Why a window measured in AR cannot be sized, in words for the person; null when it can (or it was not measured in
+ * AR): degenerate points, or a size outside 6..200 in.
+ */
+export function arProblem(input: PhotoWindowInput): string | null {
+  const s = input.scale;
+  if (s.kind !== 'ar') return null;
+  const m = sizeFromArPoints(s.pointsM);
+  if (m === null) return 'its AR corners are on top of each other or in a line';
+  const out = (v: number) => !(v >= AR_MIN_IN && v <= AR_MAX_IN);
+  if (out(m.widthIn) || out(m.heightIn)) return `its AR size ${m.widthIn.toFixed(1)} x ${m.heightIn.toFixed(1)} in is outside ${AR_MIN_IN} to ${AR_MAX_IN} in`;
   return null;
 }

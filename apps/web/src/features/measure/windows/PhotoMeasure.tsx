@@ -1,6 +1,7 @@
 import { Banner, Button, Checkbox, Field, Select } from '@roofline/ui';
 import {
   photoWindowKey,
+  sizeFromArPoints,
   WINDOW_PHOTO_REFERENCES,
   type PhotoWindow,
   type PhotoWindowInput,
@@ -12,7 +13,7 @@ import {
   type WindowPhotoScale,
   type WindowPhotoUpload,
 } from '@roofline/shared';
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { windowPhotos as copy } from '../../../copy/measureWindows.ts';
 import { newMarkId } from './model.ts';
 import {
@@ -37,9 +38,12 @@ import {
   type PlaneTarget,
 } from './photoModel.ts';
 import { useSheetPhoto } from './useSheetPhoto.ts';
+import type { ArResult } from './ar/ArMeasure.tsx';
+import { useArSupport } from './ar/arSupport.ts';
+import { LazyArMeasure } from './ar/lazy.ts';
 import styles from './PhotoMeasure.module.css';
 
-type Method = 'sheet' | 'reference' | 'known-side';
+type Method = 'ar' | 'sheet' | 'reference' | 'known-side';
 type Which = 'window' | 'paper';
 type Drag = { which: Which; i: number; x: number; y: number; fw: number; fh: number };
 /** The last snap (or proposal): per-side confidence, corner noise, rival edges and the ranked outlines. */
@@ -55,6 +59,10 @@ const LOUPE_PX = 112;
 const LOUPE_ZOOM = 3;
 const PAPERS = Object.keys(WINDOW_PHOTO_REFERENCES) as WindowPhotoReference[];
 const METHODS: Method[] = ['sheet', 'reference', 'known-side'];
+const METHODS_WITH_AR: Method[] = ['ar', ...METHODS];
+
+/** An AR measurement as the screen keeps it: the 3D corners and the photo (with the corners drawn in) kept with them. */
+type ArKept = Pick<ArResult, 'pointsM' | 'trackingLostCount' | 'corners'> & { uploadId: string; projected: boolean | null };
 const TARGETS = Object.keys(PLANE_TARGETS) as (keyof typeof PLANE_TARGETS)[];
 
 /** One corner of a quad moved to (x, y), kept on the photo. */
@@ -87,6 +95,9 @@ export function PhotoMeasure({
   groups = [],
   live = [],
   defaultWindowKey,
+  initialAr,
+  uploadPhoto,
+  srcFor,
 }: {
   upload: WindowPhotoUpload;
   src: string;
@@ -103,11 +114,28 @@ export function PhotoMeasure({
   live?: readonly PhotoWindow[];
   /** The window this new photo is of (from "Add another photo of …"). */
   defaultWindowKey?: string | undefined;
+  /** A measurement just made in AR (from "Measure with AR" on the photos screen): opens on the AR method with it. */
+  initialAr?: ArResult | undefined;
+  /** Sends a picture to the measurement (AR keeps one camera picture, or asks for a photo). */
+  uploadPhoto?: ((file: File) => Promise<WindowPhotoUpload>) | undefined;
+  /** Where any upload of this measurement is served (the AR picture is a new upload). */
+  srcFor?: ((uploadId: string) => string) | undefined;
 }) {
   const W = upload.widthPx;
   const H = upload.heightPx;
   const initialScale = initial?.scale;
-  const [method, setMethod] = useState<Method>(initialScale?.kind ?? 'sheet');
+  const [method, setMethod] = useState<Method>(initialAr !== undefined ? 'ar' : (initialScale?.kind ?? 'sheet'));
+  const arSupport = useArSupport();
+  const [ar, setAr] = useState<ArKept | null>(
+    initialAr !== undefined
+      ? { pointsM: initialAr.pointsM, trackingLostCount: initialAr.trackingLostCount, corners: initialAr.corners, uploadId: initialAr.upload.id, projected: initialAr.projected }
+      : initialScale?.kind === 'ar' && initial !== null
+        ? { pointsM: initialScale.pointsM, trackingLostCount: initialScale.trackingLostCount, corners: initial.corners, uploadId: initial.uploadId, projected: null }
+        : null,
+  );
+  const [arAgain, setArAgain] = useState(false);
+  // AR shows (first) where the phone supports it, and always for a window already measured in AR
+  const methods = arSupport === 'supported' || ar !== null ? METHODS_WITH_AR : METHODS;
   const [windowQuad, setWindowQuad] = useState<Quad>(initial?.corners ?? seedWindowQuad(W, H));
   const [reference, setReference] = useState<WindowPhotoReference>(initialScale?.kind === 'reference' ? initialScale.reference : 'letter');
   const [paperQuad, setPaperQuad] = useState<Quad>(
@@ -210,8 +238,14 @@ export function PhotoMeasure({
   const cornerSigmaPx = onChosen ? snapInfo.cornerSigmaPx : undefined;
 
   const inches = Number.parseFloat(inchesText);
+  const arMode = method === 'ar';
+  const arSize = arMode && ar !== null ? sizeFromArPoints(ar.pointsM) : null;
   const scale: WindowPhotoScale | null =
-    method === 'reference'
+    method === 'ar'
+      ? ar !== null
+        ? { kind: 'ar', pointsM: ar.pointsM, trackingLostCount: ar.trackingLostCount }
+        : null
+      : method === 'reference'
       ? { kind: 'reference', reference, corners: paperQuad }
       : method === 'known-side'
         ? { kind: 'known-side', side, inches: Number.isFinite(inches) ? inches : 0 }
@@ -231,10 +265,10 @@ export function PhotoMeasure({
       ? null
       : {
           id: initial?.id ?? '',
-          uploadId: upload.id,
+          uploadId: arMode && ar !== null ? ar.uploadId : upload.id,
           ...(label.trim() !== '' && { label: label.trim() }),
           ...(groupKey !== '' && groupKey !== initial?.id && { windowKey: groupKey }),
-          corners: windowQuad,
+          corners: arMode && ar !== null ? ar.corners : windowQuad,
           scale,
         };
   const unchanged = saved !== null && input !== null && sizingKey(saved) === sizingKey(input);
@@ -269,7 +303,7 @@ export function PhotoMeasure({
       : input !== null
         ? sizePhotoWindow(input, upload)
         : null;
-  const uncertainty = unchanged ? (saved.uncertaintyIn ?? null) : (measurement?.uncertaintyIn ?? null);
+  const uncertainty = unchanged ? (saved.uncertaintyIn ?? null) : arMode ? (arSize?.uncertaintyIn ?? null) : (measurement?.uncertaintyIn ?? null);
   const uMax = uncertainty === null ? null : Math.max(uncertainty.width, uncertainty.height);
   const warnings = sheetMode && !unchanged ? (measurement?.warnings ?? []) : [];
   const distanceIn = unchanged ? (saved.distanceIn ?? null) : (measurement?.distanceIn ?? null);
@@ -469,23 +503,62 @@ export function PhotoMeasure({
   const showsSize = size !== null;
   const sizeText = !showsSize
     ? null
-    : sheetMode || (unchanged && saved.scale.kind === 'sheet')
+    : sheetMode || arMode || (unchanged && (saved.scale.kind === 'sheet' || saved.scale.kind === 'ar'))
       ? copy.sizeExact(inchesFraction(size.widthIn), inchesFraction(size.heightIn))
       : copy.size(size.widthIn, size.heightIn);
 
   return (
     <div className={styles.measure} data-photo-measure="" data-method={method}>
       <div className={styles.methods} role="tablist" aria-label={copy.methodLabel}>
-        {METHODS.map((m) => (
-          <Button key={m} variant="ghost" role="tab" aria-selected={method === m} className={styles.method} data-selected={method === m ? 'true' : undefined} onClick={() => setMethod(m)}>
-            {m === 'sheet' ? copy.methodSheet : m === 'reference' ? copy.methodReference : copy.methodKnownSide}
+        {methods.map((m) => (
+          <Button key={m} variant="ghost" role="tab" aria-selected={method === m} className={styles.method} data-selected={method === m ? 'true' : undefined} data-method-tab={m} onClick={() => setMethod(m)}>
+            {m === 'ar' ? copy.methodAr : m === 'sheet' ? copy.methodSheet : m === 'reference' ? copy.methodReference : copy.methodKnownSide}
             {m === 'sheet' ? <span className={styles.recommended}>{copy.recommended}</span> : null}
           </Button>
         ))}
       </div>
-      <p className={styles.hint}>{method === 'sheet' ? copy.sheetHint : method === 'reference' ? copy.referenceHint : copy.knownSideHint}</p>
+      <p className={styles.hint}>{arMode ? copy.arHint : method === 'sheet' ? copy.sheetHint : method === 'reference' ? copy.referenceHint : copy.knownSideHint}</p>
       {sheetStatus}
-      <div className={styles.area}>
+      {arMode ? (
+        <div className={styles.arPanel} data-ar-panel="">
+          {ar !== null ? (
+            <div className={styles.arKept} data-ar-kept="">
+              <div className={styles.arThumb}>
+                <img className={styles.photo} src={ar.uploadId === upload.id ? src : (srcFor?.(ar.uploadId) ?? src)} alt="" draggable={false} />
+                {ar.uploadId === upload.id ? (
+                  <svg className={styles.quads} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
+                    <polygon className={styles.window} points={points(ar.corners)} vectorEffect="non-scaling-stroke" />
+                  </svg>
+                ) : null}
+              </div>
+              <span className={styles.found}>{copy.arMeasuredWith}</span>
+              {ar.projected === false ? <p className={styles.hint}>{copy.arCornersApprox}</p> : null}
+              {arSize !== null && arSize.quality === 'check' ? (
+                <Banner tone="warning">
+                  {copy.arCheck} {copy.arCheckWhy(arSize.reasons.join('; '))}
+                </Banner>
+              ) : null}
+            </div>
+          ) : null}
+          {ar === null || arAgain ? (
+            <Suspense fallback={<p role="status">{copy.arStarting}</p>}>
+              <LazyArMeasure
+                photo={upload}
+                uploadPhoto={uploadPhoto ?? (() => Promise.reject(new Error('no upload')))}
+                onResult={(r) => {
+                  setAr({ pointsM: r.pointsM, trackingLostCount: r.trackingLostCount, corners: r.corners, uploadId: r.upload.id, projected: r.projected });
+                  setArAgain(false);
+                }}
+              />
+            </Suspense>
+          ) : (
+            <Button variant="ghost" className={styles.inline} onClick={() => setArAgain(true)}>
+              {copy.arAgain}
+            </Button>
+          )}
+        </div>
+      ) : null}
+      <div className={styles.area} hidden={arMode}>
         <div
           ref={frameRef}
           className={styles.frame}
@@ -567,7 +640,7 @@ export function PhotoMeasure({
         </fieldset>
       ) : null}
       <div className={styles.controls}>
-        {sheetMode ? (
+        {arMode ? null : sheetMode ? (
           <>
             <div className={styles.snapRow}>
               <Checkbox label={copy.noSnap} checked={!snapOn} onChange={(next) => setSnapOn(!next)} />
@@ -634,8 +707,8 @@ export function PhotoMeasure({
         )}
         <div className={styles.size} role="status" data-live-size={size === null ? 'none' : 'live'} data-retake={retake ? 'true' : undefined}>
           <span className={styles.sizeLabel}>{copy.sizeLabel}</span>
-          {sizeText !== null ? <strong className={styles.sizeValue}>{sizeText}</strong> : <span>{method === 'known-side' && !(inches > 0) ? copy.typeSide : copy.noSize}</span>}
-          {sizeText !== null && uMax !== null && (sheetMode || unchanged) ? (
+          {sizeText !== null ? <strong className={styles.sizeValue}>{sizeText}</strong> : <span>{arMode ? copy.arNoSize : method === 'known-side' && !(inches > 0) ? copy.typeSide : copy.noSize}</span>}
+          {sizeText !== null && uMax !== null && (sheetMode || arMode || unchanged) ? (
             <span className={styles.plusMinus} data-plus-minus="">
               {copy.plusMinus(plusMinusFraction(uMax))}
             </span>
@@ -664,7 +737,7 @@ export function PhotoMeasure({
             </Button>
           </div>
         ) : null}
-        {unchanged && saved.quality === 'check' ? <Banner tone="warning">{copy.check}</Banner> : null}
+        {unchanged && saved.quality === 'check' && !arMode ? <Banner tone="warning">{copy.check}</Banner> : null}
         {groups.some((g) => g.key !== initial?.id) ? (
           <Select
             label={copy.whichWindow}
