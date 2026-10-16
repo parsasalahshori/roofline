@@ -302,6 +302,7 @@ export const windowPhotos = {
   sheetPick: 'Which sheet',
   twoSheets: 'Two sheets found',
   twoSheetsSize: 'Sized from both sheets',
+  noCameraData: 'No camera data in this photo, so the size is less certain.',
   printCheckTitle: 'Check the print',
   printCheckHint: (length: number, unit: string) => `Measure the ruler on the printed sheet. It should be exactly ${length} ${unit}.`,
   printCheckField: (unit: string) => `The ruler measured (${unit})`,

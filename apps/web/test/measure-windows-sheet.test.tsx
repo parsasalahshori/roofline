@@ -1,5 +1,6 @@
 import {
   priceWindows,
+  SHEET_FOCAL_UNKNOWN_SIGMA,
   windowCounts,
   windowSizeClass,
   type PhotoWindow,
@@ -350,6 +351,18 @@ describe('Measuring sheet: what is measured, and the size', () => {
     const [input, local] = onSave.mock.calls[0]!;
     expect(input).toEqual({ id: expect.stringMatching(/^photo-/), uploadId: 'up1', label: 'Kitchen', corners: SNAPPED, scale: { kind: 'sheet', paper: 'letter', imagePoints: DETECTION.imagePoints, sheetPointsIn: DETECTION.sheetPointsIn, planeOffsetIn: 1 } });
     expect(local).toMatchObject({ widthIn: 35.87, heightIn: 59.74, uncertaintyIn: MEASURED.uncertaintyIn, distanceIn: 78, viewAngleDeg: 12 });
+  });
+
+  it('a photo with no camera data (no focal length): says the size is less certain and asks the engine for the wider ±', async () => {
+    renderMeasure({ upload: { ...UPLOAD, focal35mm: null } });
+    await ready();
+    expect(document.querySelector('[data-no-camera-data]')!.textContent).toBe(copy.noCameraData);
+    expect(lastMeasureInput().focalSigmaFrac).toBe(SHEET_FOCAL_UNKNOWN_SIGMA);
+    cleanup();
+    renderMeasure();
+    await ready();
+    expect(document.querySelector('[data-no-camera-data]')).toBeNull();
+    expect(lastMeasureInput().focalSigmaFrac).toBeUndefined();
   });
 
   it('asks for a re-take when the size could be off by more than 1/4 in', async () => {

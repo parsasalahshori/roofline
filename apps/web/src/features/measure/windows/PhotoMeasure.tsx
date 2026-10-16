@@ -743,6 +743,11 @@ export function PhotoMeasure({
           ) : null}
           {sizeText !== null ? <span className={styles.sizeSource}>{unchanged ? copy.fromServer : copy.live}</span> : null}
           {sizeText !== null && twoSheets && sheetMode ? <span className={styles.sizeNote} data-size-two-sheets="">{copy.twoSheetsSize}</span> : null}
+          {sizeText !== null && sheetMode && upload.focal35mm == null ? (
+            <span className={styles.sizeNote} data-no-camera-data="">
+              {copy.noCameraData}
+            </span>
+          ) : null}
           {sizeText !== null && sheetMode && printScale !== 1 ? (
             <span className={styles.sizeNote} data-size-print-scale="">
               {copy.printCheckApplied((printScale * 100).toFixed(1))}

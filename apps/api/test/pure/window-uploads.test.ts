@@ -52,6 +52,14 @@ describe('sizing a photographed window', () => {
     expect(w).toMatchObject({ sizeClass: 'standard', quality: 'good' });
   });
 
+  it('with the measuring sheet and no focal length in the photo: the ± is wider than with one (26 mm assumed)', () => {
+    const input = { id: 'w1', uploadId: 'u', corners: photo.window, scale: { kind: 'sheet' as const, paper: 'letter' as const, imagePoints: photo.sheet.imagePoints, sheetPointsIn: photo.sheet.sheetPointsIn, planeOffsetIn: 0 } };
+    const known = sizePhotoWindow(input, { ...upload, focal35mm: 26 })!;
+    const assumed = sizePhotoWindow(input, upload)!;
+    expect(assumed.widthIn).toBe(known.widthIn);
+    expect(assumed.uncertaintyIn!.width + assumed.uncertaintyIn!.height).toBeGreaterThan(known.uncertaintyIn!.width + known.uncertaintyIn!.height);
+  });
+
   it('with one side measured: the other side from the corners and the focal length', () => {
     const w = sizePhotoWindow({ id: 'w1', uploadId: 'u', corners: photo.window, scale: { kind: 'known-side', side: 'width', inches: 36 } }, upload)!;
     within(w.heightIn, WINDOW_IN.h);

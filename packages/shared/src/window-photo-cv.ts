@@ -98,6 +98,8 @@ export type WindowPhotoCv = {
     printScale?: number;
     /** From snapQuad (1.5 px when not given: corners placed by hand). */
     cornerSigmaPx?: number | [number, number, number, number];
+    /** One-sigma doubt in focalPx as a fraction: SHEET_FOCAL_UNKNOWN_SIGMA when the photo did not say (3% when not given). */
+    focalSigmaFrac?: number;
   }): WindowPhotoMeasurement | null;
   /** Several photos of the same window combined: the median size and the spread between photos. */
   combine(ms: WindowPhotoMeasurement[]): { widthIn: number; heightIn: number; spreadIn: { width: number; height: number } } | null;

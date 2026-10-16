@@ -24,7 +24,7 @@ export const windowPhotoCv: WindowPhotoCv = {
     return proposeQuadSync(img, sheet, target);
   },
   measure(input) {
-    const m = measureWithSheet({ ...input, printScale: input.printScale, imagePoints: input.sheet.imagePoints, sheetPointsIn: input.sheet.sheetPointsIn, sheetIndex: input.sheet.sheetIndex });
+    const m = measureWithSheet({ ...input, printScale: input.printScale, focalSigmaFrac: input.focalSigmaFrac, imagePoints: input.sheet.imagePoints, sheetPointsIn: input.sheet.sheetPointsIn, sheetIndex: input.sheet.sheetIndex });
     if (m === null) return null;
     return { widthIn: m.widthIn, heightIn: m.heightIn, uncertaintyIn: m.uncertaintyIn, distanceIn: m.distanceIn, viewAngleDeg: m.viewAngleDeg, warnings: m.warnings };
   },
