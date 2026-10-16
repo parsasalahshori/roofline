@@ -6,6 +6,8 @@ import type { MeasurementView, PriceRange } from '@roofline/shared';
  * can tick, without a price range (null here). When it lands, work out the feet from the measured roof's eave
  * edges here and price them with its function, then widen with priceRange like the roof and windows.
  */
-export function gutterRange(_view: MeasurementView, _pct: number): { feet: number; range: PriceRange } | null {
+export function gutterRange(view: MeasurementView, pct: number): { feet: number; range: PriceRange } | null {
+  void view;
+  void pct;
   return null;
 }

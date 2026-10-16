@@ -364,6 +364,40 @@ describe('POST /api/public/quote/:slug/lead', () => {
   });
 });
 
+describe('GET /slots and booking', () => {
+  test('no times when booking is off; spread times when on; a picked time books an inspection on the new job', async () => {
+    const off = await request(t.app).get(`/api/public/quote/${ACME}/slots`);
+    expect(off.body.slots).toEqual([]);
+    await q(`update company_settings set quote_booking = true where company_id = $1`, [t.seed.a.companyId]);
+    const on = await request(t.app).get(`/api/public/quote/${ACME}/slots`);
+    expect(on.status).toBe(200);
+    const slots = on.body.slots as { id: string; start: string; end: string }[];
+    expect(slots.length).toBeGreaterThan(0);
+    expect(slots.length).toBeLessThanOrEqual(8);
+    expect(JSON.stringify(on.body)).not.toMatch(/userId|name/i);
+    const days = new Map<string, number>();
+    for (const sl of slots) {
+      const d = new Date(sl.start).toLocaleDateString('en-CA', { timeZone: on.body.timeZone });
+      days.set(d, (days.get(d) ?? 0) + 1);
+    }
+    for (const n of days.values()) expect(n).toBeLessThanOrEqual(2);
+
+    // The first time sits right on the minimum notice, which the seconds spent on the form may pass: pick a later one.
+    const pick = slots[slots.length - 1]!;
+    const e = await estimated();
+    t.clock.advance(8000);
+    const res = await lead(ACME, leadBody(e, { slotId: pick.id }));
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(res.body.booked).toEqual({ start: pick.start, end: pick.end });
+    const [appt] = await q(`select kind, starts_at, job_id from appointments where company_id = $1`, [t.seed.a.companyId]);
+    expect(appt).toMatchObject({ kind: 'inspection' });
+    expect(new Date(appt!.starts_at).toISOString()).toBe(pick.start);
+    const [req] = await q(`select appointment_id, job_id from quote_requests where company_id = $1`, [t.seed.a.companyId]);
+    expect(req!.appointment_id).not.toBeNull();
+    expect(appt!.job_id).toBe(req!.job_id);
+  });
+});
+
 describe('Turnstile (only when TURNSTILE_SECRET is set)', () => {
   test('off by default: no fetch to Cloudflare', async () => {
     const spy = vi.spyOn(globalThis, 'fetch');

@@ -225,7 +225,7 @@ async function openSlots(deps: AppDeps, ctx: TenantContext, propertyId: string |
   return withTenant(deps.pools, ctx, (tx) => openInspectionSlots(tx, ctx, { from, to, propertyId, now }));
 }
 
-const MAX_SLOTS = 12;
+const MAX_SLOTS = 8;
 const OFFER_DAYS = 10;
 
 export function publicQuoteRoutes(deps: AppDeps): Router {
@@ -291,7 +291,19 @@ export function publicQuoteRoutes(deps: AppDeps): Router {
       }
       const now = deps.clock.now();
       const world = await openSlots(deps, ctx, null, now, new Date(now.getTime() + OFFER_DAYS * 24 * HOUR_MS));
-      const slots = world.slots.slice(0, MAX_SLOTS).map((s) => ({ id: s.start.toISOString(), start: s.start.toISOString(), end: s.end.toISOString() }));
+      // Spread over the days: at most two a day (the earliest, then one at least three hours later), up to MAX_SLOTS.
+      const perDay = new Map<string, Date[]>();
+      const picked: typeof world.slots = [];
+      for (const s of world.slots) {
+        if (picked.length >= MAX_SLOTS) break;
+        const day = s.start.toLocaleDateString('en-CA', { timeZone: isTimeZone(world.zone) ? world.zone : 'UTC' });
+        const taken = perDay.get(day) ?? [];
+        if (taken.length >= 2 || taken.some((t) => s.start.getTime() - t.getTime() < 3 * HOUR_MS)) continue;
+        taken.push(s.start);
+        perDay.set(day, taken);
+        picked.push(s);
+      }
+      const slots = picked.map((s) => ({ id: s.start.toISOString(), start: s.start.toISOString(), end: s.end.toISOString() }));
       res.json({ timeZone: isTimeZone(world.zone) ? world.zone : 'UTC', slots } satisfies PublicQuoteSlots);
     }),
   );
@@ -391,14 +403,17 @@ async function bookVisit(
   const now = deps.clock.now();
   if (!(start.getTime() > now.getTime()) || start.getTime() > now.getTime() + MAX_AVAILABILITY_DAYS * 24 * HOUR_MS) return null;
   const end = new Date(start.getTime() + INSPECTION_MINUTES * MINUTE_MS);
+  // The slot search wants room round the visit (travel buffers), so it looks a few hours either side and matches the start.
+  const from = new Date(start.getTime() - 3 * HOUR_MS);
+  const to = new Date(end.getTime() + 3 * HOUR_MS);
   try {
     const made = await withTenant(deps.pools, ctx, async (tx) => {
-      const before = await openInspectionSlots(tx, ctx, { from: start, to: end, propertyId: filed.propertyId, now });
+      const before = await openInspectionSlots(tx, ctx, { from, to, propertyId: filed.propertyId, now });
       const open = before.slots.find((s) => s.start.getTime() === start.getTime());
       const inspector = open?.userIds[0];
       if (inspector === undefined) return null;
       await lockInspector(tx, ctx, inspector);
-      const fresh = await openInspectionSlots(tx, ctx, { from: start, to: end, propertyId: filed.propertyId, now });
+      const fresh = await openInspectionSlots(tx, ctx, { from, to, propertyId: filed.propertyId, now });
       if (!fresh.slots.some((s) => s.start.getTime() === start.getTime() && s.userIds.includes(inspector))) return null;
       const appt = await createAppointment(
         tx,

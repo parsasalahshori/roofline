@@ -11,7 +11,8 @@ import styles from './QuotePage.module.css';
 const W = 360;
 const H = 240;
 const TILE = 256;
-const MAX_ZOOM = 20;
+/** 19: the free aerial has gaps at 20 in many places. */
+const MAX_ZOOM = 19;
 const FILL = 0.55;
 const TILE_URL = (z: number, x: number, y: number) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
 
@@ -67,6 +68,9 @@ export function RoofThumb({ ring, center, alt, showOutline, children }: { ring: 
           decoding="async"
           referrerPolicy="no-referrer"
           draggable={false}
+          onError={(e) => {
+            e.currentTarget.style.visibility = 'hidden';
+          }}
         />
       ))}
       {showOutline && layout.points.length >= 3 ? (
