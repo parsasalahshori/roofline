@@ -207,9 +207,12 @@ describe('E1 windows', () => {
     });
     renderApp('/settings/prices');
 
-    expect(await screen.findByRole('heading', { name: tierEditor.title })).toBeInTheDocument();
-    expect(await screen.findByRole('heading', { name: financeCopy.title })).toBeInTheDocument();
-    expect(await screen.findByRole('heading', { name: estimateCopy.title })).toBeInTheDocument();
-    expect(await screen.findByLabelText(prices.fields.permit)).toBeInTheDocument();
+    // Each section's panel first holds its loading line under the same heading, so wait for the heading that stays
+    for (const title of [tierEditor.title, financeCopy.title, estimateCopy.title]) {
+      await waitFor(() => expect(screen.getByRole('heading', { name: title })).toBeInTheDocument());
+    }
+    expect(await screen.findByText(prices.fields.permit)).toBeInTheDocument();
+    // Once the data is in, a section has one panel, not a loading one inside the form's
+    await waitFor(() => expect(screen.getAllByRole('heading', { name: estimateCopy.title })).toHaveLength(1));
   });
 });

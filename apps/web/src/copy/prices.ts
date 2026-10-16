@@ -43,6 +43,16 @@ export const prices = {
     material: 'Default material',
   },
 
+  /** The heads of each group's table: what the price is, what it is per, and the amount. */
+  columns: { item: 'Item', unit: 'Unit', price: 'Price', actions: 'Actions' },
+  /** The buttons that open a row's box and close it again; each names its row. */
+  edit: 'Edit',
+  done: 'Done',
+  editFor: (item: string) => `Edit ${item}`,
+  doneFor: (item: string) => `Done editing ${item}`,
+  /** The tag on a row whose amount differs from the saved one. */
+  edited: 'Edited',
+
   /** Unit help under a field. */
   units: {
     perBundle: 'per bundle',

@@ -1,5 +1,5 @@
-import { useId, useState, type FormEvent, type ReactNode } from 'react';
-import { Banner, Button, EmptyState, Field, Skeleton, Toggle, useToast } from '@roofline/ui';
+import { useState, type FormEvent, type ReactNode } from 'react';
+import { Banner, Button, EmptyState, Field, Icon, Panel, Skeleton, Toggle, useToast } from '@roofline/ui';
 import { useMe } from '../../api/hooks.ts';
 import { estimateCopy } from '../../copy/financeEstimate.ts';
 import { settings as settingsCopy } from '../../copy/settings.ts';
@@ -8,6 +8,8 @@ import { formErrors } from '../auth/formErrors.ts';
 import type { EstimatorSettings } from '@roofline/shared';
 import { useEstimatorSettings, useSaveEstimatorSettings } from './estimator-api.ts';
 import styles from './FinanceEstimate.module.css';
+import form from './form.module.css';
+import { SaveBar } from './SaveBar.tsx';
 
 /** The three number fields, by the key the API takes. The two switches have no field message of their own. */
 type EstimateKey = 'defaultPitchX12' | 'overhangFt' | 'proposalValidDays';
@@ -96,17 +98,9 @@ function check(form: Form): Checked {
   return { ok: false, errors };
 }
 
-/** A titled block of the Prices tab. Every state of the section sits inside it. */
+/** The panel of the Prices tab the loading line and the failure sit in. The form brings its own panel. */
 function Section({ children }: { children: ReactNode }) {
-  const headingId = useId();
-  return (
-    <section className={styles.section} aria-labelledby={headingId}>
-      <h2 id={headingId} className={styles.heading}>
-        {estimateCopy.title}
-      </h2>
-      {children}
-    </section>
-  );
+  return <Panel title={estimateCopy.title}>{children}</Panel>;
 }
 
 /** Estimate defaults and proposal terms: the owner sets them, everyone else reads them. */
@@ -147,120 +141,139 @@ export function EstimateSection() {
     );
   }
 
-  return (
-    <Section>
-      <EstimateForm settings={estimator.data} canEdit={me.data.role === 'owner'} />
-    </Section>
-  );
+  return <EstimateForm settings={estimator.data} canEdit={me.data.role === 'owner'} />;
 }
 
 function EstimateForm({ settings, canEdit }: { settings: EstimatorSettings; canEdit: boolean }) {
-  const [form, setForm] = useState(() => toForm(settings));
+  const [values, setValues] = useState(() => toForm(settings));
+  // What the form was last loaded or saved as: only a difference makes it saveable
+  const [baseline, setBaseline] = useState(() => toForm(settings));
   // Problems in the form are shown once the owner has tried to save, then follow the edits as they are made
   const [submitted, setSubmitted] = useState(false);
   const save = useSaveEstimatorSettings();
   const toast = useToast();
   // A problem about a switch has no field to sit beside, so it is shown at the top of the form
   const problems = formErrors(save.error, ESTIMATE_KEYS);
-  const current = check(form);
+  const current = check(values);
   const clientErrors: Partial<Record<EstimateKey, string>> = submitted && !current.ok ? current.errors : {};
+  const changed = JSON.stringify(values) !== JSON.stringify(baseline);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canEdit) return;
     setSubmitted(true);
-    const checked = check(form);
+    const checked = check(values);
     if (!checked.ok) return;
     // The aerial switch is sent only when a provider is set up; otherwise there is no switch to send
     const body = {
       ...checked.values,
-      estimateChangeClause: form.changeClause,
-      ...(settings.aerialConfigured ? { aerialMeasure: form.aerial } : {}),
+      estimateChangeClause: values.changeClause,
+      ...(settings.aerialConfigured ? { aerialMeasure: values.aerial } : {}),
     };
     save.mutate(body, {
       onSuccess: (answer) => {
         // The answer is what the server kept: show that, not what was typed
-        setForm(toForm(answer));
+        const next = toForm(answer);
+        setValues(next);
+        setBaseline(next);
+        setSubmitted(false);
         toast.show(tiers.saved, 'success');
       },
     });
   }
 
   return (
-    <>
-      {canEdit ? null : <p className={styles.note}>{tiers.officeReadOnly}</p>}
-      <form className={styles.form} onSubmit={submit} noValidate>
-        {problems.general ? <Banner tone="danger">{problems.general}</Banner> : null}
-        <Field
-          label={estimateCopy.defaultPitch}
-          name="defaultPitchX12"
-          type="number"
-          inputMode="decimal"
-          step="0.5"
-          min="0"
-          max="24"
-          value={form.pitch}
-          onChange={(event) => setForm((previous) => ({ ...previous, pitch: event.target.value }))}
-          disabled={!canEdit}
-          error={clientErrors.defaultPitchX12 ?? problems.forField('defaultPitchX12')}
-        />
-        <Field
-          label={estimateCopy.overhang}
-          name="overhangFt"
-          type="number"
-          inputMode="decimal"
-          step="0.1"
-          min="0"
-          max="3"
-          value={form.overhang}
-          onChange={(event) =>
-            setForm((previous) => ({
-              ...previous,
-              overhang: event.target.value,
-            }))
-          }
-          disabled={!canEdit}
-          error={clientErrors.overhangFt ?? problems.forField('overhangFt')}
-        />
-        <Field
-          label={estimateCopy.validDays}
-          name="proposalValidDays"
-          type="number"
-          inputMode="numeric"
-          step="1"
-          min="1"
-          max="180"
-          value={form.days}
-          onChange={(event) => setForm((previous) => ({ ...previous, days: event.target.value }))}
-          disabled={!canEdit}
-          error={clientErrors.proposalValidDays ?? problems.forField('proposalValidDays')}
-        />
-        <div className={styles.switch}>
-          <Toggle
-            label={estimateCopy.changeClause}
-            checked={form.changeClause}
-            onChange={(next) => setForm((previous) => ({ ...previous, changeClause: next }))}
-            disabled={!canEdit}
-          />
-          <p className={styles.help}>{estimateCopy.changeClauseHelp}</p>
-        </div>
-        {settings.aerialConfigured ? (
-          <div className={styles.switch}>
-            <Toggle
-              label={estimateCopy.aerial}
-              checked={form.aerial}
-              onChange={(next) => setForm((previous) => ({ ...previous, aerial: next }))}
-              disabled={!canEdit}
-            />
-            <p className={styles.help}>{estimateCopy.aerialHelp}</p>
+    <form className={form.form} onSubmit={submit} noValidate>
+      <Panel title={estimateCopy.title}>
+        {canEdit ? null : (
+          <p className={form.note}>
+            <Icon name="lock" size={16} />
+            {tiers.officeReadOnly}
+          </p>
+        )}
+        {problems.general ? (
+          <div className={styles.banner}>
+            <Banner tone="danger">{problems.general}</Banner>
           </div>
         ) : null}
-        {canEdit ? (
-          <Button type="submit" variant="primary" className={styles.save} busy={save.isPending}>
-            {tiers.save}
-          </Button>
-        ) : null}
-      </form>
-    </>
+        <div className={form.grid}>
+          <Field
+            label={estimateCopy.defaultPitch}
+            name="defaultPitchX12"
+            type="number"
+            inputMode="decimal"
+            step="0.5"
+            min="0"
+            max="24"
+            value={values.pitch}
+            onChange={(event) => setValues((previous) => ({ ...previous, pitch: event.target.value }))}
+            disabled={!canEdit}
+            error={clientErrors.defaultPitchX12 ?? problems.forField('defaultPitchX12')}
+          />
+          <Field
+            label={estimateCopy.overhang}
+            name="overhangFt"
+            type="number"
+            inputMode="decimal"
+            step="0.1"
+            min="0"
+            max="3"
+            value={values.overhang}
+            onChange={(event) => setValues((previous) => ({ ...previous, overhang: event.target.value }))}
+            disabled={!canEdit}
+            error={clientErrors.overhangFt ?? problems.forField('overhangFt')}
+          />
+          <Field
+            label={estimateCopy.validDays}
+            name="proposalValidDays"
+            type="number"
+            inputMode="numeric"
+            step="1"
+            min="1"
+            max="180"
+            value={values.days}
+            onChange={(event) => setValues((previous) => ({ ...previous, days: event.target.value }))}
+            disabled={!canEdit}
+            error={clientErrors.proposalValidDays ?? problems.forField('proposalValidDays')}
+          />
+          <div className={form.span}>
+            <div className={styles.switch}>
+              <Toggle
+                label={estimateCopy.changeClause}
+                checked={values.changeClause}
+                onChange={(next) => setValues((previous) => ({ ...previous, changeClause: next }))}
+                disabled={!canEdit}
+              />
+              <p className={styles.help}>{estimateCopy.changeClauseHelp}</p>
+            </div>
+          </div>
+          {settings.aerialConfigured ? (
+            <div className={form.span}>
+              <div className={styles.switch}>
+                <Toggle
+                  label={estimateCopy.aerial}
+                  checked={values.aerial}
+                  onChange={(next) => setValues((previous) => ({ ...previous, aerial: next }))}
+                  disabled={!canEdit}
+                />
+                <p className={styles.help}>{estimateCopy.aerialHelp}</p>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </Panel>
+      {canEdit ? (
+        <SaveBar
+          dirty={changed}
+          saving={save.isPending}
+          saveLabel={tiers.save}
+          onDiscard={() => {
+            save.reset();
+            setValues(baseline);
+            setSubmitted(false);
+          }}
+        />
+      ) : null}
+    </form>
   );
 }
