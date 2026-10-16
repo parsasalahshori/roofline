@@ -31,7 +31,8 @@ export function useWindowOrder(id: string): UseQueryResult<WindowOrderView> {
 }
 
 /** GET /api/window-measurements/:id/order: the measurement's order, or null when it has none yet (a 404). */
-export function useMeasurementOrder(measurementId: string): UseQueryResult<WindowOrderView | null> {
+/** `enabled: false` skips the request (the windows screen asks only once photo windows exist). */
+export function useMeasurementOrder(measurementId: string, enabled = true): UseQueryResult<WindowOrderView | null> {
   return useQuery({
     queryKey: measurementOrderKey(measurementId),
     queryFn: async ({ signal }) => {
@@ -42,7 +43,7 @@ export function useMeasurementOrder(measurementId: string): UseQueryResult<Windo
         throw error;
       }
     },
-    enabled: measurementId !== '',
+    enabled: enabled && measurementId !== '',
   });
 }
 

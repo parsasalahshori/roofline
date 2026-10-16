@@ -140,7 +140,7 @@ describe('PATCH /api/window-orders/:id', () => {
     expect(v.totals.windows).toBe(3);
     expect(v.canMarkReady).toBe(true);
 
-    const bad = async (body: unknown) => (await owner.patch(url).send(body)).status;
+    const bad = async (body: object) => (await owner.patch(url).send(body)).status;
     expect(await bad({ lines: [{ id: 'p1', style: 'bay' }] })).toBe(400);
     expect(await bad({ lines: [{ id: 'p1', quantity: 0 }] })).toBe(400);
     expect(await bad({ lines: [{ id: 'p1', grid: { type: 'colonial', top: '3 by 2', bottom: '' } }] })).toBe(400);

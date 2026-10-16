@@ -349,10 +349,11 @@ describe('OrderStatusChip', () => {
     expect(link.getAttribute('href')).toBe('/estimator/windows/m1/order');
   });
 
-  it('shows nothing without photo windows and no order', async () => {
-    current = null;
+  it('without photo windows shows nothing and does not ask for an order', async () => {
+    current = view(goodLines(), { status: 'ready' });
     renderAt('/estimator/windows/m1/order', <OrderStatusChip measurementId="m1" hasPhotoWindows={false} />);
-    await waitFor(() => expect(calls).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(calls).toHaveLength(0);
     expect(screen.queryByRole('link')).toBeNull();
   });
 });

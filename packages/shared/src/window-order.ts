@@ -529,9 +529,8 @@ export function applyLinePatches(lines: readonly WindowOrderLine[], patches: rea
   for (const p of patches) {
     const line = byId.get(p.id);
     if (!line) return null;
-    const { id: _id, ...rest } = p;
-    const next: WindowOrderLine = { ...line, ...(rest as Partial<WindowOrderLine>) };
-    byId.set(p.id, next);
+    // The id names the line; everything else in the patch replaces that field.
+    byId.set(p.id, { ...line, ...p, id: line.id });
   }
   return lines.map((l) => byId.get(l.id)!);
 }

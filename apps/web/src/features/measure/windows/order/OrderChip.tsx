@@ -10,14 +10,15 @@ export const orderHref = (measurementId: string) => `/estimator/windows/${encode
  * from on-site photos can be ordered.
  */
 export function OrderStatusChip({ measurementId, hasPhotoWindows = true }: { measurementId: string; hasPhotoWindows?: boolean }) {
-  const query = useMeasurementOrder(measurementId);
-  if (query.data === undefined) return null;
+  // Only windows measured from on-site photos can be ordered: with none there is nothing to show, so nothing to ask.
+  const query = useMeasurementOrder(measurementId, hasPhotoWindows);
+  if (!hasPhotoWindows || query.data === undefined) return null;
   if (query.data === null) {
-    return hasPhotoWindows ? (
+    return (
       <Button variant="ghost" href={orderHref(measurementId)}>
         {copy.createOrder}
       </Button>
-    ) : null;
+    );
   }
   return (
     <Pill tone="neutral" href={orderHref(measurementId)}>
