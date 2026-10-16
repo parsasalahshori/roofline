@@ -94,6 +94,8 @@ const PhotoWindowsSchema = z
         id: z.string().regex(WINDOW_ID),
         uploadId: z.string().regex(UUID),
         label: z.string().max(80).refine(noNul).optional(),
+        // Several photos of one window share a key (the screen combines them).
+        windowKey: z.string().max(80).refine(noNul).optional(),
         corners: QuadSchema,
         scale: ScaleSchema,
       })

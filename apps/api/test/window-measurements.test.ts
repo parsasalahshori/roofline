@@ -372,12 +372,15 @@ describe('on-site window photos', () => {
     const id = (await upload(owner, view.id, photo.bytes)).body.id as string;
     const url = `/api/window-measurements/${view.id}`;
     const scale = { kind: 'sheet', paper: 'letter', ...photo.sheet, planeOffsetIn: 1.5 };
-    const patched = await owner.patch(url).send({ photoWindows: [{ id: 'p1', uploadId: id, label: 'Bath', corners: photo.windowAt(1.5), scale }] });
+    const patched = await owner.patch(url).send({ photoWindows: [{ id: 'p1', uploadId: id, label: 'Bath', windowKey: 'bath', corners: photo.windowAt(1.5), scale }] });
     expect(patched.status, JSON.stringify(patched.body)).toBe(200);
     const w = (patched.body as WindowMeasurementView).photoWindows![0]!;
     expect(Math.abs(w.widthIn - 36)).toBeLessThan(0.02);
     expect(Math.abs(w.heightIn - 60)).toBeLessThan(0.02);
     expect(w.quality).toBe('good');
+    expect(w.windowKey).toBe('bath');
+    expect((await owner.get(url)).body.adjustments.photoWindows[0].windowKey).toBe('bath');
+    expect((await owner.patch(url).send({ photoWindows: [{ id: 'p1', uploadId: id, windowKey: 'x'.repeat(81), corners: photo.windowAt(1.5), scale }] })).status).toBe(400);
     expect(w.uncertaintyIn!.width).toBeGreaterThan(0);
     expect(w.uncertaintyIn!.width).toBeLessThan(0.5);
     expect(Math.abs(w.distanceIn! - 2.2 / 0.0254)).toBeLessThan(15);
