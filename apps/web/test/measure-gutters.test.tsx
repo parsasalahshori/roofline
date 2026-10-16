@@ -1,4 +1,4 @@
-import { eaveHeight, gutterView, instantEstimate, measureRoof, type GutterAdjustments, type GutterMeasurementView, type Ring } from '@roofline/shared';
+import { EMPTY_GUTTER_ADJUSTMENTS, eaveHeight, gutterView, instantEstimate, measureRoof, type GutterAdjustments, type GutterMeasurementView, type Ring } from '@roofline/shared';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -57,6 +57,7 @@ let current: MeasurementView;
 let adjustments: GutterAdjustments;
 let role: string;
 let patches: Record<string, unknown>[];
+let reportEaveFt: number | null;
 
 function measurement(ring: Ring): MeasurementView {
   const measured = measureRoof({ outline: [ring], pitchX12: 6, overhangFt: 1 });
@@ -84,7 +85,10 @@ function measurement(ring: Ring): MeasurementView {
 
 /** What the API answers: the same pure rules, quotes only for those who see money. */
 const serverView = (): GutterMeasurementView =>
-  gutterView('m1', current.roof, eaveHeight({ floors: 1 }), adjustments, role === 'rep' ? null : undefined);
+  gutterView('m1', current.roof, eaveHeight({ floors: 1 }), adjustments, role === 'rep' ? null : undefined, { reportEaveFt });
+
+const serverViewWith = (extra: Partial<GutterAdjustments>): GutterMeasurementView =>
+  gutterView('m1', current.roof, eaveHeight({ floors: 1 }), { ...adjustments, ...extra }, undefined, { reportEaveFt });
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -121,9 +125,10 @@ beforeEach(() => {
   forgetRevealed();
   fake.FakeMap.instances.length = 0;
   current = measurement(rectM(12, 10));
-  adjustments = { excludedRunIds: [], downspouts: {}, size: null };
+  adjustments = { ...EMPTY_GUTTER_ADJUSTMENTS };
   role = 'owner';
   patches = [];
+  reportEaveFt = null;
   vi.stubEnv('VITE_MAPTILER_KEY', '');
   vi.stubEnv('VITE_MAP_TILES', '');
   vi.stubEnv('VITE_MEASURE_SCAN_MS', '0');
@@ -138,7 +143,8 @@ beforeEach(() => {
       if (key === 'GET /api/measurements/m1/gutters') return json(serverView());
       if (key === 'PATCH /api/measurements/m1/gutters') {
         patches.push(body);
-        adjustments = { ...adjustments, ...(body as Partial<GutterAdjustments>) };
+        // The server stamps who changed it
+        adjustments = { ...adjustments, ...(body as Partial<GutterAdjustments>), adjustedBy: { name: 'Dana Cole', at: '2026-10-16T15:00:00.000Z' } };
         return json(serverView());
       }
       return json({ error: `Unexpected ${key}` }, 500);
@@ -198,7 +204,7 @@ describe('Measure gutters', () => {
     fireEvent.click(out);
     fireEvent.click(screen.getByRole('button', { name }));
     await wait(650);
-    expect(patches).toEqual([{ excludedRunIds: [run.id], downspouts: {}, size: null }]);
+    expect(patches).toEqual([{ excludedRunIds: [run.id], downspouts: {}, size: null, addedRuns: [], totalFt: null }]);
   });
 
   it('Adjust: more downspouts on a run and a size chosen by hand update the numbers and save', async () => {
@@ -213,7 +219,78 @@ describe('Measure gutters', () => {
     expect(stat('downspouts')).toBe(copy.downspoutsValue(v.totals.downspouts + 1, v.totals.downspoutFt + 10));
     expect(stat('size')).toBe(copy.sizeValue('6in', '3x4'));
     await wait(650);
-    expect(patches).toEqual([{ excludedRunIds: [], downspouts: { [v.runs[0]!.id]: 2 }, size: '6in' }]);
+    expect(patches).toEqual([{ excludedRunIds: [], downspouts: { [v.runs[0]!.id]: 2 }, size: '6in', addedRuns: [], totalFt: null }]);
+    // Saved: the card names who changed it
+    await waitFor(() => expect(card().querySelector('[data-adjusted-by]')?.textContent).toBe(copy.adjustedBy('Dana Cole', '2026-10-16T15:00:00.000Z')));
+  });
+
+  it('an estimate is a draft: no Recommended or Built by Estimator marks, and a note to check it', async () => {
+    await open();
+    const panel = screen.getByRole('complementary', { name: liftProposal.label });
+    expect(within(panel).queryByText(liftProposal.builtBy)).toBeNull();
+    expect(within(panel).queryByText(liftProposal.recommended)).toBeNull();
+    expect(panel.querySelector('[data-quote-draft]')?.textContent).toBe(copy.quoteDraft);
+    expect(card().querySelector('[data-kind="estimate"]')?.textContent).toBe(copy.confidenceTag.estimate);
+    expect(card().querySelector('[data-draft]')?.textContent).toBe(copy.draftNote);
+    // The send button stays off
+    expect(screen.getByRole('button', { name: copy.send })).toHaveProperty('disabled', true);
+  });
+
+  it('Adjust: a run added by hand joins the total, saves, and the quote is vouched for again', async () => {
+    await open();
+    const before = serverView();
+    fireEvent.click(screen.getByRole('button', { name: copy.adjust }));
+    const form = document.querySelector('[data-add-run]') as HTMLElement;
+    fireEvent.change(within(form).getByLabelText(copy.addLabel), { target: { value: 'Upper floor, back' } });
+    fireEvent.change(within(form).getByLabelText(copy.addLength), { target: { value: '40' } });
+    fireEvent.click(within(form).getByRole('button', { name: copy.addRun }));
+    expect(document.querySelector('[data-added-row="A1"]')?.textContent).toContain('Upper floor, back');
+    fireEvent.click(screen.getByRole('button', { name: copy.done }));
+    expect(stat('gutter-ft')).toBe(Math.round(before.totals.gutterFt + 40).toLocaleString('en-US'));
+    expect(card().querySelector('[data-kind="adjusted"]')?.textContent).toBe(copy.confidenceTag.adjusted);
+    const panel = screen.getByRole('complementary', { name: liftProposal.label });
+    expect(within(panel).getByText(liftProposal.builtBy)).toBeTruthy();
+    expect(within(panel).getByText(liftProposal.recommended)).toBeTruthy();
+    await wait(650);
+    expect(patches).toEqual([{ excludedRunIds: [], downspouts: {}, size: null, addedRuns: [{ id: 'A1', label: 'Upper floor, back', lengthFt: 40 }], totalFt: null }]);
+  });
+
+  it('Adjust: refuses a length out of range, and removes an added run', async () => {
+    adjustments = { ...EMPTY_GUTTER_ADJUSTMENTS, addedRuns: [{ id: 'A1', label: 'Porch', lengthFt: 20 }] };
+    await open();
+    fireEvent.click(screen.getByRole('button', { name: copy.adjust }));
+    const form = document.querySelector('[data-add-run]') as HTMLElement;
+    fireEvent.change(within(form).getByLabelText(copy.addLength), { target: { value: '900' } });
+    fireEvent.click(within(form).getByRole('button', { name: copy.addRun }));
+    expect(within(form).getByText(copy.addLengthError)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: copy.removeAdded('Porch') }));
+    expect(document.querySelector('[data-added-row]')).toBeNull();
+    await wait(650);
+    expect(patches).toEqual([{ excludedRunIds: [], downspouts: {}, size: null, addedRuns: [], totalFt: null }]);
+  });
+
+  it('Adjust: a total typed in replaces the measured length and prices', async () => {
+    await open();
+    fireEvent.click(screen.getByRole('button', { name: copy.adjust }));
+    const form = document.querySelector('[data-total-form]') as HTMLElement;
+    fireEvent.change(within(form).getByLabelText(copy.totalLabel), { target: { value: '300' } });
+    fireEvent.click(within(form).getByRole('button', { name: copy.totalSet }));
+    fireEvent.click(screen.getByRole('button', { name: copy.done }));
+    expect(stat('gutter-ft')).toBe('300');
+    expect(card().querySelector('[data-length-source="override"]')).not.toBeNull();
+    expect(screen.getByText(copy.quoteLine(300, serverViewWith({ totalFt: 300 }).totals.downspouts))).toBeTruthy();
+    await wait(650);
+    expect(patches).toEqual([{ excludedRunIds: [], downspouts: {}, size: null, addedRuns: [], totalFt: 300 }]);
+  });
+
+  it("an exact report's eave length is the total, vouched for", async () => {
+    reportEaveFt = 212;
+    await open();
+    expect(stat('gutter-ft')).toBe('212');
+    expect(card().querySelector('[data-length-source="eagleview"]')?.textContent).toBe(copy.lengthFrom.eagleview(serverView().totals.measuredFt));
+    expect(card().querySelector('[data-review="gutters-check"]')).toBeNull();
+    const panel = screen.getByRole('complementary', { name: liftProposal.label });
+    expect(within(panel).getByText(liftProposal.builtBy)).toBeTruthy();
   });
 
   it('flags gutter length that looks low for the house, and says how much of the outline the gutters cover', async () => {
@@ -222,10 +299,13 @@ describe('Measure gutters', () => {
     const firstEave = roof.lines.find((l) => l.kind === 'eave')!;
     current = { ...current, roof: { ...roof, lines: roof.lines.filter((l) => l.kind !== 'eave' || l === firstEave) } };
     await open();
-    const flag = card().querySelector('[data-review="gutters-check"]');
-    expect(flag?.textContent).toBe(copy.checkLow);
+    const flag = card().querySelector('[data-review="gutters-check"]') as HTMLElement;
+    expect(flag.textContent).toContain(copy.checkLow);
     const v = serverView();
     expect(card().querySelector('[data-coverage]')?.textContent).toBe(copy.coverage(v.check.perimeterFt, v.check.share));
+    // Add runs opens Adjust at the runs the map missed
+    fireEvent.click(within(flag).getByRole('button', { name: copy.checkAddRuns }));
+    expect(document.querySelector('[data-added-runs]')).not.toBeNull();
   });
 
   it('a whole hip roof is not flagged', async () => {

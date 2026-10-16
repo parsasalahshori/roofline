@@ -79,10 +79,10 @@ export async function completeExactReport(
       },
       now,
     );
-    // createMeasurement does not store the report's facet count or reference.
+    // createMeasurement does not store the report's facet count, reference or eave length (the gutter total).
     await tx
       .update(measurements)
-      .set({ facets: r.facets, providerRef: r.reportRef, updatedAt: now })
+      .set({ facets: r.facets, providerRef: r.reportRef, eaveFt: r.eaveFt, updatedAt: now })
       .where(and(eq(measurements.companyId, ctx.companyId), eq(measurements.id, created.id)));
 
     // Once per report: recordUsage is idempotent on (company, kind, refType, refId).

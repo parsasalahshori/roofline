@@ -336,6 +336,7 @@ describe('EagleViewOrders', () => {
         pitchX12: 6,
         ridgeFt: 65,
         edgeFt: 180,
+        eaveFt: 120,
         valleyFt: 30,
         facets: 12,
         reportRef: REPORT_ID,
@@ -382,12 +383,13 @@ describe('EagleViewOrders', () => {
 });
 
 describe('normalizeEagleView', () => {
-  test('maps the complete fixture to surface, pitch, ridge+hip, eave+rake, valley and facets', () => {
+  test('maps the complete fixture to surface, pitch, ridge+hip, eave+rake, the eave alone, valley and facets', () => {
     expect(normalizeEagleView(fixtureJson('get-report-complete.json'))).toEqual({
       surfaceSqFt: 2850,
       pitchX12: 6,
       ridgeFt: 65,
       edgeFt: 180,
+      eaveFt: 120,
       valleyFt: 30,
       facets: 12,
       reportRef: REPORT_ID,
@@ -410,7 +412,17 @@ describe('normalizeEagleView', () => {
     const report = normalizeEagleView({ ...raw, TotalMeasurements: measurements });
     expect(report.ridgeFt).toBe(40);
     expect(report.edgeFt).toBe(120);
+    expect(report.eaveFt).toBe(120);
     expect(report.valleyFt).toBe(0);
+  });
+
+  test('a report with no eave length has eaveFt 0 (gutters then fall back to the measured runs)', () => {
+    const raw = fixtureJson('get-report-complete.json');
+    const measurements = { ...(raw.TotalMeasurements as Record<string, unknown>) };
+    delete measurements.LengthEave;
+    const report = normalizeEagleView({ ...raw, TotalMeasurements: measurements });
+    expect(report.eaveFt).toBe(0);
+    expect(report.edgeFt).toBe(60);
   });
 
   test('a bad Area throws EagleViewNormalizeError', () => {

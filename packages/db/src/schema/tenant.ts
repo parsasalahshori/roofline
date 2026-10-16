@@ -1072,6 +1072,8 @@ export const measurements = pgTable(
     pitchX12: numeric('pitch_x12', { precision: 4, scale: 2, mode: 'number' }),
     surfaceSqFt: numeric('surface_sq_ft', { precision: 12, scale: 2, mode: 'number' }),
     edgeFt: numeric('edge_ft', { precision: 12, scale: 2, mode: 'number' }),
+    /** An exact report's eave length (EagleView LengthEave), ft: the gutter total for that measurement. Null otherwise. */
+    eaveFt: numeric('eave_ft', { precision: 12, scale: 2, mode: 'number' }),
     ridgeFt: numeric('ridge_ft', { precision: 12, scale: 2, mode: 'number' }),
     valleyFt: numeric('valley_ft', { precision: 12, scale: 2, mode: 'number' }),
     facets: integer('facets'),
@@ -1100,8 +1102,15 @@ export const measurements = pgTable(
      * sets this to null; our own numbers (outline, faces, pitch, totals) stay. Null: nothing of Google's to delete.
      */
     googleDeleteBy: tstz('google_delete_by'),
-    /** Measure gutters: runs left out, downspouts typed in per run, and a size chosen by hand (see GutterAdjustments). */
-    gutterAdjustments: jsonb('gutter_adjustments').$type<GutterAdjustments>().notNull().default({ excludedRunIds: [], downspouts: {}, size: null }),
+    /**
+     * Measure gutters: runs left out, downspouts typed in per run, a size chosen by hand, runs added by hand, a typed
+     * total and who changed them (see GutterAdjustments). Older rows lack the later keys; repos/gutters.ts reads them
+     * tolerantly.
+     */
+    gutterAdjustments: jsonb('gutter_adjustments')
+      .$type<Pick<GutterAdjustments, 'excludedRunIds' | 'downspouts' | 'size'> & Partial<GutterAdjustments>>()
+      .notNull()
+      .default({ excludedRunIds: [], downspouts: {}, size: null }),
     createdByUserId: userRef('created_by_user_id'),
     ...timestamps(),
   },

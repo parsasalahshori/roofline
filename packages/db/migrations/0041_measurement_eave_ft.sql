@@ -1,0 +1,1 @@
+ALTER TABLE "measurements" ADD COLUMN "eave_ft" numeric(12, 2);
