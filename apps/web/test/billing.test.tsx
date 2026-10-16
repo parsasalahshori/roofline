@@ -298,7 +298,7 @@ it('a canceled company can pick its old plan again', async () => {
   });
   const { user } = renderApp('/settings/billing');
 
-  const card = (await screen.findByRole('heading', { name: 'Growth', level: 4 })).closest('li') as HTMLElement;
+  const card = (await screen.findByRole('heading', { name: 'Growth', level: 3 })).closest('li') as HTMLElement;
   expect(within(card).queryByText(billing.yourPlan)).not.toBeInTheDocument();
   await user.click(within(card).getByRole('button', { name: billing.pickPlan }));
 
@@ -317,6 +317,65 @@ it('an active subscriber still sees Your plan on its own plan', async () => {
   });
   renderApp('/settings/billing');
 
-  const card = (await screen.findByRole('heading', { name: 'Growth', level: 4 })).closest('li') as HTMLElement;
+  const card = (await screen.findByRole('heading', { name: 'Growth', level: 3 })).closest('li') as HTMLElement;
   expect(within(card).getByText(billing.yourPlan)).toBeInTheDocument();
+});
+
+it.each([
+  ['trial', /^Free trial until /],
+  ['active', /^Active$/],
+  ['past_due', /^Payment didn't go through$/],
+  ['trial_ended', /^Trial ended$/],
+  ['canceled', /^Canceled$/],
+] as const)('the plan panel says how the plan stands as a tag: %s', async (status, words) => {
+  signedIn({
+    status: status === 'past_due' ? 'past_due' : 'active',
+    view: billingView({ status, planKey: 'starter', planName: 'Starter', trialEndsAt: '2026-10-25T12:00:00.000Z', plans: [STARTER] }),
+  });
+  renderApp('/settings/billing');
+
+  const panel = (await screen.findByRole('heading', { name: 'Starter', level: 2 })).closest('section') as HTMLElement;
+  expect(within(panel).getByText(words)).toBeInTheDocument();
+});
+
+it('Invoices and card opens the payment portal from the plan panel', async () => {
+  const assign = vi.spyOn(go, 'assign').mockImplementation(() => {});
+  signedIn({
+    view: billingView({ planKey: 'starter', planName: 'Starter', hasPaymentMethod: true, canOpenPortal: true, plans: [STARTER] }),
+    routes: { 'POST /api/billing/portal': () => ({ body: { url: PORTAL_URL } }) },
+  });
+  const { user } = renderApp('/settings/billing');
+
+  const panel = (await screen.findByRole('heading', { name: 'Starter', level: 2 })).closest('section') as HTMLElement;
+  await user.click(within(panel).getByRole('button', { name: billing.invoicesAndCard }));
+
+  await waitFor(() => expect(assign).toHaveBeenCalledWith(PORTAL_URL));
+});
+
+it('there is no Invoices and card until the company has something to open', async () => {
+  signedIn({ view: billingView({ canOpenPortal: false }) });
+  renderApp('/settings/billing');
+
+  expect(await screen.findByText(billing.noPlan)).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: billing.invoicesAndCard })).not.toBeInTheDocument();
+});
+
+it('the company\'s own plan is tagged and the other plans offer a switch', async () => {
+  signedIn({
+    view: billingView({
+      status: 'active',
+      planKey: 'growth',
+      planName: 'Growth',
+      hasPaymentMethod: true,
+      plans: [STARTER, GROWTH],
+    }),
+  });
+  renderApp('/settings/billing');
+
+  const own = (await screen.findByRole('heading', { name: 'Growth', level: 3 })).closest('li') as HTMLElement;
+  const other = screen.getByRole('heading', { name: 'Starter', level: 3 }).closest('li') as HTMLElement;
+  expect(within(own).getByText(billing.yourPlan)).toBeInTheDocument();
+  expect(within(own).queryByRole('button')).toBeNull();
+  expect(within(other).getByRole('button', { name: billing.switchPlan })).toBeInTheDocument();
+  expect(within(other).queryByText(billing.yourPlan)).toBeNull();
 });
