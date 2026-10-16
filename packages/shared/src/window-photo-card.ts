@@ -42,10 +42,12 @@ export const CARD_OFFSET_SIGMA_IN = 0.5;
 /** A floor for what the model leaves out (lens distortion, a card that is not quite flat, a window that is not quite square): 0.1% of the size. */
 export const CARD_MODEL_FLOOR = 0.001;
 /**
- * The propagated one-sigma error is multiplied by this so that about 68% of real errors fall inside it: fitted with the
- * Monte-Carlo study (scripts/window-card-accuracy.ts, docs/windows/card-method.md) on synthetic photos.
+ * The propagated one-sigma error is multiplied by this so that about 68% of real errors fall inside it. Fitted with the
+ * Monte-Carlo study on synthetic photos (`npx tsx scripts/window-card-accuracy.ts --fit`, seed 1, 40 cells of window size
+ * and shot): 68.27% of the errors fall inside 1.04 x the propagated sigma, so 1.05 (slightly conservative); checked on
+ * the seed the doc's tables use (docs/windows/card-method.md: 69% inside 1 sigma, 96% inside 2 sigma).
  */
-export const CARD_SIGMA_SCALE = 1;
+export const CARD_SIGMA_SCALE = 1.05;
 /** The card's longest side is under this share of the photo's long side (about 60 px on a 4032 px photo): 'check'. */
 export const CARD_MIN_LONG_SIDE_FRAC = 0.015;
 /** ... and under this share (about 30 px on a 4032 px photo) the card is refused: too small to tap. */
