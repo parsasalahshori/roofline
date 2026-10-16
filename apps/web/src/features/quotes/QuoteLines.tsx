@@ -1,37 +1,41 @@
 import { money, type QuoteLine } from '@roofline/shared';
+import { Table, Td, Th, Tr } from '@roofline/ui';
 import { quotes } from '../../copy/quotes.ts';
+import { useIsPhone } from '../../shell/useIsPhone.ts';
 import styles from './QuoteLines.module.css';
 
 export type QuoteLinesProps = { lines: QuoteLine[] };
 
-/** The priced lines of a quote: item, quantity with its unit, rate and amount, numbers right-aligned. */
+/**
+ * The priced lines of a quote in a table with the numbers in mono at the right: item, quantity with its unit, rate and
+ * amount. A phone has no room for four columns, so the quantity and the rate go under the item's name and the amount
+ * keeps the right edge.
+ */
 export function QuoteLines({ lines }: QuoteLinesProps) {
+  const phone = useIsPhone();
   return (
-    <table className={styles.table} aria-label={quotes.linesLabel}>
+    <Table aria-label={quotes.linesLabel}>
       <thead>
         <tr>
-          <th scope="col">{quotes.colName}</th>
-          <th scope="col" className={styles.num}>
-            {quotes.colQuantity}
-          </th>
-          <th scope="col" className={styles.num}>
-            {quotes.colRate}
-          </th>
-          <th scope="col" className={styles.num}>
-            {quotes.colAmount}
-          </th>
+          <Th>{quotes.colName}</Th>
+          {phone ? null : <Th numeric>{quotes.colQuantity}</Th>}
+          {phone ? null : <Th numeric>{quotes.colRate}</Th>}
+          <Th numeric>{quotes.colAmount}</Th>
         </tr>
       </thead>
       <tbody>
         {lines.map((line) => (
-          <tr key={line.code}>
-            <td className={styles.name}>{line.name}</td>
-            <td className={styles.num}>{quotes.quantityWithUnit(line.quantity, line.unit)}</td>
-            <td className={styles.num}>{money(line.unitCents)}</td>
-            <td className={styles.num}>{money(line.totalCents)}</td>
-          </tr>
+          <Tr key={line.code}>
+            <Td>
+              {line.name}
+              {phone ? <span className={styles.detail}>{quotes.lineDetail(quotes.quantityWithUnit(line.quantity, line.unit), money(line.unitCents))}</span> : null}
+            </Td>
+            {phone ? null : <Td numeric>{quotes.quantityWithUnit(line.quantity, line.unit)}</Td>}
+            {phone ? null : <Td numeric>{money(line.unitCents)}</Td>}
+            <Td numeric>{money(line.totalCents)}</Td>
+          </Tr>
         ))}
       </tbody>
-    </table>
+    </Table>
   );
 }

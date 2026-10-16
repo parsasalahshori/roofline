@@ -150,7 +150,7 @@ describe('the customer window', () => {
 
     const link = await screen.findByRole('link', { name: customers.window.callLabel('+15551230001') });
     expect(link).toHaveAttribute('href', 'tel:+15551230001');
-    expect(link).toHaveTextContent('+15551230001');
+    expect(link).toHaveTextContent('(555) 123-0001');
   });
 
   it('a home not on the map says so, and Place on map posts the locate call for that home', async () => {
@@ -197,14 +197,66 @@ describe('the customer window', () => {
     expect(api.count('POST /api/customers/c1/archive')).toBe(0);
   });
 
-  it('the action links point at a new job, an appointment and Add a home', async () => {
+  it('New job is in the head; Book an appointment and Add a home sit in the panels they belong to', async () => {
     signedInApi();
     renderWindow();
 
     const actions = await screen.findByRole('group', { name: customers.window.actionsLabel });
     expect(within(actions).getByRole('link', { name: customers.window.newJob })).toHaveAttribute('href', '/jobs/new?customerId=c1');
-    expect(within(actions).getByRole('link', { name: customers.window.bookAppointment })).toHaveAttribute('href', '/calendar/new?customerId=c1');
-    expect(within(actions).getByRole('link', { name: customers.window.addHome })).toHaveAttribute('href', '/customers/c1?addHome=1');
+    const upcoming = await section(customers.window.upcomingHeading);
+    expect(within(upcoming).getByRole('link', { name: customers.window.bookAppointment })).toHaveAttribute('href', '/calendar/new?customerId=c1');
+    const homes = await section(customers.window.homesHeading);
+    expect(within(homes).getByRole('link', { name: customers.window.addHome })).toHaveAttribute('href', '/customers/c1?addHome=1');
+  });
+
+  it('the trail names Customers and the customer, and Customers is the way back', async () => {
+    signedInApi();
+    renderWindow();
+
+    await screen.findByRole('heading', { level: 1, name: 'Dana Homeowner' });
+    const trail = screen.getByRole('navigation', { name: 'Breadcrumb' });
+    expect(within(trail).getByRole('link', { name: 'Customers' })).toHaveAttribute('href', '/customers');
+    expect(within(trail).getByText('Dana Homeowner')).toBeInTheDocument();
+  });
+
+  it('the name is the page title, with the texting status under it', async () => {
+    signedInApi(makeView({ customer: { consent: 'written', doNotContact: true } }));
+    renderWindow();
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Dana Homeowner' })).toBeInTheDocument();
+    expect(screen.getAllByText(customers.consent.written)).toHaveLength(1);
+    expect(screen.getByText(customers.doNotContact)).toBeInTheDocument();
+  });
+
+  it('contact lists phones in mono with their label and primary tag, emails and tags', async () => {
+    signedInApi();
+    renderWindow();
+
+    const contact = await section(customers.window.contactHeading);
+    expect(within(contact).getByText('Mobile')).toBeInTheDocument();
+    expect(within(contact).getByText(customers.window.primary)).toBeInTheDocument();
+    expect(within(contact).getByRole('link', { name: 'dana@example.com' })).toHaveAttribute('href', 'mailto:dana@example.com');
+    expect(within(contact).getByText('storm')).toBeInTheDocument();
+  });
+
+  it('a customer with no jobs shows what a job is and a New job button', async () => {
+    signedInApi({ ...makeView(), jobs: [], homes: [], upcoming: [] });
+    renderWindow();
+
+    const jobsPanel = await section(customers.window.jobsHeading);
+    expect(within(jobsPanel).getByText(customers.window.noJobs)).toBeInTheDocument();
+    expect(within(jobsPanel).getByText(customers.window.noJobsBody)).toBeInTheDocument();
+    expect(within(jobsPanel).getByRole('link', { name: customers.window.newJob })).toHaveAttribute('href', '/jobs/new?customerId=c1');
+    expect(within(await section(customers.window.homesHeading)).getByText(customers.window.noHomes)).toBeInTheDocument();
+    expect(within(await section(customers.window.upcomingHeading)).getByText(customers.window.noUpcoming)).toBeInTheDocument();
+  });
+
+  it('a failed load shows the error tag with Try again', async () => {
+    signedInApi(makeView(), { 'GET /api/customers/c1/view': () => ({ status: 500, body: { error: 'Nope' } }) });
+    renderWindow();
+
+    expect(await screen.findByText(customers.window.errorTag)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: customers.window.retry })).toBeInTheDocument();
   });
 
   it('mounts the timeline for this customer', async () => {
@@ -215,12 +267,15 @@ describe('the customer window', () => {
     await waitFor(() => expect(api.count('GET /api/timeline?customerId=c1')).toBeGreaterThanOrEqual(1));
   });
 
-  it('job rows show the stage chip', async () => {
+  it('job rows show the address, the stage tag and the days, and open the job', async () => {
     signedInApi();
     renderWindow();
 
     const jobRows = await section(customers.window.jobsHeading);
-    expect(within(jobRows).getByRole('link', { name: jobs.stage.lead })).toBeInTheDocument();
+    const row = within(jobRows).getByRole('link', { name: /12 Oak Street/ });
+    expect(row).toHaveAttribute('href', '/jobs/j1');
+    expect(within(row).getByText(jobs.stage.lead)).toBeInTheDocument();
+    expect(row).toHaveTextContent(jobs.daysInStage(2));
   });
 
   it('opens the Add a home panel when the page is loaded with addHome=1', async () => {

@@ -10,6 +10,7 @@ import { AddressFields, EMPTY_ADDRESS, type AddressValue } from '../src/features
 import { CustomerPicker } from '../src/features/create/CustomerPicker.tsx';
 import type { CustomerRecord } from '../src/features/create/api.ts';
 import { stubApi } from './helpers.tsx';
+import { chooseFromListbox } from './crm-helpers.ts';
 
 let api: ReturnType<typeof stubApi> | undefined;
 
@@ -36,8 +37,9 @@ function fieldBox(label: string): HTMLElement {
 }
 
 describe('address fields', () => {
-  it('address fields lists all states and reports errors under their fields', () => {
+  it('address fields lists all states and reports errors under their fields', async () => {
     const onChange = vi.fn();
+    const user = userEvent.setup();
     render(
       <AddressFields
         value={EMPTY_ADDRESS}
@@ -51,10 +53,14 @@ describe('address fields', () => {
     expect(fieldBox(create.address.state)).toContainElement(screen.getByText('c'));
     expect(fieldBox(create.address.zip)).toContainElement(screen.getByText('d'));
 
+    // The state is a Listbox: its list opens under the control and holds the empty choice, then every state by name
     const state = screen.getByLabelText(create.address.state);
-    const options = within(state).getAllByRole('option');
+    expect(state).toHaveTextContent(create.address.statePlaceholder);
+    await user.click(state);
+    const list = await screen.findByRole('listbox', { name: create.address.state });
+    const options = within(list).getAllByRole('option');
     expect(options.length).toBeGreaterThanOrEqual(51);
-    expect(within(state).getByRole('option', { name: 'Texas' })).toHaveAttribute('value', 'TX');
+    expect(within(list).getByRole('option', { name: 'Texas' })).toBeInTheDocument();
     expect(options[0]).toHaveTextContent(create.address.statePlaceholder);
   });
 
@@ -67,7 +73,7 @@ describe('address fields', () => {
     await user.type(screen.getByLabelText(create.address.street), '1');
     expect(onChange).toHaveBeenLastCalledWith({ ...value, addressLine: '1' });
 
-    await user.selectOptions(screen.getByLabelText(create.address.state), 'TX');
+    await chooseFromListbox(user, create.address.state, 'Texas');
     expect(onChange).toHaveBeenLastCalledWith({ ...value, state: 'TX' });
   });
 });
@@ -115,7 +121,7 @@ describe('add home sheet', () => {
   async function fillHome(user: ReturnType<typeof userEvent.setup>) {
     await user.type(screen.getByLabelText(create.address.street), '12 Oak St');
     await user.type(screen.getByLabelText(create.address.city), 'Dallas');
-    await user.selectOptions(screen.getByLabelText(create.address.state), 'TX');
+    await chooseFromListbox(user, create.address.state, 'Texas');
     await user.type(screen.getByLabelText(create.address.zip), '75201');
   }
 

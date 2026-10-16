@@ -44,12 +44,19 @@ export function AddHomeSheet({ customerId, onDone }: AddHomeSheetProps) {
   }
 
   return (
-    <Sheet open title={create.addHome.title} closeLabel={common.close} onClose={() => onDone?.()}>
-      <form id={formId} className={styles.sheetForm} onSubmit={(event) => void save(event)}>
-        <AddressFields value={address} onChange={setAddress} errors={fieldErrors} />
-        <Button type="submit" busy={createProperty.isPending} className={styles.save}>
+    <Sheet
+      open
+      title={create.addHome.title}
+      closeLabel={common.close}
+      onClose={() => onDone?.()}
+      footer={
+        <Button type="submit" form={formId} variant="primary" busy={createProperty.isPending}>
           {createProperty.isPending ? create.saving : create.addHome.save}
         </Button>
+      }
+    >
+      <form id={formId} className={styles.sheetForm} onSubmit={(event) => void save(event)}>
+        <AddressFields value={address} onChange={setAddress} errors={fieldErrors} />
       </form>
     </Sheet>
   );

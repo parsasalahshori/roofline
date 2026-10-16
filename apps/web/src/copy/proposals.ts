@@ -1,4 +1,4 @@
-import type { AddOnUnit, ProposalEventKind, ProposalStatus, Tier } from '@roofline/shared';
+import type { AddOnUnit, ProposalStatus, Tier } from '@roofline/shared';
 
 /** Whole dollars, as the screen shows every amount. */
 const dollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -8,9 +8,12 @@ const dollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'U
  */
 export const proposals = {
   // --- loading and errors ---
+  pageTitle: 'Proposal',
+  errorTag: "Couldn't load",
   loadFailed: "We couldn't open this proposal. Try again.",
   retry: 'Try again',
   notFound: "We couldn't find this proposal.",
+  backToJobs: 'Back to jobs',
 
   // --- header ---
   title: (number: string): string => `Proposal ${number}`,
@@ -67,15 +70,6 @@ export const proposals = {
   /** "Opened 3 times · last today 7:12 PM". `last` comes from formatLastOpened in features/proposals/format.ts. */
   eventsLine: (count: number, last: string): string => `Opened ${count} ${count === 1 ? 'time' : 'times'} · last ${last}`,
   sentOn: (when: string): string => `Sent ${when}`,
-  eventKind: {
-    sent: 'Sent',
-    viewed: 'Opened',
-    option_viewed: 'Looked at an option',
-    signed: 'Signed',
-    declined: 'Declined',
-    link_resent: 'Link sent again',
-    link_copied: 'Link copied',
-  } satisfies Record<ProposalEventKind, string>,
   /** Words for a date label. `today` and `yesterday` are followed by a clock time. */
   today: 'today',
   yesterday: 'yesterday',
@@ -95,18 +89,26 @@ export const proposals = {
   makeRevised: 'Make a revised proposal',
   reviseFailed: "We couldn't make a revised proposal. Try again.",
   saveFailed: "We couldn't save your change. Try again.",
-  saving: 'Saving',
+
+  // --- the options as rows and, on a phone, tabs ---
+  tiersLabel: 'Options',
+  recommended: 'Recommended',
+  optionLeftOut: 'Left out',
+  /** The one line under an option's name: what it is made of and the waste it allows for. */
+  specLine: (material: string, wastePercent: number): string => `${material} · ${wastePercent}% waste`,
+  activityHeading: 'Activity',
 
   // --- option cards ---
   optionHeading: (tier: Tier): string => proposals.tierName[tier],
   tierName: { good: 'Good', better: 'Better', best: 'Best' } satisfies Record<Tier, string>,
   optionOn: 'Include this option',
-  optionOff: 'Left out of this proposal',
   fieldName: 'Option name',
   fieldMaterial: 'Material',
   fieldWaste: 'Waste (percent)',
   fieldMarkup: 'Markup (percent)',
   totalLabel: 'Total',
+  lineItem: 'Item',
+  lineAmount: 'Amount',
   includes: 'Includes',
   linesHeading: 'Price lines',
   pricesUnavailable: 'Live prices are not available to you. The saved total is shown.',

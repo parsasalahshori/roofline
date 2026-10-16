@@ -1,5 +1,5 @@
 import { US_STATE_NAMES } from '@roofline/shared';
-import { Field, Select, type SelectOption } from '@roofline/ui';
+import { Field, Listbox, type ListboxOption } from '@roofline/ui';
 import { create } from '../../copy/create.ts';
 import styles from './Create.module.css';
 
@@ -13,7 +13,7 @@ export type AddressFieldsProps = {
 };
 
 /** The first option is the empty choice; the states follow, sorted by name. */
-const STATE_OPTIONS: readonly SelectOption[] = [
+const STATE_OPTIONS: readonly ListboxOption[] = [
   { value: '', label: create.address.statePlaceholder },
   ...Object.entries(US_STATE_NAMES)
     .map(([code, name]) => ({ value: code, label: name }))
@@ -39,7 +39,7 @@ export function AddressFields({ value, onChange, errors = {} }: AddressFieldsPro
         onChange={(event) => onChange({ ...value, city: event.currentTarget.value })}
         error={errors.city}
       />
-      <Select
+      <Listbox
         label={create.address.state}
         value={value.state}
         options={STATE_OPTIONS}

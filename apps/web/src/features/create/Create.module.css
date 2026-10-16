@@ -25,10 +25,17 @@
 
 .results {
   display: grid;
-  gap: 4px;
   margin: 0;
   padding: 0;
+  overflow: hidden;
   list-style: none;
+  border-radius: var(--r-2);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+}
+
+.results > li + li {
+  border-top: 1px solid var(--line);
 }
 
 /* A match is as tall as a phone touch target and as wide as its column */
@@ -36,6 +43,7 @@
   width: 100%;
   min-height: 40px;
   justify-content: flex-start;
+  border-radius: 0;
   text-align: left;
 }
 
@@ -54,16 +62,11 @@
   overflow-wrap: anywhere;
 }
 
-/* The sheet's form: the address block, then Save as wide as its words */
+/* The sheet's form: the address block; Save is pinned in the sheet's footer */
 .sheetForm {
   display: grid;
   gap: 16px;
   min-width: 0;
-}
-
-.save {
-  justify-self: start;
-  min-height: 40px;
 }
 
 @media (max-width: 767.98px) {

@@ -27,3 +27,11 @@ export function formatLastOpened(iso: string, now: Date, timeZone: string | unde
 
 /** The same label for sent, signed and declined lines. */
 export const formatWhen = formatLastOpened;
+
+/** A plain `YYYY-MM-DD` date as "Nov 9". Anything that is not one comes back as it was. */
+export function formatDay(date: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (match === null) return date;
+  const day = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(day);
+}

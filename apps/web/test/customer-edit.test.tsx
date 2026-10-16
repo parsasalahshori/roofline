@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { customers } from '../src/copy/customers.ts';
 import { EditCustomerSheet } from '../src/features/customers/EditCustomerSheet.tsx';
 import { renderAt, stubApi } from './helpers.tsx';
+import { chooseFromListbox } from './crm-helpers.ts';
 
 let api: ReturnType<typeof stubApi> | undefined;
 
@@ -56,7 +57,7 @@ describe('the edit customer sheet', () => {
   it('office changes consent with the confirm', async () => {
     const { user, onDone, stub } = renderSheet(makeView());
 
-    await user.selectOptions(screen.getByLabelText(customers.edit.consent), customers.edit.consentOptions.written);
+    await chooseFromListbox(user, customers.edit.consent, customers.edit.consentOptions.written);
     expect(screen.getByText(customers.edit.consentConfirm)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: customers.edit.save }));
@@ -153,7 +154,7 @@ describe('the edit customer sheet', () => {
   it('a written note goes with the written status it records', async () => {
     const { user, onDone, stub } = renderSheet(makeView());
 
-    await user.selectOptions(screen.getByLabelText(customers.edit.consent), customers.edit.consentOptions.written);
+    await chooseFromListbox(user, customers.edit.consent, customers.edit.consentOptions.written);
     await user.type(screen.getByLabelText(customers.edit.consentNote), 'Signed the form on site');
     await user.click(screen.getByRole('button', { name: customers.edit.save }));
 

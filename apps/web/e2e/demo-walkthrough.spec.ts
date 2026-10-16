@@ -78,7 +78,7 @@ test('Roofline demo walkthrough', async ({ page }) => {
     await visit(page, '/customers');
     await clickFirst(page, 'main a[href^="/customers/"]:not([href$="/new"])');
     await visit(page, '/jobs');
-    await clickFirst(page, 'main a[href^="/jobs/"]:not([href$="/new"])');
+    await clickFirst(page, 'main a[href^="/jobs/"]:not([href^="/jobs/new"])');
   });
 
   await test.step('Estimator and proposals', async () => {

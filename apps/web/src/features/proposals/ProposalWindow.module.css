@@ -1,63 +1,73 @@
-.page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 16px;
+/*
+ * The owner's proposal: the three options stacked as rows at the left (on a phone, one at a time from three tabs), the
+ * activity and the text message at the right.
+ */
+.meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
-.header {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.titleRow {
+.actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
-.title {
-  margin: 0;
-  font-size: 1.25rem;
+.notice {
+  margin-bottom: 14px;
 }
 
-.meta {
-  margin: 0;
-  color: var(--ink-3);
-  font-size: var(--font-size-body);
-  overflow-wrap: anywhere;
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 14px;
+  align-items: start;
+}
+
+.main,
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
 }
 
 .options {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   min-width: 0;
 }
 
-.events {
+/* The three tabs share the width, each with its name over its price, so they fit a 360px phone */
+.main .tabs {
   display: flex;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.main .tabs [role='radio'] {
+  flex: 1 1 0;
   flex-direction: column;
+  justify-content: center;
   gap: 4px;
+  min-width: 0;
+  min-height: 52px;
+  padding: 6px 8px;
 }
 
-.events p {
-  margin: 0;
-  overflow-wrap: anywhere;
+.option {
+  min-width: 0;
 }
 
-.message {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.heading {
-  margin: 0;
-  font-size: 1rem;
+.option[hidden] {
+  display: none;
 }
 
 .messageText {
@@ -66,20 +76,21 @@
   overflow-wrap: anywhere;
 }
 
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.actions > * {
-  min-height: 40px;
-  min-width: 40px;
-}
-
-.loading {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.skeletonPanel {
   padding: 16px;
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+}
+
+@media (max-width: 1023.98px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 767.98px) {
+  .actions {
+    justify-content: flex-start;
+  }
 }

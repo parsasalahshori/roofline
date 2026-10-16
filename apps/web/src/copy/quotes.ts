@@ -4,11 +4,22 @@ import type { Scope } from '@roofline/shared';
 export const quotes = {
   loading: 'Loading the quote',
   loadFailed: 'We could not load this quote.',
+  notFound: "We couldn't find this quote.",
+  backToJobs: 'Back to jobs',
+  errorTag: "Couldn't load",
+  retry: 'Try again',
+  /** The page's name while the quote loads, and the last step of the trail. */
+  pageTitle: 'Quote',
+  title: (number: string) => `Quote ${number}`,
+  crumbJob: 'Job',
   estimateLabel: 'Estimate',
 
-  statNumber: 'Quote',
   statStatus: 'Status',
   statTotal: 'Total',
+  statValid: 'Good until',
+  priceLinesHeading: 'Price lines',
+  /** Under a line's name on a phone: how much, at what rate. */
+  lineDetail: (quantity: string, rate: string): string => `${quantity} × ${rate}`,
   status: { draft: 'Draft', final: 'Final' } as Record<string, string>,
 
   editorLabel: 'Quote details',
@@ -51,7 +62,6 @@ export const quotes = {
   total: 'Total',
 
   save: 'Save',
-  saving: 'Saving',
   saved: 'Quote saved.',
   saveFailed: 'We could not save the quote.',
   markFinal: 'Mark final',
@@ -62,6 +72,8 @@ export const quotes = {
   finalized: 'Quote marked final.',
   finalizeFailed: 'We could not mark the quote final.',
   finalizedOn: (date: string) => `Final on ${date}`,
+  notFinal: 'Not final yet',
+  madeOn: (date: string) => `Made ${date}`,
   readOnlyNote: 'This quote is final. Copy it to make changes.',
   copy: 'Copy to a new quote',
   copyFailed: 'We could not copy the quote.',

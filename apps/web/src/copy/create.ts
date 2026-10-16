@@ -1,7 +1,6 @@
 /** The New customer, New job and Add a home screens (Task 22). */
 export const create = {
   notOnMap: "Saved. We couldn't find that address on the map yet.",
-  save: 'Save',
   saving: 'Saving...',
   address: {
     street: 'Street address',
@@ -12,6 +11,10 @@ export const create = {
   },
   newCustomer: {
     title: 'New customer',
+    subtitle: 'A name and a way to reach them is enough to start.',
+    stepName: 'Name',
+    stepContact: 'Contact',
+    cancel: 'Cancel',
     firstName: 'First name',
     lastName: 'Last name',
     displayName: 'Name to show',
@@ -25,6 +28,8 @@ export const create = {
   },
   newJob: {
     title: 'New job',
+    subtitle: 'Pick a customer, then the home and the details.',
+    cancel: 'Cancel',
     stepCustomer: 'Customer',
     stepHome: 'Home',
     stepDetails: 'Details',

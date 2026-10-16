@@ -1,5 +1,5 @@
 import { CONVERSATION_OUTCOMES, type ConversationOutcome, type TimelineItem } from '@roofline/shared';
-import { Pill, UiLink } from '@roofline/ui';
+import { Tag, UiLink } from '@roofline/ui';
 import { timeline } from '../../copy/timeline.ts';
 import { actorLabel, TimeStamp } from './Timeline.tsx';
 import styles from './FrontDeskCard.module.css';
@@ -29,18 +29,21 @@ export function frontDeskActivity(item: TimelineItem): FrontDeskActivity | null 
 export function FrontDeskCard({ item, data }: { item: TimelineItem; data: FrontDeskActivity }) {
   const label = item.kind === 'call' ? timeline.frontDesk.callLabel : timeline.frontDesk.textLabel;
   return (
-    <li className={styles.card} data-type="front-desk">
-      <div className={styles.head}>
-        <span className={styles.label}>{label}</span>
-        {data.outcome !== null ? <Pill tone="neutral">{timeline.frontDesk.outcome[data.outcome]}</Pill> : null}
+    <li className={styles.item} data-type="front-desk">
+      <span className={styles.dot} data-kind="front-desk" aria-hidden="true" />
+      <div className={styles.card}>
+        <div className={styles.head}>
+          <span className={styles.label}>{label}</span>
+          {data.outcome !== null ? <Tag>{timeline.frontDesk.outcome[data.outcome]}</Tag> : null}
+        </div>
+        <p className={styles.summary}>{data.summary}</p>
+        <p className={styles.meta}>
+          <span>{timeline.by(actorLabel(item))}</span> <TimeStamp at={item.at} />
+        </p>
+        <UiLink className={styles.link} href={`/front-desk/${encodeURIComponent(data.conversationId)}`}>
+          {timeline.frontDesk.open}
+        </UiLink>
       </div>
-      <p className={styles.summary}>{data.summary}</p>
-      <p className={styles.meta}>
-        <span>{timeline.by(actorLabel(item))}</span> <TimeStamp at={item.at} />
-      </p>
-      <UiLink className={styles.link} href={`/front-desk/${encodeURIComponent(data.conversationId)}`}>
-        {timeline.frontDesk.open}
-      </UiLink>
     </li>
   );
 }

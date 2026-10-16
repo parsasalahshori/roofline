@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ADD_ON_UNITS, materialNames, priceTier, toSurfaceArea } from '@roofline/shared';
-import type { AddOn, AddOnUnit, MeasuredQuantities, MeasurementKind, Pricebook, ProposalOptionView, Scope } from '@roofline/shared';
-import { Button, Card, Field, IconButton, Pill, Select, Toggle } from '@roofline/ui';
+import type { AddOn, MeasuredQuantities, MeasurementKind, Pricebook, ProposalOptionView, Scope, Tier } from '@roofline/shared';
+import { Button, Field, Icon, IconButton, Listbox, Table, Tag, Td, Th, Toggle, Tr } from '@roofline/ui';
 import { proposals } from '../../copy/proposals.ts';
 import type { OptionPatch } from './api.ts';
 import styles from './OptionCard.module.css';
@@ -16,6 +16,15 @@ export type OptionCardProps = {
   prices: Pricebook | null;
   /** Called with only what changed, when a change is committed (switch, select, blur). */
   onChange: (patch: OptionPatch) => void;
+  /** True for the option that is picked: it shows what it includes, its fields, its price lines and its total. */
+  open?: boolean;
+  /**
+   * Given on a desktop, where the three options are stacked rows and each row is a radio that picks it. Left out on a
+   * phone, where the tabs above pick the option and the row is only a heading.
+   */
+  onSelect?: () => void;
+  /** The name the three rows' radios share, so the arrow keys move between them. */
+  radioName?: string;
 };
 
 /** The measured quantities the add-ons are charged against, taken from a saved scope. */
@@ -63,6 +72,9 @@ const signatureOf = (option: ProposalOptionView): string =>
 const unitOptions = ADD_ON_UNITS.map((unit) => ({ value: unit, label: proposals.addOnUnitLabel[unit] }));
 const materialOptions = (Object.keys(materialNames) as Scope['material'][]).map((key) => ({ value: key, label: materialNames[key] }));
 
+/** The option the pages call out: the one most people choose. The job page and the measure screen follow the same rule. */
+const RECOMMENDED_TIER: Tier = 'better';
+
 function RemoveIcon() {
   return (
     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" focusable="false">
@@ -71,7 +83,7 @@ function RemoveIcon() {
   );
 }
 
-export function OptionCard({ option, editable, basis, prices, onChange }: OptionCardProps) {
+export function OptionCard({ option, editable, basis, prices, onChange, open = true, onSelect, radioName }: OptionCardProps) {
   const signature = signatureOf(option);
   const [seen, setSeen] = useState(signature);
   const [draft, setDraft] = useState<Draft>(() => draftOf(option));
@@ -121,208 +133,262 @@ export function OptionCard({ option, editable, basis, prices, onChange }: Option
     if (JSON.stringify(draft.addOns) !== JSON.stringify(saved.addOns)) commitAddOns(draft.addOns, draft.rates);
   };
 
+  const recommended = option.tier === RECOMMENDED_TIER;
+  const title = (
+    <>
+      {onSelect ? <span className={styles.radio} aria-hidden="true" /> : null}
+      <span className={styles.titles}>
+        <span className={styles.tierLine}>
+          <span className={styles.tier}>{proposals.tierName[option.tier]}</span>
+          {recommended ? (
+            <Tag tone="brand" icon="star">
+              {proposals.recommended}
+            </Tag>
+          ) : null}
+          {draft.enabled ? null : (
+            <Tag tone="neutral" icon="minus">
+              {proposals.optionLeftOut}
+            </Tag>
+          )}
+        </span>
+        <span className={styles.name}>{draft.name}</span>
+        <span className={styles.spec}>{proposals.specLine(materialNames[draft.material], waste)}</span>
+      </span>
+      {onSelect ? <span className={styles.price}>{proposals.money(totalCents)}</span> : null}
+    </>
+  );
+
   return (
-    <Card as="section" className={styles.card} aria-label={proposals.optionHeading(option.tier)}>
-      <div className={styles.header}>
-        <h3 className={styles.title}>{proposals.tierName[option.tier]}</h3>
-        {editable ? (
-          <Toggle
-            checked={draft.enabled}
-            label={proposals.optionOn}
-            labelHidden
-            onChange={(enabled) => {
-              update({ enabled });
-              setSaved((s) => ({ ...s, enabled }));
-              onChange({ enabled });
-            }}
-          />
-        ) : (
-          <Pill tone={option.enabled ? 'accent' : 'neutral'}>{option.enabled ? proposals.optionOn : proposals.optionOff}</Pill>
-        )}
-      </div>
+    <section
+      aria-label={proposals.optionHeading(option.tier)}
+      className={styles.card}
+      data-recommended={recommended ? 'true' : undefined}
+      data-open={open ? 'true' : 'false'}
+    >
+      {onSelect ? (
+        <label className={styles.header} data-pick="true">
+          <input type="radio" name={radioName} className={styles.input} checked={open} onChange={onSelect} />
+          {title}
+        </label>
+      ) : (
+        <div className={styles.header}>{title}</div>
+      )}
 
-      {option.highlights.length > 0 ? (
-        <>
-          <p className={styles.heading}>{proposals.includes}</p>
-          <ul className={styles.highlights}>
-            {option.highlights.map((h, i) => (
-              <li key={i}>{h}</li>
-            ))}
-          </ul>
-        </>
-      ) : null}
+      <div className={styles.detail} hidden={!open}>
+        <div className={styles.body}>
+          {editable ? (
+            <Toggle
+              checked={draft.enabled}
+              label={proposals.optionOn}
+              onChange={(enabled) => {
+                update({ enabled });
+                setSaved((s) => ({ ...s, enabled }));
+                onChange({ enabled });
+              }}
+            />
+          ) : null}
 
-      <div className={styles.totalRow}>
-        <span className={styles.heading}>{proposals.totalLabel}</span>
-        <span className={styles.total}>{proposals.money(totalCents)}</span>
-        {estimate ? <span className={styles.estimate}>{proposals.estimateLabel}</span> : null}
-      </div>
-      {showMonthly && option.monthlyEstimateCents !== null ? (
-        <p className={styles.monthly}>
-          <span>{proposals.monthly(option.monthlyEstimateCents)}</span>
-          {estimate ? <span className={styles.estimate}>{proposals.estimateLabel}</span> : null}
-        </p>
-      ) : null}
-      {prices ? null : <p className={styles.note}>{proposals.pricesUnavailable}</p>}
+          {option.highlights.length > 0 ? (
+            <section className={styles.block}>
+              <p className={styles.heading}>{proposals.includes}</p>
+              <ul className={styles.highlights}>
+                {option.highlights.map((h, i) => (
+                  <li key={i}>
+                    <Icon name="check" size={16} />
+                    <span>{h}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
 
-      {editable ? (
-        <div className={styles.fields}>
-          <Field
-            label={proposals.fieldName}
-            value={draft.name}
-            onChange={(e) => update({ name: e.currentTarget.value })}
-            onBlur={() => {
-              const name = draft.name.trim();
-              if (name === '') return update({ name: saved.name });
-              if (name !== saved.name) {
-                setSaved((s) => ({ ...s, name }));
-                onChange({ name });
-              }
-            }}
-          />
-          <Select
-            label={proposals.fieldMaterial}
-            value={draft.material}
-            options={materialOptions}
-            onChange={(value) => {
-              const material = value as Scope['material'];
-              update({ material });
-              if (material !== saved.material) {
-                setSaved((s) => ({ ...s, material }));
-                onChange({ material });
-              }
-            }}
-          />
-          <Field
-            label={proposals.fieldWaste}
-            type="number"
-            inputMode="decimal"
-            value={draft.waste}
-            onChange={(e) => update({ waste: e.currentTarget.value })}
-            onBlur={() => {
-              const wastePercent = clamp(draft.waste, 50, Number(saved.waste));
-              update({ waste: String(wastePercent) });
-              if (wastePercent !== Number(saved.waste)) {
-                setSaved((s) => ({ ...s, waste: String(wastePercent) }));
-                onChange({ wastePercent });
-              }
-            }}
-          />
-          <Field
-            label={proposals.fieldMarkup}
-            type="number"
-            inputMode="decimal"
-            value={draft.markup}
-            onChange={(e) => update({ markup: e.currentTarget.value })}
-            onBlur={() => {
-              const markupPercent = clamp(draft.markup, 100, Number(saved.markup));
-              update({ markup: String(markupPercent) });
-              if (markupPercent !== Number(saved.markup)) {
-                setSaved((s) => ({ ...s, markup: String(markupPercent) }));
-                onChange({ markupPercent });
-              }
-            }}
-          />
+          {editable ? (
+            <div className={styles.fields}>
+              <Field
+                className={styles.wide}
+                label={proposals.fieldName}
+                value={draft.name}
+                onChange={(e) => update({ name: e.currentTarget.value })}
+                onBlur={() => {
+                  const name = draft.name.trim();
+                  if (name === '') return update({ name: saved.name });
+                  if (name !== saved.name) {
+                    setSaved((s) => ({ ...s, name }));
+                    onChange({ name });
+                  }
+                }}
+              />
+              <Listbox
+                className={styles.wide}
+                label={proposals.fieldMaterial}
+                value={draft.material}
+                options={materialOptions}
+                onChange={(material) => {
+                  update({ material });
+                  if (material !== saved.material) {
+                    setSaved((s) => ({ ...s, material }));
+                    onChange({ material });
+                  }
+                }}
+              />
+              <Field
+                label={proposals.fieldWaste}
+                type="number"
+                inputMode="decimal"
+                value={draft.waste}
+                onChange={(e) => update({ waste: e.currentTarget.value })}
+                onBlur={() => {
+                  const wastePercent = clamp(draft.waste, 50, Number(saved.waste));
+                  update({ waste: String(wastePercent) });
+                  if (wastePercent !== Number(saved.waste)) {
+                    setSaved((s) => ({ ...s, waste: String(wastePercent) }));
+                    onChange({ wastePercent });
+                  }
+                }}
+              />
+              <Field
+                label={proposals.fieldMarkup}
+                type="number"
+                inputMode="decimal"
+                value={draft.markup}
+                onChange={(e) => update({ markup: e.currentTarget.value })}
+                onBlur={() => {
+                  const markupPercent = clamp(draft.markup, 100, Number(saved.markup));
+                  update({ markup: String(markupPercent) });
+                  if (markupPercent !== Number(saved.markup)) {
+                    setSaved((s) => ({ ...s, markup: String(markupPercent) }));
+                    onChange({ markupPercent });
+                  }
+                }}
+              />
+            </div>
+          ) : null}
+
+          <section className={styles.block}>
+            <p className={styles.heading}>{proposals.linesHeading}</p>
+            <div className={styles.flush}>
+              <Table>
+                <thead>
+                  <tr>
+                    <Th>{proposals.lineItem}</Th>
+                    <Th numeric>{proposals.lineAmount}</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lines.map((line, i) => (
+                    <Tr key={`${line.code}-${i}`}>
+                      <Td>{line.name}</Td>
+                      <Td numeric>{proposals.money(line.totalCents)}</Td>
+                    </Tr>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
+          </section>
+
+          <section className={styles.block}>
+            <p className={styles.heading}>{proposals.addOnsHeading}</p>
+            {draft.addOns.length === 0 ? <p className={styles.note}>{proposals.addOnsNone}</p> : null}
+            {editable ? (
+              <>
+                <ul className={styles.addOns}>
+                  {draft.addOns.map((addOn, index) => (
+                    <li key={index} className={styles.addOn}>
+                      <Field
+                        className={styles.addOnName}
+                        label={proposals.addOnName}
+                        value={addOn.name}
+                        onChange={(e) => {
+                          const name = e.currentTarget.value;
+                          update({ addOns: draft.addOns.map((a, i) => (i === index ? { ...a, name } : a)) });
+                        }}
+                        onBlur={blurAddOnText}
+                      />
+                      <Listbox label={proposals.addOnUnit} value={addOn.unit} options={unitOptions} onChange={(unit) => changeAddOn(index, { unit })} />
+                      <Field
+                        label={proposals.addOnRate}
+                        type="number"
+                        inputMode="decimal"
+                        value={draft.rates[index] ?? ''}
+                        onChange={(e) => {
+                          const text = e.currentTarget.value;
+                          const dollars = Number(text);
+                          const rateCents = text.trim() !== '' && Number.isFinite(dollars) && dollars >= 0 ? Math.round(dollars * 100) : addOn.rateCents;
+                          update({
+                            rates: draft.rates.map((r, i) => (i === index ? text : r)),
+                            addOns: draft.addOns.map((a, i) => (i === index ? { ...a, rateCents } : a)),
+                          });
+                        }}
+                        onBlur={blurAddOnText}
+                      />
+                      <div className={styles.addOnActions}>
+                        <Toggle checked={addOn.taxable} label={proposals.addOnTaxable} onChange={(taxable) => changeAddOn(index, { taxable })} />
+                        <IconButton
+                          label={proposals.addOnRemove(addOn.name)}
+                          icon={<RemoveIcon />}
+                          onClick={() =>
+                            commitAddOns(
+                              draft.addOns.filter((_, i) => i !== index),
+                              draft.rates.filter((_, i) => i !== index),
+                            )
+                          }
+                        />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <Button
+                  variant="default"
+                  size="sm"
+                  className={styles.addButton}
+                  onClick={() =>
+                    commitAddOns(
+                      [...draft.addOns, { name: proposals.addOnNewName, unit: 'per_job', rateCents: 0, taxable: false }],
+                      [...draft.rates, '0'],
+                    )
+                  }
+                >
+                  <Icon name="plus" size={16} />
+                  {proposals.addOnAdd}
+                </Button>
+              </>
+            ) : draft.addOns.length > 0 ? (
+              <div className={styles.flush}>
+                <Table>
+                  <thead>
+                    <tr>
+                      <Th>{proposals.lineItem}</Th>
+                      <Th>{proposals.addOnUnit}</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {draft.addOns.map((addOn, index) => (
+                      <Tr key={index}>
+                        <Td>{addOn.name}</Td>
+                        <Td>{proposals.addOnUnitLabel[addOn.unit]}</Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
+            ) : null}
+          </section>
         </div>
-      ) : (
-        <dl className={styles.readList}>
-          <div className={styles.readItem}>
-            <dt>{proposals.fieldName}</dt>
-            <dd>{draft.name}</dd>
-          </div>
-          <div className={styles.readItem}>
-            <dt>{proposals.fieldMaterial}</dt>
-            <dd>{materialNames[draft.material]}</dd>
-          </div>
-        </dl>
-      )}
 
-      <p className={styles.heading}>{proposals.linesHeading}</p>
-      <ul className={styles.lines}>
-        {lines.map((line, i) => (
-          <li key={`${line.code}-${i}`} className={styles.line}>
-            <span className={styles.lineName}>{line.name}</span>
-            <span>{proposals.money(line.totalCents)}</span>
-          </li>
-        ))}
-      </ul>
-
-      <p className={styles.heading}>{proposals.addOnsHeading}</p>
-      {draft.addOns.length === 0 ? <p className={styles.note}>{proposals.addOnsNone}</p> : null}
-      {editable ? (
-        <>
-          <ul className={styles.addOns}>
-            {draft.addOns.map((addOn, index) => (
-              <li key={index} className={styles.addOn}>
-                <Field
-                  label={proposals.addOnName}
-                  value={addOn.name}
-                  onChange={(e) => {
-                    const name = e.currentTarget.value;
-                    update({ addOns: draft.addOns.map((a, i) => (i === index ? { ...a, name } : a)) });
-                  }}
-                  onBlur={blurAddOnText}
-                />
-                <Select
-                  label={proposals.addOnUnit}
-                  value={addOn.unit}
-                  options={unitOptions}
-                  onChange={(unit) => changeAddOn(index, { unit: unit as AddOnUnit })}
-                />
-                <Field
-                  label={proposals.addOnRate}
-                  type="number"
-                  inputMode="decimal"
-                  value={draft.rates[index] ?? ''}
-                  onChange={(e) => {
-                    const text = e.currentTarget.value;
-                    const dollars = Number(text);
-                    const rateCents = text.trim() !== '' && Number.isFinite(dollars) && dollars >= 0 ? Math.round(dollars * 100) : addOn.rateCents;
-                    update({
-                      rates: draft.rates.map((r, i) => (i === index ? text : r)),
-                      addOns: draft.addOns.map((a, i) => (i === index ? { ...a, rateCents } : a)),
-                    });
-                  }}
-                  onBlur={blurAddOnText}
-                />
-                <div className={styles.addOnActions}>
-                  <Toggle checked={addOn.taxable} label={proposals.addOnTaxable} onChange={(taxable) => changeAddOn(index, { taxable })} />
-                  <IconButton
-                    label={proposals.addOnRemove(addOn.name)}
-                    icon={<RemoveIcon />}
-                    onClick={() =>
-                      commitAddOns(
-                        draft.addOns.filter((_, i) => i !== index),
-                        draft.rates.filter((_, i) => i !== index),
-                      )
-                    }
-                  />
-                </div>
-              </li>
-            ))}
-          </ul>
-          <Button
-            variant="ghost"
-            onClick={() =>
-              commitAddOns(
-                [...draft.addOns, { name: proposals.addOnNewName, unit: 'per_job', rateCents: 0, taxable: false }],
-                [...draft.rates, '0'],
-              )
-            }
-          >
-            {proposals.addOnAdd}
-          </Button>
-        </>
-      ) : (
-        <ul className={styles.lines}>
-          {draft.addOns.map((addOn, index) => (
-            <li key={index} className={styles.line}>
-              <span className={styles.lineName}>{addOn.name}</span>
-              <span>{proposals.addOnUnitLabel[addOn.unit]}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </Card>
+        {/* The total is pinned to the foot of the card while its lines scroll: the lines above add up to it */}
+        <div className={styles.foot}>
+          <span className={styles.footLabel}>{proposals.totalLabel}</span>
+          <span className={styles.total}>{proposals.money(totalCents)}</span>
+          {estimate ? <Tag>{proposals.estimateLabel}</Tag> : null}
+          {showMonthly && option.monthlyEstimateCents !== null ? (
+            <span className={styles.monthly}>
+              {proposals.monthly(option.monthlyEstimateCents)}
+              {estimate ? <Tag>{proposals.estimateLabel}</Tag> : null}
+            </span>
+          ) : null}
+          {prices ? null : <span className={styles.note}>{proposals.pricesUnavailable}</span>}
+        </div>
+      </div>
+    </section>
   );
 }

@@ -1,9 +1,21 @@
 import type { JobStage } from '@roofline/shared';
 
-/** The Jobs window: tabs, pipeline board, list view, filters, the Move-to menu and sheet. */
+/** The Jobs page: head, tabs, pipeline board, list view, filters, the Move-to menu and sheet. */
 export const jobs = {
   tabsLabel: 'Jobs and customers',
-  tabs: { pipeline: 'Pipeline', customers: 'Customers' },
+  tabs: { pipeline: 'Pipeline', customers: 'Customers', archived: 'Archived' },
+
+  // The line under the title: real counts only, each part left out when there is nothing to say
+  subtitle: {
+    open: (n: number) => (n === 1 ? '1 open job' : `${n} open jobs`),
+    inPlay: (dollars: string) => `${dollars} in play`,
+    waiting: (n: number) => (n === 1 ? '1 proposal waiting on a signature' : `${n} proposals waiting on a signature`),
+    archived: (n: number) => (n === 1 ? '1 archived job' : `${n} archived jobs`),
+    join: ' · ',
+  },
+  export: 'Export',
+  viewLabel: 'View',
+  views: { board: 'Board', list: 'List' },
 
   stage: {
     lead: 'Lead',
@@ -17,35 +29,56 @@ export const jobs = {
   boardLabel: 'Pipeline board',
   listLabel: 'Jobs list',
   columnHeader: (label: string, count: number) => `${label} (${count})`,
+  /** The lane's $ total, with the word a screen reader needs (the page shows only the money). */
   total: (dollars: string) => `${dollars} total`,
+  totalWord: 'total',
+  /** A lane whose jobs have no value yet: said in words rather than as "$0". */
+  noValueYet: 'No value yet',
+  addToStage: (stage: string) => `Add a job to ${stage}`,
   lostDrawer: (count: number) => `Lost (${count})`,
   lostDrawerEmpty: 'No lost jobs.',
+  lostDropHint: 'Drop a job here to mark it lost.',
   columnEmpty: 'No jobs here yet.',
+  dropHere: (stage: string) => `Move to ${stage}`,
   showMore: (n: number) => `Show ${n} more`,
   loading: 'Loading jobs',
+  errorTag: "Couldn't load",
   loadFailed: "We couldn't load your jobs. Try again in a minute.",
   retry: 'Try again',
   emptyBoard: 'No jobs yet. Add your first job to start your pipeline.',
+  emptyBoardBody: 'Each job moves across the board from Lead to Installed. Drag a card, or use its Move to menu.',
+  emptyArchived: 'No archived jobs.',
+  emptyArchivedBody: 'A job you archive leaves the board and waits here. Open one to bring it back.',
+  emptyFiltered: 'No jobs match.',
+  emptyFilteredBody: 'Try a different name, address or filter.',
+  clearFilters: 'Clear filters',
 
   // Card text
-  value: (dollars: string) => `${dollars}`,
   unassigned: 'Unassigned',
   daysInStage: (n: number) => (n === 1 ? '1 day' : `${n} days`),
+  /** The aging figure on a card: "4d". */
+  daysShort: (n: number) => `${n}d`,
   stuck: (n: number) => `Stuck ${n} days`,
-  nextStep: (text: string, date: string | null) => (date === null ? `Next: ${text}` : `Next: ${text} on ${date}`),
+  /** The next-step line on a card: the step, then when ("today", "Oct 14"). */
+  nextStepLine: (text: string, when: string | null) => (when === null ? text : `${text} · ${when}`),
+  today: 'today',
+  /** The one tag a card can carry, when the job's own dates say so. */
+  tagToday: 'Today',
+  tagOverdue: 'Overdue',
 
   // Buttons
   newJob: 'New job',
-  downloadJobs: 'Download jobs',
+  /** The split button on a hovered card: the next stage, one click away. */
+  moveToStage: (stage: string) => `Move to ${stage}`,
 
   // Filters
   filtersLabel: 'Filter jobs',
-  filterAssignee: 'Assigned to',
+  filterAssignee: 'Assigned',
   filterAll: 'Everyone',
   filterMine: 'Mine',
   filterUnassigned: 'Unassigned',
   filterSource: 'Source',
-  filterSourceAll: 'Any source',
+  filterSourceAll: 'Any',
   source: {
     storm: 'Storm',
     call: 'Call',
@@ -57,15 +90,13 @@ export const jobs = {
     front_desk: 'Front Desk',
   },
   filterSearch: 'Search jobs',
-  filterSearchHelp: 'Name, address or next step',
-  showArchived: 'Show archived',
+  /** Shown in the empty search box. */
+  filterSearchPlaceholder: 'Name, address or next step',
 
   // Move to
   moveTo: 'Move to…',
-  moveJobFor: (name: string) => `Move ${name}`,
   /** The menu's own heading, over the stages: "Move Linda Young to" (set in mono capitals by the kit). */
   moveHeading: (name: string) => `Move ${name} to`,
-  moved: (stage: string) => `Moved to ${stage}.`,
   /** The toast after a move, with Undo beside it. */
   movedTo: (name: string, stage: string) => `${name} moved to ${stage}.`,
   archivedJob: (name: string) => `${name} archived.`,
@@ -100,8 +131,7 @@ export const jobs = {
   close: 'Close',
 
   // List view
-  listColumns: { job: 'Job', stage: 'Stage', value: 'Value', rep: 'Rep', updated: 'Updated', move: 'Move' },
-  listEmpty: 'No jobs match.',
+  listColumns: { job: 'Job', stage: 'Stage', value: 'Value', rep: 'Rep', age: 'Age', updated: 'Updated', move: 'Move' },
 } as const;
 
 export type LostReason = (typeof jobs.lostReasons)[number];

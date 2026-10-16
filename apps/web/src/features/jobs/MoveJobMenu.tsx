@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router';
 import type { JobCard, JobStage } from '@roofline/shared';
-import { StageMenu, useToast, type StageMenuExtra, type StageMenuStage } from '@roofline/ui';
+import { Button, Icon, StageMenu, useToast, type StageMenuExtra, type StageMenuStage } from '@roofline/ui';
 import { ApiError } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
 import { jobs } from '../../copy/jobs.ts';
 import { useArchiveJob } from '../job/api.ts';
 import { useMoveJob } from './api.ts';
 import { MoveJobSheet } from './MoveJobSheet.tsx';
+import styles from './MoveJobMenu.module.css';
 
 export type MoveJobMenuProps = {
   job: JobCard;
@@ -16,6 +17,10 @@ export type MoveJobMenuProps = {
   compact?: boolean;
   /** The job is archived now (the Archived view): the menu offers Restore, not Archive. */
   archived?: boolean;
+  /** A split button: "Move to {next stage}" for the common step, with the chevron menu beside it. Used on a board card. */
+  split?: boolean;
+  /** The split button of a page head: the quick move is graphite and full height, with the chevron the same height. */
+  prominent?: boolean;
 };
 
 /** The stages in pipeline order. Installed is only offered from Won (Decision 2). */
@@ -34,7 +39,7 @@ const STAGE_COLOR: Record<Exclude<JobStage, 'lost'>, string> = {
  * Lost opens the sheet that asks why, Won without a value asks for it, anything else moves at once and
  * says so in a toast with Undo.
  */
-export function MoveJobMenu({ job, onMoved, compact = false, archived }: MoveJobMenuProps) {
+export function MoveJobMenu({ job, onMoved, compact = false, archived, split = false, prominent = false }: MoveJobMenuProps) {
   const move = useMoveJob();
   const archive = useArchiveJob(job.id);
   const toast = useToast();
@@ -90,17 +95,45 @@ export function MoveJobMenu({ job, onMoved, compact = false, archived }: MoveJob
     onMoved?.();
   }
 
+  // The step after this one, for the quick button: Installed comes only after Won, and nothing follows Installed or Lost
+  const stepIndex = STAGE_ORDER.indexOf(job.stage as (typeof STAGE_ORDER)[number]);
+  const nextStage = split && stepIndex >= 0 ? (STAGE_ORDER[stepIndex + 1] ?? null) : null;
+
+  const menu = (
+    <StageMenu
+      label={jobs.moveTo}
+      heading={jobs.moveHeading(job.customerName)}
+      stages={stages}
+      current={job.stage}
+      extras={extras}
+      showLabel={!compact && !split}
+      className={prominent ? styles.tall : undefined}
+      onPick={(key) => void choose(key)}
+    />
+  );
+
   return (
     <>
-      <StageMenu
-        label={jobs.moveTo}
-        heading={jobs.moveHeading(job.customerName)}
-        stages={stages}
-        current={job.stage}
-        extras={extras}
-        showLabel={!compact}
-        onPick={(key) => void choose(key)}
-      />
+      {split ? (
+        <div className={styles.split}>
+          {nextStage !== null ? (
+            <Button
+              variant={prominent ? 'ink' : 'default'}
+              size={prominent ? 'md' : 'sm'}
+              className={styles.quick}
+              data-part="quick"
+              busy={move.isPending}
+              onClick={() => void choose(nextStage)}
+            >
+              <span className={styles.quickText}>{jobs.moveToStage(jobs.stage[nextStage])}</span>
+              <Icon name="arrow" size={16} />
+            </Button>
+          ) : null}
+          {menu}
+        </div>
+      ) : (
+        menu
+      )}
       {sheetTo !== null ? (
         <MoveJobSheet
           job={job}

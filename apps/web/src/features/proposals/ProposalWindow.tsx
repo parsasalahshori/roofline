@@ -1,8 +1,13 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useParams } from 'react-router';
 import type { ProposalView } from '@roofline/shared';
-import { Banner, Button, Card, EmptyState, Field, Pill, Skeleton } from '@roofline/ui';
+import { Banner, Button, Field, Icon, Panel, Segmented, Skeleton } from '@roofline/ui';
+import { ApiError } from '../../api/client.ts';
 import { proposals } from '../../copy/proposals.ts';
+import { WINDOW_COPY } from '../../copy/rail.ts';
+import { useIsPhone } from '../../shell/useIsPhone.ts';
+import { DetailPage } from '../jobs/DetailPage.tsx';
+import { EmptyPanel, LoadError } from '../jobs/states.tsx';
 import { useCompany } from '../settings/api.ts';
 import {
   proposalPdfUrl,
@@ -13,16 +18,22 @@ import {
   useReviseProposal,
   useSendProposal,
 } from './api.ts';
-import { formatLastOpened, formatWhen } from './format.ts';
+import { formatDay } from './format.ts';
 import { OptionCard } from './OptionCard.tsx';
+import { ProposalEvents, proposalEventLines } from './ProposalEvents.tsx';
+import { StatusTag } from './StatusTag.tsx';
 import styles from './ProposalWindow.module.css';
+
+const JOBS_CRUMB = { label: WINDOW_COPY.jobs.title, href: '/jobs' } as const;
+
+/** The option the pages call out: the one most people choose. */
+const RECOMMENDED_TIER = 'better';
 
 /** The text message; edits stay local and save when the field loses focus with a changed value. */
 function MessageBox({ body, editable, onCommit }: { body: string; editable: boolean; onCommit: (body: string) => void }) {
   const [draft, setDraft] = useState(body);
   return (
-    <section className={styles.message}>
-      <h2 className={styles.heading}>{proposals.messageHeading}</h2>
+    <Panel title={proposals.messageHeading} className={styles.message}>
       {editable ? (
         <Field
           multiline
@@ -38,12 +49,13 @@ function MessageBox({ body, editable, onCommit }: { body: string; editable: bool
       ) : (
         <p className={styles.messageText}>{body}</p>
       )}
-    </section>
+    </Panel>
   );
 }
 
 function ProposalBody({ proposal }: { proposal: ProposalView }) {
   const id = proposal.id;
+  const phone = useIsPhone();
   const [resets, setResets] = useState<Record<string, number>>({});
   const company = useCompany();
   const pricebook = usePricebook();
@@ -62,138 +74,188 @@ function ProposalBody({ proposal }: { proposal: ProposalView }) {
   const revise = useReviseProposal(id);
 
   const timeZone = company.data?.timezone;
-  const now = new Date();
   const status = proposal.status;
   const editable = proposal.canEdit && status === 'draft';
   const prices = pricebook.data?.prices ?? null;
   const canRevise = ['sent', 'viewed', 'ready', 'declined', 'expired'].includes(status);
   const canCopyLink = ['sent', 'viewed', 'signed', 'declined', 'expired'].includes(status);
 
-  return (
-    <div className={styles.page}>
-      <header className={styles.header}>
-        <div className={styles.titleRow}>
-          <h1 className={styles.title}>{proposals.title(proposal.number)}</h1>
-          <Pill tone="neutral">{proposals.statusLabelFor(status)}</Pill>
-        </div>
-        <p className={styles.meta}>{proposals.customerLine(proposal.customer.name, proposal.address)}</p>
-        <p className={styles.meta}>{proposals.validUntil(proposal.validUntil)}</p>
-        {proposal.basis === 'exact' ? <p className={styles.meta}>{proposals.basisExactNote}</p> : null}
-      </header>
+  // On a phone one option shows at a time, chosen from three tabs; the recommended one first. All stay mounted so a
+  // change that has not been saved yet is not lost when the tab is left.
+  const firstShown = (proposal.options.find((option) => option.tier === RECOMMENDED_TIER) ?? proposal.options[0])?.id ?? '';
+  const [picked, setPicked] = useState(firstShown);
+  const shown = proposal.options.some((option) => option.id === picked) ? picked : firstShown;
 
+  // A desktop's rows are one radio group: they share a name, so the arrow keys move the pick
+  const radioName = useId();
+
+  const events = proposalEventLines(proposal, new Date(), timeZone);
+
+  return (
+    <DetailPage
+      app="estimator"
+      title={proposals.title(proposal.number)}
+      crumbs={[JOBS_CRUMB, { label: proposal.customer.name, href: `/jobs/${proposal.jobId}` }, { label: proposal.number }]}
+      subtitle={
+        <span className={styles.meta}>
+          <StatusTag proposal={proposal} />
+          <span>{proposals.customerLine(proposal.customer.name, proposal.address)}</span>
+          <span>{proposals.validUntil(formatDay(proposal.validUntil))}</span>
+          {proposal.basis === 'exact' ? <span>{proposals.basisExactNote}</span> : null}
+        </span>
+      }
+      actions={
+        <div className={styles.actions}>
+          <Button href={proposalPdfUrl(id)} variant="default">
+            <Icon name="doc" size={16} />
+            {proposals.downloadPdf}
+          </Button>
+          {canCopyLink ? (
+            <Button variant="default" busy={copyLink.isPending} onClick={() => copyLink.mutate()}>
+              {proposals.copyLink}
+            </Button>
+          ) : null}
+          {canRevise ? (
+            <Button variant="default" busy={revise.isPending} onClick={() => revise.mutate()}>
+              {proposals.makeRevised}
+            </Button>
+          ) : null}
+          {editable ? (
+            <Button variant="primary" busy={send.isPending} onClick={() => send.mutate()}>
+              <Icon name="arrow" size={16} />
+              {proposals.send}
+            </Button>
+          ) : null}
+        </div>
+      }
+    >
       {!editable && status !== 'draft' && status !== 'replaced' ? (
-        <Banner
-          tone="info"
-          action={
-            status === 'ready' && proposal.taskId ? (
-              <Button variant="ghost" href={`/approvals/${proposal.taskId}`}>
-                {proposals.waitingForOk}
-              </Button>
-            ) : undefined
-          }
-        >
-          {proposals.noteFor(status)}
-        </Banner>
+        <div className={styles.notice}>
+          <Banner
+            tone="info"
+            action={
+              status === 'ready' && proposal.taskId ? (
+                <Button variant="default" size="sm" href={`/approvals/${proposal.taskId}`}>
+                  {proposals.waitingForOk}
+                </Button>
+              ) : undefined
+            }
+          >
+            {proposals.noteFor(status)}
+          </Banner>
+        </div>
       ) : null}
       {proposal.replacedById ? (
-        <Banner
-          tone="info"
-          action={
-            <Button variant="ghost" href={`/estimator/proposals/${proposal.replacedById}`}>
-              {proposals.openReplacement}
-            </Button>
-          }
-        >
-          {proposals.replacedNote}
-        </Banner>
+        <div className={styles.notice}>
+          <Banner
+            tone="info"
+            action={
+              <Button variant="default" size="sm" href={`/estimator/proposals/${proposal.replacedById}`}>
+                {proposals.openReplacement}
+              </Button>
+            }
+          >
+            {proposals.replacedNote}
+          </Banner>
+        </div>
       ) : null}
 
-      <div className={styles.options}>
-        {proposal.options.map((option) => (
-          <OptionCard
-            key={`${option.id}:${resets[option.id] ?? 0}`}
-            option={option}
+      <div className={styles.grid}>
+        <div className={styles.main}>
+          {phone ? (
+            <Segmented
+              className={styles.tabs}
+              label={proposals.tiersLabel}
+              value={shown}
+              onChange={setPicked}
+              options={proposal.options.map((option) => ({
+                value: option.id,
+                label: proposals.tierName[option.tier],
+                count: proposals.money(option.totalCents),
+              }))}
+            />
+          ) : null}
+          <div className={styles.options} role={phone ? undefined : 'radiogroup'} aria-label={phone ? undefined : proposals.tiersLabel}>
+            {proposal.options.map((option) => (
+              <div key={`${option.id}:${resets[option.id] ?? 0}`} className={styles.option} hidden={phone && option.id !== shown}>
+                <OptionCard
+                  option={option}
+                  editable={editable}
+                  basis={proposal.basis}
+                  prices={prices}
+                  open={option.id === shown}
+                  onSelect={phone ? undefined : () => setPicked(option.id)}
+                  radioName={radioName}
+                  onChange={(change) => patch.mutate({ options: [{ id: option.id, ...change }] })}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className={styles.side}>
+          {events.length > 0 ? (
+            <Panel title={proposals.activityHeading}>
+              <ProposalEvents lines={events} />
+            </Panel>
+          ) : null}
+          <MessageBox
+            key={proposal.messageBody}
+            body={proposal.messageBody}
             editable={editable}
-            basis={proposal.basis}
-            prices={prices}
-            onChange={(change) => patch.mutate({ options: [{ id: option.id, ...change }] })}
+            onCommit={(messageBody) => patch.mutate({ messageBody })}
           />
+        </div>
+      </div>
+    </DetailPage>
+  );
+}
+
+/** The panels' shape while the proposal loads: the options at the left, the activity and the message at the right. */
+function ProposalSkeleton() {
+  return (
+    <div role="status" aria-label={proposals.pageTitle} aria-busy="true" className={styles.grid}>
+      <div className={styles.main}>
+        {[0, 1, 2].map((row) => (
+          <div key={row} className={styles.skeletonPanel}>
+            <Skeleton lines={2} height="24px" />
+          </div>
         ))}
       </div>
-
-      <Card className={styles.events}>
-        {proposal.views.count > 0 && proposal.views.last ? (
-          <p>{proposals.eventsLine(proposal.views.count, formatLastOpened(proposal.views.last, now, timeZone))}</p>
-        ) : proposal.sentAt ? (
-          <>
-            <p>{proposals.sentOn(formatWhen(proposal.sentAt, now, timeZone))}</p>
-            <p>{proposals.eventsNone}</p>
-          </>
-        ) : null}
-        {proposal.signed ? <p>{proposals.signedLine(proposal.signed.name, formatWhen(proposal.signed.at, now, timeZone))}</p> : null}
-        {proposal.declined ? (
-          <>
-            <p>{proposals.declinedLine(formatWhen(proposal.declined.at, now, timeZone))}</p>
-            {proposal.declined.reason ? <p>{proposals.declinedReason(proposal.declined.reason)}</p> : null}
-          </>
-        ) : null}
-      </Card>
-
-      <MessageBox
-        key={proposal.messageBody}
-        body={proposal.messageBody}
-        editable={editable}
-        onCommit={(messageBody) => patch.mutate({ messageBody })}
-      />
-
-      <div className={styles.actions}>
-        {editable ? (
-          <Button busy={send.isPending} onClick={() => send.mutate()}>
-            {proposals.send}
-          </Button>
-        ) : null}
-        {canCopyLink ? (
-          <Button variant="ghost" busy={copyLink.isPending} onClick={() => copyLink.mutate()}>
-            {proposals.copyLink}
-          </Button>
-        ) : null}
-        <Button variant="ghost" href={proposalPdfUrl(id)}>
-          {proposals.downloadPdf}
-        </Button>
-        {canRevise ? (
-          <Button variant="ghost" busy={revise.isPending} onClick={() => revise.mutate()}>
-            {proposals.makeRevised}
-          </Button>
-        ) : null}
+      <div className={styles.side}>
+        <div className={styles.skeletonPanel}>
+          <Skeleton lines={4} />
+        </div>
       </div>
     </div>
   );
 }
 
-/** The proposal window: header, the three options, who opened it, the text message and the actions. */
+/** The proposal page: its head, the three options, who has opened it, the text message and the actions. */
 export function ProposalWindow() {
   const { proposalId = '' } = useParams();
   const query = useProposal(proposalId);
 
-  if (query.isPending) {
-    return (
-      <div className={styles.loading}>
-        <Skeleton height="2rem" width="50%" />
-        <Skeleton lines={4} />
-      </div>
-    );
-  }
-  if (query.isError || !query.data) {
-    return (
-      <EmptyState
-        title={proposals.loadFailed}
-        action={
-          <Button variant="ghost" onClick={() => void query.refetch()}>
-            {proposals.retry}
-          </Button>
-        }
-      />
-    );
-  }
-  return <ProposalBody proposal={query.data} />;
+  if (query.data !== undefined) return <ProposalBody key={query.data.id} proposal={query.data} />;
+
+  const crumbs = [JOBS_CRUMB, { label: proposals.pageTitle }];
+  return (
+    <DetailPage app="estimator" title={proposals.pageTitle} crumbs={crumbs}>
+      {query.error instanceof ApiError && query.error.status === 404 ? (
+        <EmptyPanel
+          title={proposals.notFound}
+          ghost="none"
+          action={
+            <Button variant="default" href="/jobs">
+              {proposals.backToJobs}
+            </Button>
+          }
+        />
+      ) : query.isError ? (
+        <LoadError tag={proposals.errorTag} title={proposals.loadFailed} retry={proposals.retry} busy={query.isFetching} onRetry={() => void query.refetch()} />
+      ) : (
+        <ProposalSkeleton />
+      )}
+    </DetailPage>
+  );
 }

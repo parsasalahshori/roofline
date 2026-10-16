@@ -8,6 +8,7 @@ import { DEFAULT_TIER_TEMPLATES } from '@roofline/shared';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { create } from '../src/copy/create.ts';
+import { quotes } from '../src/copy/quotes.ts';
 import { WINDOW_COPY } from '../src/copy/rail.ts';
 import { job } from '../src/copy/job.ts';
 import { jobs } from '../src/copy/jobs.ts';
@@ -100,7 +101,7 @@ describe('C1 windows', () => {
     expect(await within(dialog).findByText(copy)).toBeInTheDocument();
   });
 
-  it('/jobs/j1/quotes/q1 shows the quote in the Jobs window', async () => {
+  it('/jobs/j1/quotes/q1 is the quote page, titled for the quote', async () => {
     const quote: QuoteView = {
       id: 'q1',
       jobId: 'j1',
@@ -122,8 +123,8 @@ describe('C1 windows', () => {
     });
     renderApp('/jobs/j1/quotes/q1');
 
-    const dialog = await screen.findByRole('main', { name: WINDOW_COPY.jobs.title });
-    expect(await within(dialog).findByText('Q-0001')).toBeInTheDocument();
+    const page = await screen.findByRole('main', { name: quotes.title('Q-0001') });
+    expect(await within(page).findByRole('region', { name: quotes.statsLabel })).toBeInTheDocument();
   });
 
   it('shows the Jobs tabs on the pipeline, with Pipeline marked as the current page', async () => {
@@ -155,12 +156,13 @@ describe('C1 windows', () => {
 });
 
 describe('the New job and New customer screens', () => {
-  it('/jobs/new shows the New job steps in the Jobs window', async () => {
+  it('/jobs/new shows the New job steps on a page titled New job, under Jobs', async () => {
     signedInApi();
     renderApp('/jobs/new');
 
-    const dialog = await screen.findByRole('main', { name: WINDOW_COPY.jobs.title });
-    expect((await within(dialog).findAllByText(create.newJob.stepCustomer)).length).toBeGreaterThan(0);
+    const page = await screen.findByRole('main', { name: create.newJob.title });
+    expect((await within(page).findAllByText(create.newJob.stepCustomer)).length).toBeGreaterThan(0);
+    expect(within(screen.getByRole('navigation', { name: 'Breadcrumb' })).getByRole('link', { name: WINDOW_COPY.jobs.title })).toHaveAttribute('href', '/jobs');
   });
 
   it('/customers/new shows the New customer form in the Customers window', async () => {

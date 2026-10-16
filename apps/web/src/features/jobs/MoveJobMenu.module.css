@@ -1,0 +1,33 @@
+/* The split button on a card: the next step and the stage menu's chevron, one row */
+.split {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.quick {
+  flex: 1 1 auto;
+  justify-content: space-between;
+  gap: 4px;
+  min-width: 0;
+}
+
+.quickText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The chevron beside a page head's quick move is as tall as the buttons around it */
+.tall[aria-haspopup] {
+  width: 36px;
+  height: 36px;
+}
+
+@media (max-width: 767.98px) {
+  .tall[aria-haspopup] {
+    width: 44px;
+    height: 44px;
+  }
+}
