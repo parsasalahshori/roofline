@@ -7,7 +7,7 @@ import { formatDollars } from './format.ts';
 import { JobCardView } from './JobCardView.tsx';
 import styles from './BoardColumn.module.css';
 
-/** A job can be added straight into these lanes. Won needs a value and Installed only follows Won, so they are not offered. */
+/** A job can be added straight into these lanes (not in the archived view). Won needs a value and Installed only follows Won, so they are not offered. */
 const ADDABLE: readonly BoardStage[] = ['lead', 'inspection', 'proposal'];
 
 export type BoardColumnProps = {
@@ -73,7 +73,7 @@ export function BoardColumn({ column, filter, today, share, dragging, onDragStar
               {column.count}
             </span>
           </h2>
-          {ADDABLE.includes(column.stage) ? (
+          {ADDABLE.includes(column.stage) && filter.archived !== true ? (
             <IconButton
               label={jobs.addToStage(label)}
               icon={<Icon name="plus" size={16} />}

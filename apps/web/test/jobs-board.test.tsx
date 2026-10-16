@@ -592,13 +592,88 @@ describe('jobs page head', () => {
     expect(api.count('GET /api/proposals?status=sent')).toBe(0);
   });
 
-  it('the archived view says how many archived jobs there are', async () => {
-    signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead' })])]));
-    api.routes['GET /api/jobs/board?archived=true'] = () => ({ body: current });
+  it('the archived view shows only the archived jobs and says how many there are', async () => {
+    // The server's archived=true is the open jobs and the archived ones together; the archived ones are what the open board lacks
+    const stillOpen = job({ id: 'j2', stage: 'lead', customerName: 'Olive Open' });
+    signedIn(boardOf([column('lead', [stillOpen])]));
+    api.routes['GET /api/jobs/board?archived=true'] = () => ({
+      body: boardOf([column('lead', [job({ id: 'j1', stage: 'lead', customerName: 'Arthur Archived' }), stillOpen])]),
+    });
     renderApp('/jobs?archived=true');
 
     const main = await screen.findByRole('main', { name: 'Jobs' });
     expect(await within(main).findByText(jobs.subtitle.archived(1))).toBeInTheDocument();
+    expect(await within(main).findByText('Arthur Archived')).toBeInTheDocument();
+    expect(within(main).queryByText('Olive Open')).not.toBeInTheDocument();
+  });
+
+  it('the archived view counts a stage by its archived jobs and adds up their value', async () => {
+    const open = job({ id: 'j2', stage: 'proposal', valueCents: 700_000 });
+    signedIn(boardOf([column('proposal', [open], 700_000)]));
+    api.routes['GET /api/jobs/board?archived=true'] = () => ({
+      body: boardOf([column('proposal', [job({ id: 'j1', stage: 'proposal', customerName: 'Arthur Archived', valueCents: 1_250_000 }), open], 1_950_000)]),
+    });
+    renderApp('/jobs?archived=true');
+
+    const lane = await screen.findByRole('region', { name: jobs.stage.proposal });
+    expect(within(lane).getByText('Arthur Archived')).toBeInTheDocument();
+    expect(lane.querySelector('[data-part="lane-total"]')).toHaveTextContent(jobs.total('$12,500'));
+  });
+
+  it('the archived view finds archived jobs past the first page of a long stage', async () => {
+    // Three leads in all, one of them archived and on the second page; the open board has the other two
+    const first = job({ id: 'j1', stage: 'lead', customerName: 'Olive Open' });
+    const second = job({ id: 'j2', stage: 'lead', customerName: 'Owen Open' });
+    const archived = job({ id: 'j3', stage: 'lead', customerName: 'Arthur Archived' });
+    signedIn(boardOf([column('lead', [first, second])]));
+    api.routes['GET /api/jobs/board?archived=true'] = () => ({
+      body: boardOf([{ stage: 'lead', count: 3, totalCents: null, jobs: [first, second] }]),
+    });
+    api.routes['GET /api/jobs/board?archived=true&stage=lead&offset=2'] = () => ({
+      body: { stage: 'lead', count: 3, totalCents: null, jobs: [archived] },
+    });
+    renderApp('/jobs?archived=true');
+
+    const main = await screen.findByRole('main', { name: 'Jobs' });
+    expect(await within(main).findByText('Arthur Archived')).toBeInTheDocument();
+    expect(within(main).queryByText('Olive Open')).not.toBeInTheDocument();
+    expect(within(main).getByText(jobs.subtitle.archived(1))).toBeInTheDocument();
+  });
+
+  it('the archived view with nothing archived says so', async () => {
+    const lead = job({ id: 'j1', stage: 'lead' });
+    signedIn(boardOf([column('lead', [lead])]));
+    api.routes['GET /api/jobs/board?archived=true'] = () => ({ body: boardOf([column('lead', [lead])]) });
+    renderApp('/jobs?archived=true');
+
+    const main = await screen.findByRole('main', { name: 'Jobs' });
+    expect(await within(main).findByText(jobs.emptyArchived)).toBeInTheDocument();
+    expect(within(main).queryByText('Pat Homeowner')).not.toBeInTheDocument();
+  });
+
+  it('the archived view has no "add a job" button on its lanes', async () => {
+    const stillOpen = job({ id: 'j2', stage: 'lead', customerName: 'Olive Open' });
+    signedIn(boardOf([column('lead', [stillOpen])]));
+    api.routes['GET /api/jobs/board?archived=true'] = () => ({
+      body: boardOf([column('lead', [job({ id: 'j1', stage: 'lead', customerName: 'Arthur Archived' }), stillOpen])]),
+    });
+    renderApp('/jobs?archived=true');
+
+    await screen.findByText('Arthur Archived');
+    expect(screen.queryByRole('link', { name: jobs.addToStage(jobs.stage.lead) })).not.toBeInTheDocument();
+  });
+
+  it('the archived list shows only the archived jobs too', async () => {
+    const stillOpen = job({ id: 'j2', stage: 'lead', customerName: 'Olive Open' });
+    signedIn(boardOf([column('lead', [stillOpen])]));
+    api.routes['GET /api/jobs/board?archived=true'] = () => ({
+      body: boardOf([column('lead', [job({ id: 'j1', stage: 'lead', customerName: 'Arthur Archived' }), stillOpen])]),
+    });
+    renderApp('/jobs?archived=true&view=list');
+
+    const table = await screen.findByRole('table', { name: jobs.listLabel });
+    expect(within(table).getByText('Arthur Archived')).toBeInTheDocument();
+    expect(within(table).queryByText('Olive Open')).not.toBeInTheDocument();
   });
 
   it('offers Export to the owner and New job to everyone', async () => {
@@ -634,7 +709,7 @@ describe('jobs page head', () => {
 
   it('marks Archived as the current tab on the archived view', async () => {
     signedIn(boardOf());
-    api.routes['GET /api/jobs/board?archived=true'] = () => ({ body: current });
+    api.routes['GET /api/jobs/board?archived=true'] = () => ({ body: boardOf() });
     renderApp('/jobs?archived=true');
 
     const tabs = await screen.findByRole('navigation', { name: jobs.tabsLabel });

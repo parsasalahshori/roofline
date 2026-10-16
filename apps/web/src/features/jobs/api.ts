@@ -55,21 +55,6 @@ export function useProposalsWaiting(enabled: boolean): number | undefined {
   return sent.data.total + viewed.data.total;
 }
 
-export function useBoard(filter: BoardFilterParams) {
-  return useQuery<BoardView>({
-    queryKey: jobsKeys.board(filter),
-    queryFn: ({ signal }) => apiFetch<BoardView>(boardQuery(filter), { signal }),
-  });
-}
-
-export function useBoardColumnPage(stage: BoardStage, filter: BoardFilterParams, offset: number, enabled = true) {
-  return useQuery<BoardColumn>({
-    queryKey: jobsKeys.column(stage, filter, offset),
-    queryFn: ({ signal }) => apiFetch<BoardColumn>(boardQuery(filter, { stage, offset: String(offset) }), { signal }),
-    enabled,
-  });
-}
-
 /** Adds the jobs of a page that are not listed yet, keeping the order they came in. */
 function appendUnique(listed: JobCard[], more: JobCard[]): JobCard[] {
   const seen = new Set(listed.map((job) => job.id));
@@ -79,6 +64,69 @@ function appendUnique(listed: JobCard[], more: JobCard[]): JobCard[] {
     return true;
   });
   return added.length === 0 ? listed : [...listed, ...added];
+}
+
+/** Every job of a column: its first page and the pages after it, until the column's count is reached or a page brings nothing new. */
+async function loadWholeColumn(filter: BoardFilterParams, first: BoardColumn, signal: AbortSignal): Promise<JobCard[]> {
+  let loaded = first.jobs;
+  while (loaded.length < first.count) {
+    const page = await apiFetch<BoardColumn>(boardQuery(filter, { stage: first.stage, offset: String(loaded.length) }), { signal });
+    const next = appendUnique(loaded, page.jobs);
+    if (next === loaded) break;
+    loaded = next;
+  }
+  return loaded;
+}
+
+/**
+ * The board of archived jobs only. The server's `archived=true` means "the open jobs and the archived ones together", and
+ * its cards do not say which are archived, so the archived jobs of a column are the ones in that board that the open board
+ * does not have. A column with no archived job costs nothing more than the two first pages.
+ */
+async function fetchArchivedBoard(filter: BoardFilterParams, signal: AbortSignal): Promise<BoardView> {
+  const openFilter: BoardFilterParams = { ...filter, archived: false };
+  const [together, open] = await Promise.all([
+    apiFetch<BoardView>(boardQuery(filter), { signal }),
+    apiFetch<BoardView>(boardQuery(openFilter), { signal }),
+  ]);
+  const openColumns = new Map(open.columns.map((column) => [column.stage, column]));
+  const columns = await Promise.all(
+    together.columns.map(async (column): Promise<BoardColumn> => {
+      const openColumn = openColumns.get(column.stage);
+      if (column.count - (openColumn?.count ?? 0) <= 0) {
+        return { ...column, count: 0, totalCents: column.totalCents === null ? null : 0, jobs: [] };
+      }
+      const [everyJob, openJobs] = await Promise.all([
+        loadWholeColumn(filter, column, signal),
+        openColumn === undefined ? Promise.resolve<JobCard[]>([]) : loadWholeColumn(openFilter, openColumn, signal),
+      ]);
+      const stillOpen = new Set(openJobs.map((job) => job.id));
+      const archived = everyJob.filter((job) => !stillOpen.has(job.id));
+      return {
+        ...column,
+        count: archived.length,
+        totalCents: column.totalCents === null ? null : archived.reduce((sum, job) => sum + (job.valueCents ?? 0), 0),
+        jobs: archived,
+      };
+    }),
+  );
+  return { columns, lost: { count: Math.max(0, together.lost.count - open.lost.count) } };
+}
+
+/** The board for a filter. With `archived` set it is the board of archived jobs only (see fetchArchivedBoard). */
+export function useBoard(filter: BoardFilterParams) {
+  return useQuery<BoardView>({
+    queryKey: jobsKeys.board(filter),
+    queryFn: ({ signal }) => (filter.archived === true ? fetchArchivedBoard(filter, signal) : apiFetch<BoardView>(boardQuery(filter), { signal })),
+  });
+}
+
+export function useBoardColumnPage(stage: BoardStage, filter: BoardFilterParams, offset: number, enabled = true) {
+  return useQuery<BoardColumn>({
+    queryKey: jobsKeys.column(stage, filter, offset),
+    queryFn: ({ signal }) => apiFetch<BoardColumn>(boardQuery(filter, { stage, offset: String(offset) }), { signal }),
+    enabled,
+  });
 }
 
 /**
