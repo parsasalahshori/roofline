@@ -54,15 +54,17 @@ function dragTo(which: 'window' | 'paper', i: number, [x, y]: [number, number]) 
 const liveSize = () => document.querySelector('[data-live-size]')?.textContent ?? '';
 
 describe('Measure a window on its photo (PhotoMeasure)', () => {
+  /** The measure view on the paper method (the measuring sheet is the default now; it has its own tests). */
   function renderMeasure(initial: PhotoWindowInput | null = null, saved: PhotoWindow | null = null) {
     const onSave = vi.fn();
     render(<PhotoMeasure upload={UPLOAD} src="/x.jpg" initial={initial} saved={saved} onSave={onSave} onCancel={vi.fn()} />);
+    if (initial === null) fireEvent.click(screen.getByRole('tab', { name: new RegExp(copy.methodReference) }));
     stubRect(photoFrame());
     return onSave;
   }
   afterEach(cleanup);
 
-  it('starts with the window inset 15% and a small sheet of paper in the middle, Paper on the glass first', () => {
+  it('starts with the window inset 15% and a small sheet of paper in the middle (Paper on the glass)', () => {
     renderMeasure();
     expect(screen.getByRole('tab', { selected: true }).textContent).toContain(copy.methodReference);
     expect(seedWindowQuad(1200, 1600)).toEqual([
@@ -295,6 +297,7 @@ describe('Photograph windows on site', () => {
     fireEvent.click(await within(dialog).findByRole('button', { name: copy.measure }));
     expect(xhrSent).toEqual([{ url: '/api/window-measurements/w1/uploads', field: 'photo' }]);
 
+    fireEvent.click(screen.getByRole('tab', { name: new RegExp(copy.methodReference) }));
     stubRect(photoFrame());
     for (let i = 0; i < 4; i++) dragTo('paper', i, PAPER[i]!);
     for (let i = 0; i < 4; i++) dragTo('window', i, WIN[i]!);

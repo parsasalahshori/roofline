@@ -1,10 +1,13 @@
 import { Banner, Button, Checkbox, ProgressBar } from '@roofline/ui';
-import type { PhotoWindow, PhotoWindowInput, WindowPhotoUpload } from '@roofline/shared';
+import { photoWindowKey, type PhotoWindow, type PhotoWindowInput, type WindowPhotoUpload } from '@roofline/shared';
 import { createPortal } from 'react-dom';
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { measureWindows, windowPhotos as copy } from '../../../copy/measureWindows.ts';
 import { UPLOAD_MAX_BYTES, UPLOAD_TYPES, uploadSrc, uploadWindowPhoto } from './api.ts';
-import { PhotoMeasure } from './PhotoMeasure.tsx';
+import { PhotoMeasure, type WindowGroup } from './PhotoMeasure.tsx';
+import { usePhotoEngine } from './photoEngine.tsx';
+import { asMeasurement, inchesFraction, plusMinusFraction, type LocalSheetSize } from './photoModel.ts';
+import { SheetPrint } from './SheetPrint.tsx';
 import flow from './PhotoWindows.module.css';
 
 /** One photo on its way up, up, or refused. */
@@ -79,7 +82,37 @@ export function useWindowUploads(measurementId: string, serverUploads: readonly 
 export type Uploads = ReturnType<typeof useWindowUploads>;
 
 /** Where the flow is: taking photos, or sizing the window on one of them. */
-export type FlowAt = { step: 'capture' } | { step: 'measure'; uploadId: string; windowId: string | null };
+export type FlowAt = { step: 'capture' } | { step: 'print' } | { step: 'measure'; uploadId: string; windowId: string | null };
+
+/** The windows photographed so far (several photos of one window are one window), named as the card names them. */
+export function windowGroups(inputs: readonly PhotoWindowInput[]): WindowGroup[] {
+  const out: WindowGroup[] = [];
+  for (const w of inputs) {
+    const key = photoWindowKey(w);
+    if (out.some((g) => g.key === key)) continue;
+    out.push({ key, name: w.label ?? copy.untitled(out.length + 1) });
+  }
+  return out;
+}
+
+/** The 3-step how-to for the measuring sheet, with the way to print it. */
+export function SheetHowTo({ onPrint }: { onPrint: () => void }) {
+  return (
+    <section className={flow.howTo} aria-labelledby="sheet-how-to">
+      <h3 id="sheet-how-to" className={flow.howToTitle}>
+        {copy.howToTitle}
+      </h3>
+      <ol className={flow.steps}>
+        {copy.howTo.map((step) => (
+          <li key={step}>{step}</li>
+        ))}
+      </ol>
+      <Button variant="ghost" className={flow.printButton} onClick={onPrint}>
+        {copy.printOpen}
+      </Button>
+    </section>
+  );
+}
 
 /**
  * "Photograph windows", full screen on a phone: take photos (camera or library), watch them upload, then size each
@@ -91,6 +124,7 @@ export function PhotoWindowsFlow({
   uploads,
   inputs,
   saved,
+  live = [],
   onSave,
   onDelete,
   onClose,
@@ -100,10 +134,15 @@ export function PhotoWindowsFlow({
   uploads: Uploads;
   inputs: readonly PhotoWindowInput[];
   saved: readonly PhotoWindow[];
-  onSave: (input: PhotoWindowInput) => void;
+  /** The photographed windows as sized now (to combine several photos of one window). */
+  live?: readonly PhotoWindow[];
+  onSave: (input: PhotoWindowInput, local?: LocalSheetSize) => void;
   onDelete: (id: string) => void;
   onClose: () => void;
 }) {
+  // After a save: "Add another photo of …" makes the next new photo another photo of that window
+  const [lastSaved, setLastSaved] = useState<WindowGroup | null>(null);
+  const [nextKey, setNextKey] = useState<string | null>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const libraryRef = useRef<HTMLInputElement>(null);
   const titleId = 'photo-windows-title';
@@ -120,7 +159,7 @@ export function PhotoWindowsFlow({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      if (at.step === 'measure') go({ step: 'capture' });
+      if (at.step !== 'capture') go({ step: 'capture' });
       else onClose();
     };
     window.addEventListener('keydown', onKey);
@@ -131,13 +170,13 @@ export function PhotoWindowsFlow({
   return createPortal(
     <div className={flow.overlay} role="dialog" aria-modal="true" aria-labelledby={titleId} data-photo-flow={at.step}>
       <header className={flow.head}>
-        {at.step === 'measure' ? (
+        {at.step !== 'capture' ? (
           <Button variant="ghost" className={flow.headButton} onClick={() => go({ step: 'capture' })}>
             {copy.back}
           </Button>
         ) : null}
         <h2 id={titleId} className={flow.title}>
-          {at.step === 'measure' ? copy.measureTitle : copy.title}
+          {at.step === 'measure' ? copy.measureTitle : at.step === 'print' ? copy.printTitle : copy.title}
         </h2>
         <Button variant="ghost" className={flow.headButton} onClick={onClose}>
           {copy.close}
@@ -151,8 +190,16 @@ export function PhotoWindowsFlow({
             src={uploads.srcFor(measuring.id)}
             initial={editing}
             saved={editing !== null ? (saved.find((w) => w.id === editing.id) ?? null) : null}
-            onSave={(input) => {
-              onSave(input);
+            groups={windowGroups(inputs)}
+            live={live}
+            defaultWindowKey={editing === null ? (nextKey ?? undefined) : undefined}
+            onSave={(input, local) => {
+              if (local !== undefined) onSave(input, local);
+              else onSave(input);
+              const key = photoWindowKey(input);
+              const named = windowGroups([...inputs.filter((w) => w.id !== input.id), input]).find((g) => g.key === key);
+              setLastSaved(named ?? null);
+              setNextKey(null);
               go({ step: 'capture' });
             }}
             onCancel={() => go({ step: 'capture' })}
@@ -165,9 +212,26 @@ export function PhotoWindowsFlow({
                 : undefined
             }
           />
+        ) : at.step === 'print' ? (
+          <SheetPrint onClose={() => go({ step: 'capture' })} />
         ) : (
           <div className={flow.capture}>
             <p className={flow.guidance}>{copy.guidance}</p>
+            <SheetHowTo onPrint={() => go({ step: 'print' })} />
+            {lastSaved !== null ? (
+              <Button
+                variant="ghost"
+                className={flow.another}
+                data-another={lastSaved.key}
+                aria-pressed={nextKey === lastSaved.key}
+                onClick={() => {
+                  setNextKey(lastSaved.key);
+                  cameraRef.current?.click();
+                }}
+              >
+                {copy.anotherPhoto(lastSaved.name)}
+              </Button>
+            ) : null}
             <div className={flow.pick}>
               <Button className={flow.pickButton} onClick={() => cameraRef.current?.click()}>
                 {copy.take}
@@ -253,9 +317,35 @@ function UploadList({ uploads, inputs, go }: { uploads: Uploads; inputs: readonl
   );
 }
 
+/** The size the card shows for one window: its photos combined (the engine's median and spread), or its one photo. */
+function groupSize(
+  photos: readonly PhotoWindow[],
+  combine: ((ms: ReturnType<typeof asMeasurement>[]) => { widthIn: number; heightIn: number; spreadIn: { width: number; height: number } } | null) | null,
+): { text: string; detail: string | null } | null {
+  if (photos.length === 0) return null;
+  const exact = photos.some((p) => p.scale.kind === 'sheet');
+  if (photos.length === 1) {
+    const p = photos[0]!;
+    if (!exact) return { text: measureWindows.size(p.widthIn, p.heightIn), detail: null };
+    const u = p.uncertaintyIn ? Math.max(p.uncertaintyIn.width, p.uncertaintyIn.height) : null;
+    return { text: copy.sizeExact(inchesFraction(p.widthIn), inchesFraction(p.heightIn)), detail: u !== null ? copy.plusMinus(plusMinusFraction(u)) : null };
+  }
+  const c = combine?.(photos.map(asMeasurement)) ?? null;
+  if (c === null) {
+    const mid = (vs: number[]) => [...vs].sort((a, b) => a - b)[Math.floor((vs.length - 1) / 2)]!;
+    const w = mid(photos.map((p) => p.widthIn));
+    const h = mid(photos.map((p) => p.heightIn));
+    return { text: exact ? copy.sizeExact(inchesFraction(w), inchesFraction(h)) : measureWindows.size(w, h), detail: copy.photosOfWindow(photos.length) };
+  }
+  return {
+    text: copy.sizeExact(inchesFraction(c.widthIn), inchesFraction(c.heightIn)),
+    detail: copy.groupSpread(photos.length, plusMinusFraction(Math.max(c.spreadIn.width, c.spreadIn.height))),
+  };
+}
+
 /**
- * The photographed windows in the card: thumbnail, name, size and a "Photo" chip; tap to edit, a checkbox to leave
- * one out, delete; and "I photographed every window".
+ * The photographed windows in the card, one row per window (its photos combined): thumbnail, name, size and a "Photo"
+ * chip; tap to edit, a checkbox to leave one out, delete; and "I photographed every window".
  */
 export function PhotoWindowsList({
   windows,
@@ -274,48 +364,51 @@ export function PhotoWindowsList({
   coverAll: boolean;
   srcFor: (uploadId: string) => string;
   onOpen: (w: PhotoWindowInput) => void;
-  onToggle: (id: string) => void;
-  onDelete: (id: string) => void;
+  /** Leave a window (all its photos) out of the quote, or put it back. */
+  onToggle: (ids: string[]) => void;
+  onDelete: (ids: string[]) => void;
   onCoverAll: (next: boolean) => void;
 }) {
+  const groups = windowGroups(inputs);
+  const several = groups.some((g) => inputs.filter((w) => photoWindowKey(w) === g.key).length > 1);
+  const engine = usePhotoEngine(several);
   if (inputs.length === 0) return null;
   return (
     <section className={flow.list} aria-labelledby="photo-windows-list">
-      {
-        <>
-          <h3 id="photo-windows-list" className={flow.listTitle}>
-            {copy.listTitle}
-          </h3>
-          <ul className={flow.rows}>
-            {inputs.map((input, i) => {
-              const sized = windows.find((w) => w.id === input.id);
-              const name = input.label ?? copy.untitled(i + 1);
-              const size = sized !== undefined ? measureWindows.size(sized.widthIn, sized.heightIn) : measureWindows.sizing;
-              const out = excluded.has(input.id);
-              return (
-                <li key={input.id} className={flow.row} data-photo-window={input.id} data-out={out ? 'true' : undefined}>
-                  <Button variant="ghost" className={flow.rowOpen} aria-label={copy.rowLabel(name, size)} onClick={() => onOpen(input)}>
-                    <img className={flow.rowThumb} src={srcFor(input.uploadId)} alt="" />
-                    <span className={flow.rowText}>
-                      <span className={flow.rowName}>
-                        {name}
-                        <span className={flow.chip}>{copy.chip}</span>
-                      </span>
-                      <span className={flow.rowSize}>{out ? measureWindows.leftOut : size}</span>
-                    </span>
-                  </Button>
-                  <Checkbox label={copy.inQuote} checked={!out} onChange={() => onToggle(input.id)} />
-                  <Button variant="ghost" className={flow.rowDelete} aria-label={copy.deleteRow(name)} onClick={() => onDelete(input.id)}>
-                    {copy.remove}
-                  </Button>
-                </li>
-              );
-            })}
-          </ul>
-          <Checkbox label={copy.coverAll} description={copy.coverAllHint} checked={coverAll} onChange={onCoverAll} />
-        </>
-      }
+      <h3 id="photo-windows-list" className={flow.listTitle}>
+        {copy.listTitle}
+      </h3>
+      <ul className={flow.rows}>
+        {groups.map((g) => {
+          const members = inputs.filter((w) => photoWindowKey(w) === g.key);
+          const first = members[0]!;
+          const ids = members.map((w) => w.id);
+          const sized = members.flatMap((m) => windows.filter((w) => w.id === m.id));
+          const shown = groupSize(sized, engine.cv === null ? null : (ms) => engine.cv!.combine(ms));
+          const size = shown !== null ? shown.text : measureWindows.sizing;
+          const out = ids.every((id) => excluded.has(id));
+          return (
+            <li key={g.key} className={flow.row} data-photo-window={first.id} data-photos={members.length} data-out={out ? 'true' : undefined}>
+              <Button variant="ghost" className={flow.rowOpen} aria-label={copy.rowLabel(g.name, size)} onClick={() => onOpen(first)}>
+                <img className={flow.rowThumb} src={srcFor(first.uploadId)} alt="" />
+                <span className={flow.rowText}>
+                  <span className={flow.rowName}>
+                    {g.name}
+                    <span className={flow.chip}>{members.length > 1 ? copy.photosOfWindow(members.length) : copy.chip}</span>
+                  </span>
+                  <span className={flow.rowSize}>{out ? measureWindows.leftOut : size}</span>
+                  {!out && shown?.detail ? <span className={flow.rowDetail}>{shown.detail}</span> : null}
+                </span>
+              </Button>
+              <Checkbox label={copy.inQuote} checked={!out} onChange={() => onToggle(ids)} />
+              <Button variant="ghost" className={flow.rowDelete} aria-label={copy.deleteRow(g.name)} onClick={() => onDelete(ids)}>
+                {copy.remove}
+              </Button>
+            </li>
+          );
+        })}
+      </ul>
+      <Checkbox label={copy.coverAll} description={copy.coverAllHint} checked={coverAll} onChange={onCoverAll} />
     </section>
   );
 }
-

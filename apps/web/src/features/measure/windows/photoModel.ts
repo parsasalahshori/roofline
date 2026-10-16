@@ -8,6 +8,9 @@ import {
   type PhotoWindow,
   type PhotoWindowInput,
   type Quad,
+  type SheetDetection,
+  type WindowPhotoCv,
+  type WindowPhotoMeasurement,
   type WindowPhotoUpload,
 } from '@roofline/shared';
 
@@ -51,10 +54,14 @@ export function sizePhotoWindow(input: Pick<PhotoWindowInput, 'corners' | 'scale
   if (s.kind === 'reference') {
     const ref = WINDOW_PHOTO_REFERENCES[s.reference];
     size = sizeFromReference(input.corners, s.corners, ref.widthIn, ref.heightIn);
-  } else {
+  } else if (s.kind === 'known-side') {
     if (!(s.inches > 0)) return null;
     const focalPx = focalPxFrom35mm(upload.focal35mm ?? DEFAULT_FOCAL_35MM, upload.widthPx, upload.heightPx);
     size = sizeFromKnownSide(input.corners, upload.widthPx, upload.heightPx, s.side, s.inches, focalPx);
+  } else {
+    // The measuring sheet needs the engine (many points, the frame's offset): sized on the measure screen
+    // (LocalSheetSize) and re-checked by the server.
+    return null;
   }
   if (size === null || !Number.isFinite(size.widthIn) || !Number.isFinite(size.heightIn) || size.widthIn <= 0 || size.heightIn <= 0) return null;
   return { widthIn: round1(size.widthIn), heightIn: round1(size.heightIn) };
@@ -68,12 +75,18 @@ export function livePhotoWindows(
   inputs: readonly PhotoWindowInput[],
   server: readonly PhotoWindow[] | undefined,
   uploads: readonly WindowPhotoUpload[],
+  local: ReadonlyMap<string, LocalSheetSize> = new Map(),
 ): (PhotoWindow & { fromServer: boolean })[] {
   const byId = new Map((server ?? []).map((w) => [w.id, w]));
   return inputs.flatMap((input) => {
     const saved = byId.get(input.id);
     if (saved !== undefined && JSON.stringify([saved.corners, saved.scale]) === JSON.stringify([input.corners, input.scale])) {
       return [{ ...saved, label: input.label ?? saved.label, fromServer: true }] as (PhotoWindow & { fromServer: boolean })[];
+    }
+    const mine = local.get(input.id);
+    if (mine !== undefined && mine.key === sizingKey(input)) {
+      const m = { widthIn: mine.widthIn, heightIn: mine.heightIn, uncertaintyIn: mine.uncertaintyIn, distanceIn: mine.distanceIn, viewAngleDeg: mine.viewAngleDeg };
+      return [{ ...input, ...m, sizeClass: windowSizeClass(m.widthIn, m.heightIn), quality: 'good' as const, fromServer: false }];
     }
     const upload = uploads.find((u) => u.id === input.uploadId);
     if (upload === undefined) return [];
@@ -82,3 +95,81 @@ export function livePhotoWindows(
     return [{ ...input, ...size, sizeClass: windowSizeClass(size.widthIn, size.heightIn), quality: 'good' as const, fromServer: false }];
   });
 }
+
+/** What a window's size depends on: its corners and its scale. Same key, same size. */
+export function sizingKey(input: Pick<PhotoWindowInput, 'corners' | 'scale'>): string {
+  return JSON.stringify([input.corners, input.scale]);
+}
+
+/** A sheet-measured window sized on the measure screen (the engine's numbers), kept until the server's size arrives. */
+export type LocalSheetSize = {
+  key: string;
+  widthIn: number;
+  heightIn: number;
+  uncertaintyIn: { width: number; height: number } | null;
+  distanceIn: number | null;
+  viewAngleDeg: number | null;
+};
+
+/** What the person is measuring, and how far it sits in front of the glass (where the sheet is), inches. */
+export const PLANE_TARGETS = { frame: 1.0, trim: 1.5, glass: 0 } as const;
+export type PlaneTarget = keyof typeof PLANE_TARGETS | 'custom';
+
+export function planeTargetFor(offsetIn: number): PlaneTarget {
+  const hit = (Object.keys(PLANE_TARGETS) as (keyof typeof PLANE_TARGETS)[]).find((k) => PLANE_TARGETS[k] === offsetIn);
+  return hit ?? 'custom';
+}
+
+/** Above this (either side, inches) the photo should be taken again. */
+export const RETAKE_UNCERTAINTY_IN = 0.25;
+/** A side the engine is less sure of than this gets "check this edge". */
+export const LOW_SIDE_CONFIDENCE = 0.5;
+
+/** The window's size from the sheet the engine found, with the camera's focal length from the photo. */
+export function measureOnSheet(
+  cv: Pick<WindowPhotoCv, 'measure'>,
+  upload: Pick<WindowPhotoUpload, 'widthPx' | 'heightPx' | 'focal35mm'>,
+  sheet: Pick<SheetDetection, 'imagePoints' | 'sheetPointsIn'>,
+  windowQuad: Quad,
+  planeOffsetIn: number,
+): WindowPhotoMeasurement | null {
+  const focalPx = focalPxFrom35mm(upload.focal35mm ?? DEFAULT_FOCAL_35MM, upload.widthPx, upload.heightPx);
+  const m = cv.measure({ widthPx: upload.widthPx, heightPx: upload.heightPx, focalPx, sheet, windowQuad, planeOffsetIn });
+  if (m === null || !(m.widthIn > 0) || !(m.heightIn > 0) || !Number.isFinite(m.widthIn) || !Number.isFinite(m.heightIn)) return null;
+  return m;
+}
+
+/** A sized photo as the engine's measurement (to combine several photos of one window). */
+export function asMeasurement(w: Pick<PhotoWindow, 'widthIn' | 'heightIn' | 'uncertaintyIn' | 'distanceIn' | 'viewAngleDeg'>): WindowPhotoMeasurement {
+  return {
+    widthIn: w.widthIn,
+    heightIn: w.heightIn,
+    uncertaintyIn: w.uncertaintyIn ?? { width: 0, height: 0 },
+    distanceIn: w.distanceIn ?? 0,
+    viewAngleDeg: w.viewAngleDeg ?? 0,
+    warnings: [],
+  };
+}
+
+const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+
+/** Inches as a whole number and a reduced fraction, to the nearest 1/`den` (35.87 -> "35 7/8"; 36 -> "36"). */
+export function inchesFraction(v: number, den = 8): string {
+  const sign = v < 0 ? '-' : '';
+  const total = Math.round(Math.abs(v) * den);
+  const whole = Math.floor(total / den);
+  const num = total % den;
+  if (num === 0) return `${sign}${whole}`;
+  const g = gcd(num, den);
+  const frac = `${num / g}/${den / g}`;
+  return whole === 0 ? `${sign}${frac}` : `${sign}${whole} ${frac}`;
+}
+
+/** An uncertainty rounded up to the next 1/16 in (never shown as less than 1/16): "1/16", "3/16", "1 1/4". */
+export function plusMinusFraction(u: number): string {
+  const sixteenths = Math.max(1, Math.ceil(Math.abs(u) * 16 - 1e-9));
+  return inchesFraction(sixteenths / 16, 16);
+}
+
+/** Feet to one decimal, from inches (for "6.5 ft"). */
+export const feet1 = (inches: number) => Math.round((inches / 12) * 10) / 10;
