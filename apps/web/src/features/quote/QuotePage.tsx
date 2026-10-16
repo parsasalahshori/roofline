@@ -7,6 +7,7 @@ import { ScanOverlay } from '../measure/lift/ScanOverlay.tsx';
 import { readScanMs, stageAt, type ScanStage } from '../measure/lift/scan.ts';
 import { type EstimateAnswer, QuoteApiError, quoteApi } from './api.ts';
 import { RoofThumb } from './RoofThumb.tsx';
+import { Turnstile } from './Turnstile.tsx';
 import styles from './QuotePage.module.css';
 
 /*
@@ -92,6 +93,7 @@ export function QuotePage({ slug }: { slug: string }) {
         {step.kind === 'address' ? (
           <AddressStep
             slug={slug}
+            siteKey={c.turnstileSiteKey}
             address={typed}
             onAddress={setTyped}
             initialError={step.error ?? null}
@@ -130,6 +132,7 @@ export function QuotePage({ slug }: { slug: string }) {
 /** The estimate's request starts here; its answer is handed up while the scan plays, a failure brings the step back. */
 function AddressStep({
   slug,
+  siteKey,
   address,
   onAddress,
   initialError,
@@ -138,6 +141,7 @@ function AddressStep({
   onFailed,
 }: {
   slug: string;
+  siteKey: string | null;
   address: string;
   onAddress: (v: string) => void;
   initialError: AddressError | null;
@@ -147,6 +151,7 @@ function AddressStep({
 }) {
   const setAddress = onAddress;
   const [honeypot, setHoneypot] = useState('');
+  const [human, setHuman] = useState('');
   const [error, setError] = useState<AddressError | null>(initialError);
   const headingId = useId();
 
@@ -159,7 +164,7 @@ function AddressStep({
     }
     setError(null);
     onStart(performance.now());
-    quoteApi.estimate(slug, { address: typed, website: honeypot }).then(onAnswer, (err: unknown) => {
+    quoteApi.estimate(slug, { address: typed, website: honeypot, ...(siteKey !== null && { turnstileToken: human }) }).then(onAnswer, (err: unknown) => {
       onFailed(
         err instanceof QuoteApiError
           ? { message: err.status === 429 ? quote.tooFast : err.message, ...(err.field !== undefined && { field: err.field }) }
@@ -189,7 +194,8 @@ function AddressStep({
           enterKeyHint="go"
         />
         <Honeypot value={honeypot} onChange={setHoneypot} />
-        <Button type="submit" size="lg" className={styles.primary}>
+        <Turnstile siteKey={siteKey} onToken={setHuman} />
+        <Button type="submit" size="lg" className={styles.primary} disabled={siteKey !== null && human === ''}>
           {quote.measureButton}
         </Button>
         <p className={styles.small}>{quote.noObligation}</p>
@@ -369,6 +375,9 @@ function LeadForm({
   const [submitted, setSubmitted] = useState(false);
   const [sending, setSending] = useState(false);
   const [serverError, setServerError] = useState<QuoteApiError | null>(null);
+  const [human, setHuman] = useState('');
+  // A Turnstile token works once: after a refused send the widget starts over for a new one.
+  const [humanRound, setHumanRound] = useState(0);
   const [slots, setSlots] = useState<{ timeZone: string; slots: PublicQuoteSlot[] } | null>(null);
   const firstRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const headingId = useId();
@@ -407,11 +416,14 @@ function LeadForm({
         formToken: answer.formToken,
         website: form.website,
         ...(form.slotId !== '' && { slotId: form.slotId }),
+        ...(config.turnstileSiteKey !== null && { turnstileToken: human }),
       })
       .then(
         (res) => onDone(form.firstName.trim(), res.booked),
         (err: unknown) => {
           setSending(false);
+          setHuman('');
+          setHumanRound((n) => n + 1);
           setServerError(err instanceof QuoteApiError ? (err.status === 429 ? new QuoteApiError(429, quote.tooFast) : err) : new QuoteApiError(0, quote.genericError));
         },
       );
@@ -475,7 +487,8 @@ function LeadForm({
         ) : null}
         <Checkbox checked={form.consent} onChange={(on) => set('consent', on)} label={quote.consentLabel} description={config.consent.text} error={fieldError('consent')} />
         <Honeypot value={form.website} onChange={(v) => set('website', v)} />
-        <Button type="submit" size="lg" className={styles.primary} busy={sending}>
+        <Turnstile key={humanRound} siteKey={config.turnstileSiteKey} onToken={setHuman} />
+        <Button type="submit" size="lg" className={styles.primary} busy={sending} disabled={config.turnstileSiteKey !== null && human === ''}>
           {sending ? quote.sending : quote.submit}
         </Button>
         <p className={styles.small}>{quote.finalNote}</p>

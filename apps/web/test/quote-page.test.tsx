@@ -216,6 +216,28 @@ describe('QuotePage', () => {
   });
 });
 
+describe('Turnstile on the page', () => {
+  it('with a site key, the widget token goes with the estimate; the button waits for it', async () => {
+    const user = userEvent.setup();
+    const render_ = vi.fn((_el: HTMLElement, opts: { callback: (t: string) => void }) => {
+      setTimeout(() => opts.callback('human-token'), 0);
+      return 'w1';
+    });
+    vi.stubGlobal('turnstile', { render: render_, remove: vi.fn() });
+    api = stubApi({
+      [`GET ${BASE}`]: () => ({ body: { ...CONFIG, turnstileSiteKey: 'site-key' } }),
+      [`POST ${BASE}/estimate`]: () => ({ body: READY }),
+    });
+    render(<QuotePage slug={SLUG} />);
+    await user.type(await screen.findByLabelText(quote.addressLabel), READY.address);
+    await waitFor(() => expect(screen.getByRole('button', { name: quote.measureButton })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: quote.measureButton }));
+    await screen.findByRole('heading', { name: quote.resultsTitle });
+    expect(render_.mock.calls[0]![1]).toMatchObject({ sitekey: 'site-key' });
+    expect(api.sent(`POST ${BASE}/estimate`)).toEqual([{ address: READY.address, website: '', turnstileToken: 'human-token' }]);
+  });
+});
+
 describe('quote helpers', () => {
   it('checkLead mirrors the server rules', () => {
     const ok = { firstName: 'A', lastName: 'B', email: 'a@b.co', phone: '402-555-0142', postalCode: '68132', products: ['roof' as const], consent: true, slotId: '', website: '' };
