@@ -78,6 +78,12 @@
   flex: none;
 }
 
+/* On a fill page a child keeps its own height (a tab row is never squeezed); the one that should take the rest
+   says so with its own flex. Written with :where so any class of theirs wins. */
+:where(.page[data-layout="fill"] .body) > * {
+  flex: none;
+}
+
 @media (max-width: 767.98px) {
   .page {
     padding: 8px 16px 24px;
