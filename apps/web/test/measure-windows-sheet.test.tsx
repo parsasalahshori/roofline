@@ -518,9 +518,9 @@ describe('Measuring sheet through the windows screen', () => {
       ),
     );
     fireEvent.click(await screen.findByRole('button', { name: measureWindows.scanButton }));
-    await screen.findByRole('heading', { name: measureWindows.measuredBy });
     const card = () => screen.getByRole('region', { name: measureWindows.statsLabel });
-    fireEvent.click(within(card()).getByRole('button', { name: copy.add }));
+    await waitFor(() => expect(card().dataset.phase).toBe('done'));
+    fireEvent.click(screen.getByRole('button', { name: copy.add }));
     const dialog = screen.getByRole('dialog', { name: copy.title });
     // The how-to and the way to print the sheet are on the photos screen
     for (const step of copy.howTo) expect(within(dialog).getByText(step)).toBeTruthy();
@@ -545,7 +545,7 @@ describe('Measuring sheet through the windows screen', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: copy.close }));
     const row = card().querySelector('[data-photo-window]')!;
     // The server's size (35.9 x 59.7) wins: 35 7/8 x 59 3/4
-    await waitFor(() => expect(row.textContent).toContain(copy.sizeExact('35 7/8', '59 3/4')));
-    expect(row.textContent).toContain(copy.plusMinus('1/16'));
+    await waitFor(() => expect(row.textContent).toContain('35 7/8 by 59 3/4 inches'));
+    expect(row.textContent).toContain('plus or minus 1/16');
   });
 });

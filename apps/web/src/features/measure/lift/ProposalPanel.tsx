@@ -9,6 +9,11 @@ import styles from './ProposalPanel.module.css';
 
 const RECOMMENDED: Tier = 'better';
 
+/** The tier shown as picked: the one chosen, else the recommended one, else the first. */
+export function pickedOption(options: readonly TierOption[], picked: Tier | null, recommended: Tier = RECOMMENDED): TierOption | undefined {
+  return options.find((o) => o.tier === picked) ?? options.find((o) => o.tier === recommended) ?? options[0];
+}
+
 function firstName(name: string | null | undefined): string | null {
   const first = name?.trim().split(/\s+/)[0];
   return first === undefined || first === '' ? null : first;
@@ -108,6 +113,7 @@ export function TierPanel({
   footer,
   recommended = RECOMMENDED,
   vouched = true,
+  onPick,
 }: {
   title: string;
   /** The lines under the title; may follow the tier picked. */
@@ -125,9 +131,11 @@ export function TierPanel({
    * a draft (an estimated gutter length nobody checked); the recommended tier is still the one picked first.
    */
   vouched?: boolean;
+  /** Told when a tier is picked, so a bar elsewhere on the screen can show the same total. */
+  onPick?: (tier: Tier) => void;
 }) {
   const [picked, setPicked] = useState<Tier | null>(null);
-  const selected = options.find((o) => o.tier === picked) ?? options.find((o) => o.tier === recommended) ?? options[0];
+  const selected = pickedOption(options, picked, recommended);
   return (
     <aside className={styles.panel} aria-label={liftProposal.label}>
       <div className={styles.head}>
@@ -146,7 +154,13 @@ export function TierPanel({
         {options.length > 0 ? (
           <div className={styles.tiers} role="radiogroup" aria-label={liftProposal.tiersLabel}>
             {options.map((o) => (
-              <TierCard key={o.tier} option={o} checked={o.tier === selected?.tier} onPick={() => setPicked(o.tier)} recommended={recommended} badge={vouched} />
+              <TierCard key={o.tier} option={o} checked={o.tier === selected?.tier} onPick={() => {
+                  setPicked(o.tier);
+                  onPick?.(o.tier);
+                }}
+                recommended={recommended}
+                badge={vouched}
+              />
             ))}
           </div>
         ) : pending ? (
