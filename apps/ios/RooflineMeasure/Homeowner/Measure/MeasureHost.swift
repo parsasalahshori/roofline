@@ -1,0 +1,102 @@
+import AVFoundation
+import RooflineCore
+import SwiftUI
+
+/// The measuring screens, full screen over everything: the AR corners, the room scan or the bank-card photo, then the label
+/// sheet (room, optional name, save) over whichever one it was. "Measure it again" starts the same method over.
+struct MeasureHost: View {
+    @Environment(HomeownerStore.self) private var store
+    let session: MeasureSession
+    @State private var attempt = 0
+
+    var body: some View {
+        @Bindable var store = store
+        ZStack {
+            Color.black.ignoresSafeArea()
+            switch session.method {
+            case .corners: ArMeasureScreen(session: session).id(attempt)
+            case .roomScan: RoomScanScreen(session: session).id(attempt)
+            case .card: CardPhotoFlow(session: session).id(attempt)
+            }
+        }
+        .sheet(item: $store.pending) { p in
+            LabelSheet(pending: p) {
+                store.pending = nil
+                attempt += 1
+            }
+            .environment(store)
+        }
+    }
+}
+
+/// Camera permission, asked before the AR session or the camera picker starts, so a refusal can say what to do.
+@MainActor
+enum CameraAccess {
+    enum State { case allowed, denied }
+
+    static func request() async -> State {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized: return .allowed
+        case .notDetermined: return await AVCaptureDevice.requestAccess(for: .video) ? .allowed : .denied
+        default: return .denied
+        }
+    }
+}
+
+/// A measuring screen that cannot run here: the phone has no camera or no AR (the simulator), or camera access is off. It says
+/// what is needed and offers the way out, so nobody is left on a black screen.
+struct UnsupportedMeasureView: View {
+    enum Reason {
+        case noCamera
+        case noDepth
+        case cameraOff
+    }
+
+    let reason: Reason
+    let method: MeasureMethod
+    let onClose: () -> Void
+
+    private var title: String {
+        switch reason {
+        case .noCamera: return "This needs an iPhone"
+        case .noDepth: return "This needs a Pro iPhone"
+        case .cameraOff: return "Camera access is off"
+        }
+    }
+
+    private var detail: String {
+        switch reason {
+        case .noCamera: return "This device can't measure with a camera. Your request is saved. Open WinChoice on your iPhone to measure your windows."
+        case .noDepth: return "Scanning a room needs the depth sensor in a Pro iPhone. Tap the 4 corners of each window instead, or take a photo with a bank card."
+        case .cameraOff: return "WinChoice uses the camera only to measure your windows. Turn it on in Settings, then come back."
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 18) {
+            HStack {
+                Button(action: onClose) {
+                    IconView(icon: .close, size: 20, weight: 2).foregroundStyle(Theme.ink)
+                        .frame(width: 44, height: 44).background(Circle().fill(Theme.surface))
+                }
+                .accessibilityLabel("Close")
+                Spacer()
+            }
+            Spacer()
+            IconTile(icon: reason == .cameraOff ? .camera : .alert, size: 72, iconSize: 34, tint: reason == .cameraOff ? Theme.blueTint : Theme.warnTint, foreground: reason == .cameraOff ? Theme.blue : Theme.warn)
+            Text(title).wcHeading(26, .heavy, relativeTo: .title).foregroundStyle(Theme.ink).multilineTextAlignment(.center).accessibilityAddTraits(.isHeader)
+            Text(detail).wc(16, relativeTo: .body).foregroundStyle(Theme.ink2).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+            Spacer()
+            if reason == .cameraOff {
+                WCPrimaryButton(title: "Open Settings") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                }
+            }
+            WCSecondaryButton(title: "Back", action: onClose)
+        }
+        .padding(Theme.gutter)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.ground.ignoresSafeArea())
+        .accessibilityElement(children: .contain)
+    }
+}
