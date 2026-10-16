@@ -678,6 +678,15 @@ describe('ApprovalCard', () => {
     expect(screen.getByRole('button', { name: 'Approve' })).toHaveAttribute('data-key', '1');
   });
 
+  it('shows a summary under the title, and a glyph of its own on the main action', () => {
+    card({ summary: 'Text the customers under the hail swath.', approve: { label: 'Review 3 steps', href: '/approvals/t1', icon: 'arrow' } });
+    const article = screen.getByRole('article', { name: 'Order an exact roof report' });
+    expect(within(article).getByText('Text the customers under the hail swath.')).toBeInTheDocument();
+    expect(within(article).getByRole('link', { name: 'Review 3 steps' })).toHaveAttribute('href', '/approvals/t1');
+    // Without a summary there is no empty line under the title
+    expect(article.querySelectorAll('p')).toHaveLength(1);
+  });
+
   it('can link instead of act, leave out Edit and Not now, and show a busy Approve', () => {
     card({ approve: { label: 'Approve', href: '/approvals/t1', busy: true }, edit: undefined, later: undefined, meta: undefined });
     const approve = screen.getByRole('link', { name: 'Approve' });

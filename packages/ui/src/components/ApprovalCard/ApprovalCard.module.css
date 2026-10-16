@@ -56,6 +56,17 @@
   font-stretch: 108%;
 }
 
+.summary {
+  display: -webkit-box;
+  margin: -4px 0 0;
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: var(--font-size-body);
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
 .facts {
   display: flex;
   flex-wrap: wrap;
@@ -106,4 +117,21 @@
   margin-left: auto;
   color: var(--ink-3);
   font-size: var(--font-size-min);
+}
+
+/* A thumb: the buttons share the row at 44px, and the expiry drops under them */
+@media (max-width: 767.98px) {
+  .actions .action[data-size] {
+    flex: 1 1 0;
+    min-height: 44px;
+  }
+
+  .actions .action[data-role="approve"] {
+    flex-grow: 1.6;
+  }
+
+  .meta {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
 }

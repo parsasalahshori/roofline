@@ -19,8 +19,10 @@ export type ApprovalAction = {
   onClick?: () => void;
   href?: string;
   busy?: boolean;
-  /** The key that does it from the keyboard, shown on the button. */
+  /** The key that does it from the keyboard. The button carries it as `data-key`, so a screen can find the button for a key. */
   keyHint?: string;
+  /** Approve only: the glyph before the label. A check unless the action opens something to look at first. */
+  icon?: IconName;
 };
 
 export type ApprovalCardProps = {
@@ -31,6 +33,8 @@ export type ApprovalCardProps = {
   /** "Needs your OK". */
   tag: string;
   title: string;
+  /** One sentence under the title: what the plan does. Three lines at most; the whole sentence is still read out. */
+  summary?: string;
   facts: ReadonlyArray<ApprovalFact>;
   approve: ApprovalAction;
   edit?: ApprovalAction;
@@ -46,7 +50,7 @@ export type ApprovalCardProps = {
  * An agent's draft waiting for a yes: a 3px tape edge, who drafted it and when, the title, the facts that matter (cost in
  * mono, price, customer and recipient locked), then Approve, Edit and Not now. The keys 1, E and H do the same from the keyboard.
  */
-export function ApprovalCard({ agentIcon, drafted, tag, title, facts, approve, edit, later, meta, lockedLabel, className }: ApprovalCardProps) {
+export function ApprovalCard({ agentIcon, drafted, tag, title, summary, facts, approve, edit, later, meta, lockedLabel, className }: ApprovalCardProps) {
   const titleId = useId();
   return (
     <article className={cx(styles.card, className)} aria-labelledby={titleId}>
@@ -62,6 +66,7 @@ export function ApprovalCard({ agentIcon, drafted, tag, title, facts, approve, e
       <h3 id={titleId} className={styles.title}>
         {title}
       </h3>
+      {summary ? <p className={styles.summary}>{summary}</p> : null}
       <dl className={styles.facts}>
         {facts.map((fact) => (
           <div key={fact.label} className={styles.fact}>
@@ -76,17 +81,17 @@ export function ApprovalCard({ agentIcon, drafted, tag, title, facts, approve, e
         ))}
       </dl>
       <div className={styles.actions}>
-        <Button size="sm" onClick={approve.onClick} href={approve.href} busy={approve.busy} data-key={approve.keyHint}>
-          <Icon name="check" size={16} />
+        <Button size="sm" className={styles.action} data-role="approve" onClick={approve.onClick} href={approve.href} busy={approve.busy} data-key={approve.keyHint}>
+          <Icon name={approve.icon ?? 'check'} size={16} />
           {approve.label}
         </Button>
         {edit ? (
-          <Button size="sm" variant="default" onClick={edit.onClick} href={edit.href} busy={edit.busy} data-key={edit.keyHint}>
+          <Button size="sm" variant="default" className={styles.action} onClick={edit.onClick} href={edit.href} busy={edit.busy} data-key={edit.keyHint}>
             {edit.label}
           </Button>
         ) : null}
         {later ? (
-          <Button size="sm" variant="ghost" onClick={later.onClick} href={later.href} busy={later.busy} data-key={later.keyHint}>
+          <Button size="sm" variant="ghost" className={styles.action} onClick={later.onClick} href={later.href} busy={later.busy} data-key={later.keyHint}>
             {later.label}
           </Button>
         ) : null}
