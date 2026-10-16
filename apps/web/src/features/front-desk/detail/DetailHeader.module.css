@@ -33,7 +33,10 @@
   display: flex;
   grid-area: who;
   flex-direction: column;
+  justify-content: center;
   gap: 6px;
+  /* With no tags the name sits level with the middle of the avatar */
+  min-height: 40px;
   min-width: 0;
 }
 
