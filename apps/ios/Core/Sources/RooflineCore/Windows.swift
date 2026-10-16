@@ -1,7 +1,7 @@
 import Foundation
 
 /// A window on the list: every photo of it (a shared windowKey), its size from the median of them.
-public struct WindowGroup: Equatable, Sendable, Identifiable {
+public struct MeasuredWindowGroup: Equatable, Sendable, Identifiable {
     public var key: String
     public var name: String
     public var photos: [PhotoWindow]
@@ -19,7 +19,7 @@ public struct WindowGroup: Equatable, Sendable, Identifiable {
 
 public enum WindowGrouping {
     /// The windows photographed so far, in the order first seen, named by their label or "Window N".
-    public static func groups(_ windows: [PhotoWindow], excluded: Set<String> = []) -> [WindowGroup] {
+    public static func groups(_ windows: [PhotoWindow], excluded: Set<String> = []) -> [MeasuredWindowGroup] {
         var order: [String] = []
         var byKey: [String: [PhotoWindow]] = [:]
         for w in windows where !excluded.contains(w.id) {
@@ -32,7 +32,7 @@ public enum WindowGrouping {
             let name = ps.compactMap { $0.input.label }.first { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? "Window \(n + 1)"
             let us = ps.compactMap { $0.uncertaintyIn.map { max($0.width, $0.height) } }
             let scanOnly = ps.allSatisfy { $0.input.scale.kind == "roomplan" }
-            return WindowGroup(
+            return MeasuredWindowGroup(
                 key: k,
                 name: name,
                 photos: ps,

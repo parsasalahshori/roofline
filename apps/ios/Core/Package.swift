@@ -15,6 +15,8 @@ let package = Package(
     platforms: [.macOS("14.0"), .iOS("17.0")],
     products: [
         .library(name: "RooflineCore", targets: ["RooflineCore"]),
+        // For the app's test target (RooflineMeasureTests) to run the same checks
+        .library(name: "RooflineCoreCheckSuite", targets: ["RooflineCoreCheckSuite"]),
     ],
     targets: [
         .target(name: "RooflineCore"),
