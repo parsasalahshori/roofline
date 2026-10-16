@@ -66,9 +66,14 @@ function renderGuide({
 const carrierPicker = () => screen.findByLabelText(forwarding.carrierLabel);
 const modePicker = () => screen.findByLabelText(forwarding.modeLabel);
 
-// Picked by value: the label "AT&T" is escaped in the DOM, so user-event cannot match it by text
+// The kit Listbox: open it by its label, then click the option (it is portaled, so it is found on the whole screen)
+async function choose(user: ReturnType<typeof userEvent.setup>, picker: HTMLElement, option: string) {
+  await user.click(picker);
+  await user.click(await screen.findByRole('option', { name: option }));
+}
+
 async function pick(user: ReturnType<typeof userEvent.setup>, carrier: Carrier) {
-  await user.selectOptions(await carrierPicker(), carrier);
+  await choose(user, await carrierPicker(), forwarding.carriers[carrier]);
 }
 
 describe('forwarding guide: dial codes', () => {
@@ -83,7 +88,7 @@ describe('forwarding guide: dial codes', () => {
   it('switches to the no-answer code when the mode changes', async () => {
     const { user } = renderGuide();
     await screen.findByText('*724025550100');
-    await user.selectOptions(await modePicker(), forwarding.modes.no_answer);
+    await choose(user, await modePicker(), forwarding.modes.no_answer);
     expect(await screen.findByText('*714025550100')).toBeInTheDocument();
     expect(screen.queryByText('*724025550100')).not.toBeInTheDocument();
   });
@@ -168,5 +173,27 @@ describe('forwarding guide: anchor', () => {
     renderGuide({ path: '/settings/front-desk' });
     await screen.findByRole('heading', { name: forwarding.title });
     expect(scroll).not.toHaveBeenCalled();
+  });
+});
+
+describe('forwarding guide: panel', () => {
+  it('is a panel named by its heading, with both numbers as facts in the national format', async () => {
+    renderGuide();
+    const panel = await screen.findByRole('region', { name: forwarding.title });
+    // The numbers arrive after the panel does
+    expect(await within(panel).findByText(forwarding.businessNumberLabel)).toBeInTheDocument();
+    expect(within(panel).getByText('(402) 555-1234')).toBeInTheDocument();
+    expect(within(panel).getByText(forwarding.rooflineNumberLabel)).toBeInTheDocument();
+    expect(within(panel).getByText('(402) 555-0100')).toBeInTheDocument();
+  });
+
+  it('offers the phone companies and the two modes in listboxes, not native selects', async () => {
+    const { user } = renderGuide();
+    const picker = await carrierPicker();
+    expect(picker.tagName).toBe('BUTTON');
+    await user.click(picker);
+    expect(await screen.findAllByRole('option')).toHaveLength(Object.keys(forwarding.carriers).length);
+    expect(screen.getByRole('option', { name: forwarding.carriers.att })).toBeInTheDocument();
+    expect(document.querySelector('select')).toBeNull();
   });
 });

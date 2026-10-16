@@ -2,6 +2,8 @@
 export const frontDeskSettings = {
   loadFailed: 'We could not load the Front Desk settings.',
   title: 'Front Desk',
+  /** The panels of the form, top to bottom (the on-call list and the forwarding guide are panels with their own titles). */
+  panels: { answering: 'Answering', assistant: 'The assistant', rules: 'What it may do', timing: 'Timing and records' },
   onOff: {
     label: 'Front Desk answers my calls',
     blocked: {

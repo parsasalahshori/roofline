@@ -43,3 +43,27 @@ describe('save bar', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 });
+
+describe('save bar and the column that scrolls', () => {
+  function inColumn(dirty: boolean) {
+    return (
+      <div data-testid="column" style={{ overflowY: 'auto' }}>
+        <form>
+          <SaveBar dirty={dirty} saving={false} saveLabel="Save" onDiscard={() => {}} />
+        </form>
+      </div>
+    );
+  }
+
+  it('keeps the column clear of itself while it is there, and gives the column back when it goes', () => {
+    const { rerender } = render(inColumn(false));
+    const column = () => screen.getByTestId('column');
+    expect(column().style.getPropertyValue('scroll-padding-bottom')).toBe('');
+
+    rerender(inColumn(true));
+    expect(column().style.getPropertyValue('scroll-padding-bottom')).toMatch(/^\d+px$/);
+
+    rerender(inColumn(false));
+    expect(column().style.getPropertyValue('scroll-padding-bottom')).toBe('');
+  });
+});

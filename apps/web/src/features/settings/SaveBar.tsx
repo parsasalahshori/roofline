@@ -1,6 +1,8 @@
 import { Button, Icon } from '@roofline/ui';
+import { useRef } from 'react';
 import { settings } from '../../copy/settings.ts';
 import styles from './SaveBar.module.css';
+import { useClearOfBar } from './useClearOfBar.ts';
 
 export type SaveBarProps = {
   /** The bar is there only while the form has something to save. */
@@ -20,10 +22,16 @@ export type SaveBarProps = {
  * reach however far down the field is. It is the form's submit button, so Enter in a field saves too. Put it inside
  * the `<form>`, after the panels, and it stays within the form's own height.
  */
-export function SaveBar({ dirty, saving, saveLabel, onDiscard, saveDisabled = false }: SaveBarProps) {
-  if (!dirty) return null;
+export function SaveBar({ dirty, ...rest }: SaveBarProps) {
+  return dirty ? <Bar {...rest} /> : null;
+}
+
+/** The bar itself, mounted only while there is something to save, so the room it takes from the column lasts exactly that long. */
+function Bar({ saving, saveLabel, onDiscard, saveDisabled = false }: Omit<SaveBarProps, 'dirty'>) {
+  const ref = useRef<HTMLDivElement>(null);
+  useClearOfBar(ref);
   return (
-    <div role="group" aria-label={settings.saveBar.label} className={styles.bar}>
+    <div ref={ref} role="group" aria-label={settings.saveBar.label} className={styles.bar}>
       <p className={styles.text}>
         <Icon name="pen" size={16} />
         {settings.saveBar.unsaved}

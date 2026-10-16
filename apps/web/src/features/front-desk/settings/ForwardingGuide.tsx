@@ -1,10 +1,12 @@
 import { CARRIERS, forwardingSteps, type Carrier } from '@roofline/shared';
-import { Banner, Button, Card, EmptyState, Select, Skeleton } from '@roofline/ui';
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { Banner, Button, EmptyState, Listbox, Panel, Skeleton } from '@roofline/ui';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router';
 import { errors } from '../../../copy/errors.ts';
 import { forwarding } from '../../../copy/forwarding.ts';
+import { formatPhone } from '../../../lib/phone.ts';
 import { useCompany } from '../../settings/api.ts';
+import form from '../../settings/form.module.css';
 import { useTexting } from '../../texting/api.ts';
 import { ForwardingTest } from './ForwardingTest.tsx';
 import styles from './ForwardingGuide.module.css';
@@ -31,7 +33,7 @@ function isCarrier(value: string): value is Carrier {
   return (CARRIERS as readonly string[]).includes(value);
 }
 
-/** One group of codes or steps: a heading, then each string as large code with a copy button, or as an ordered list. */
+/** One group of codes or steps: a heading, then each string as large mono code on a sunken box with a copy button, or as an ordered list. */
 function CodeGroup({
   label,
   kind,
@@ -53,7 +55,7 @@ function CodeGroup({
         codes.map((code) => (
           <div key={code} className={styles.codeRow}>
             <code className={styles.code}>{code}</code>
-            <Button variant="ghost" onClick={() => onCopy(code)}>
+            <Button variant="default" size="sm" onClick={() => onCopy(code)}>
               {copiedCode === code ? forwarding.copied : forwarding.copy}
             </Button>
           </div>
@@ -70,9 +72,8 @@ function CodeGroup({
 }
 
 export function ForwardingGuide() {
-  const headingId = useId();
   const location = useLocation();
-  const sectionRef = useRef<HTMLElement>(null);
+  const sectionRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (location.hash === '#forwarding') sectionRef.current?.scrollIntoView?.({ block: 'start' });
   }, [location.hash]);
@@ -126,56 +127,57 @@ export function ForwardingGuide() {
     );
   }
 
+  const hasNumbers = businessNumber !== null || rooflineNumber !== null;
   return (
-    <section id="forwarding" ref={sectionRef} aria-labelledby={headingId} className={styles.guide}>
-      <Card as="div" className={styles.card}>
-        <h2 id={headingId} className={styles.title}>
-          {forwarding.title}
-        </h2>
-
-        <dl className={styles.numbers}>
-          {businessNumber !== null ? (
-            <div className={styles.number}>
-              <dt className={styles.numberLabel}>{forwarding.businessNumberLabel}</dt>
-              <dd className={styles.numberValue}>{businessNumber}</dd>
-            </div>
+    <div id="forwarding" ref={sectionRef} className={styles.guide}>
+      <Panel title={forwarding.title}>
+        <div className={styles.card}>
+          {hasNumbers ? (
+            <dl className={form.facts}>
+              {businessNumber !== null ? (
+                <div className={form.fact}>
+                  <dt className={form.factLabel}>{forwarding.businessNumberLabel}</dt>
+                  <dd className={`${form.factValue} ${form.mono}`}>{formatPhone(businessNumber)}</dd>
+                </div>
+              ) : null}
+              {rooflineNumber !== null ? (
+                <div className={form.fact}>
+                  <dt className={form.factLabel}>{forwarding.rooflineNumberLabel}</dt>
+                  <dd className={`${form.factValue} ${form.mono}`}>{formatPhone(rooflineNumber)}</dd>
+                </div>
+              ) : null}
+            </dl>
           ) : null}
-          {rooflineNumber !== null ? (
-            <div className={styles.number}>
-              <dt className={styles.numberLabel}>{forwarding.rooflineNumberLabel}</dt>
-              <dd className={styles.numberValue}>{rooflineNumber}</dd>
-            </div>
-          ) : null}
-        </dl>
-        {company.isSuccess && businessNumber === null ? <p className={styles.hint}>{forwarding.noBusinessNumber}</p> : null}
+          {company.isSuccess && businessNumber === null ? <p className={form.help}>{forwarding.noBusinessNumber}</p> : null}
 
-        <div className={styles.pickers}>
-          <Select
-            label={forwarding.carrierLabel}
-            value={carrier}
-            options={CARRIER_OPTIONS}
-            onChange={(value) => {
-              if (isCarrier(value)) {
-                setCarrier(value);
-                setCopiedCode(null);
-              }
-            }}
-          />
-          <Select
-            label={forwarding.modeLabel}
-            value={mode}
-            options={MODE_OPTIONS}
-            onChange={(value) => {
-              if (isMode(value)) {
-                setMode(value);
-                setCopiedCode(null);
-              }
-            }}
-          />
+          <div className={form.grid}>
+            <Listbox
+              label={forwarding.carrierLabel}
+              value={carrier}
+              options={CARRIER_OPTIONS}
+              onChange={(value) => {
+                if (isCarrier(value)) {
+                  setCarrier(value);
+                  setCopiedCode(null);
+                }
+              }}
+            />
+            <Listbox
+              label={forwarding.modeLabel}
+              value={mode}
+              options={MODE_OPTIONS}
+              onChange={(value) => {
+                if (isMode(value)) {
+                  setMode(value);
+                  setCopiedCode(null);
+                }
+              }}
+            />
+          </div>
+
+          {body}
         </div>
-
-        {body}
-      </Card>
-    </section>
+      </Panel>
+    </div>
   );
 }

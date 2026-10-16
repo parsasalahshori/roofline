@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
+import { useClearOfBar } from '../settings/useClearOfBar.ts';
 import styles from './WizardActions.module.css';
 
 /**
@@ -6,8 +7,10 @@ import styles from './WizardActions.module.css';
  * It stays at the foot of the window while the step scrolls: on a phone the long mapping list never pushes Next out of reach.
  */
 export function WizardActions({ status, children }: { status: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useClearOfBar(ref);
   return (
-    <div className={styles.bar}>
+    <div ref={ref} className={styles.bar}>
       <p className={styles.status}>{status}</p>
       <div className={styles.buttons}>{children}</div>
     </div>

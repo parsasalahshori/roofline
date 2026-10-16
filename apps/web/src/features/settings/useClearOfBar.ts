@@ -1,0 +1,32 @@
+import { useLayoutEffect, type RefObject } from 'react';
+
+const PROPERTY = 'scroll-padding-bottom';
+
+/**
+ * While a bar rides the foot of the window (the save bar, the import's step bar) the column that scrolls keeps whatever is
+ * focused or scrolled to above it: the column's scroll-padding grows by the bar's height and its gap, and goes back when the
+ * bar is gone. Without it a field at the bottom of the window can be focused and sit behind the bar.
+ */
+export function useClearOfBar(ref: RefObject<HTMLElement | null>): void {
+  useLayoutEffect(() => {
+    const bar = ref.current;
+    if (!bar) return undefined;
+    let column: HTMLElement | null = bar.parentElement;
+    while (column && !/auto|scroll/.test(getComputedStyle(column).overflowY)) column = column.parentElement;
+    if (!column) return undefined;
+    const scroller = column;
+    const before = scroller.style.getPropertyValue(PROPERTY);
+    const apply = () => {
+      const gap = Number.parseFloat(getComputedStyle(bar).bottom) || 0;
+      scroller.style.setProperty(PROPERTY, `${Math.ceil(bar.offsetHeight + gap + 12)}px`);
+    };
+    apply();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(apply);
+    observer?.observe(bar);
+    return () => {
+      observer?.disconnect();
+      if (before === '') scroller.style.removeProperty(PROPERTY);
+      else scroller.style.setProperty(PROPERTY, before);
+    };
+  }, [ref]);
+}

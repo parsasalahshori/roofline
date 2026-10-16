@@ -1,10 +1,12 @@
-import { useState, type FormEvent } from 'react';
-import { Button, Checkbox, EmptyState, Field, Skeleton, useToast } from '@roofline/ui';
+import { useId, useState, type FormEvent } from 'react';
+import { Button, Checkbox, EmptyState, Field, Panel, Skeleton, useToast } from '@roofline/ui';
 import type { AgentValues } from '@roofline/shared';
 import { ApiError } from '../../api/client.ts';
 import { errors } from '../../copy/errors.ts';
 import { agentRules } from '../../copy/agents.ts';
 import { useAgentValues, useUpdateAgentValues, type AgentValuesPatchBody } from './api.ts';
+import layout from './form.module.css';
+import { SaveBar } from './SaveBar.tsx';
 import styles from './AgentRules.module.css';
 
 /** The form's text values. Numbers stay as typed until they are sent, so a half-typed number is not lost. */
@@ -132,10 +134,12 @@ export function AgentRules() {
       );
     }
     return (
-      <div role="status">
-        <Skeleton lines={4} />
-        <span className="visually-hidden">{agentRules.loading}</span>
-      </div>
+      <Panel>
+        <div role="status">
+          <Skeleton lines={4} />
+          <span className="visually-hidden">{agentRules.loading}</span>
+        </div>
+      </Panel>
     );
   }
 
@@ -149,6 +153,7 @@ function AgentRulesForm({ values }: { values: AgentValues }) {
   const [localProblems, setLocalProblems] = useState<Record<string, string>>({});
   const update = useUpdateAgentValues();
   const toast = useToast();
+  const titleId = useId();
 
   const serverField = errorField(update.error);
   const problemFor = (field: string): string | undefined =>
@@ -190,40 +195,42 @@ function AgentRulesForm({ values }: { values: AgentValues }) {
   }
 
   return (
-    <section className={styles.section}>
-      <h2 className={styles.title}>{agentRules.title}</h2>
-      <form className={styles.form} onSubmit={submit} noValidate>
-        <fieldset className={styles.group}>
-          <legend className={styles.groupTitle}>{agentRules.groups.claims}</legend>
-          <p className={styles.help}>{agentRules.claimsHelp}</p>
-          <div className={styles.row}>
-            {agentRules.nudgeDayLabels.map((label, index) => (
-              <Field
-                key={label}
-                className={styles.field}
-                name={`claimsNudgeDays${index}`}
-                label={label}
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={60}
-                value={form.nudge[index] ?? ''}
-                onChange={(event) => setAt('nudge', index, event.target.value)}
-              />
-            ))}
+    <section className={layout.section} aria-labelledby={titleId}>
+      <div className={layout.sectionHead}>
+        <h2 id={titleId} className={layout.sectionTitle}>
+          {agentRules.title}
+        </h2>
+      </div>
+      <form className={layout.form} onSubmit={submit} noValidate>
+        <Panel title={agentRules.groups.claims} headingLevel={3}>
+          <div className={styles.body}>
+            <p className={layout.help}>{agentRules.claimsHelp}</p>
+            <div className={layout.grid}>
+              {agentRules.nudgeDayLabels.map((label, index) => (
+                <Field
+                  key={label}
+                  name={`claimsNudgeDays${index}`}
+                  label={label}
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={60}
+                  value={form.nudge[index] ?? ''}
+                  onChange={(event) => setAt('nudge', index, event.target.value)}
+                />
+              ))}
+            </div>
+            {problemFor('claimsNudgeDays') ? (
+              <p role="alert" className={styles.problem}>
+                {problemFor('claimsNudgeDays')}
+              </p>
+            ) : null}
           </div>
-          {problemFor('claimsNudgeDays') ? (
-            <p role="alert" className={styles.problem}>
-              {problemFor('claimsNudgeDays')}
-            </p>
-          ) : null}
-        </fieldset>
+        </Panel>
 
-        <fieldset className={styles.group}>
-          <legend className={styles.groupTitle}>{agentRules.groups.scheduler}</legend>
-          <div className={styles.row}>
+        <Panel title={agentRules.groups.scheduler} headingLevel={3}>
+          <div className={layout.grid}>
             <Field
-              className={styles.field}
               name="reminderHour"
               label={agentRules.hourLabel}
               help={agentRules.hourHelp}
@@ -236,7 +243,6 @@ function AgentRulesForm({ values }: { values: AgentValues }) {
               onChange={(event) => set('hour', event.target.value)}
             />
             <Field
-              className={styles.field}
               name="weatherRainPct"
               label={agentRules.rainLabel}
               help={agentRules.rainHelp}
@@ -249,7 +255,6 @@ function AgentRulesForm({ values }: { values: AgentValues }) {
               onChange={(event) => set('rain', event.target.value)}
             />
             <Field
-              className={styles.field}
               name="weatherGustMph"
               label={agentRules.gustLabel}
               help={agentRules.gustHelp}
@@ -262,98 +267,104 @@ function AgentRulesForm({ values }: { values: AgentValues }) {
               onChange={(event) => set('gust', event.target.value)}
             />
           </div>
-        </fieldset>
+        </Panel>
 
-        <fieldset className={styles.group}>
-          <legend className={styles.groupTitle}>{agentRules.groups.followup}</legend>
-          <div className={styles.switches}>
-            <Checkbox
-              checked={form.reviews}
-              onChange={(next) => set('reviews', next)}
-              label={agentRules.reviewsLabel}
-              description={agentRules.reviewsHelp}
-              error={problemFor('followupReviews')}
-            />
-            <Checkbox
-              checked={form.leads}
-              onChange={(next) => set('leads', next)}
-              label={agentRules.leadsLabel}
-              description={agentRules.leadsHelp}
-              error={problemFor('followupLeads')}
-            />
-            <Checkbox
-              checked={form.proposals}
-              onChange={(next) => set('proposals', next)}
-              label={agentRules.proposalsLabel}
-              description={agentRules.proposalsHelp}
-              error={problemFor('followupProposals')}
-            />
-          </div>
-          <p className={styles.help}>{agentRules.followupDaysHelp}</p>
-          <div className={styles.row}>
-            {agentRules.followupDayLabels.map((label, index) => (
+        <Panel title={agentRules.groups.followup} headingLevel={3}>
+          <div className={styles.body}>
+            <div className={styles.switches}>
+              <Checkbox
+                checked={form.reviews}
+                onChange={(next) => set('reviews', next)}
+                label={agentRules.reviewsLabel}
+                description={agentRules.reviewsHelp}
+                error={problemFor('followupReviews')}
+              />
+              <Checkbox
+                checked={form.leads}
+                onChange={(next) => set('leads', next)}
+                label={agentRules.leadsLabel}
+                description={agentRules.leadsHelp}
+                error={problemFor('followupLeads')}
+              />
+              <Checkbox
+                checked={form.proposals}
+                onChange={(next) => set('proposals', next)}
+                label={agentRules.proposalsLabel}
+                description={agentRules.proposalsHelp}
+                error={problemFor('followupProposals')}
+              />
+            </div>
+            <p className={`${layout.help} ${styles.rule}`}>{agentRules.followupDaysHelp}</p>
+            <div className={layout.grid}>
+              {agentRules.followupDayLabels.map((label, index) => (
+                <Field
+                  key={label}
+                  name={`followupDays${index}`}
+                  label={label}
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={30}
+                  value={form.followup[index] ?? ''}
+                  onChange={(event) => setAt('followup', index, event.target.value)}
+                />
+              ))}
+            </div>
+            {problemFor('followupDays') ? (
+              <p role="alert" className={styles.problem}>
+                {problemFor('followupDays')}
+              </p>
+            ) : null}
+            <div className={layout.grid}>
               <Field
-                key={label}
-                className={styles.field}
-                name={`followupDays${index}`}
-                label={label}
+                name="leadFollowupDays"
+                label={agentRules.leadDaysLabel}
+                help={agentRules.leadDaysHelp}
                 type="number"
                 inputMode="numeric"
                 min={1}
                 max={30}
-                value={form.followup[index] ?? ''}
-                onChange={(event) => setAt('followup', index, event.target.value)}
+                value={form.leadDays}
+                error={problemFor('leadFollowupDays')}
+                onChange={(event) => set('leadDays', event.target.value)}
               />
-            ))}
+              <Field
+                name="reviewDelayDays"
+                label={agentRules.reviewDelayLabel}
+                help={agentRules.reviewDelayHelp}
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={30}
+                value={form.reviewDelay}
+                error={problemFor('reviewDelayDays')}
+                onChange={(event) => set('reviewDelay', event.target.value)}
+              />
+              <div className={layout.span}>
+                <Field
+                  name="reviewLink"
+                  label={agentRules.reviewLinkLabel}
+                  help={agentRules.reviewLinkHelp}
+                  type="url"
+                  value={form.reviewLink}
+                  error={problemFor('reviewLink')}
+                  onChange={(event) => set('reviewLink', event.target.value)}
+                />
+              </div>
+            </div>
           </div>
-          {problemFor('followupDays') ? (
-            <p role="alert" className={styles.problem}>
-              {problemFor('followupDays')}
-            </p>
-          ) : null}
-          <div className={styles.row}>
-            <Field
-              className={styles.field}
-              name="leadFollowupDays"
-              label={agentRules.leadDaysLabel}
-              help={agentRules.leadDaysHelp}
-              type="number"
-              inputMode="numeric"
-              min={1}
-              max={30}
-              value={form.leadDays}
-              error={problemFor('leadFollowupDays')}
-              onChange={(event) => set('leadDays', event.target.value)}
-            />
-            <Field
-              className={styles.field}
-              name="reviewLink"
-              label={agentRules.reviewLinkLabel}
-              help={agentRules.reviewLinkHelp}
-              type="url"
-              value={form.reviewLink}
-              error={problemFor('reviewLink')}
-              onChange={(event) => set('reviewLink', event.target.value)}
-            />
-            <Field
-              className={styles.field}
-              name="reviewDelayDays"
-              label={agentRules.reviewDelayLabel}
-              help={agentRules.reviewDelayHelp}
-              type="number"
-              inputMode="numeric"
-              min={0}
-              max={30}
-              value={form.reviewDelay}
-              error={problemFor('reviewDelayDays')}
-              onChange={(event) => set('reviewDelay', event.target.value)}
-            />
-          </div>
-        </fieldset>
+        </Panel>
 
-        <Button className={styles.save} type="submit" variant="primary" busy={update.isPending} disabled={!hasChanges}>
-          {agentRules.save}
-        </Button>
+        <SaveBar
+          dirty={hasChanges}
+          saving={update.isPending}
+          saveLabel={agentRules.save}
+          onDiscard={() => {
+            setForm(baseline);
+            setLocalProblems({});
+            update.reset();
+          }}
+        />
         {update.isPending ? <span className="visually-hidden">{agentRules.saving}</span> : null}
       </form>
     </section>

@@ -1,18 +1,8 @@
-/* The on-call list: one card row per member, drag handle, number, name and phone, then the move and remove buttons */
-.root {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.heading {
-  margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
-}
-
+/* The on-call list: the help line, then one row per member (drag handle, place, name and phone, the move and remove buttons) */
 .help {
   margin: 0;
+  padding: 16px;
+  border-bottom: 1px solid var(--line);
   color: var(--ink-3);
   font-size: var(--font-size-body);
 }
@@ -25,21 +15,23 @@
 .offList {
   display: flex;
   flex-direction: column;
-  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+/* A row is a hairline-divided line of the panel, not a card of its own: the hairline sits between rows, never after the last one */
 .row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 8px 12px;
   min-height: 56px;
-  padding: 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-3);
+  padding: 8px 16px;
+}
+
+.row + .row {
+  border-top: 1px solid var(--line);
 }
 
 .handle,
@@ -52,11 +44,14 @@
   cursor: grab;
 }
 
+/* The place in the ring order: a mono number, so the column of them lines up */
 .place {
   min-width: 24px;
   color: var(--ink-3);
-  text-align: center;
+  font-family: var(--f-mono);
   font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: center;
 }
 
 .who {
@@ -74,8 +69,16 @@
 
 .phone {
   color: var(--ink-3);
+  font-family: var(--f-mono);
   font-size: var(--font-size-body);
+  font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
+}
+
+/* A person with no phone yet: a sentence, not a number, so it is not mono */
+.noPhone {
+  color: var(--ink-3);
+  font-size: var(--font-size-body);
 }
 
 .actions {
@@ -85,6 +88,7 @@
 
 .empty {
   margin: 0;
+  padding: 16px;
   color: var(--ink-3);
   font-size: var(--font-size-body);
 }
@@ -92,13 +96,20 @@
 .offSection {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+}
+
+/* The people who are not on the list are set off from the list above them by a hairline */
+.listArea + .offSection {
+  border-top: 1px solid var(--line);
 }
 
 .subheading {
-  margin: 8px 0 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
+  margin: 0;
+  padding: 12px 16px 4px;
+  color: var(--ink-3);
+  font: 600 var(--font-size-min)/1.2 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 /* Keeps the live region for screen readers and out of sight */

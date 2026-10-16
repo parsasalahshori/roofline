@@ -1,23 +1,12 @@
-/* The Front Desk tab: the form's cards one under another, the save row, then the empty slot for the forwarding guide */
+/* The Front Desk tab: the form's panels, then the forwarding guide, one under another */
 .page {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
 }
 
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.section {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-/* The on/off switches stack, each on its own line, with the reason sentence under the first */
+/* The on/off switches stack, each on its own line, with the reason under the first */
 .switches {
   display: flex;
   flex-direction: column;
@@ -25,18 +14,19 @@
   gap: 12px;
 }
 
-.blocked {
-  margin: 0;
-  font-size: var(--font-size-min);
-  color: var(--ink-3);
+.switches > [role='status'],
+.switches > [role='alert'] {
+  align-self: stretch;
 }
 
+/* The owner's "turn on anyway": asked on a raised box under the switch, with its two buttons */
 .confirm {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  align-self: stretch;
   padding: 16px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-2);
   border-radius: var(--r-3);
   background: var(--surface-2);
 }
@@ -51,10 +41,7 @@
   gap: 8px;
 }
 
-.voice {
-  max-width: 320px;
-}
-
+/* The voice's sample: the browser's own player, the width of a field */
 .preview {
   display: block;
   width: 100%;
@@ -62,43 +49,18 @@
   min-height: 40px;
 }
 
+/* What the assistant should know: the text box, with how much of its room is used right-aligned under it */
+.facts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .counter {
   margin: 0;
-  font-size: var(--font-size-min);
   color: var(--ink-3);
+  font-family: var(--f-mono);
+  font-size: var(--font-size-min);
+  font-variant-numeric: tabular-nums;
   text-align: right;
-}
-
-/* Number fields sit in a row that wraps, each at least as wide as a phone field */
-.numbers {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px 16px;
-}
-
-.actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
-/* The space for Task 24's forwarding guide: set off from the form by a rule and a gap, with nothing drawn in it */
-.forwardingSlot {
-  min-height: 0;
-  margin-top: 8px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
-}
-
-@media (max-width: 767.98px) {
-  .actions {
-    justify-content: stretch;
-  }
-
-  .actions > button {
-    width: 100%;
-  }
-
-  .voice {
-    max-width: none;
-  }
 }
