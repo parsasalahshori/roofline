@@ -198,6 +198,15 @@ describe('KpiTile', () => {
     rerender(<KpiTile label="Signed" value="$1" spark={[2, 4, 8]} sparkLabel="Signed per week, 3 weeks" />);
     expect(screen.getByRole('img', { name: 'Signed per week, 3 weeks' })).toBeInTheDocument();
   });
+
+  it('says it has bars, so the note under the number can leave them room; a tile without bars says nothing', () => {
+    const { container, rerender } = render(<KpiTile label="Signed" value="$1" meta="Weekly" spark={[2, 4]} />);
+    expect(container.firstElementChild).toHaveAttribute('data-spark', 'true');
+    rerender(<KpiTile label="Signed" value="$1" meta="Weekly" spark={[]} />);
+    expect(container.firstElementChild).not.toHaveAttribute('data-spark');
+    rerender(<KpiTile label="Signed" value="$1" meta="Weekly" />);
+    expect(container.firstElementChild).not.toHaveAttribute('data-spark');
+  });
 });
 
 describe('Table', () => {

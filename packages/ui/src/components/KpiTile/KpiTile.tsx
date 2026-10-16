@@ -22,7 +22,7 @@ export type KpiTileProps = {
 export function KpiTile({ label, value, unit, meta, spark, sparkLabel, className }: KpiTileProps) {
   const top = spark && spark.length > 0 ? Math.max(...spark, 1) : 1;
   return (
-    <div className={cx(styles.tile, className)}>
+    <div className={cx(styles.tile, className)} data-spark={spark && spark.length > 0 ? 'true' : undefined}>
       <dl className={styles.stat}>
         <dt className={styles.label}>{label}</dt>
         <dd className={styles.value}>
