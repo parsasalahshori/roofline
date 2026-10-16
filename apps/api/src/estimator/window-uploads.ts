@@ -214,6 +214,9 @@ export function sizePhotoWindow(input: PhotoWindowInput, photo: { widthPx: numbe
     const r2 = (v: number) => Math.round(v * 100) / 100;
     extra = { uncertaintyIn: { width: r2(m.uncertaintyIn.width), height: r2(m.uncertaintyIn.height) }, distanceIn: null, viewAngleDeg: null };
     step = 100;
+  } else if (s.kind === 'card') {
+    // The card method is wired in with the card module (window-photo-card.ts).
+    return null;
   } else {
     size = sizeFromKnownSide(corners, photo.widthPx, photo.heightPx, s.side, s.inches, focalPx);
   }

@@ -5,6 +5,7 @@
 // optional detector can find the front windows instead (source 'detector'); it is off by default.
 // Estimated windows are never shown or priced as measured.
 import type { Tier } from './proposals.ts';
+import type { WindowStyle } from './window-order.ts';
 import type { ArDevice, ArQuad, Quad } from './window-photo-math.ts';
 
 type LngLat = [number, number];
@@ -244,6 +245,23 @@ export type WindowPhotoScale =
       heightM: number;
       /** RoomPlan's own confidence in the surface. */
       confidence: RoomPlanConfidence;
+    }
+  | {
+      /**
+       * A credit card (ISO/IEC 7810 ID-1, 85.60 x 53.98 mm) held or taped flat on the glass: the person taps its four
+       * corners and the window frame's four corners on one photo, and the size comes from the homography of the card's
+       * known size (window-photo-card.ts). Quote-grade (the card is small next to the window): its ± grows with the
+       * window-to-card size ratio and the window is 'check' above CARD_CHECK_UNCERTAINTY_IN. The PhotoWindowInput's
+       * `corners` are the window frame's corners in the same photo; `uploadId` and `corners` are required.
+       */
+      kind: 'card';
+      /**
+       * The card's four corners in the photo (pixels), each tapped at the tip of the card's rounded corner, in order
+       * around the card (clockwise or counterclockwise, starting at any corner: the server finds which side is long).
+       */
+      cardCorners: Quad;
+      /** The card's size, millimetres: always the ID-1 size (the server refuses any other). */
+      card: { widthMm: number; heightMm: number };
     };
 
 export const ROOMPLAN_CONFIDENCES = ['low', 'medium', 'high'] as const;
@@ -253,13 +271,33 @@ export const ROOMPLAN_MIN_UNCERTAINTY_IN = 1;
 /** RoomPlan's ± by its confidence, inches (UNCALIBRATED until the field test; never under the 1 in floor). */
 export const ROOMPLAN_UNCERTAINTY_IN: Readonly<Record<RoomPlanConfidence, number>> = { high: 1, medium: 1.5, low: 2 };
 
+/** PhotoWindowInput.source for a window the homeowner measured in the phone app. */
+export const HOMEOWNER_APP_SOURCE = 'homeowner-app' as const;
+
 /**
  * What the person enters for one photographed window: corners in photo pixels (TL, TR, BR, BL). Several photos of the
  * same window share a `windowKey` (one PhotoWindowInput per photo); absent means the photo is its own window.
  * `uploadId` and `corners` are always there except for a RoomPlan window (scale kind 'roomplan'), which may have no
  * photo; the API refuses them missing for any other kind.
  */
-export type PhotoWindowInput = { id: string; uploadId?: string; label?: string; windowKey?: string; corners?: Quad; scale: WindowPhotoScale };
+export type PhotoWindowInput = {
+  id: string;
+  uploadId?: string;
+  label?: string;
+  windowKey?: string;
+  corners?: Quad;
+  scale: WindowPhotoScale;
+  /**
+   * Where the window was measured from, when not by staff: 'homeowner-app' = the homeowner measured it themselves in the
+   * phone app (public homeowner API). Quote-grade only: never used for a factory order, whatever its scale. Set by the
+   * server; staff cannot set it (a staff edit that changes the measurement takes it off).
+   */
+  source?: typeof HOMEOWNER_APP_SOURCE;
+  /** The room the homeowner put the window in ("Kitchen", "Bedroom 1"), when they said. */
+  room?: string;
+  /** The window's style as the homeowner picked it. */
+  style?: WindowStyle;
+};
 
 /** The window a photographed window belongs to: its shared key, else its own id (one photo, one window). */
 export function photoWindowKey(w: Pick<PhotoWindowInput, 'id' | 'windowKey'>): string {
@@ -298,6 +336,8 @@ export type PhotoWindow = PhotoWindowInput & {
   viewAngleDeg?: number | null;
   /** 'check' when the corners are nearly degenerate or the photo was steeply angled (> 50 deg); AR: not a flat rectangle. */
   quality: 'good' | 'check';
+  /** Why 'check', in plain words (the card method's; absent for the others). */
+  reasons?: string[];
 };
 
 /** The person's changes: windows left out of the quote, and counts typed in per size class (replacing the estimate). */
