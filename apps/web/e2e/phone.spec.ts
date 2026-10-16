@@ -214,12 +214,64 @@ test('C1 pages do not scroll sideways', async ({ page, loginAs, markTodaySeen, d
       '/calendar?view=list',
       () => page.locator('[data-testid^="agenda-day-"]').first().or(page.getByText('Nothing scheduled.', { exact: true })),
     ],
+    ['/calendar', () => page.getByRole('group', { name: 'Pick a day' })],
+    ['/calendar/new?kind=inspection', () => page.getByRole('list', { name: 'Suggested times' })],
   ];
   for (const [path, ready] of pages) {
     await page.goto(path);
     await expect(ready()).toBeVisible({ timeout: 20_000 });
     await noSideScroll(page);
   }
+});
+
+test('the calendar opens on the day, with a strip of the week, and the visit page keeps its actions in reach', async ({
+  page,
+  loginAs,
+  markTodaySeen,
+  db,
+  scenario,
+}) => {
+  const owner = await db.query<{ user_id: string }>(`select user_id from memberships where company_id = $1 and role = 'owner' order by user_id limit 1`, [
+    scenario.a.companyId,
+  ]);
+  const visit = await db.query<{ id: string }>(
+    `insert into appointments (company_id, kind, title, assigned_user_id, starts_at, ends_at, status, source)
+     select $1, 'inspection', 'Roof inspection', $2,
+            (((now() at time zone c.timezone)::date) + time '10:00') at time zone c.timezone,
+            (((now() at time zone c.timezone)::date) + time '11:00') at time zone c.timezone, 'scheduled', 'manual'
+       from companies c where c.id = $1 returning id`,
+    [scenario.a.companyId, owner.rows[0]!.user_id],
+  );
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+
+  await page.goto('/calendar');
+  const views = page.getByRole('radiogroup', { name: 'Calendar view' });
+  await expect(views.getByRole('radio', { name: 'Day' })).toBeChecked({ timeout: 20_000 });
+  const strip = page.getByRole('group', { name: 'Pick a day' });
+  await expect(strip.getByRole('button')).toHaveCount(7);
+  await expect(strip.locator('[data-picked="true"]')).toHaveCount(1);
+  await expect(page.getByTestId(`appt-${visit.rows[0]?.id}`)).toBeVisible();
+  await noSideScroll(page);
+
+  // A day of the strip, a thumb wide
+  const other = strip.getByRole('button').nth(0);
+  const box = await other.boundingBox();
+  expect(box!.width).toBeGreaterThanOrEqual(40);
+  expect(box!.height).toBeGreaterThanOrEqual(44);
+
+  // The visit page: the way back is the calendar, and Mark done is above the tab bar
+  await page.goto(`/calendar/appointments/${visit.rows[0]?.id}`);
+  await expect(page.getByRole('heading', { name: 'Roof inspection', level: 2 })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('link', { name: 'Calendar' }).first()).toBeVisible();
+  await expectAboveTabs(page, page.getByRole('button', { name: 'Mark done' }));
+  await noSideScroll(page);
+
+  // The form: Save is above the tab bar too
+  await page.goto('/calendar/new?kind=inspection');
+  await expect(page.getByRole('list', { name: 'Suggested times' })).toBeVisible({ timeout: 20_000 });
+  await expectAboveTabs(page, page.getByRole('button', { name: 'Save', exact: true }));
+  await noSideScroll(page);
 });
 
 test('agents screens fit the phone', async ({ page, loginAs, markTodaySeen, agentsSeed }) => {
