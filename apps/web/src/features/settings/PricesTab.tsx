@@ -8,6 +8,7 @@ import { prices } from '../../copy/prices.ts';
 import { formErrors } from '../auth/formErrors.ts';
 import { usePricebook, useSavePricebook, type PricebookSave } from './crm-api.ts';
 import { EstimateSection } from './EstimateSection.tsx';
+import { InstantQuoteSection } from './InstantQuoteSection.tsx';
 import { FinancingSection } from './FinancingSection.tsx';
 import styles from './PricesTab.module.css';
 import { TiersSection } from './TiersSection.tsx';
@@ -131,6 +132,7 @@ export function PricesTab() {
       <TiersSection />
       <FinancingSection />
       <EstimateSection />
+      <InstantQuoteSection />
     </>
   );
 }

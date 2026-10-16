@@ -120,4 +120,5 @@ export const quoteSettings = {
   copied: 'Copied',
   preview: 'Preview the page',
   turnOnFirst: 'Turn the page on and save to get the code.',
+  iframeTitle: 'Instant estimate',
 } as const;

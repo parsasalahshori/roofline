@@ -56,3 +56,17 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* The embed code's buttons: copy, and the page's preview opened in a new tab */
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.previewLink {
+  color: var(--ds-info-ink, #1f55b3);
+  font-weight: 600;
+}
