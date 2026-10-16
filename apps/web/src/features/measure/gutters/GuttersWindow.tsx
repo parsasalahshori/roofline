@@ -549,7 +549,7 @@ function GuttersCard({
                 </span>
                 <span className={cardStyles.sqft}>{copy.runsLine(Math.round(t.runs * share), Math.round(corners * share))}</span>
               </div>
-              <dl className={cardStyles.grid}>
+              <dl className={`${cardStyles.grid} ${styles.cells}`}>
               <div className={cardStyles.cell}>
                 <dt>{copy.downspoutsCell}</dt>
                 <dd data-stat="downspouts">{placed ? copy.downspoutsValue(t.downspouts, t.downspoutFt) : copy.minus}</dd>
