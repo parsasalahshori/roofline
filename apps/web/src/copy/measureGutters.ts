@@ -55,6 +55,8 @@ export const measureGutters = {
   rainNote: (inPerHr: number) => `Sized for ${inPerHr} in/hr, a 10-year five-minute Arkansas downpour (NOAA Atlas 14)`,
   porchNote: 'Porch and patio roofs have their own runs, one floor up.',
   noRuns: 'No eaves on this roof take a gutter.',
+  checkLow: 'Gutter length looks low for this house. Check the runs on the map.',
+  coverage: (perimeterFt: number, share: number) => `Gutters cover ${Math.round(share * 100)}% of the ${ft(perimeterFt)} around the house`,
   saveFailed: 'Your gutter changes did not save. Try again.',
   adjust: 'Adjust',
   done: 'Done',

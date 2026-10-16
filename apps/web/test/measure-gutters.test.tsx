@@ -216,6 +216,23 @@ describe('Measure gutters', () => {
     expect(patches).toEqual([{ excludedRunIds: [], downspouts: { [v.runs[0]!.id]: 2 }, size: '6in' }]);
   });
 
+  it('flags gutter length that looks low for the house, and says how much of the outline the gutters cover', async () => {
+    // Only one eave of the hip left: about a quarter of the perimeter
+    const roof = current.roof!;
+    const firstEave = roof.lines.find((l) => l.kind === 'eave')!;
+    current = { ...current, roof: { ...roof, lines: roof.lines.filter((l) => l.kind !== 'eave' || l === firstEave) } };
+    await open();
+    const flag = card().querySelector('[data-review="gutters-check"]');
+    expect(flag?.textContent).toBe(copy.checkLow);
+    const v = serverView();
+    expect(card().querySelector('[data-coverage]')?.textContent).toBe(copy.coverage(v.check.perimeterFt, v.check.share));
+  });
+
+  it('a whole hip roof is not flagged', async () => {
+    await open();
+    expect(card().querySelector('[data-review="gutters-check"]')).toBeNull();
+  });
+
   it('a rep sees the gutters without prices', async () => {
     role = 'rep';
     await open();

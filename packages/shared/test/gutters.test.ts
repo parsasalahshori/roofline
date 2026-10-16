@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { buildRoofModel, type RoofModel } from '../src/roof-model.ts';
 import {
+  classifyEdge,
   compassSide,
+  gutterCheck,
   DEFAULT_GUTTER_TIERS,
   downspoutCapacitySqFt,
   eaveHeight,
@@ -293,20 +295,6 @@ describe('gutterView', () => {
 });
 
 describe('3D roof edges', () => {
-  it('a rake that is level is guttered like an eave; a sloped rake never is', () => {
-    const roof = roofOf(GABLE);
-    const rakes = roof.lines.filter((l) => l.kind === 'rake');
-    // Make one rake level: its true length equal to its plan length.
-    const planFt = (l: (typeof rakes)[number]) => {
-      const [a, b] = l.coords;
-      return Math.hypot((b[0] - a[0]) * K * COS, (b[1] - a[1]) * K) * FT;
-    };
-    const level = { ...rakes[0]!, lengthFt: planFt(rakes[0]!) };
-    const edited: RoofModel = { ...roof, lines: roof.lines.map((l) => (l === rakes[0] ? level : l)) };
-    expect(gutterRuns(roof).runs).toHaveLength(2);
-    expect(gutterRuns(edited).runs.length).toBeGreaterThan(2);
-  });
-
   it('drops a lone eave piece under 4 ft (a jog) but keeps a short one that turns a corner', () => {
     const roof = roofOf(GABLE);
     const eave = roof.lines.find((l) => l.kind === 'eave')!;
@@ -314,5 +302,143 @@ describe('3D roof edges', () => {
     const stub: [number, number] = [a[0], a[1] - 0.9 / K]; // 0.9 m south of the eave's start, alone
     const lone = { ...eave, coords: [[stub[0] - 0.9 / (K * COS), stub[1]], stub] as [[number, number], [number, number]], lengthFt: 0.9 * FT };
     expect(gutterRuns({ ...roof, lines: [...roof.lines, lone] }).runs).toHaveLength(2);
+  });
+});
+
+/** A roof model by hand: facets as [id, plan points (m), pitch x/12, downhill azimuth], lines as [kind, a, b, facets, rise ft]. */
+function handRoof(
+  facets: [string, [number, number][], number, number | undefined][],
+  lines: [string, [number, number], [number, number], string[], number][],
+  outline: [number, number][],
+): RoofModel {
+  return {
+    facets: facets.map(([id, pts, pitch, az]) => {
+      const cx = pts.reduce((t, p) => t + p[0], 0) / pts.length;
+      const cy = pts.reduce((t, p) => t + p[1], 0) / pts.length;
+      const r = ring(pts);
+      const area = Math.abs(pts.reduce((t, p, k) => t + p[0] * pts[(k + 1) % pts.length]![1] - pts[(k + 1) % pts.length]![0] * p[1], 0) / 2) * FT * FT;
+      return { id, ring: [...r, r[0]!], planSqFt: area, areaSqFt: area * 1.1, pitch: `${pitch}/12`, labelAt: pt(cx, cy), ...(az !== undefined ? { azimuthDeg: az } : {}) };
+    }),
+    lines: lines.map(([kind, a, b, fs, rise]) => {
+      const plan = Math.hypot(b[0] - a[0], b[1] - a[1]) * FT;
+      return { kind: kind as RoofModel['lines'][number]['kind'], coords: [pt(...a), pt(...b)] as [[number, number], [number, number]], lengthFt: Math.hypot(plan, rise), facets: fs };
+    }),
+    outline: [...ring(outline), ring(outline)[0]!],
+    pitch: '6/12',
+    totals: { squares: 0, slopedSqFt: 0, planSqFt: 0, facetCount: facets.length, wastePct: 10, ridgeFt: 0, hipFt: 0, valleyFt: 0, eaveFt: 0, rakeFt: 0 },
+  };
+}
+
+describe('classifyEdge (from the face plane, not the label)', () => {
+  const base = { pitchX12: 6, climbX12: 0, label: 'rake' };
+  it('downhill within 45 degrees of the outward normal is an eave, 60 or more a rake', () => {
+    expect(classifyEdge({ ...base, outward: { x: 0, y: -1 }, downhillDeg: 180 })).toBe('eave');
+    expect(classifyEdge({ ...base, outward: { x: 1, y: -1 }, downhillDeg: 180 })).toBe('eave'); // 45
+    expect(classifyEdge({ ...base, label: 'eave', outward: { x: 1, y: 0 }, downhillDeg: 180 })).toBe('rake'); // 90
+    expect(classifyEdge({ ...base, label: 'eave', outward: { x: Math.sin((61 * Math.PI) / 180), y: -Math.cos((61 * Math.PI) / 180) }, downhillDeg: 180, climbX12: 0 })).toBe('rake'); // past 60, even level
+  });
+  it('between 45 and 60 degrees the edge\'s climb decides; a climb too close to call uses the label', () => {
+    const at52 = { x: Math.sin((52 * Math.PI) / 180), y: -Math.cos((52 * Math.PI) / 180) };
+    expect(classifyEdge({ ...base, outward: at52, downhillDeg: 180, climbX12: 0.3 })).toBe('eave');
+    expect(classifyEdge({ ...base, label: 'eave', outward: at52, downhillDeg: 180, climbX12: 4 })).toBe('rake');
+    expect(classifyEdge({ ...base, label: 'eave', outward: at52, downhillDeg: 180, climbX12: 1.5 })).toBe('eave');
+    expect(classifyEdge({ ...base, label: 'rake', outward: at52, downhillDeg: 180, climbX12: 1.5 })).toBe('rake');
+  });
+  it('a face with no direction (or a flat one) falls back on the label', () => {
+    expect(classifyEdge({ ...base, label: 'eave', outward: { x: 1, y: 0 }, downhillDeg: null })).toBe('eave');
+    expect(classifyEdge({ ...base, label: 'rake', pitchX12: 1, outward: { x: 0, y: -1 }, downhillDeg: 180 })).toBe('rake');
+  });
+});
+
+describe('runs from the planes on whole roofs', () => {
+  it('hip: gutters all round; gable: only along the eaves', () => {
+    const hip = gutterRuns(roofOf(HIP));
+    expect(hip.runs.reduce((t, r) => t + r.lengthFt, 0)).toBeCloseTo(gutterCheck(roofOf(HIP), []).perimeterFt, -1);
+    const gable = gutterRuns(roofOf(GABLE));
+    expect(gable.runs.map((r) => r.side).sort()).toEqual(['north', 'south']);
+  });
+
+  it('L-shape: eaves on both wings, none on the two gable ends', () => {
+    const roof = roofOf(L_SHAPE);
+    const runs = gutterRuns(roof).runs;
+    const rakeFt = roof.lines.filter((l) => l.kind === 'rake').length;
+    expect(rakeFt).toBeGreaterThan(0);
+    const eaveFt = roof.lines.filter((l) => l.kind === 'eave').reduce((t, l) => t + l.lengthFt, 0);
+    expect(runs.reduce((t, r) => t + r.lengthFt, 0)).toBeCloseTo(eaveFt, 0);
+  });
+
+  it('Dutch gable: eaves on all four sides, the little gable\'s rakes (above the hips) take none', () => {
+    // 12 x 8 m: front and back faces, hipped ends from y 2..6 at the ends, a small gable on top of each end.
+    const roof = handRoof(
+      [
+        ['A', [[0, 0], [12, 0], [10, 3], [2, 3]], 6, 180],
+        ['B', [[0, 8], [2, 5], [10, 5], [12, 8]], 6, 0],
+        ['C', [[12, 0], [12, 8], [10, 5], [10, 3]], 6, 90],
+        ['D', [[0, 0], [2, 3], [2, 5], [0, 8]], 6, 270],
+      ],
+      [
+        ['eave', [0, 0], [12, 0], ['A'], 0],
+        ['eave', [12, 8], [0, 8], ['B'], 0],
+        ['eave', [12, 0], [12, 8], ['C'], 0],
+        ['eave', [0, 8], [0, 0], ['D'], 0],
+        // The small gables' rakes, drawn on the front and back faces where the hips stop
+        ['rake', [10, 3], [10, 4], ['A'], 2],
+        ['rake', [2, 3], [2, 4], ['A'], 2],
+        ['rake', [10, 5], [10, 4], ['B'], 2],
+        ['rake', [2, 5], [2, 4], ['B'], 2],
+        ['hip', [12, 0], [10, 3], ['A', 'C'], 4],
+        ['ridge', [2, 4], [10, 4], ['A', 'B'], 0],
+      ],
+      [[0, 0], [12, 0], [12, 8], [0, 8]],
+    );
+    const { runs, corners } = gutterRuns(roof);
+    expect(runs).toHaveLength(4);
+    expect(runs.map((r) => r.side).sort()).toEqual(['east', 'north', 'south', 'west']);
+    expect(corners).toHaveLength(4);
+  });
+
+  it('mislabelled edges (a Ridgeway-like 3D roof): eaves drawn as rakes still get gutters, rakes drawn as eaves do not', () => {
+    // A 14 x 9 m gable, ridge east-west: the long sides are the eaves. The reconstruction swapped the labels and
+    // gave the eaves a little height noise.
+    const roof = handRoof(
+      [
+        ['A', [[0, 0], [14, 0], [14, 4.5], [0, 4.5]], 8, 180],
+        ['B', [[0, 4.5], [14, 4.5], [14, 9], [0, 9]], 8, 0],
+      ],
+      [
+        ['rake', [0, 0], [14, 0], ['A'], 0.6],
+        ['rake', [14, 9], [0, 9], ['B'], 0.4],
+        ['eave', [14, 0], [14, 4.5], ['A'], 9.8],
+        ['eave', [14, 4.5], [14, 9], ['B'], 9.8],
+        ['eave', [0, 9], [0, 4.5], ['B'], 9.8],
+        ['eave', [0, 4.5], [0, 0], ['A'], 9.8],
+        ['ridge', [0, 4.5], [14, 4.5], ['A', 'B'], 0],
+      ],
+      [[0, 0], [14, 0], [14, 9], [0, 9]],
+    );
+    const { runs } = gutterRuns(roof);
+    expect(runs.map((r) => r.side).sort()).toEqual(['north', 'south']);
+    expect(runs.reduce((t, r) => t + r.lengthFt, 0)).toBeCloseTo(28 * FT, 0);
+    const check = gutterCheck(roof, runs);
+    expect(check.share).toBeCloseTo((28 / 46), 1);
+    expect(check.reasons).toEqual([]);
+  });
+});
+
+describe('gutterCheck', () => {
+  it('flags gutters under 45% of the perimeter, or under 40 ft on a house over 800 sq ft', () => {
+    const roof = roofOf(GABLE);
+    const c = gutterCheck(roof, gutterRuns(roof).runs);
+    expect(c.perimeterFt).toBeCloseTo(2 * (20 + 10) * FT, 0); // the footprint's outline
+    expect(c.reasons).toEqual([]);
+    expect(c.expectedShare).toBeCloseTo(0.55, 2);
+    expect(gutterCheck(roof, [{ lengthFt: 40 }]).reasons).toEqual(['gutters-check']);
+    expect(gutterCheck(roofOf(HIP), []).expectedShare).toBeGreaterThan(0.9);
+    // A small house (under 800 sq ft) at half its perimeter is fine; the 40 ft floor applies to bigger ones only.
+    const small = roofOf([[0, 0], [6, 0], [6, 5], [0, 5]]);
+    expect(gutterCheck(small, [{ lengthFt: gutterCheck(small, []).perimeterFt * 0.5 }]).reasons).toEqual([]);
+  });
+  it('is part of the measurement', () => {
+    expect(measureGutters(roofOf(HIP), ASSUMED).check.reasons).toEqual([]);
   });
 });

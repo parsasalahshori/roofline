@@ -101,6 +101,19 @@ function projectOne(instance: MapLibreMap | null, p: LngLat): { x: number; y: nu
   }
 }
 
+/**
+ * fitBounds padding: the room above the card (and above the bottom 38% before the card shows), the photo's sides kept
+ * clear on a wide map, never less than 120 px of height for the roof.
+ */
+export function framePadding(w: number, h: number, cardPx: number): { top: number; bottom: number; left: number; right: number } {
+  const portrait = h > w;
+  const top = Math.round(h * (portrait ? 0.14 : 0.12));
+  const wanted = Math.max(Math.round(h * (portrait ? 0.5 : 0.36)), cardPx > 0 ? cardPx + 30 : 0);
+  const bottom = Math.max(0, Math.min(wanted, h - top - 120));
+  const side = Math.round(w * (portrait ? 0.08 : 0.18));
+  return { top, bottom, left: side, right: side };
+}
+
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
 /** The map with the roof's outline framed, the runs, rakes, downspouts and run labels drawn over it. */
@@ -133,7 +146,9 @@ function GutterMap({
     }
     const loose = map as unknown as Loose;
     map.on('error', () => setFailed(true));
-    // Frames the roof above the card (the card covers more of a phone's map, which is portrait)
+    // The card over the bottom of the map (it lives beside the map in the same stage)
+    const cardHeight = () => container.parentElement?.parentElement?.querySelector<HTMLElement>('[data-gutters-card]')?.offsetHeight ?? 0;
+    // Frames the roof in the room above the card
     const fit = () => {
       const ring = startRef.current.outline;
       const w = container.clientWidth;
@@ -148,10 +163,7 @@ function GutterMap({
             [Math.max(...lngs), Math.max(...lats)],
           ],
           {
-            padding:
-              h > w
-                ? { top: Math.round(h * 0.14), bottom: Math.round(h * 0.56), left: Math.round(w * 0.08), right: Math.round(w * 0.08) }
-                : { top: Math.round(h * 0.14), bottom: Math.round(h * 0.38), left: Math.round(w * 0.18), right: Math.round(w * 0.18) },
+            padding: framePadding(w, h, cardHeight()),
             maxZoom: FIT_MAX_ZOOM,
             duration: 0,
           },
@@ -183,7 +195,21 @@ function GutterMap({
           })
         : null;
     observer?.observe(container);
+    // The card grows as the scan fills it in, and with Adjust: frame the roof above it again each time
+    const stage = container.parentElement?.parentElement ?? null;
+    const cardWatch =
+      typeof MutationObserver === 'function' && stage !== null
+        ? new MutationObserver(() => {
+            const card = stage.querySelector<HTMLElement>('[data-gutters-card]');
+            if (card !== null && card.dataset.watched !== 'true') {
+              card.dataset.watched = 'true';
+              observer?.observe(card);
+            }
+          })
+        : null;
+    if (stage !== null) cardWatch?.observe(stage, { childList: true, subtree: true });
     return () => {
+      cardWatch?.disconnect();
       observer?.disconnect();
       map.remove();
     };
@@ -420,6 +446,14 @@ function GuttersCard({
               <div className={styles.facts}>
                 <p className={styles.reason} data-size-reason="">
                   <strong>{copy.reasonLabel}</strong> {view.size.reason}
+                </p>
+                {view.check.reasons.includes('gutters-check') ? (
+                  <div data-review="gutters-check">
+                    <Banner tone="warning">{copy.checkLow}</Banner>
+                  </div>
+                ) : null}
+                <p className={styles.small} data-coverage="">
+                  {copy.coverage(view.check.perimeterFt, view.check.share)}
                 </p>
                 <p className={styles.small}>{copy.heightSource[view.eave.source]}</p>
                 <p className={styles.small}>{copy.rainNote(view.design.rainfallInPerHr)}</p>

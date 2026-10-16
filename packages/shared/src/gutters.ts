@@ -4,8 +4,9 @@
 // (and an eave height when one is known).
 //
 // How it works (local metres round the roof):
-// 1. Eave lines (never rakes, ridges, hips, valleys or flashing; a "rake" of a 3D roof that is in fact level counts as
-//    an eave) are turned so their facet lies on their left, then touching collinear pieces are merged; pieces too
+// 1. Outline edges are classified from their face's plane (classifyEdge: the face's downhill direction against the
+//    edge's outward normal), not from the drawing's labels; ridges, hips, valleys and flashing never take gutters. Eaves
+//    are turned so their facet lies on their left, then touching collinear pieces are merged; pieces too
 //    short to gutter (under 2 ft, or under 4 ft and turning no corner) are dropped. Each straight run ends at a corner or an open end. Low porch or patio
 //    roofs (flat facets that are a small part of the roof: the reconstruction's 'low-attachment') give their own
 //    runs along their downhill edges, never merged with the house's.
@@ -59,8 +60,17 @@ export const GUTTER_DESIGN = {
   minRunFt: 2,
   /** A run this short with no corner into another run (a jog over a bay) gets no gutter of its own. */
   minLoneRunFt: 4,
-  /** A line drawn as a rake that climbs less than this (x/12) is level: water leaves the roof there, so it is an eave. */
+  /** An edge in the 45-60 degree band that climbs less than this (x/12) is level: water leaves the roof there (an eave). */
   levelRakeMaxX12: 1.5,
+  /** Edge classification from the face's plane: downhill within this of the edge's outward normal is an eave... */
+  eaveMaxDeg: 45,
+  /** ...and this far or more off it is a rake; between, the edge's own climb decides. */
+  rakeMinDeg: 60,
+  /** The review check: gutters under this share of the outline's perimeter... */
+  checkMinShare: 0.45,
+  /** ...or under this many feet on a house of more than `checkMinPlanSqFt`, look low. */
+  checkMinFt: 40,
+  checkMinPlanSqFt: 800,
   hangerSpacingFt: 2,
   elbowsPerDownspout: 3,
   floorHeightFt: 10,
@@ -175,8 +185,21 @@ export type GutterSizing = {
   overridden: boolean;
 };
 
+/** Gutter length set against the house's outline: low gutter footage is flagged for a person to check. */
+export type GutterCheck = {
+  /** The roof outline's perimeter, ft. */
+  perimeterFt: number;
+  /** Every run's length (left-out runs too) over the perimeter. */
+  share: number;
+  /** About what to expect from the roof's mix: 1 for all hips, about 0.55 for all gables. */
+  expectedShare: number;
+  /** 'gutters-check': the gutter length looks low for this house (GUTTER_DESIGN.checkMinShare / checkMinFt). */
+  reasons: 'gutters-check'[];
+};
+
 export type GutterMeasure = {
   runs: GutterRun[];
+  check: GutterCheck;
   corners: GutterCorner[];
   size: GutterSizing;
   eave: EaveHeight;
@@ -254,6 +277,39 @@ export function compassSide(dir: { x: number; y: number }): CompassSide {
 export function pitchX12Of(pitch: string): number {
   const m = /^\s*(\d+(?:\.\d+)?)\s*\/\s*12\s*$/.exec(pitch);
   return m ? Number(m[1]) : 0;
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Which outline edges take a gutter, from the face planes (not the drawing's eave/rake labels).
+
+export type EdgeClass = 'eave' | 'rake';
+
+/**
+ * Whether water runs off an outline edge, from its face's plane: the angle in plan between the face's downhill
+ * direction and the edge's outward normal. Up to 45 degrees: an eave; 60 or more: a rake; between: the edge's own climb
+ * (under 1.5/12 is level: an eave). A face with no direction (flat, or none recorded) and a climb too close to call fall
+ * back on the drawing's label, the only place it is used.
+ */
+export function classifyEdge(e: {
+  /** Outward normal of the edge in plan (x east, y north; any length). */
+  outward: { x: number; y: number };
+  /** The face's downhill compass direction, degrees (0 north, 90 east); null when it has none. */
+  downhillDeg: number | null;
+  /** The face's pitch, x/12. */
+  pitchX12: number;
+  /** The edge's own climb end to end, x/12; null when unknown. */
+  climbX12: number | null;
+  /** The drawing's label. */
+  label: string;
+}): EdgeClass {
+  const byLabel: EdgeClass = e.label === 'eave' ? 'eave' : 'rake';
+  if (e.downhillDeg === null || !Number.isFinite(e.downhillDeg) || e.pitchX12 < GUTTER_DESIGN.lowAttachmentMaxX12) return byLabel;
+  const rad = (e.downhillDeg * Math.PI) / 180;
+  const off = angleDeg({ x: Math.sin(rad), y: Math.cos(rad) }, e.outward);
+  if (off <= GUTTER_DESIGN.eaveMaxDeg) return 'eave';
+  if (off >= GUTTER_DESIGN.rakeMinDeg) return 'rake';
+  if (e.climbX12 === null || Math.abs(e.climbX12 - GUTTER_DESIGN.levelRakeMaxX12) < 0.25) return byLabel;
+  return e.climbX12 < GUTTER_DESIGN.levelRakeMaxX12 ? 'eave' : 'rake';
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -343,15 +399,26 @@ export function gutterRuns(roof: RoofModel | null): { runs: GutterRunGeometry[];
   const facetById = new Map(roof.facets.map((f) => [f.id, f]));
 
   const isLow = (l: RoofLine) => (l.facets ?? []).length === 1 && low.has(l.facets![0]!);
-  // A rake that is level (a 3D roof's edge drawn as a rake within its noise) drains like an eave.
-  const levelRake = (l: RoofLine) => {
-    if (l.kind !== 'rake') return false;
-    const planFt = len(sub(frame.toLocal(l.coords[1]), frame.toLocal(l.coords[0]))) * FT_PER_M;
-    if (planFt <= 0) return false;
-    const riseFt = Math.sqrt(Math.max(0, l.lengthFt * l.lengthFt - planFt * planFt));
-    return (riseFt / planFt) * 12 < GUTTER_DESIGN.levelRakeMaxX12;
+  // Every outline edge (one face; never flashing, which is a wall) is classified from its face's plane.
+  const isEave = (l: RoofLine) => {
+    if (l.kind !== 'eave' && l.kind !== 'rake' && l.kind !== 'flat-edge') return false;
+    if ((l.facets ?? []).length !== 1) return l.kind === 'eave';
+    const facet = facetById.get(l.facets![0]!);
+    const { a, b } = orient(l, frame, facetMid, roofMid);
+    const d = sub(b, a);
+    const planFt = len(d) * FT_PER_M;
+    const climbX12 = planFt > 0 ? (Math.sqrt(Math.max(0, l.lengthFt * l.lengthFt - planFt * planFt)) / planFt) * 12 : null;
+    return (
+      classifyEdge({
+        outward: { x: d.y, y: -d.x },
+        downhillDeg: facet?.azimuthDeg ?? null,
+        pitchX12: facet ? pitchX12Of(facet.pitch) : 0,
+        climbX12,
+        label: l.kind,
+      }) === 'eave'
+    );
   };
-  const mainLines = roof.lines.filter((l) => (l.kind === 'eave' || levelRake(l)) && !isLow(l));
+  const mainLines = roof.lines.filter((l) => !isLow(l) && isEave(l));
   const lowLines: RoofLine[] = [];
   for (const id of low) {
     const edges = roof.lines.filter((l) => (l.kind === 'eave' || l.kind === 'flat-edge') && (l.facets ?? []).length === 1 && l.facets![0] === id);
@@ -461,6 +528,32 @@ export function cleanGutterAdjustments(runs: readonly { id: string }[], adj: Par
   }
   const size = adj?.size === '5in' || adj?.size === '6in' ? adj.size : null;
   return { excludedRunIds: excluded, downspouts, size };
+}
+
+/** The outline's perimeter and the share of it the runs cover; flagged when low (see GutterCheck). */
+export function gutterCheck(roof: RoofModel | null, runs: readonly { lengthFt: number }[]): GutterCheck {
+  const ring = roof?.outline ?? [];
+  const frame = frameFor(ring);
+  let perimeterM = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const a = frame.toLocal(ring[i]!);
+    const b = frame.toLocal(ring[(i + 1) % ring.length]!);
+    perimeterM += len(sub(b, a));
+  }
+  const perimeterFt = round1(perimeterM * FT_PER_M);
+  const gutterFt = runs.reduce((t, r) => t + r.lengthFt, 0);
+  const share = perimeterFt > 0 ? Math.round((gutterFt / perimeterFt) * 100) / 100 : 0;
+  // The roof's mix: hips put gutters all round, gable ends none (their ridge ends at the outline).
+  const sum = (k: string) => (roof?.lines ?? []).filter((l) => l.kind === k).reduce((t, l) => t + l.lengthFt, 0);
+  const hip = sum('hip');
+  const ridge = sum('ridge');
+  const hipMix = hip + ridge > 0 ? Math.min(1, hip / (hip + ridge)) : 0;
+  const expectedShare = Math.round((0.55 + 0.45 * hipMix) * 100) / 100;
+  const planSqFt = (roof?.facets ?? []).reduce((t, f) => t + f.planSqFt, 0);
+  const low =
+    perimeterFt > 0 &&
+    (share < GUTTER_DESIGN.checkMinShare || (planSqFt > GUTTER_DESIGN.checkMinPlanSqFt && gutterFt < GUTTER_DESIGN.checkMinFt));
+  return { perimeterFt, share, expectedShare, reasons: low ? ['gutters-check'] : [] };
 }
 
 /** "1,420" */
@@ -590,6 +683,7 @@ export function measureGutters(roof: RoofModel | null, eave: EaveHeight, adjustm
   };
   return {
     runs,
+    check: gutterCheck(roof, geo),
     corners,
     size: { recommended, chosen, downspout: GUTTER_DESIGN.downspoutFor[chosen], reason, overridden: adj.size !== null },
     eave,

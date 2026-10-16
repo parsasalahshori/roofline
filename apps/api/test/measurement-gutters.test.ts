@@ -66,6 +66,10 @@ describe('GET /api/measurements/:id/gutters', () => {
     expect(v.runs[0]!.coords[0]).toHaveLength(2);
     expect(v.totals).toMatchObject({ runs: 4, downspouts: 4, outsideCorners: 4, insideCorners: 0, endCaps: 0, elbows: 12 });
     expect(v.size.recommended).toBe('5in');
+    // A hip roof: gutters all round the outline, nothing to check
+    expect(v.check.reasons).toEqual([]);
+    expect(v.check.share).toBeCloseTo(1, 1);
+    expect(v.check.perimeterFt).toBeGreaterThan(130);
     expect(v.size.reason).toMatch(/^5 in:/);
     expect(v.eave).toEqual({ heightFt: 10, floors: 1, source: 'assumed' });
     expect(v.totals.downspoutFt).toBe(40);
