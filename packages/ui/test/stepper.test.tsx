@@ -51,4 +51,15 @@ describe('Stepper', () => {
     steps(2);
     for (const step of STEPS) expect(screen.getByText(step.label)).toBeInTheDocument();
   });
+
+  it('names the one step that keeps its name on a phone: the one in progress, or the last once all are done', () => {
+    const named = (current: number) =>
+      within(steps(current))
+        .getAllByRole('listitem')
+        .map((item) => item.hasAttribute('data-named'));
+
+    expect(named(2)).toEqual([false, true, false, false]);
+    cleanup();
+    expect(named(5)).toEqual([false, false, false, true]);
+  });
 });

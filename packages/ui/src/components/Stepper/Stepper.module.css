@@ -81,8 +81,8 @@
 }
 
 @media (max-width: 767.98px) {
-  /* Only the step in progress keeps its name on a phone; the numbers say how far along it is */
-  .step:not([data-state="current"]) .label {
+  /* Only the step in progress keeps its name on a phone (the last one once all are done); the numbers say how far along it is */
+  .step:not([data-named]) .label {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -98,8 +98,8 @@
     margin: 0 8px;
   }
 
-  /* The step in progress is the one with a name, so it keeps the room the others gave up */
-  .step[data-state="current"] {
+  /* The step with a name keeps the room the others gave up */
+  .step[data-named] {
     flex: 3 1 0;
   }
 }
