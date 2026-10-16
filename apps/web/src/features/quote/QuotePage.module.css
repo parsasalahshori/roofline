@@ -1,0 +1,344 @@
+/* The public instant quote page: one column, phone first, capped at 600px on a wide screen. */
+.page {
+  --quote-accent: var(--ds-accent, #ffc21a);
+
+  min-height: 100dvh;
+  padding: 0 0 40px;
+  background: var(--ds-bg, #f6f7f8);
+  color: var(--ds-text-1, #151c22);
+  font-family: var(--ds-font, var(--font));
+  font-size: 1rem;
+  line-height: 1.5;
+  box-sizing: border-box;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 14px 16px;
+  box-sizing: border-box;
+}
+
+.logo {
+  display: block;
+  max-height: 40px;
+  max-width: 60%;
+  object-fit: contain;
+}
+
+.companyName {
+  font-size: 1.125rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.phone {
+  color: var(--ds-text-1, #151c22);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 0 16px;
+  box-sizing: border-box;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 16px;
+  border: 1px solid var(--ds-hairline, rgba(21, 28, 34, 0.08));
+  border-radius: var(--ds-r-card, 12px);
+  background: var(--ds-surface, #fff);
+  box-shadow: 0 1px 2px rgba(21, 28, 34, 0.04);
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.5rem;
+  line-height: 1.2;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.title:focus {
+  outline: none;
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 1.25rem;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+.text {
+  margin: 0;
+  color: var(--ds-text-2, #3a444d);
+  overflow-wrap: anywhere;
+}
+
+.small {
+  margin: 0;
+  color: var(--ds-text-3, #6b7680);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.note {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--ds-r-ctl, 9px);
+  background: var(--ds-accent-tint, #fff1d1);
+  color: var(--ds-accent-ink, #8a5a00);
+  font-weight: 600;
+}
+
+.addressForm,
+.leadForm {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.twoUp {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 380px) {
+  .twoUp {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The page's main button takes the company's colour; the text stays dark enough to read on a light accent */
+.primary {
+  width: 100%;
+  background: var(--quote-accent) !important;
+  border-color: var(--quote-accent) !important;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.honeypot {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+/* The scan and the photo: a 3:2 box the tiles and the outline are laid out in */
+.scanFrame {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.thumb,
+.thumbPlaceholder {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  overflow: hidden;
+  border-radius: var(--ds-r-ctl, 9px);
+  background: #1d2a1f;
+}
+
+.thumbPlaceholder {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 194, 26, 0.12), transparent 60%),
+    repeating-linear-gradient(45deg, #24302a 0 12px, #1f2a24 12px 24px);
+}
+
+.tile {
+  position: absolute;
+  max-width: none;
+  user-select: none;
+  pointer-events: none;
+}
+
+.outline {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.outline polygon {
+  fill: rgba(255, 194, 26, 0.22);
+  stroke: var(--ds-accent, #ffc21a);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.credit {
+  margin: 0;
+  color: var(--ds-text-3, #6b7680);
+  font-size: 0.75rem;
+}
+
+.stages {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stages li {
+  position: relative;
+  padding-left: 22px;
+  color: var(--ds-text-3, #6b7680);
+}
+
+.stages li::before {
+  content: "";
+  position: absolute;
+  top: 0.45em;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--ds-fill, #c3cbd1);
+  box-sizing: border-box;
+}
+
+.stages li[data-state="now"] {
+  color: var(--ds-text-1, #151c22);
+  font-weight: 600;
+}
+
+.stages li[data-state="now"]::before {
+  border-color: var(--ds-accent, #ffc21a);
+  background: var(--ds-accent, #ffc21a);
+}
+
+.stages li[data-state="done"]::before {
+  border-color: var(--ds-success, #0ca30c);
+  background: var(--ds-success, #0ca30c);
+}
+
+.timer {
+  margin: 0;
+  color: var(--ds-text-3, #6b7680);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.875rem;
+}
+
+.ranges {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ranges li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px;
+  border-radius: var(--ds-r-ctl, 9px);
+  background: var(--ds-surface-2, #eceff1);
+}
+
+.rangeLabel {
+  color: var(--ds-text-2, #3a444d);
+  font-weight: 600;
+}
+
+.rangeValue {
+  font-size: 1.25rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.products {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-weight: 600;
+}
+
+.error {
+  margin: 0;
+  color: var(--ds-danger-ink, #a32424);
+  font-size: 0.875rem;
+}
+
+.slots {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--ds-hairline-strong, #c3cbd1);
+  border-radius: var(--ds-r-ctl, 9px);
+  font-size: 0.875rem;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.slot[data-checked] {
+  border-color: var(--ds-accent-line, rgba(217, 158, 0, 0.55));
+  background: var(--ds-accent-tint, #fff1d1);
+}
+
+.check {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--ds-success-tint, #e2f4e2);
+  color: var(--ds-success-ink, #0a6e1d);
+}
+
+@media (min-width: 768px) {
+  .card {
+    padding: 28px;
+  }
+
+  .title {
+    font-size: 1.75rem;
+  }
+}
