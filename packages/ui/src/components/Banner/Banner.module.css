@@ -14,8 +14,13 @@
   font-size: var(--font-size-body);
 }
 
+/* The edges are the status colours, never the company's: on WinChoice --brand is red, and a warning must not read as an error */
+.banner[data-tone="info"] {
+  border-left-color: var(--info);
+}
+
 .banner[data-tone="warning"] {
-  border-left-color: var(--brand);
+  border-left-color: var(--warn);
 }
 
 .banner[data-tone="danger"] {
