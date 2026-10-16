@@ -2,7 +2,6 @@ import type { Scope } from '@roofline/shared';
 
 /** The quote screen inside a job: editor, lines, totals and the actions. Frozen by the plan; Package C may append keys. */
 export const quotes = {
-  comingSoon: 'Quotes are coming soon.',
   loading: 'Loading the quote',
   loadFailed: 'We could not load this quote.',
   estimateLabel: 'Estimate',

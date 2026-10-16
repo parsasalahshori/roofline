@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { getMeasurement, gutterInputs, measurementRoof3d, roofPhotoGone, setGutterAdjustments, updateMeasurement, withTenant, type GutterInputs, type MeasurementPatch, type TenantContext } from '@roofline/db';
-import { eaveHeight, gutterRuns, gutterView, MAX_DOWNSPOUTS_PER_RUN, MAX_EXCLUDED_FACETS, MAX_GUTTER_RUNS, type GutterMeasurementView, type MeasurementView, outlineProblem, solarDataCurrent, type LngLat, type Outline, type Ring } from '@roofline/shared';
+import { ADDED_RUN_ID, eaveHeight, gutterRuns, gutterView, MAX_ADDED_GUTTER_RUNS, MAX_ADDED_RUN_FT, MAX_DOWNSPOUTS_PER_RUN, MAX_EXCLUDED_FACETS, MAX_GUTTER_RUNS, MAX_GUTTER_TOTAL_FT, MAX_RUN_LABEL, type GutterMeasurementView, type MeasurementView, outlineProblem, solarDataCurrent, type LngLat, type Outline, type Ring } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { aerialMeasure } from '../estimator/aerial.ts';
 import { requestExactReport } from '../estimator/exact-report.ts';
@@ -32,7 +32,7 @@ const EXACT_NOT_SET_UP_MESSAGE = "Exact reports aren't set up yet.";
 
 const CREATE_FIELDS = ['propertyId', 'address', 'jobId'] as const;
 const PREFETCH_FIELDS = ['propertyId', 'address'] as const;
-const GUTTER_FIELDS = ['excludedRunIds', 'downspouts', 'size'] as const;
+const GUTTER_FIELDS = ['excludedRunIds', 'downspouts', 'size', 'addedRuns', 'totalFt'] as const;
 const PATCH_FIELDS = ['outline', 'includedStructures', 'pitchX12', 'overhangFt', 'valleyFt', 'excludedFacets'] as const;
 
 /** Vertices a ring may have: a house has a few dozen corners; more is a bad or hostile outline. */
@@ -103,14 +103,32 @@ const PatchBody = z
 const GUTTER_RUNS_MESSAGE = 'Pick gutter runs on this roof.';
 const DOWNSPOUTS_MESSAGE = `Please enter 0 to ${MAX_DOWNSPOUTS_PER_RUN} downspouts for a run.`;
 const GUTTER_SIZE_MESSAGE = 'Pick a 5 in or 6 in gutter.';
+const ADDED_RUNS_MESSAGE = `Add up to ${MAX_ADDED_GUTTER_RUNS} runs, each 1 to ${MAX_ADDED_RUN_FT} ft with a label up to ${MAX_RUN_LABEL} characters.`;
+const TOTAL_FT_MESSAGE = `Please enter a total from 1 to ${MAX_GUTTER_TOTAL_FT.toLocaleString('en-US')} ft.`;
 /** Gutter run ids: 'G1', 'G2', ... (see gutterRuns). */
 const RUN_ID = /^G\d{1,3}$/;
+/** Downspouts may be typed for a measured run or an added one ('A1', ...). */
+const ANY_RUN_ID = /^[GA]\d{1,3}$/;
+
+const AddedRun = z
+  .object({
+    id: z.string({ error: ADDED_RUNS_MESSAGE }).regex(ADDED_RUN_ID, ADDED_RUNS_MESSAGE),
+    label: z.string({ error: ADDED_RUNS_MESSAGE }).trim().max(MAX_RUN_LABEL, ADDED_RUNS_MESSAGE).refine(noNul, ADDED_RUNS_MESSAGE),
+    lengthFt: z.number({ error: ADDED_RUNS_MESSAGE }).finite(ADDED_RUNS_MESSAGE).min(1, ADDED_RUNS_MESSAGE).max(MAX_ADDED_RUN_FT, ADDED_RUNS_MESSAGE),
+  })
+  .strict();
 
 const GutterBody = z
   .object({
     excludedRunIds: z.array(z.string().regex(RUN_ID), { error: GUTTER_RUNS_MESSAGE }).max(MAX_GUTTER_RUNS, GUTTER_RUNS_MESSAGE).optional(),
+    addedRuns: z
+      .array(AddedRun, { error: ADDED_RUNS_MESSAGE })
+      .max(MAX_ADDED_GUTTER_RUNS, ADDED_RUNS_MESSAGE)
+      .refine((runs) => new Set(runs.map((r) => r.id)).size === runs.length, ADDED_RUNS_MESSAGE)
+      .optional(),
+    totalFt: z.number({ error: TOTAL_FT_MESSAGE }).finite(TOTAL_FT_MESSAGE).min(1, TOTAL_FT_MESSAGE).max(MAX_GUTTER_TOTAL_FT, TOTAL_FT_MESSAGE).nullable().optional(),
     downspouts: z
-      .record(z.string().regex(RUN_ID, DOWNSPOUTS_MESSAGE), z.number({ error: DOWNSPOUTS_MESSAGE }).int(DOWNSPOUTS_MESSAGE).min(0, DOWNSPOUTS_MESSAGE).max(MAX_DOWNSPOUTS_PER_RUN, DOWNSPOUTS_MESSAGE), {
+      .record(z.string().regex(ANY_RUN_ID, DOWNSPOUTS_MESSAGE), z.number({ error: DOWNSPOUTS_MESSAGE }).int(DOWNSPOUTS_MESSAGE).min(0, DOWNSPOUTS_MESSAGE).max(MAX_DOWNSPOUTS_PER_RUN, DOWNSPOUTS_MESSAGE), {
         error: DOWNSPOUTS_MESSAGE,
       })
       .refine((r) => Object.keys(r).length <= MAX_GUTTER_RUNS, DOWNSPOUTS_MESSAGE)
@@ -122,7 +140,9 @@ const GutterBody = z
 /** The gutter view of a measurement: worked out on read from its roof; quotes only for members who see money. */
 function gutterViewFor(input: GutterInputs, ctx: TenantContext): GutterMeasurementView {
   const eave = eaveHeight({ eaveHeightM: input.eaveHeightM, floors: input.floors });
-  return gutterView(input.view.id, input.view.roof, eave, input.adjustments, can(ctx, 'view_money_totals') ? undefined : null);
+  return gutterView(input.view.id, input.view.roof, eave, input.adjustments, can(ctx, 'view_money_totals') ? undefined : null, {
+    reportEaveFt: input.reportEaveFt,
+  });
 }
 
 /** Roof sections to leave out of the quote: up to MAX_EXCLUDED_FACETS facet ids. */
@@ -273,7 +293,9 @@ export function measurementRoutes(deps: AppDeps): Router {
   });
 
   // The person's gutter changes, merged into the stored ones: runs left out (replacing the list), downspouts per run
-  // (replacing the map) and the size (null: the recommended one). Every run id must be one of this roof's runs.
+  // (replacing the map), the size (null: the recommended one), runs added by hand (replacing the list: id 'A1'..., a
+  // label and a length) and a typed total (null: the measured or exact one). Every run id must be one of this roof's runs
+  // or an added one. The saved set records who changed it (adjustedBy), never taken from the body.
   router.patch('/:id/gutters', async (req, res) => {
     const { ctx } = req;
     const id = idParam(req.params.id);
@@ -284,11 +306,15 @@ export function measurementRoutes(deps: AppDeps): Router {
       const { runs } = gutterRuns(input.view.roof);
       const known = new Set(runs.map((r) => r.id));
       if ((body.excludedRunIds ?? []).some((r) => !known.has(r))) throw new AppError(400, GUTTER_RUNS_MESSAGE, 'excludedRunIds');
-      if (Object.keys(body.downspouts ?? {}).some((r) => !known.has(r))) throw new AppError(400, GUTTER_RUNS_MESSAGE, 'downspouts');
+      const addedRuns = body.addedRuns ?? input.adjustments.addedRuns;
+      const knownOrAdded = new Set([...known, ...addedRuns.map((a) => a.id)]);
+      if (Object.keys(body.downspouts ?? {}).some((r) => !knownOrAdded.has(r))) throw new AppError(400, GUTTER_RUNS_MESSAGE, 'downspouts');
       const next = {
         excludedRunIds: body.excludedRunIds ?? input.adjustments.excludedRunIds,
         downspouts: body.downspouts ?? input.adjustments.downspouts,
         size: body.size !== undefined ? body.size : input.adjustments.size,
+        addedRuns,
+        totalFt: body.totalFt !== undefined ? body.totalFt : input.adjustments.totalFt,
       };
       const saved = await setGutterAdjustments(tx, ctx, id, runs, next, clock.now());
       if (saved === null) throw new AppError(404, MESSAGES.notFound);

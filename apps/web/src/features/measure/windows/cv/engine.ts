@@ -3,6 +3,7 @@
 import { combineSheetMeasurements, measureWithSheet, type RgbaImage, type WindowPhotoCv } from '@roofline/shared';
 import { detectSheetSync } from './detect-sheet.ts';
 import { calibrationSheetSvg } from './sheet-layout.ts';
+import { proposeQuadSync } from './propose-quad.ts';
 import { snapQuadSync } from './snap-quad.ts';
 
 /** Gives the browser a frame between heavy steps so a spinner keeps turning. */
@@ -18,8 +19,12 @@ export const windowPhotoCv: WindowPhotoCv = {
     await yieldToBrowser();
     return snapQuadSync(img, rough, { sheet: opts?.sheet, target: opts?.target });
   },
+  async proposeQuad(img, sheet, target) {
+    await yieldToBrowser();
+    return proposeQuadSync(img, sheet, target);
+  },
   measure(input) {
-    const m = measureWithSheet({ ...input, printScale: input.printScale, imagePoints: input.sheet.imagePoints, sheetPointsIn: input.sheet.sheetPointsIn, sheetIndex: input.sheet.sheetIndex });
+    const m = measureWithSheet({ ...input, printScale: input.printScale, focalSigmaFrac: input.focalSigmaFrac, imagePoints: input.sheet.imagePoints, sheetPointsIn: input.sheet.sheetPointsIn, sheetIndex: input.sheet.sheetIndex });
     if (m === null) return null;
     return { widthIn: m.widthIn, heightIn: m.heightIn, uncertaintyIn: m.uncertaintyIn, distanceIn: m.distanceIn, viewAngleDeg: m.viewAngleDeg, warnings: m.warnings };
   },

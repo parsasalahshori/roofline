@@ -49,6 +49,7 @@ export function WindowsCard({
   panels,
   notes,
   captured,
+  tools = false,
   fromPhotos = false,
   photos = null,
   onAddPhotos,
@@ -63,6 +64,8 @@ export function WindowsCard({
   /** The review and missing notes, under the numbers. */
   notes: ReactNode;
   captured: string | null;
+  /** The Street View tools are on (front windows can be marked on the photo). */
+  tools?: boolean;
   /** "I photographed every window": the count is the photos'. */
   fromPhotos?: boolean;
   /** The photographed windows and the button that adds them. */
@@ -85,7 +88,26 @@ export function WindowsCard({
     v.detector === 'stand-in' && anyFound ? copy.foundBy.standIn : anyMarked ? copy.foundBy.marked : anyFound ? copy.foundBy.detector : copy.foundBy.none;
   const open = editing && !scanning;
   const walls = v.walls ?? null;
-  const basis = walls !== null ? copy.wallsBasis(walls.perimeterFt, walls.wallHeightFt, v.stories, walls.wallAreaSqFt) : null;
+  const estimate = v.estimated === null ? null : WINDOW_SIZE_CLASSES.reduce((n, c) => n + v.estimated!.bySizeClass[c], 0);
+  const floorsFrom = walls?.floorsFrom ?? (v.stories === null ? 'assumed' : 'height-map');
+  // The floors as the estimate took them: one is assumed when there are no heights.
+  const floors = v.stories ?? (floorsFrom === 'assumed' ? 1 : null);
+  // Shown as a range when the estimate is unsure and nothing was measured, photographed or typed in.
+  const range = !scanning && t.measured === 0 && !fromPhotos && estimate !== null && total === estimate ? (v.estimated?.range ?? null) : null;
+  const basis =
+    walls !== null
+      ? copy.wallsBasis({
+          perimeterFt: walls.perimeterFt,
+          wallHeightFt: floorsFrom === 'assumed' ? null : walls.wallHeightFt,
+          floors,
+          floorsFrom,
+          lowWingFt: walls.lowWingFt ?? 0,
+          outlineFrom: walls.outlineFrom ?? 'footprint',
+          windows: estimate,
+          range: v.estimated?.range ?? null,
+          covers: v.estimated?.covers ?? 'all-sides',
+        })
+      : null;
 
   return (
     <section className={`${cardStyles.card} ${styles.card}`} aria-label={copy.statsLabel} data-windows-card="" data-phase={scan.phase} data-editing={open ? 'true' : 'false'}>
@@ -102,12 +124,13 @@ export function WindowsCard({
           <div className={cardStyles.big}>
             <span className={cardStyles.label}>{fromPhotos ? windowPhotos.fromPhotos : t.measured === 0 ? copy.fromWalls : t.estimated === 0 ? copy.measuredOnly(Math.round(t.measured * share)) : copy.toReplace}</span>
             <span className={cardStyles.squaresRow}>
-              {t.measured === 0 && !fromPhotos ? <span className={styles.about}>{copy.about}</span> : null}
-              <span className={cardStyles.squares} data-stat="windows">
-                {shown}
+              {t.measured === 0 && !fromPhotos && range === null ? <span className={styles.about}>{copy.about}</span> : null}
+              <span className={cardStyles.squares} data-stat="windows" data-range={range !== null ? `${range.low}-${range.high}` : undefined}>
+                {range !== null ? <span className={styles.rangeStat}>{copy.range(range.low, range.high)}</span> : shown}
               </span>
-              <span className={cardStyles.unit}>{copy.windowsUnit(total)}</span>
+              <span className={cardStyles.unit}>{copy.windowsUnit(range !== null ? range.high : total)}</span>
             </span>
+            {range !== null ? <span className={cardStyles.sqft}>{copy.mostLikely(total)}</span> : null}
             {t.measured > 0 && t.estimated > 0 ? (
               <span className={cardStyles.sqft}>{copy.measuredAndEstimated(Math.round(t.measured * share), Math.round(t.estimated * share))}</span>
             ) : null}
@@ -120,30 +143,27 @@ export function WindowsCard({
             {basis !== null ? (
               <div className={styles.fact} data-fact="basis">
                 <dt>{copy.basisLabel}</dt>
-                <dd>{[basis, v.estimated?.basis].filter((s): s is string => s !== undefined && s !== '').join('. ')}</dd>
-              </div>
-            ) : v.estimated !== null ? (
-              <div className={styles.fact} data-fact="basis">
-                <dt>{copy.basisLabel}</dt>
-                <dd>{v.estimated.basis}</dd>
+                <dd>{basis}</dd>
               </div>
             ) : null}
-            <div className={styles.fact}>
+            <div className={styles.fact} data-fact="floors">
               <dt>{copy.floorsCell}</dt>
-              <dd>{v.stories ?? copy.unknown}</dd>
+              <dd>{floors !== null ? copy.floorsWithSource(floors, floorsFrom) : copy.unknown}</dd>
             </div>
             <div className={styles.fact}>
               <dt>{copy.imageryCell}</dt>
               <dd>{captured ?? copy.unknown}</dd>
             </div>
-            <div className={styles.fact}>
-              <dt>{copy.foundByCell}</dt>
-              <dd>
-                <span className={styles.detectorChip} data-detector={v.detector ?? 'none'}>
-                  {foundBy}
-                </span>
-              </dd>
-            </div>
+            {tools || anyMarked || anyFound ? (
+              <div className={styles.fact}>
+                <dt>{copy.foundByCell}</dt>
+                <dd>
+                  <span className={styles.detectorChip} data-detector={v.detector ?? 'none'}>
+                    {foundBy}
+                  </span>
+                </dd>
+              </div>
+            ) : null}
           </dl>
         ) : null}
         {!scanning && !open ? photos : null}

@@ -300,3 +300,72 @@ export function inRange(deg: number, range: [number, number]): boolean {
   const span = norm360(range[1] - range[0]);
   return norm360(deg - range[0]) <= span + 1e-9;
 }
+
+/** A Street View panorama a search found: where the camera stood, whether it is Google's own, and which search found it. */
+export type PanoCandidate = { panoId: string; location: LngLat; byGoogle: boolean; from: 'address' | 'centre' | 'side' };
+
+/** Panoramas farther than this from the outline's middle are another street's, metres. */
+export const PANO_MAX_M = 80;
+/** A camera is on the address's side when its bearing from the house is within this of the address panorama's, degrees. */
+export const FRONT_SIDE_DEG = 60;
+/** The side searches: this far past the outline's edge, with this radius, metres. */
+const SIDE_SEARCH_OUT_M = 15;
+export const SIDE_SEARCH_RADIUS_M = 25;
+
+/**
+ * Where to look for panoramas besides the address and the outline's middle: a point past each of the outline's four
+ * sides (along the longest wall and across it), so a house with streets on two sides (a corner or an alley lot) has a
+ * Google panorama on each to choose from.
+ */
+export function panoSearchPoints(ring: readonly LngLat[]): LngLat[] {
+  if (ring.length < 3) return [];
+  const n = ring.length;
+  const origin: LngLat = [ring.reduce((t, p) => t + p[0], 0) / n, ring.reduce((t, p) => t + p[1], 0) / n];
+  const frame = localFrame(origin);
+  const local = ring.map((p) => frame.toLocal(p));
+  const walls = wallsOf(local);
+  if (walls.length === 0) return [];
+  const longest = walls.reduce((a, b) => (b.lengthM > a.lengthM ? b : a));
+  const u: Vec = [(longest.b[0] - longest.a[0]) / longest.lengthM, (longest.b[1] - longest.a[1]) / longest.lengthM];
+  const dirs: Vec[] = [u, [-u[0], -u[1]], [-u[1], u[0]], [u[1], -u[0]]];
+  return dirs.map((d) => {
+    const reach = Math.max(...local.map((p) => p[0] * d[0] + p[1] * d[1]));
+    return frame.toLngLat([d[0] * (reach + SIDE_SEARCH_OUT_M), d[1] * (reach + SIDE_SEARCH_OUT_M)]);
+  });
+}
+
+/**
+ * The panorama to photograph the house from, of those found round it:
+ *   - The address search's panorama says which street the house faces (Google finds the address on its street). A
+ *     Google panorama on that side (within FRONT_SIDE_DEG of it, seen from the house) wins, the nearest first: the
+ *     nearest panorama to the house's middle is often on a side street or an alley for a corner or alley lot.
+ *   - Google's own panoramas before people's uploads: an upload has no known camera height or level.
+ *   - Without an address panorama: the nearest Google panorama, else the nearest at all.
+ * Every candidate must be within PANO_MAX_M of the outline's middle. Null when none is.
+ */
+export function pickPano<T extends PanoCandidate>(ring: readonly LngLat[], candidates: readonly T[]): { pano: T; onAddressSide: boolean | null } | null {
+  if (ring.length < 3) return null;
+  const n = ring.length;
+  const origin: LngLat = [ring.reduce((t, p) => t + p[0], 0) / n, ring.reduce((t, p) => t + p[1], 0) / n];
+  const frame = localFrame(origin);
+  // The same panorama from two searches is kept once, as the address search's when that found it.
+  const byId = new Map<string, T>();
+  for (const c of candidates) if (!byId.has(c.panoId) || c.from === 'address') byId.set(c.panoId, c);
+  const near = [...byId.values()]
+    .map((c) => {
+      const v = frame.toLocal(c.location);
+      return { c, d: Math.hypot(v[0], v[1]), b: bearing([0, 0], v) };
+    })
+    .filter((x) => x.d <= PANO_MAX_M)
+    .sort((a, b) => a.d - b.d);
+  if (near.length === 0) return null;
+  const address = near.find((x) => x.c.from === 'address') ?? null;
+  const google = near.filter((x) => x.c.byGoogle);
+  if (address !== null) {
+    const side = google.filter((x) => Math.abs(angleDiff(x.b, address.b)) <= FRONT_SIDE_DEG);
+    if (side.length > 0) return { pano: side[0]!.c, onAddressSide: true };
+    // No Google panorama on the address's side: the address's own (perhaps an upload) still faces the right side.
+    return { pano: address.c, onAddressSide: true };
+  }
+  return { pano: (google[0] ?? near[0]!).c, onAddressSide: null };
+}

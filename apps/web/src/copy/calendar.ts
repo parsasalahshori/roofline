@@ -1,6 +1,5 @@
 /** The Calendar window. SHELL (Task 23): Package C owns this file; keys below are the contract, texts may be refined. */
 export const calendar = {
-  comingSoon: 'Your calendar of inspections and installs is coming soon.',
   today: 'Today',
   previous: 'Previous',
   next: 'Next',

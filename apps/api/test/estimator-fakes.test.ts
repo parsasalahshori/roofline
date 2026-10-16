@@ -96,7 +96,7 @@ describe('FakeExactReports', () => {
     r.complete(reportId);
     expect(await r.report(reportId)).toEqual({
       status: 'complete',
-      report: { surfaceSqFt: 2612, pitchX12: 7, ridgeFt: 62, edgeFt: 188, valleyFt: 24, facets: 9, reportRef: reportId },
+      report: { surfaceSqFt: 2612, pitchX12: 7, ridgeFt: 62, edgeFt: 188, eaveFt: 142, valleyFt: 24, facets: 9, reportRef: reportId },
       costCents: 4500,
     });
   });

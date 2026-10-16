@@ -13,6 +13,9 @@ describe('window photo benchmark (small)', () => {
       const p = { ...w.photos[0]!, megapixels: 3 as const, scene: { ...w.photos[0]!.scene, widthPx: 1512, heightPx: 2016, supersample: 2 } };
       const r = evaluatePhoto(w.id, 0, p, { w: w.widthIn, h: w.heightIn, offsetIn: w.offsetIn });
       expect(r.detected).toBe(true);
+      // The engine's own proposal around the sheet offers the right outline among the top 3.
+      expect(r.rankP).toBeGreaterThanOrEqual(1);
+      expect(r.rankP).toBeLessThanOrEqual(3);
       const s = r.results.sheetSnapOffset!;
       const old = r.results.paper4!;
       errs.push({ paper: Math.max(Math.abs(old.w - w.widthIn), Math.abs(old.h - w.heightIn)), sheet: Math.max(Math.abs(s.w - w.widthIn), Math.abs(s.h - w.heightIn)) });

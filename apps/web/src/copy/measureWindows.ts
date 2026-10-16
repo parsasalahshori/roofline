@@ -1,6 +1,9 @@
 /** Words for Measure windows (features/measure/windows): the photo of the front, the scan, the card and the quote. */
 const plural = (n: number, one: string, many: string) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
 const inches = (n: number) => `${Math.round(n)}`;
+/** "2 floors (from the height map)", "1.5 floors (from the height map)", "1 floor (assumed: no height data)". */
+const measureWindowsFloors = (floors: number, from: 'height-map' | 'photo' | 'assumed') =>
+  `${floors === 1 ? '1 floor' : `${floors} floors`} (${from === 'assumed' ? 'assumed: no height data' : from === 'photo' ? 'from the photo' : 'from the height map'})`;
 
 export const measureWindows = {
   title: 'Measure',
@@ -34,6 +37,8 @@ export const measureWindows = {
   noPhoto: 'No street-level photo of this house',
   imageryCaptured: (when: string) => `Street-level imagery captured ${when}`,
   imageryPlain: 'Street-level imagery',
+  /** The street photo without the Street View tools: a check that it is the house, with the photo's date. */
+  rightHouse: (when: string | null) => (when === null ? 'Is this the right house?' : `Is this the right house? Photo from ${when}`),
   measuringChip: 'Estimator is measuring',
   wallsTitle: 'Walls',
   wallsPlanLabel: (perimeterFt: number, frontFt: number | null) =>
@@ -119,15 +124,41 @@ export const measureWindows = {
   measuredAndEstimated: (measured: number, estimated: number) =>
     `${plural(measured, 'window', 'windows')} measured on the front, ${plural(estimated, 'window', 'windows')} estimated on the sides and back`,
   measuredOnly: (measured: number) => `${plural(measured, 'window', 'windows')} measured on the front`,
-  wallsBasis: (perimeterFt: number, heightFt: number | null, floors: number | null, areaSqFt: number | null) =>
+  /**
+   * How the estimate was worked out, each fact once: "220 ft of wall, 2 floors (from the height map), eaves 19 ft up.
+   * 40 ft of a low wing (likely a garage or porch) left out. About 17 windows."
+   */
+  wallsBasis: (b: {
+    perimeterFt: number;
+    wallHeightFt: number | null;
+    floors: number | null;
+    floorsFrom: 'height-map' | 'photo' | 'assumed';
+    lowWingFt: number;
+    outlineFrom: 'footprint' | 'google-roof';
+    windows: number | null;
+    range: { low: number; high: number } | null;
+    covers: 'all-sides' | 'sides-and-back';
+  }) =>
     [
-      `${Math.round(perimeterFt).toLocaleString()} ft of wall`,
-      heightFt !== null ? `${Math.round(heightFt)} ft high` : null,
-      floors !== null ? plural(floors, 'floor', 'floors') : null,
-      areaSqFt !== null ? `${Math.round(areaSqFt).toLocaleString()} sq ft of wall` : null,
+      [
+        `${Math.round(b.perimeterFt).toLocaleString()} ft of wall`,
+        b.floors !== null ? measureWindowsFloors(b.floors, b.floorsFrom) : null,
+        b.wallHeightFt !== null ? `eaves ${Math.round(b.wallHeightFt)} ft up` : null,
+      ]
+        .filter((part): part is string => part !== null)
+        .join(', '),
+      b.lowWingFt > 0 ? `${Math.round(b.lowWingFt)} ft of a low one-storey wing (likely a garage or porch) left out` : null,
+      b.outlineFrom === 'google-roof' ? 'Outline traced from the roof seen from above, as no building footprint was found' : null,
+      b.windows !== null
+        ? `${b.covers === 'sides-and-back' ? 'Sides and back: about' : 'About'} ${b.range !== null ? `${b.range.low} to ${b.range.high} windows, most likely ${b.windows}` : plural(b.windows, 'window', 'windows')}`
+        : null,
     ]
       .filter((part): part is string => part !== null)
-      .join(', '),
+      .join('. '),
+  floorsWithSource: (floors: number, from: 'height-map' | 'photo' | 'assumed') => measureWindowsFloors(floors, from),
+  // Word joiners round the dash: the range never breaks over two lines.
+  range: (low: number, high: number) => `${low}\u2060\u2013\u2060${high}`,
+  mostLikely: (n: number) => `Most likely ${n}`,
   basisLabel: 'How it was worked out',
   tableLabel: 'Windows by size',
   sizeHead: 'Size',
@@ -189,10 +220,11 @@ export const measureWindows = {
       'We can\u2019t confirm the front wall drawn from the outline sits on the house in the photo, so sizes from it may be off. Under Adjust, drag its corners onto the house, or mark a door as a ruler.',
   },
   standIn: 'Demo detector: these windows are made up. Add a detector key for real windows.',
+  estimatedFromSizeNoTools: 'Estimated from the house’s size. Add windows from photos for real sizes.',
 
   // Why no window could be seen on the photo
   missing: {
-    'no-street-view': 'No street-level photo near this house, so no window could be marked. The quote uses the estimate from the walls.',
+    'no-street-view': 'No street-level photo of this house. The quote uses the estimate from the walls.',
     'house-blurred': 'The owner had this house blurred in street-level imagery, so no window could be marked. The quote uses the estimate from the walls.',
     'facade-hidden': 'Trees, fences or cars hide the front of the house on the photo. The quote uses the estimate from the walls.',
     'no-footprint': 'No building outline was found for this address, so the walls could not be measured. Type in the window counts under Adjust.',
@@ -230,8 +262,13 @@ export const windowPhotos = {
   uploading: (name: string) => `Uploading ${name}`,
   uploaded: 'Ready to measure',
   uploadFailed: 'This photo did not upload. Try again.',
-  tooBig: 'This photo is over 12 MB. Take it again at a smaller size.',
+  tooBig: 'This photo is too big to upload, even made smaller. Take it again at a smaller size.',
   wrongType: 'Use a JPEG, PNG or HEIC photo.',
+  heicUnsupported:
+    'This photo is in the HEIC (high efficiency) format, which this browser cannot open. Set the camera to save JPEG and take it again: on iPhone, Settings > Camera > Formats > Most Compatible; on Samsung, Camera settings > Advanced > High efficiency pictures off.',
+  preparing: 'Getting the photo ready…',
+  waitingOffline: 'Waiting for a connection. It uploads by itself.',
+  photosWaiting: (n: number) => (n === 1 ? '1 photo waiting to upload' : `${n} photos waiting to upload`),
   retry: 'Try again',
   remove: 'Remove',
   measure: 'Measure',
@@ -259,6 +296,7 @@ export const windowPhotos = {
   size: (w: number, h: number) => `${w.toFixed(1)} × ${h.toFixed(1)} in`,
   sizeLabel: 'Size',
   noSize: 'Move the corners to size the window.',
+  cornersFirst: (placed: number, of: number) => `Place every corner to see the size (${placed} of ${of}).`,
   typeSide: 'Type the side you measured.',
   check: 'Check the corners: the photo is at a steep angle or the corners are nearly in a line.',
   fromServer: 'Checked by Estimator',
@@ -287,7 +325,9 @@ export const windowPhotos = {
 
   // The measuring sheet (recommended)
   methodSheet: 'Measuring sheet',
-  sheetHint: 'The sheet on the glass is found for you. Check the yellow corners sit on the window frame.',
+  sheetHintProposed: 'The window was found around the sheet. Check the yellow corners sit on the window frame.',
+  sheetHintPlace: 'Drag the four corners onto the frame.',
+  sheetHintCheck: 'Check the yellow corners sit on the window frame.',
   howToTitle: 'How to photograph a window',
   howTo: [
     'Tape the measuring sheet flat on the glass, in a lower corner.',
@@ -299,6 +339,7 @@ export const windowPhotos = {
   sheetPick: 'Which sheet',
   twoSheets: 'Two sheets found',
   twoSheetsSize: 'Sized from both sheets',
+  noCameraData: 'No camera data in this photo, so the size is less certain.',
   printCheckTitle: 'Check the print',
   printCheckHint: (length: number, unit: string) => `Measure the ruler on the printed sheet. It should be exactly ${length} ${unit}.`,
   printCheckField: (unit: string) => `The ruler measured (${unit})`,

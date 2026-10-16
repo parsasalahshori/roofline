@@ -87,6 +87,13 @@
   font-size: 14px;
 }
 
+.waiting {
+  margin: 0;
+  color: var(--ds-text-label, #505b64);
+  font-size: 14px;
+  font-weight: 600;
+}
+
 .uploads {
   display: flex;
   flex-direction: column;

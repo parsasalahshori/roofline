@@ -196,12 +196,12 @@ export function countedOn(plan: Plan, photo: StoredFacadePhoto, box: Box): boole
 }
 
 /** The eave height the walls use: the person's fit, else Google's heights, else the photo line-up, else none. */
-function eaveFor(geometry: WindowGeometry, photos: readonly StoredFacadePhoto[]): { eaveM: number | null } {
+function eaveFor(geometry: WindowGeometry, photos: readonly StoredFacadePhoto[]): { eaveM: number | null; fromHeights: boolean } {
   const person = photos.find((p) => p.personFit !== null)?.personFit ?? null;
-  if (person !== null) return { eaveM: person.eaveM };
-  if (geometry.eaveHeightM !== null) return { eaveM: geometry.eaveHeightM };
+  if (person !== null) return { eaveM: person.eaveM, fromHeights: false };
+  if (geometry.eaveHeightM !== null) return { eaveM: geometry.eaveHeightM, fromHeights: true };
   const photo = photos.find((p) => p.lineup?.eaveM != null)?.lineup?.eaveM ?? null;
-  return { eaveM: photo };
+  return { eaveM: photo, fromHeights: false };
 }
 
 export function wallsFor(geometry: WindowGeometry | null, photos: readonly StoredFacadePhoto[]): HouseWalls | null {
@@ -210,7 +210,15 @@ export function wallsFor(geometry: WindowGeometry | null, photos: readonly Store
   if (plan === null) return null;
   const perimeter = plan.walls.reduce((t, w) => t + w.lengthM, 0);
   const front = plan.camera === null ? null : frontWalls(plan.walls, plan.camera).reduce((t, w) => t + w.lengthM, 0);
-  return houseWalls(perimeter, front, eaveFor(geometry, photos).eaveM);
+  const { eaveM, fromHeights } = eaveFor(geometry, photos);
+  // Wall by wall only with Google's own reading (a person's corner fit gives one height for the whole house).
+  const perWall = fromHeights && Array.isArray(geometry.wallEavesM) && geometry.wallEavesM.length === geometry.ring.length ? geometry.wallEavesM : null;
+  return houseWalls(perimeter, front, eaveM, {
+    walls: perWall === null ? null : plan.walls.map((w) => ({ lengthM: w.lengthM, eaveM: perWall[w.index] ?? null })),
+    ridgeM: fromHeights ? (geometry.ridgeM ?? null) : null,
+    outlineSource: geometry.outlineSource,
+    fromPhoto: !fromHeights && eaveM !== null,
+  });
 }
 
 function corners01(q: Quad, photo: StoredFacadePhoto): [[number, number], [number, number], [number, number], [number, number]] {
@@ -236,8 +244,9 @@ function overlayOf(plan: Plan | null, geometry: WindowGeometry | null, photo: St
   };
 }
 
-export function publicPhoto(plan: Plan | null, geometry: WindowGeometry | null, p: StoredFacadePhoto): FacadePhoto {
-  const overlay = overlayOf(plan, geometry, p);
+export function publicPhoto(plan: Plan | null, geometry: WindowGeometry | null, p: StoredFacadePhoto, photoTools = true): FacadePhoto {
+  // Without the Street View tools the photo is a picture of the house only: no wall drawn on it.
+  const overlay = photoTools ? overlayOf(plan, geometry, p) : undefined;
   return {
     id: p.id,
     heading: p.heading,
@@ -262,7 +271,12 @@ function yearsBetween(capturedOn: string, now: Date): number {
   return (now.getUTCFullYear() - y! + (now.getUTCMonth() + 1 - m!) / 12);
 }
 
-export function toWindowView(row: WindowMeasurementRow, now: Date): WindowMeasurementView {
+/**
+ * `photoTools` (WINDOWS_STREET_VIEW_TOOLS): the Street View tools are on, so the wall drawn on each photo and the
+ * 'walls-unconfirmed' review are part of the answer. Off (the default), neither is: the photo is a picture of the house.
+ */
+export function toWindowView(row: WindowMeasurementRow, now: Date, opts: { photoTools?: boolean } = {}): WindowMeasurementView {
+  const photoTools = opts.photoTools === true;
   const geometry = row.geometry ?? null;
   const plan = geometry === null ? null : planOf(geometry);
   const photos = row.photos;
@@ -277,6 +291,8 @@ export function toWindowView(row: WindowMeasurementRow, now: Date): WindowMeasur
   const uploads = row.uploads ?? [];
   const photoWindows = (row.adjustments.photoWindows ?? [])
     .map((input) => {
+      // A room-scan window may have no photo (sizePhotoWindow sizes only that kind without one)
+      if (input.uploadId === undefined) return sizePhotoWindow(input, null);
       const u = uploads.find((x) => x.id === input.uploadId);
       return u === undefined ? null : sizePhotoWindow(input, u);
     })
@@ -293,7 +309,7 @@ export function toWindowView(row: WindowMeasurementRow, now: Date): WindowMeasur
   const personFitted = photos.some((p) => p.personFit !== null);
   // 'off' or 'unknown' (the strict line-up could not confirm it, not blurred): the walls are not confirmed.
   const unconfirmed = (p: StoredFacadePhoto) => p.wallOverlay?.fit === 'off' || (p.wallOverlay?.fit === 'unknown' && p.wallOverlay.fitScore !== null);
-  if (!personFitted && counted.some(unconfirmed)) reasons.add('walls-unconfirmed');
+  if (photoTools && !personFitted && counted.some(unconfirmed)) reasons.add('walls-unconfirmed');
   else reasons.delete('walls-unconfirmed');
 
   const floorsMeasured = windows.length > 0 ? Math.max(...windows.map((w) => w.floor)) : null;
@@ -304,11 +320,24 @@ export function toWindowView(row: WindowMeasurementRow, now: Date): WindowMeasur
     address: row.address,
     center: row.center,
     createdAt: row.createdAt.toISOString(),
-    photos: photos.map((p) => (facadePhotoExpired(p, now) ? { ...publicPhoto(plan, geometry, p), expired: true } : publicPhoto(plan, geometry, p))),
+    photos: photos.map((p) => (facadePhotoExpired(p, now) ? { ...publicPhoto(plan, geometry, p, photoTools), expired: true } : publicPhoto(plan, geometry, p, photoTools))),
+    photoTools,
     windows,
     estimated,
     stories,
-    walls: walls === null ? null : { perimeterFt: walls.perimeterFt, wallHeightFt: walls.wallHeightFt, wallAreaSqFt: walls.wallAreaSqFt, frontWallFt: walls.frontWallFt },
+    walls:
+      walls === null
+        ? null
+        : {
+            perimeterFt: walls.perimeterFt,
+            wallHeightFt: walls.wallHeightFt,
+            wallAreaSqFt: walls.wallAreaSqFt,
+            frontWallFt: walls.frontWallFt,
+            windowWallSqFt: walls.windowWallSqFt,
+            lowWingFt: walls.lowWingFt,
+            floorsFrom: walls.heightSource === 'assumed' ? 'assumed' : walls.heightSource === 'photo' ? 'photo' : 'height-map',
+            outlineFrom: walls.outlineFrom,
+          },
     detector: row.detector ?? null,
     missing: row.missingReason === null ? null : { reason: row.missingReason },
     needsReview: reasons.size === 0 ? null : { reasons: WINDOWS_REVIEW_REASONS.filter((r) => reasons.has(r)) },

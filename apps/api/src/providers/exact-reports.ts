@@ -4,6 +4,8 @@ export type ExactReport = {
   pitchX12: number;
   ridgeFt: number;
   edgeFt: number;
+  /** The report's eave length alone (part of edgeFt), ft: the gutter total for the measurement. */
+  eaveFt: number;
   valleyFt: number;
   facets: number | null;
   reportRef: string;

@@ -3,9 +3,9 @@ import type { Request } from 'express';
 import { Router } from 'express';
 import busboy from 'busboy';
 import { z } from 'zod';
-import { appendWindowUpload, getWindowMeasurement, type StoredFacadePhoto, type StoredWindowUpload, updateWindowMeasurement, type WindowMeasurementChange, withTenant } from '@roofline/db';
-import { type DoorRuler, type PhotoWindowInput, priceWindows, RULER_KINDS, RULER_MAX_IN, RULER_MIN_IN, SHEET_MAX_OFFSET_IN, SHEET_MAX_POINTS, SHEET_PAPER_IN, WINDOW_PHOTO_REFERENCES, WINDOW_SIZE_CLASSES, type WindowAdjustments, type WindowQuote, windowCounts } from '@roofline/shared';
-import { arProblem, readImageInfo, sheetProblem, sizePhotoWindow } from '../estimator/window-uploads.ts';
+import { appendWindowUpload, getLatestWindowMeasurementForProperty, getWindowMeasurement, type StoredFacadePhoto, type StoredWindowUpload, updateWindowMeasurement, type WindowMeasurementChange, withTenant } from '@roofline/db';
+import { AR_DEVICES, type DoorRuler, type PhotoWindowInput, priceWindows, ROOMPLAN_CONFIDENCES, RULER_KINDS, RULER_MAX_IN, RULER_MIN_IN, SHEET_MAX_OFFSET_IN, SHEET_MAX_POINTS, SHEET_PAPER_IN, WINDOW_PHOTO_REFERENCES, WINDOW_SIZE_CLASSES, type WindowAdjustments, type WindowQuote, windowCounts } from '@roofline/shared';
+import { arProblem, readImageInfo, roomPlanProblem, sheetProblem, sizePhotoWindow } from '../estimator/window-uploads.ts';
 import type { AppDeps } from '../app.ts';
 import { measureWindows } from '../estimator/measure-windows.ts';
 import { fitCorners, mainWall, type Quad } from '../estimator/windows-lineup.ts';
@@ -28,15 +28,21 @@ const CREATE_FIELDS = ['propertyId', 'address'] as const;
 const PATCH_FIELDS = ['excludedWindowIds', 'manualCounts', 'marked', 'wallCorners', 'photoWindows', 'photosCoverAllWindows', 'ruler'] as const;
 const PHOTO_WINDOWS_MESSAGE = 'Mark each window inside its photo, with a paper on the glass or one side measured (6 to 200 in; 60 windows at most).';
 const COVER_MESSAGE = 'Please check this field.';
+const PHOTO_WINDOWS_FULL_MESSAGE = 'This measurement has 60 windows already.';
+const PHOTO_WINDOW_TAKEN_MESSAGE = 'A different window with this id is already saved. Give the new window its own id.';
 const UPLOAD_TOO_BIG_MESSAGE = 'That photo is over 12 MB.';
 const UPLOAD_TYPE_MESSAGE = 'Upload a JPEG or PNG photo.';
-/** HEIC is refused for now (no converter on the server): the phone can save JPEG instead. */
-export const HEIC_MESSAGE = 'Take the photo as JPEG, or set the camera to Most Compatible.';
+/**
+ * HEIC is converted to JPEG in the browser where it can be opened (Safari); the server has no HEIC decoder (sharp's
+ * prebuilt libvips has no HEVC), so a HEIC that reaches it is refused with what to change on the phone.
+ */
+export const HEIC_MESSAGE =
+  'This photo is in the HEIC (high efficiency) format. Set the camera to save JPEG and take it again: on iPhone, Settings > Camera > Formats > Most Compatible; on Samsung, Camera settings > Advanced > High efficiency pictures off.';
 const UPLOAD_MISSING_MESSAGE = 'Add a photo (form field "photo").';
-const UPLOADS_FULL_MESSAGE = 'This measurement has 40 photos already.';
+const UPLOADS_FULL_MESSAGE = 'This measurement has 150 photos already.';
 const STORAGE_DOWN_MESSAGE = "Photo storage isn't available right now.";
 export const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
-export const MAX_UPLOADS = 40;
+export const MAX_UPLOADS = 150;
 export const MAX_PHOTO_WINDOWS = 60;
 export const MAX_MARKED = 60;
 const MAX_COUNT = 200;
@@ -82,6 +88,7 @@ const RulerSchema = z
 const finite = z.number().finite();
 const arCoord = z.number().finite().gt(-AR_MAX_COORD_M).lt(AR_MAX_COORD_M);
 const arPoint = z.tuple([arCoord, arCoord, arCoord]);
+const arSpread = z.number().finite().min(0).max(0.1);
 const QuadSchema = z.tuple([z.tuple([finite, finite]), z.tuple([finite, finite]), z.tuple([finite, finite]), z.tuple([finite, finite])]);
 const ScaleSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('reference'), reference: z.enum(Object.keys(WINDOW_PHOTO_REFERENCES) as [keyof typeof WINDOW_PHOTO_REFERENCES]), corners: QuadSchema }).strict(),
@@ -107,23 +114,38 @@ const ScaleSchema = z.discriminatedUnion('kind', [
       kind: z.literal('ar'),
       pointsM: z.tuple([arPoint, arPoint, arPoint, arPoint]),
       trackingLostCount: z.number().int().min(0).max(1000),
+      // Absent: 'webxr' (the Android web app). The iPhone app says 'arkit' or 'arkit-lidar'.
+      device: z.enum(AR_DEVICES).optional(),
+      // Each corner's measured spread, metres (a corner wandering more than 10 cm is not a measurement).
+      cornerSpreadM: z.tuple([arSpread, arSpread, arSpread, arSpread]).optional(),
+    })
+    .strict(),
+  // RoomPlan (LiDAR iPhone room scan): the window's size straight from the scan, metres. Quote-grade only.
+  z
+    .object({
+      kind: z.literal('roomplan'),
+      widthM: z.number().finite().gt(0).max(AR_MAX_COORD_M),
+      heightM: z.number().finite().gt(0).max(AR_MAX_COORD_M),
+      confidence: z.enum(ROOMPLAN_CONFIDENCES),
     })
     .strict(),
 ]);
+const PhotoWindowSchema = z
+  .object({
+    id: z.string().regex(WINDOW_ID),
+    // Absent only for a RoomPlan window with no photo (refined below).
+    uploadId: z.string().regex(UUID).optional(),
+    label: z.string().max(80).refine(noNul).optional(),
+    // Several photos of one window share a key (the screen combines them).
+    windowKey: z.string().max(80).refine(noNul).optional(),
+    corners: QuadSchema.optional(),
+    scale: ScaleSchema,
+  })
+  .strict()
+  // Every kind but RoomPlan is sized on its photo: uploadId and corners are required. Corners need their photo.
+  .refine((w) => (w.scale.kind === 'roomplan' ? w.corners === undefined || w.uploadId !== undefined : w.uploadId !== undefined && w.corners !== undefined));
 const PhotoWindowsSchema = z
-  .array(
-    z
-      .object({
-        id: z.string().regex(WINDOW_ID),
-        uploadId: z.string().regex(UUID),
-        label: z.string().max(80).refine(noNul).optional(),
-        // Several photos of one window share a key (the screen combines them).
-        windowKey: z.string().max(80).refine(noNul).optional(),
-        corners: QuadSchema,
-        scale: ScaleSchema,
-      })
-      .strict(),
-  )
+  .array(PhotoWindowSchema)
   .max(MAX_PHOTO_WINDOWS)
   .refine((list) => new Set(list.map((w) => w.id)).size === list.length);
 
@@ -213,11 +235,43 @@ function personFitFor(row: { geometry: Parameters<typeof planOf>[0] | null }, ph
 }
 
 /**
+ * One photographed window as the person sent it, checked against the measurement's uploads and sized with the shared
+ * math (the same checks for PATCH's whole list and POST /:id/photo-windows' one window): its photo must be one of this
+ * measurement's uploads and its corners inside it (400); a window the math cannot size is a 422 naming it.
+ */
+function checkPhotoWindow(w: z.infer<typeof PhotoWindowSchema>, uploads: readonly StoredWindowUpload[], field: string): PhotoWindowInput {
+  const input: PhotoWindowInput = { ...w, ...(w.uploadId !== undefined ? { uploadId: w.uploadId.toLowerCase() } : {}) } as PhotoWindowInput;
+  const upload = input.uploadId === undefined ? null : uploads.find((u) => u.id === input.uploadId);
+  if (upload === undefined) throw new AppError(400, PHOTO_WINDOWS_MESSAGE, field);
+  if (upload !== null) {
+    // Corners are in the photo's displayed pixels (EXIF orientation applied), inside the photo.
+    const s = input.scale;
+    const quads: [number, number][][] = [...(input.corners !== undefined ? [input.corners] : []), ...(s.kind === 'reference' ? [s.corners] : s.kind === 'sheet' ? [s.imagePoints] : [])];
+    const inside = quads.every((q) => q.every(([x, y]) => x >= 0 && y >= 0 && x <= upload.widthPx && y <= upload.heightPx));
+    if (!inside) throw new AppError(400, PHOTO_WINDOWS_MESSAGE, field);
+  }
+  const name = input.label ?? input.id;
+  const sheet = upload === null ? null : sheetProblem(input, upload);
+  if (sheet !== null) throw new AppError(422, `Window "${name}" could not be sized: ${sheet}. Take its photo again with the whole sheet flat on the glass and in view.`, field);
+  const ar = arProblem(input);
+  if (ar !== null) throw new AppError(422, `Window "${name}" could not be sized: ${ar}. Tap its four frame corners in AR again.`, field);
+  const room = roomPlanProblem(input);
+  if (room !== null) throw new AppError(422, `Window "${name}" could not be sized: ${room}. Scan the room again or measure the window in AR.`, field);
+  if (sizePhotoWindow(input, upload) === null) {
+    throw new AppError(422, `Window "${name}" could not be sized from its corners. Mark its four corners (and the paper's) again.`, field);
+  }
+  return input;
+}
+
+/**
  * `/api/window-measurements`: Measure windows.
  * - POST { address | propertyId } -> 201 WindowMeasurementView (the walls estimate, front photos with the wall drawn).
  * - GET /:id -> the view. PATCH /:id (WindowMeasurementPatch: excludedWindowIds, manualCounts, marked, wallCorners,
  *   ruler (a door of known size marked on a photo, or null); each key given replaces what was there) -> the view, with
  *   marked windows sized (on the ruler's photo, to fit the ruler) and the estimate redone.
+ * - GET ?propertyId=<uuid> -> the property's newest measurement (404 when there is none).
+ * - POST /:id/photo-windows (one PhotoWindowInput) -> 201 the view with it added (200 when the same window was there);
+ *   DELETE /:id/photo-windows/:windowId -> the view without it. Both checked and recomputed like PATCH.
  * - GET /:id/photos/:photoId -> the JPEG (kept 30 days, Google's terms; 410 after).
  * - GET /:id/preview -> { quotes }: Good/Better/Best priced from the counted windows (null for members who do not see money).
  * Rep visibility and company isolation come from the repository: a measurement the caller may not see is a 404.
@@ -225,6 +279,17 @@ function personFitFor(row: { geometry: Parameters<typeof planOf>[0] | null }, ph
 export function windowMeasurementRoutes(deps: AppDeps): Router {
   const { pools, clock } = deps;
   const router = Router();
+
+  // The newest measurement of a property (the iPhone app opens a job's windows with it): 404 when there is none.
+  router.get('/', async (req, res) => {
+    const { ctx } = req;
+    const raw = req.query.propertyId;
+    const propertyId = (typeof raw === 'string' ? raw : '').toLowerCase();
+    if (!UUID.test(propertyId)) throw new AppError(400, CHECK_MESSAGE, 'propertyId');
+    const row = await withTenant(pools, ctx, (tx) => getLatestWindowMeasurementForProperty(tx, ctx, propertyId));
+    if (row === null) throw new AppError(404, MESSAGES.notFound);
+    res.json(toWindowView(row, clock.now()));
+  });
 
   router.post('/', async (req, res) => {
     const { ctx } = req;
@@ -240,7 +305,7 @@ export function windowMeasurementRoutes(deps: AppDeps): Router {
     const { ctx } = req;
     const row = await withTenant(pools, ctx, (tx) => getWindowMeasurement(tx, ctx, idParam(req.params.id)));
     if (row === null) throw new AppError(404, MESSAGES.notFound);
-    res.json(toWindowView(row, clock.now()));
+    res.json(toWindowView(row, clock.now(), { photoTools: deps.config.WINDOWS_STREET_VIEW_TOOLS === true }));
   });
 
   router.patch('/:id', async (req, res) => {
@@ -256,7 +321,7 @@ export function windowMeasurementRoutes(deps: AppDeps): Router {
     const coverAll = 'photosCoverAllWindows' in raw ? parseOr(z.boolean(), raw.photosCoverAllWindows, COVER_MESSAGE, 'photosCoverAllWindows') : undefined;
 
     const row = await withTenant(pools, ctx, async (tx) => {
-      const found = await getWindowMeasurement(tx, ctx, id);
+      const found = await getWindowMeasurement(tx, ctx, id, { lock: true });
       if (found === null) return null;
       const photoIds = new Set(found.photos.map((p) => p.id));
       const next: WindowAdjustments = { ...found.adjustments };
@@ -265,29 +330,7 @@ export function windowMeasurementRoutes(deps: AppDeps): Router {
         if (marked.some((m) => !photoIds.has(m.photoId.toLowerCase()))) throw new AppError(400, MARKED_MESSAGE, 'marked');
         next.marked = marked.map((m) => ({ id: m.id, photoId: m.photoId.toLowerCase(), box: m.box }));
       }
-      if (photoWindows !== undefined) {
-        const list: PhotoWindowInput[] = [];
-        for (const w of photoWindows) {
-          const input: PhotoWindowInput = { ...w, uploadId: w.uploadId.toLowerCase() } as PhotoWindowInput;
-          const upload = found.uploads.find((u) => u.id === input.uploadId);
-          if (upload === undefined) throw new AppError(400, PHOTO_WINDOWS_MESSAGE, 'photoWindows');
-          // Corners are in the photo's displayed pixels (EXIF orientation applied), inside the photo.
-          const quads: [number, number][][] = input.scale.kind === 'reference' ? [input.corners, input.scale.corners] : input.scale.kind === 'sheet' ? [input.corners, input.scale.imagePoints] : [input.corners];
-          const inside = quads.every((q) => q.every(([x, y]) => x >= 0 && y >= 0 && x <= upload.widthPx && y <= upload.heightPx));
-          if (!inside) throw new AppError(400, PHOTO_WINDOWS_MESSAGE, 'photoWindows');
-          const sheet = sheetProblem(input, upload);
-          if (sheet !== null) {
-            throw new AppError(422, `Window "${input.label ?? input.id}" could not be sized: ${sheet}. Take its photo again with the whole sheet flat on the glass and in view.`, 'photoWindows');
-          }
-          const ar = arProblem(input);
-          if (ar !== null) throw new AppError(422, `Window "${input.label ?? input.id}" could not be sized: ${ar}. Tap its four frame corners in AR again.`, 'photoWindows');
-          if (sizePhotoWindow(input, upload) === null) {
-            throw new AppError(422, `Window "${input.label ?? input.id}" could not be sized from its corners. Mark its four corners (and the paper's) again.`, 'photoWindows');
-          }
-          list.push(input);
-        }
-        next.photoWindows = list;
-      }
+      if (photoWindows !== undefined) next.photoWindows = photoWindows.map((w) => checkPhotoWindow(w, found.uploads, 'photoWindows'));
       if (coverAll !== undefined) next.photosCoverAllWindows = coverAll;
       if (excluded !== undefined) {
         const known = new Set([...found.windows.map((w) => w.id), ...(next.marked ?? []).map((m) => m.id), ...(next.photoWindows ?? []).map((w) => w.id)]);
@@ -329,6 +372,55 @@ export function windowMeasurementRoutes(deps: AppDeps): Router {
       next.excludedWindowIds = next.excludedWindowIds.filter((w) => ids.has(w));
       change.adjustments = next;
       return updateWindowMeasurement(tx, ctx, id, change, clock.now());
+    });
+    if (row === null) throw new AppError(404, MESSAGES.notFound);
+    res.json(toWindowView(row, clock.now(), { photoTools: deps.config.WINDOWS_STREET_VIEW_TOOLS === true }));
+  });
+
+  // One photographed window added to the list (the iPhone app adds its windows one at a time, so the phone and the web
+  // app never overwrite each other's list). Checked exactly as PATCH checks each window. The same window sent again
+  // (a retry after a lost answer) is a 200 with nothing changed; a different window with a taken id is a 409.
+  router.post('/:id/photo-windows', async (req, res) => {
+    const { ctx } = req;
+    const id = idParam(req.params.id);
+    const w = parseOr(PhotoWindowSchema, req.body, PHOTO_WINDOWS_MESSAGE, 'photoWindows');
+    const result = await withTenant(pools, ctx, async (tx) => {
+      const found = await getWindowMeasurement(tx, ctx, id, { lock: true });
+      if (found === null) return null;
+      const input = checkPhotoWindow(w, found.uploads, 'photoWindows');
+      const list = found.adjustments.photoWindows ?? [];
+      const same = list.find((x) => x.id === input.id);
+      if (same !== undefined) {
+        if (canonicalJson(same) !== canonicalJson(input)) throw new AppError(409, PHOTO_WINDOW_TAKEN_MESSAGE, 'id');
+        return { row: found, created: false };
+      }
+      if (list.length >= MAX_PHOTO_WINDOWS) throw new AppError(409, PHOTO_WINDOWS_FULL_MESSAGE, 'photoWindows');
+      const next: WindowAdjustments = { ...found.adjustments, photoWindows: [...list, input] };
+      const row = await updateWindowMeasurement(tx, ctx, id, { adjustments: next }, clock.now());
+      return row === null ? null : { row, created: true };
+    });
+    if (result === null) throw new AppError(404, MESSAGES.notFound);
+    res.status(result.created ? 201 : 200).json(toWindowView(result.row, clock.now()));
+  });
+
+  // One photographed window taken off the list (and out of the left-out ids). A window already gone is a 200 too, so a
+  // retried delete is harmless.
+  router.delete('/:id/photo-windows/:windowId', async (req, res) => {
+    const { ctx } = req;
+    const id = idParam(req.params.id);
+    const windowId = typeof req.params.windowId === 'string' ? req.params.windowId : '';
+    if (!WINDOW_ID.test(windowId)) throw new AppError(404, MESSAGES.notFound);
+    const row = await withTenant(pools, ctx, async (tx) => {
+      const found = await getWindowMeasurement(tx, ctx, id, { lock: true });
+      if (found === null) return null;
+      const list = found.adjustments.photoWindows ?? [];
+      if (!list.some((w) => w.id === windowId)) return found;
+      const next: WindowAdjustments = {
+        ...found.adjustments,
+        photoWindows: list.filter((w) => w.id !== windowId),
+        excludedWindowIds: found.adjustments.excludedWindowIds.filter((w) => w !== windowId),
+      };
+      return updateWindowMeasurement(tx, ctx, id, { adjustments: next }, clock.now());
     });
     if (row === null) throw new AppError(404, MESSAGES.notFound);
     res.json(toWindowView(row, clock.now()));
@@ -418,6 +510,11 @@ export function windowMeasurementRoutes(deps: AppDeps): Router {
   });
 
   return router;
+}
+
+/** JSON with every object's keys sorted (Postgres jsonb does not keep key order), to compare two stored values. */
+function canonicalJson(v: unknown): string {
+  return JSON.stringify(v, (_k, x: unknown) => (x !== null && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x));
 }
 
 function parseOr<T>(schema: z.ZodType<T>, value: unknown, message: string, field: string): T {

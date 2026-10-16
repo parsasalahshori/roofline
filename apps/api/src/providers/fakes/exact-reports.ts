@@ -56,7 +56,7 @@ export class FakeExactReports implements ExactReports {
     if (!this.completed.has(id)) return { status: 'pending' };
     return {
       status: 'complete',
-      report: { surfaceSqFt: 2612, pitchX12: 7, ridgeFt: 62, edgeFt: 188, valleyFt: 24, facets: 9, reportRef: id },
+      report: { surfaceSqFt: 2612, pitchX12: 7, ridgeFt: 62, edgeFt: 188, eaveFt: 142, valleyFt: 24, facets: 9, reportRef: id },
       costCents: 4500,
     };
   }

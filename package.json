@@ -27,7 +27,8 @@
     "eval:agent-texts": "tsx scripts/eval-agent-texts.ts",
     "roof3d:mutate-guards": "tsx scripts/roof3d-guard-mutations.ts",
     "demo": "tsx scripts/demo.ts",
-    "demo:reset": "tsx scripts/demo.ts --reset"
+    "demo:reset": "tsx scripts/demo.ts --reset",
+    "ios:fixtures": "tsx scripts/ios-ar-fixtures.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

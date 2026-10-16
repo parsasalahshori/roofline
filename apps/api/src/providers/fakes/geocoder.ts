@@ -77,7 +77,23 @@ export class FakeGeocoder implements Geocoder {
     const h = fnv1a(text);
     const lng = round6(-95.9345 + (h % 1000) / 20000);
     const lat = round6(41.2565 + (Math.floor(h / 1000) % 1000) / 20000);
-    return { lng, lat, ...parseAddress(address.trim()), accuracy: 1, accuracyType: 'rooftop', source: 'fake' };
+    const parsed = parseAddress(address.trim());
+    // A unit at the end of the street ("Apt 1203", "#4") is read apart, as Geocodio does.
+    const unit = parsed.street === null ? null : /\s+((?:apt|apartment|unit|suite|ste)\.?\s+\S+|#\s*\S+)$/i.exec(parsed.street);
+    const street = unit && parsed.street !== null ? parsed.street.slice(0, unit.index).trim() : parsed.street;
+    const parts = street === null ? null : /^(\d+[a-z]?)\s+(.+)$/i.exec(street);
+    return {
+      lng,
+      lat,
+      ...parsed,
+      street,
+      accuracy: 1,
+      accuracyType: 'rooftop',
+      source: 'fake',
+      unit: unit?.[1] ?? null,
+      number: parts?.[1] ?? null,
+      streetName: parts?.[2] ?? null,
+    };
   }
 
   async geocode(address: string, opts?: { timeoutMs?: number }): Promise<GeocodeResult | null> {

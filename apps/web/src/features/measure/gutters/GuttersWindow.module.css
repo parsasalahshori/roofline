@@ -292,6 +292,81 @@
   color: var(--ds-text-1, #151c22);
 }
 
+/* "Likely short": the warning and a way straight into Adjust */
+.check {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.checkButton,
+.addButton,
+.removeButton {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line, #dde2e6);
+  border-radius: var(--ds-r-ctl, 9px);
+  background: var(--ds-surface, #fff);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.adjustedBy {
+  margin: 0;
+  color: #0b7fa0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.quoteDraft {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--ds-surface-2, #eceff1);
+  color: var(--ds-text-2, #3a444d);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Added runs: their name and length, a stepper and Remove */
+.addedText {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.addedName {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.addForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.addLabel {
+  flex: 2 1 160px;
+  min-width: 0;
+}
+
+.addLength {
+  flex: 1 1 110px;
+  min-width: 0;
+}
+
+.addButton {
+  flex: none;
+  margin-bottom: 2px;
+}
+
 @media (max-width: 899.98px) {
   .stage {
     min-height: 560px;

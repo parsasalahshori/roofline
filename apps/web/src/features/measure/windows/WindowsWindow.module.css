@@ -872,3 +872,8 @@
 .rulerWarn {
   color: #8a5300;
 }
+
+/* An unsure count shown as a range ("14–16"), a size down from a single number (copy.range keeps it on one line) */
+.rangeStat {
+  font-size: 28px;
+}

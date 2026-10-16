@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { combineSheetMeasurements, fitSheetHomography, measureWithSheet, poseFromHomography, SHEET_WARNINGS } from '../src/window-photo-sheet.ts';
+import { combineSheetMeasurements, fitSheetHomography, measureWithSheet, poseFromHomography, SHEET_FOCAL_UNKNOWN_SIGMA, SHEET_WARNINGS } from '../src/window-photo-sheet.ts';
 import type { Pt, Quad } from '../src/window-photo-math.ts';
 
 type V3 = [number, number, number];
@@ -135,6 +135,25 @@ describe('measuring with the sheet', () => {
     expect(tight.warnings).toContain(SHEET_WARNINGS.steep);
     const wide = measureWithSheet({ ...args, focalPx: (14 / 36) * s.w });
     expect(wide?.warnings).toContain(SHEET_WARNINGS.ultraWide);
+  });
+
+  it('a focal length assumed (not in the photo) widens the ±, enough to cover a 24 mm phone sized as 26 mm', () => {
+    // Shot with a 24 mm-equivalent main camera; the photo lost its EXIF, so 26 mm is assumed.
+    const s = scene({ yawDeg: 30, pitchDeg: 8, distanceIn: 72, offsetIn: 1 });
+    const assumed = (26 / 24) * s.focalPx;
+    const args = { widthPx: s.w, heightPx: s.h, focalPx: assumed, imagePoints: s.imagePoints, sheetPointsIn: s.sheetPointsIn, windowQuad: s.windowQuad, planeOffsetIn: 1, cornerSigmaPx: 0.3 };
+    const known = measureWithSheet(args)!;
+    const unknown = measureWithSheet({ ...args, focalSigmaFrac: SHEET_FOCAL_UNKNOWN_SIGMA })!;
+    expect(unknown.widthIn).toBe(known.widthIn);
+    expect(unknown.uncertaintyIn.width).toBeGreaterThan(known.uncertaintyIn.width);
+    expect(unknown.uncertaintyIn.height).toBeGreaterThan(known.uncertaintyIn.height);
+    // With the offset known well, the focal length is a bigger part of the doubt.
+    const k2 = measureWithSheet({ ...args, offsetSigmaIn: 0.01 })!;
+    const u2 = measureWithSheet({ ...args, offsetSigmaIn: 0.01, focalSigmaFrac: SHEET_FOCAL_UNKNOWN_SIGMA })!;
+    expect(u2.uncertaintyIn.height).toBeGreaterThan(1.25 * k2.uncertaintyIn.height);
+    // The real error (from the wrong focal length) is inside 2 sigma of the widened ±.
+    expect(Math.abs(unknown.widthIn - 36)).toBeLessThan(2 * unknown.uncertaintyIn.width);
+    expect(Math.abs(unknown.heightIn - 60)).toBeLessThan(2 * unknown.uncertaintyIn.height);
   });
 
   it('refuses too few points or mismatched lists', () => {

@@ -8,7 +8,7 @@
 // at every profile (centroid of the derivative), a trimmed total-least-squares line is fitted, and corners are the
 // intersections of adjacent lines. Each side reports a confidence; a close rival edge lowers it (ambiguity).
 import { applyH, fitSheetHomography, invert3, type Pt, type Quad, type RgbaImage, type SnappedQuad, type WindowLayer, type WindowMeasureTarget } from '@roofline/shared';
-import { fitLine, intersect, type Gray, type Line, sample, toGray } from './gray.ts';
+import { fitLine, intersect, type Gray, type Line, sample, sampleClamped, toGray } from './gray.ts';
 
 export type SnapResult = SnappedQuad & {
   /** One-sigma corner noise from the line fits, pixels (feeds measure's uncertainty). */
@@ -44,23 +44,16 @@ function scanSide(g: Gray, a: Pt, b: Pt, centre: Pt, band: number): SideScan | n
     const t = T0 + ((T1 - T0) * k) / (K - 1);
     const p: Pt = [a[0] + dx * t, a[1] + dy * t];
     const prof = new Float32Array(offsets.length);
-    let ok = true;
+    // The profile's point must be on the photo; the band beyond the photo's edge reads as the edge pixel (no gradient
+    // there), so a frame side near the edge of the photo is still found.
+    if (Number.isNaN(sample(g, p[0], p[1]))) continue;
     for (let i = 0; i < offsets.length; i++) {
       const o = offsets[i]!;
       let v = 0;
       // Averaged over 5 px along the side (noise, texture).
-      for (const s of [-2, -1, 0, 1, 2]) {
-        const sv = sample(g, p[0] + n[0] * o + tx * s, p[1] + n[1] * o + ty * s);
-        if (Number.isNaN(sv)) {
-          ok = false;
-          break;
-        }
-        v += sv;
-      }
-      if (!ok) break;
+      for (const s of [-2, -1, 0, 1, 2]) v += sampleClamped(g, p[0] + n[0] * o + tx * s, p[1] + n[1] * o + ty * s);
       prof[i] = v / 5;
     }
-    if (!ok) continue;
     // Derivative (outward) over about 1.5 px.
     const h = Math.max(1, Math.round(0.75 / step));
     const gr = new Float32Array(offsets.length);
@@ -111,7 +104,9 @@ function scanSide(g: Gray, a: Pt, b: Pt, centre: Pt, band: number): SideScan | n
             const j0 = i0 + d0;
             const j1 = i1 + d1;
             if (j0 < 0 || j1 < 0 || j0 >= size || j1 >= size) continue;
-            if (sign * scores[j0 * size + j1]! > v) {
+            const u = sign * scores[j0 * size + j1]!;
+            // Ties (a flat ridge) keep only the first cell, so one edge is one candidate
+            if (u > v || (u === v && j0 * size + j1 < i0 * size + i1)) {
               isMax = false;
               break;
             }
@@ -124,7 +119,14 @@ function scanSide(g: Gray, a: Pt, b: Pt, centre: Pt, band: number): SideScan | n
     }
   }
   // Weak edges stay candidates: a white frame in white trim is a small step next to the glass's big one.
-  const strong = candidates.filter((c) => c.score >= 0.08 * maxScore).sort((x, y) => y.score - x.score).slice(0, 16);
+  // Lines a grid step or two apart are the same edge (its subpixel place is found later): the stronger one stays.
+  const near = 2.5 * gstep;
+  const strong: Candidate[] = [];
+  for (const c of candidates.filter((x) => x.score >= 0.08 * maxScore).sort((x, y) => y.score - x.score)) {
+    if (strong.some((k) => k.sign === c.sign && Math.abs(k.o0 - c.o0) <= near && Math.abs(k.o1 - c.o1) <= near)) continue;
+    strong.push(c);
+    if (strong.length >= 16) break;
+  }
   return { a, b, n, ts, offsets, grad, band, candidates: strong, maxScore };
 }
 
@@ -203,6 +205,12 @@ export type SnapOptions = {
   nearWeight?: number;
 };
 
+/** Spread of the log inside:outside grey ratio over the four sides that costs RATIO_W (one side on another layer). */
+const RATIO_SPREAD = 0.05;
+const RATIO_W = 0.5;
+/** How far below the best outline a part-different outline may score and still be offered. */
+const VARIANT_GAP = 0.3;
+
 const LAYERS: WindowLayer[] = ['outer-trim', 'frame-inner', 'sash', 'glass'];
 
 /**
@@ -260,6 +268,11 @@ export function rectangleHypotheses(g: Gray, sides: (SideScan | null)[], rough: 
           const meanOut = ls.reduce((a, l) => a + l.outside, 0) / 4;
           const look = Math.sqrt(ls.reduce((a, l) => a + (l.inside - meanIn) ** 2 + (l.outside - meanOut) ** 2, 0) / 8) / 64;
           const straight = ls.reduce((a, l) => a + Math.min(1, l.rms / 1.5), 0) / 4;
+          // The same boundary all round has the same contrast across it on every side: the inside:outside grey ratio
+          // does not change with uneven light (a gain), so one side on another layer's edge stands out.
+          const lr = ls.map((l) => Math.log((l.inside + 8) / (l.outside + 8)));
+          const lrMean = lr.reduce((a, v) => a + v, 0) / 4;
+          const ratio = Math.min(3, Math.sqrt(lr.reduce((a, v) => a + (v - lrMean) ** 2, 0) / 4) / RATIO_SPREAD);
           const near = ls.reduce((a, l) => a + l.off, 0) / 4 / band;
           let angle = 0;
           if (Hinv !== null) {
@@ -275,7 +288,7 @@ export function rectangleHypotheses(g: Gray, sides: (SideScan | null)[], rough: 
             }
             angle /= 4;
           }
-          const score = 2 * strength - 1.2 * polarity - 1.5 * look - 0.5 * straight - 0.25 * Math.min(angle, 8) - 4 * nearW * near;
+          const score = 2 * strength - 1.2 * polarity - 1.5 * look - RATIO_W * ratio - 0.5 * straight - 0.25 * Math.min(angle, 8) - 4 * nearW * near;
           hyps.push({ quad: quad as Quad, lines: ls, score, layer: 'unknown' });
         }
   hyps.sort((x, y) => y.score - x.score);
@@ -294,18 +307,29 @@ export function rectangleHypotheses(g: Gray, sides: (SideScan | null)[], rough: 
   const good = distinct.filter((d) => d.score > distinct[0]!.score - 1.2);
   const byArea = [...good].sort((x, y) => area(y.quad) - area(x.quad));
   if (byArea.length === 4) byArea.forEach((h, i) => (h.layer = LAYERS[i]!));
+  // A near-tie that moves only some sides (one side on a rival edge: a faint frame line next to a strong one) is
+  // offered too, so the person can pick it when the screen asks; it keeps the layer of the outline it varies.
+  const anySideDiffers = (x: (typeof hyps)[number], y: (typeof hyps)[number]) => x.lines.some((l, k) => Math.abs(at(l.line, k) - at(y.lines[k]!.line, k)) > minSep);
+  const offered = [...distinct];
+  for (const h of hyps) {
+    if (offered.length >= 5 || h.score < distinct[0]!.score - VARIANT_GAP) break;
+    if (offered.includes(h) || !offered.every((d) => anySideDiffers(d, h))) continue;
+    const like = distinct.reduce((b, d) => (d.lines.filter((l, k) => Math.abs(at(l.line, k) - at(h.lines[k]!.line, k)) <= minSep).length > b.lines.filter((l, k) => Math.abs(at(l.line, k) - at(h.lines[k]!.line, k)) <= minSep).length ? d : b));
+    offered.push({ ...h, layer: like.layer });
+  }
+  offered.sort((x, y) => y.score - x.score);
   // The person's target reorders close hypotheses.
   if (opts.target === 'outside-trim' && byArea.length > 0) {
     const pick = byArea[0]!;
     pick.layer = 'outer-trim';
-    return [pick, ...distinct.filter((d) => d !== pick)];
+    return [pick, ...offered.filter((d) => d !== pick)];
   }
   if (opts.target === 'glass' && byArea.length > 0) {
     const pick = byArea.at(-1)!;
     pick.layer = 'glass';
-    return [pick, ...distinct.filter((d) => d !== pick)];
+    return [pick, ...offered.filter((d) => d !== pick)];
   }
-  return distinct;
+  return offered;
 }
 
 /** Pixels per inch on the glass near a quad's centre, from the sheet; null without one. */

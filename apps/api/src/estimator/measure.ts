@@ -128,13 +128,30 @@ async function findSaved(deps: AppDeps, ctx: TenantContext, addressLine: string,
 
 /** Free text in, a saved address out: geocode first (no transaction open), then save it or reuse the one already saved. */
 export async function homeFromAddress(deps: AppDeps, ctx: TenantContext, address: string, now: Date): Promise<PropertyRow> {
+  return (await lookUpHome(deps, ctx, address, now)).property;
+}
+
+/**
+ * homeFromAddress with what the lookup said about the address (how sure it is, the unit it read, the street it
+ * found), for the instant quote page's checks. `unit`: a unit to keep on the saved street line ("2200 Riverfront Dr
+ * Apt 1203"), so a request for a flat is filed under the flat and not the whole building.
+ */
+export async function lookUpHome(
+  deps: AppDeps,
+  ctx: TenantContext,
+  address: string,
+  now: Date,
+  o: { keepUnit?: (found: GeocodeResult) => string | null } = {},
+): Promise<{ property: PropertyRow; found: GeocodeResult }> {
   const found = await lookUp(deps, address);
   if (found === 'unavailable') throw new AppError(503, UNAVAILABLE_MESSAGE);
   if (found === null) throw new AppError(400, NOT_FOUND_MESSAGE, 'address');
   const { street, city, state, zip } = found;
   if (street === null || city === null || state === null || zip === null) throw new AppError(400, NOT_FOUND_MESSAGE, 'address');
   const timezone = found.timezone !== null && isTimeZone(found.timezone) ? found.timezone : null;
-  return saveHome(deps, ctx, { street, city, state, zip }, [found.lng, found.lat], timezone, now);
+  const unit = o.keepUnit?.(found) ?? null;
+  const line = unit === null || unit === '' ? street : `${street} ${unit}`;
+  return { property: await saveHome(deps, ctx, { street: line, city, state, zip }, [found.lng, found.lat], timezone, now), found };
 }
 
 /**

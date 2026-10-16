@@ -56,6 +56,11 @@ export type MeasuredSize = {
   /** Expected error (inches, about 1 sigma) when the measuring method can tell; null when it cannot. */
   uncertaintyIn: { width: number; height: number } | null;
   quality: 'good' | 'check';
+  /**
+   * True for a quote-grade measurement (the iPhone's RoomPlan room scan): shown, but never used for the order size; a
+   * line measured only this way cannot be ordered. Absent: order-grade.
+   */
+  quoteOnly?: boolean;
 };
 
 /** One order line: one window (all its photos), with what the factory needs to build it. */
@@ -64,8 +69,8 @@ export type WindowOrderLine = {
   id: string;
   /** The photo windows this line was measured from (one per photo). */
   photoWindowIds: string[];
-  /** The photo to show as the thumbnail. */
-  uploadId: string;
+  /** The photo to show as the thumbnail; null when none of the window's measurements has a photo (a room scan). */
+  uploadId: string | null;
   location: string;
   style: WindowStyle | null;
   /** Each photo's measurement; the order size uses the smallest (an opening is ordered from its tightest point). */
@@ -237,8 +242,19 @@ export function floorTo(value: number, step: number): number {
   return Math.floor(value / step + 1e-9) * step;
 }
 
+/**
+ * The measurements an order may be sized from: the order-grade ones. Quote-grade ones (a room scan) are left out when
+ * the window has any other measurement; when it has only quote-grade ones they are all there is (and checkLine makes
+ * such a line an error, so it is never ordered).
+ */
+export function orderGradeMeasured(measured: readonly MeasuredSize[]): readonly MeasuredSize[] {
+  const grade = measured.filter((m) => m.quoteOnly !== true);
+  return grade.length > 0 ? grade : measured;
+}
+
 /** The size to order for a line's measurements (see WindowOrderSettings for the rule). Null when nothing is measured. */
-export function orderSize(measured: readonly MeasuredSize[], style: WindowStyle | null, settings: WindowOrderSettings): { widthIn: number; heightIn: number } | null {
+export function orderSize(all: readonly MeasuredSize[], style: WindowStyle | null, settings: WindowOrderSettings): { widthIn: number; heightIn: number } | null {
+  const measured = orderGradeMeasured(all);
   if (measured.length === 0) return null;
   const k = settings.uncertaintyFactor;
   const w = Math.min(...measured.map((m) => m.widthIn - k * (m.uncertaintyIn?.width ?? 0)));
@@ -250,7 +266,8 @@ export function orderSize(measured: readonly MeasuredSize[], style: WindowStyle 
 }
 
 /** The smallest measured width and height and the largest uncertainty, for showing "36 1/4 x 60 (± 1/8)". */
-export function smallestMeasured(measured: readonly MeasuredSize[]): { widthIn: number; heightIn: number; uncertaintyIn: number | null } | null {
+export function smallestMeasured(all: readonly MeasuredSize[]): { widthIn: number; heightIn: number; uncertaintyIn: number | null } | null {
+  const measured = orderGradeMeasured(all);
   if (measured.length === 0) return null;
   const us = measured.flatMap((m) => (m.uncertaintyIn === null ? [] : [m.uncertaintyIn.width, m.uncertaintyIn.height]));
   return {
@@ -365,6 +382,9 @@ export function checkLine(line: WindowOrderLine, settings: WindowOrderSettings):
   if (line.style === null) errors.push('Pick a style.');
   if (!Number.isInteger(line.quantity) || line.quantity < 1 || line.quantity > MAX_ORDER_QUANTITY) errors.push(`Quantity must be 1 to ${MAX_ORDER_QUANTITY}.`);
   if (line.measured.length === 0 || order === null) errors.push('No on-site measurement for this window.');
+  else if (line.measured.every((m) => m.quoteOnly === true)) {
+    errors.push('Measured by room scan only (good for a quote, not an order): measure this window in AR or with the measuring sheet.');
+  }
   if (line.grid.type !== 'none') {
     const patterns = line.style !== null && ONE_SASH.has(line.style) ? [line.grid.top] : [line.grid.top, line.grid.bottom];
     if (!patterns.every((p) => GRID_PATTERN.test(p))) errors.push('Grid patterns look like 3x2 (lites wide x high).');
@@ -388,7 +408,7 @@ export function checkLine(line: WindowOrderLine, settings: WindowOrderSettings):
     }
   }
 
-  if (line.measured.some((m) => m.quality === 'check')) checks.push('A photo of this window was steep or unclear: check its corners, or measure it by hand.');
+  if (orderGradeMeasured(line.measured).some((m) => m.quality === 'check')) checks.push('A photo of this window was steep or unclear: check its corners, or measure it by hand.');
   const worst = smallestMeasured(line.measured)?.uncertaintyIn ?? null;
   if (worst !== null && worst > settings.checkUncertaintyIn) {
     checks.push(`The photo measurement could be off by ${fractionInches(worst)} in (more than ${fractionInches(settings.checkUncertaintyIn)} in): take another photo or measure by hand.`);
@@ -491,7 +511,10 @@ export function groupOrderLines(lines: readonly WindowOrderLine[], settings: Win
 /** What a line needs from a photo window (the photo session adds windowKey and uncertaintyIn; both optional here). */
 export type OrderSourceWindow = {
   id: string;
-  uploadId: string;
+  /** Absent for a room-scan window with no photo. */
+  uploadId?: string;
+  /** How it was measured; 'roomplan' is quote-grade (MeasuredSize.quoteOnly). Absent: order-grade. */
+  scale?: { kind: string };
   label?: string;
   windowKey?: string;
   widthIn: number;
@@ -515,11 +538,18 @@ export function linesFromPhotoWindows(windows: readonly OrderSourceWindow[], exc
   }
   const before = new Map(previous.map((l) => [l.id, l]));
   return [...byKey].map(([id, photos], i) => {
-    const measured: MeasuredSize[] = photos.map((p) => ({ widthIn: p.widthIn, heightIn: p.heightIn, uncertaintyIn: p.uncertaintyIn ?? null, quality: p.quality }));
+    const measured: MeasuredSize[] = photos.map((p) => ({
+      widthIn: p.widthIn,
+      heightIn: p.heightIn,
+      uncertaintyIn: p.uncertaintyIn ?? null,
+      quality: p.quality,
+      ...(p.scale?.kind === 'roomplan' && { quoteOnly: true }),
+    }));
     const label = photos.find((p) => (p.label ?? '').trim() !== '')?.label?.trim() ?? '';
+    const uploadId = photos.find((p) => p.uploadId !== undefined)?.uploadId ?? null;
     const old = before.get(id);
-    if (old) return { ...old, photoWindowIds: photos.map((p) => p.id), uploadId: photos[0]!.uploadId, measured, location: old.location !== '' ? old.location : label, lockedSize: null };
-    return { id, photoWindowIds: photos.map((p) => p.id), uploadId: photos[0]!.uploadId, location: label !== '' ? label : `Window ${i + 1}`, measured, ...defaultLineOptions() };
+    if (old) return { ...old, photoWindowIds: photos.map((p) => p.id), uploadId, measured, location: old.location !== '' ? old.location : label, lockedSize: null };
+    return { id, photoWindowIds: photos.map((p) => p.id), uploadId, location: label !== '' ? label : `Window ${i + 1}`, measured, ...defaultLineOptions() };
   });
 }
 

@@ -41,8 +41,22 @@ const REQ = { panoId: 'abc_DEF-1', heading: 12.345, fov: 45, pitch: 3, widthPx: 
 describe('metadata', () => {
   it('reads the pano, the camera spot and the capture month', async () => {
     const { api, urls } = sv(async () => json({ status: 'OK', pano_id: 'abc_DEF-1', location: { lat: 36.37, lng: -94.2 }, date: '2019-05' }));
-    expect(await api.metadata([-94.2001, 36.3702])).toEqual({ panoId: 'abc_DEF-1', location: [-94.2, 36.37], capturedOn: '2019-05' });
+    expect(await api.metadata([-94.2001, 36.3702])).toEqual({ panoId: 'abc_DEF-1', location: [-94.2, 36.37], capturedOn: '2019-05', byGoogle: false });
     expect(urls[0]).toContain('/metadata?location=36.3702000,-94.2001000&radius=60&source=outdoor&key=');
+  });
+
+  it("tells Google's own panoramas from people's uploads, whose ids may hold a '.'", async () => {
+    const google = sv(async () => json({ status: 'OK', pano_id: 'b7qSKUqwwFBCGHZXXLjmjg', location: { lat: 34.75, lng: -92.31 }, date: '2026-04', copyright: '\u00a9 Google' }));
+    expect((await google.api.metadata([-92.31, 34.75]))!.byGoogle).toBe(true);
+    const upload = sv(async () => json({ status: 'OK', pano_id: 'CAoSFkNJSE0wb2dLRUlDQWdNREExYlQxWEE.', location: { lat: 34.75, lng: -92.31 }, date: '2022-09', copyright: '\u00a9 A Person' }));
+    expect(await upload.api.metadata([-92.31, 34.75])).toMatchObject({ panoId: 'CAoSFkNJSE0wb2dLRUlDQWdNREExYlQxWEE.', byGoogle: false });
+  });
+
+  it('looks an address up by its text (Google finds it), encoded', async () => {
+    const { api, urls } = sv(async () => json({ status: 'OK', pano_id: 'p1', location: { lat: 36.07, lng: -94.25 }, copyright: '\u00a9 Google' }));
+    expect((await api.metadata('6425 W Pagosa Pl, Fayetteville, AR', { radiusM: 80 }))!.panoId).toBe('p1');
+    expect(urls[0]).toContain('/metadata?location=6425%20W%20Pagosa%20Pl%2C%20Fayetteville%2C%20AR&radius=80&source=outdoor&key=');
+    expect(await api.metadata('   ')).toBeNull();
   });
 
   it('ZERO_RESULTS and NOT_FOUND are no imagery (null), not errors', async () => {
@@ -100,7 +114,11 @@ describe('image', () => {
   it('a pano id that is not Google-shaped is refused before any request', async () => {
     const { api, urls } = sv(async () => new Response(jpg, { headers: { 'content-type': 'image/jpeg' } }));
     await failure(api.image({ ...REQ, panoId: 'x&key=evil' }));
+    await failure(api.image({ ...REQ, panoId: 'a/b' }));
     expect(urls).toEqual([]);
+    // An uploaded panorama's id with a '.' is fine.
+    await api.image({ ...REQ, panoId: 'CAoSFkNJSE0wb2dLRUlDQWdNREExYlQxWEE.' });
+    expect(urls[0]).toContain('pano=CAoSFkNJSE0wb2dLRUlDQWdNREExYlQxWEE.&');
   });
 });
 

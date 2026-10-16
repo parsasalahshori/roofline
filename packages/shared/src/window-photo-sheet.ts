@@ -17,6 +17,13 @@ export const SHEET_MIN_POINTS = 8;
 export const SHEET_MAX_RMS_PX = 2.5;
 /** Most matched points accepted from a browser (the sheet has 48 marker corners; this leaves room for denser sheets). */
 export const SHEET_MAX_POINTS = 2000;
+/** One-sigma doubt in a focal length read from the photo (EXIF rounds it to a whole mm). */
+export const SHEET_FOCAL_SIGMA = 0.03;
+/**
+ * One-sigma doubt when the photo has no focal length and DEFAULT_FOCAL_35MM (26 mm) is assumed: phone main cameras
+ * are 22 to 28 mm equivalent, and a cropped, edited or messaged photo can be anything near that. 10%.
+ */
+export const SHEET_FOCAL_UNKNOWN_SIGMA = 0.1;
 /** Plane offsets accepted, inches (frame in front of + / behind - the glass). */
 export const SHEET_MAX_OFFSET_IN = 6;
 /**
@@ -631,6 +638,11 @@ export type SheetMeasureInput = {
   cornerSigmaPx?: number | [number, number, number, number];
   /** One-sigma doubt in the offset the person entered, inches (0.25 when not given). */
   offsetSigmaIn?: number;
+  /**
+   * One-sigma doubt in the focal length, as a fraction (SHEET_FOCAL_SIGMA, 3%, for a focal length read from the
+   * photo; SHEET_FOCAL_UNKNOWN_SIGMA when the photo did not say and DEFAULT_FOCAL_35MM was assumed).
+   */
+  focalSigmaFrac?: number;
   /** Two sheets: which sheet each point is on (0 = A, 1 = B). Fitted as one plane (pose model). */
   sheetIndex?: number[];
   /** The printed scale read off the ruler (1 = 100%): the sheet's inches are multiplied by it. */
@@ -790,14 +802,21 @@ export function measureWithSheet(input: SheetMeasureInput): SheetMeasurement | n
       if (a !== null && b !== null) addVar(((a.w - b.w) / (2 * e)) * sig[k]!, ((a.h - b.h) / (2 * e)) * sig[k]!);
     }
   }
-  // (c) the offset the person entered, (d) the focal length (EXIF focal lengths are rounded; 3%).
+  // (c) the offset the person entered, (d) the focal length (EXIF focal lengths are rounded: 3%; assumed: much more).
   const so = input.offsetSigmaIn ?? 0.25;
+  const sf = 1 + (input.focalSigmaFrac ?? SHEET_FOCAL_SIGMA);
   {
     const a = base(fit.H, windowQuad, planeOffsetIn + so, focalPx);
     const b = base(fit.H, windowQuad, planeOffsetIn - so, focalPx);
     if (a !== null && b !== null) addVar((a.w - b.w) / 2, (a.h - b.h) / 2);
-    const fa = base(fit.H, windowQuad, planeOffsetIn, focalPx * 1.03);
-    const fb = base(fit.H, windowQuad, planeOffsetIn, focalPx / 1.03);
+    // The plane is refitted with the other focal length (the pose depends on it), not just re-projected.
+    const atFocal = (f: number) => {
+      if (model !== 'pose') return base(fit!.H, windowQuad, planeOffsetIn, f);
+      const refit = fitSheetPose(sheetPts, input.imagePoints, { focalPx: f, cx, cy, sheetIndex: input.sheetIndex, inlierPx });
+      return refit === null ? null : base(refit.H, windowQuad, planeOffsetIn, f);
+    };
+    const fa = atFocal(focalPx * sf);
+    const fb = atFocal(focalPx / sf);
     if (fa !== null && fb !== null) addVar((fa.w - fb.w) / 2, (fa.h - fb.h) / 2);
   }
   // (e) a floor for what the model leaves out (print scale after the ruler check, residual lens distortion): 0.1%.

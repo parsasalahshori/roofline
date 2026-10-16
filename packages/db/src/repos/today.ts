@@ -16,7 +16,8 @@ import {
  * The member's Today, in the company zone. `appointments`: their own appointments that overlap
  * today and are not canceled, in their scope. `followUps`: visible jobs that are not archived, not
  * installed or lost, and whose next step is due today or earlier. Owner and office see follow-ups
- * on jobs assigned to them, or unassigned jobs they created; a rep gets every job their scope shows.
+ * on jobs assigned to them, unassigned jobs they created, and unassigned web leads nobody created (a
+ * public page's request); a rep gets every job their scope shows.
  */
 export async function todayView(
   tx: Tx,
@@ -49,7 +50,13 @@ export async function todayView(
     ownerScope =
       me === null
         ? sql`false`
-        : or(eq(jobs.assignedUserId, me), and(isNull(jobs.assignedUserId), eq(jobs.createdByUserId, me)));
+        : or(
+            eq(jobs.assignedUserId, me),
+            and(isNull(jobs.assignedUserId), eq(jobs.createdByUserId, me)),
+            // A lead from a public web page (the instant quote page, a storm page) has no creator and no rep yet:
+            // the office calls it back, so every owner and office member sees its follow-up until someone takes it.
+            and(isNull(jobs.assignedUserId), isNull(jobs.createdByUserId), eq(jobs.source, 'web')),
+          );
   }
 
   const followRows = await tx

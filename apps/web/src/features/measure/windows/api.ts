@@ -53,24 +53,52 @@ export function useWindowPreview(id: string, version: string): UseQueryResult<{ 
 /** Where an on-site window photo is served (same origin, cookie auth). */
 export const uploadSrc = (id: string, uploadId: string) => `${windowsPath(id)}/uploads/${encodeURIComponent(uploadId)}`;
 
-/** The photo types and size the upload takes. */
-export const UPLOAD_TYPES = ['image/jpeg', 'image/png', 'image/heic', 'image/heif'] as const;
-export const UPLOAD_MAX_BYTES = 12 * 1024 * 1024;
+
+/** An upload that sends nothing for this long has stalled (a dead site connection): it is stopped and tried again. */
+export const UPLOAD_STALL_MS = 45_000;
+/** No upload takes longer than this, however slowly it moves (12 MB at 200 kbit/s is about 8 minutes). */
+export const UPLOAD_MAX_MS = 10 * 60_000;
 
 /**
  * POST /api/window-measurements/:id/uploads (multipart, field "photo") -> 201 WindowPhotoUpload. XHR, not fetch, so the
- * person sees the upload's progress (0..1) on a slow site connection.
+ * person sees the upload's progress (0..1) on a slow site connection. Rejects with ApiError status 0 when the
+ * connection fails or stalls (nothing sent for UPLOAD_STALL_MS) so the caller can try again.
  */
-export function uploadWindowPhoto(id: string, file: File, onProgress: (share: number) => void): Promise<WindowPhotoUpload> {
+export function uploadWindowPhoto(id: string, file: File, onProgress: (share: number) => void, o: { stallMs?: number; maxMs?: number } = {}): Promise<WindowPhotoUpload> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+    let stall: ReturnType<typeof setTimeout> | undefined;
+    let settled = false;
+    const finish = () => {
+      settled = true;
+      clearTimeout(stall);
+    };
+    const fail = () => {
+      if (settled) return;
+      finish();
+      reject(new ApiError(0, ''));
+    };
+    const watch = () => {
+      clearTimeout(stall);
+      stall = setTimeout(() => {
+        // abort() fires onabort (fail) where the browser has it; fail() covers stand-ins without it
+        xhr.abort?.();
+        fail();
+      }, o.stallMs ?? UPLOAD_STALL_MS);
+    };
     xhr.open('POST', `${windowsPath(id)}/uploads`);
     xhr.withCredentials = true;
+    xhr.timeout = o.maxMs ?? UPLOAD_MAX_MS;
     xhr.setRequestHeader('Accept', 'application/json');
     xhr.upload.onprogress = (e) => {
+      watch();
       if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total);
     };
+    xhr.ontimeout = fail;
+    xhr.onabort = fail;
     xhr.onload = () => {
+      if (settled) return;
+      finish();
       let body: unknown;
       try {
         body = JSON.parse(xhr.responseText);
@@ -83,9 +111,10 @@ export function uploadWindowPhoto(id: string, file: File, onProgress: (share: nu
         reject(new ApiError(xhr.status, message));
       }
     };
-    xhr.onerror = () => reject(new ApiError(0, ''));
+    xhr.onerror = fail;
     const form = new FormData();
     form.append('photo', file);
+    watch();
     xhr.send(form);
   });
 }

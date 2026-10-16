@@ -5,7 +5,7 @@
 // optional detector can find the front windows instead (source 'detector'); it is off by default.
 // Estimated windows are never shown or priced as measured.
 import type { Tier } from './proposals.ts';
-import type { ArQuad, Quad } from './window-photo-math.ts';
+import type { ArDevice, ArQuad, Quad } from './window-photo-math.ts';
 
 type LngLat = [number, number];
 
@@ -97,7 +97,12 @@ export type EstimatedWindows = {
   /** 'all-sides' when nothing on the front is measured; 'sides-and-back' once front windows are marked or found. */
   covers?: 'all-sides' | 'sides-and-back';
   bySizeClass: Record<WindowSizeClass, number>;
-  /** Plain-English basis, shown to the user, e.g. "2 floors, 186 ft of side and back wall, front spacing". */
+  /**
+   * How far off the count may be, when an input is shaky (no height data, a storey and a half, a low wing that may be a
+   * garage or a room, an outline from Google's roof): the count is shown as "low to high". Absent/null: no range.
+   */
+  range?: { low: number; high: number } | null;
+  /** Plain-English basis (API consumers; the web app words it from the walls itself). */
   basis: string;
 };
 
@@ -213,22 +218,48 @@ export type WindowPhotoScale =
     }
   | {
       /**
-       * AR on an Android phone (WebXR hit-test): the person tapped the window FRAME's four corners. No scale prop: the
-       * size is the distance between the points (window-photo-math sizeFromArPoints). The PhotoWindowInput's corners are
-       * the same four points drawn into the one photo kept with it (or that photo inset 15% when they could not be).
+       * AR on a phone (Android WebXR hit-test, or the iPhone app's ARKit): the person tapped the window FRAME's four
+       * corners. No scale prop: the size is the distance between the points (window-photo-math sizeFromArPoints). The
+       * PhotoWindowInput's corners are the same four points drawn into the one photo kept with it (or that photo inset
+       * 15% when they could not be).
        */
       kind: 'ar';
-      /** TL, TR, BR, BL frame corners, metres, AR world space. */
+      /** The frame's four corners, metres, AR world space (+Y up). Meant as TL, TR, BR, BL, but ordered by gravity on use. */
       pointsM: ArQuad;
       /** How many times AR lost the wall while the corners were being tapped. */
       trackingLostCount: number;
+      /** Which AR measured them; sets the per-point noise in the ±. Absent: 'webxr' (the Android web app). */
+      device?: ArDevice;
+      /** Each corner's measured spread, metres, 1 sigma, in the order of pointsM (the iPhone averages ~15 raycasts). */
+      cornerSpreadM?: [number, number, number, number];
+    }
+  | {
+      /**
+       * Apple RoomPlan on a LiDAR iPhone: the room scan found the window and gives its size directly. Quote-grade only:
+       * always 'check', at least ROOMPLAN_MIN_UNCERTAINTY_IN of ±, and never order-grade (the order sheet refuses a
+       * window measured only this way). The PhotoWindowInput may have no photo (no uploadId, no corners).
+       */
+      kind: 'roomplan';
+      widthM: number;
+      heightM: number;
+      /** RoomPlan's own confidence in the surface. */
+      confidence: RoomPlanConfidence;
     };
+
+export const ROOMPLAN_CONFIDENCES = ['low', 'medium', 'high'] as const;
+export type RoomPlanConfidence = (typeof ROOMPLAN_CONFIDENCES)[number];
+/** The least ± a RoomPlan size carries, inches (RoomPlan is a quote-grade scan, not a frame-corner measure). */
+export const ROOMPLAN_MIN_UNCERTAINTY_IN = 1;
+/** RoomPlan's ± by its confidence, inches (UNCALIBRATED until the field test; never under the 1 in floor). */
+export const ROOMPLAN_UNCERTAINTY_IN: Readonly<Record<RoomPlanConfidence, number>> = { high: 1, medium: 1.5, low: 2 };
 
 /**
  * What the person enters for one photographed window: corners in photo pixels (TL, TR, BR, BL). Several photos of the
  * same window share a `windowKey` (one PhotoWindowInput per photo); absent means the photo is its own window.
+ * `uploadId` and `corners` are always there except for a RoomPlan window (scale kind 'roomplan'), which may have no
+ * photo; the API refuses them missing for any other kind.
  */
-export type PhotoWindowInput = { id: string; uploadId: string; label?: string; windowKey?: string; corners: Quad; scale: WindowPhotoScale };
+export type PhotoWindowInput = { id: string; uploadId?: string; label?: string; windowKey?: string; corners?: Quad; scale: WindowPhotoScale };
 
 /** The window a photographed window belongs to: its shared key, else its own id (one photo, one window). */
 export function photoWindowKey(w: Pick<PhotoWindowInput, 'id' | 'windowKey'>): string {
@@ -296,10 +327,23 @@ export type WindowMeasurementView = {
   photos: FacadePhoto[];
   windows: MeasuredWindow[];
   estimated: EstimatedWindows | null;
-  /** Floors above ground, when known (from the house's height). */
+  /** Floors above ground, when known (from the house's height): 1, 1.5 (a storey and a half), 2 or 3. */
   stories: number | null;
   /** The walls the estimate is worked out from (from the outline and Google's heights). Absent/null when unknown. */
-  walls?: { perimeterFt: number; wallHeightFt: number | null; wallAreaSqFt: number | null; frontWallFt: number | null } | null;
+  walls?: {
+    perimeterFt: number;
+    wallHeightFt: number | null;
+    wallAreaSqFt: number | null;
+    frontWallFt: number | null;
+    /** The wall the windows are counted on: 9 ft a floor, low wings left out (absent on older answers). */
+    windowWallSqFt?: number;
+    /** Low one-storey wings of a taller house (an attached garage, a porch) left out of the count, feet of wall. */
+    lowWingFt?: number;
+    /** Where the floors come from: Google's height map, a person's fit on the street photo, or assumed (one floor) when there is none. */
+    floorsFrom?: 'height-map' | 'photo' | 'assumed';
+    /** Where the outline comes from: a building footprint, else Google's roof (no footprint there). */
+    outlineFrom?: 'footprint' | 'google-roof';
+  } | null;
   detector: WindowDetectorName | null;
   missing: { reason: WindowsMissReason } | null;
   needsReview: { reasons: WindowsReviewReason[] } | null;
@@ -312,6 +356,11 @@ export type WindowMeasurementView = {
   uploads?: WindowPhotoUpload[];
   /** The door ruler, as the server applied it (absent/null: none, or it could not be sized). */
   ruler?: RulerResult | null;
+  /**
+   * The Street View tools are on for this server (WINDOWS_STREET_VIEW_TOOLS): the front wall drawn on the photo, its
+   * corners, marking windows on the photo and the door ruler. Absent or false: the photo is a read-only picture.
+   */
+  photoTools?: boolean;
 };
 
 /** PATCH /api/window-measurements/:id. */

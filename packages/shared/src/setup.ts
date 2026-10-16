@@ -18,8 +18,8 @@ export const SETUP_STATUSES = ['todo', 'in_progress', 'waiting', 'done', 'skippe
 export type SetupStatus = (typeof SETUP_STATUSES)[number];
 
 /**
- * The later-spec items; each shows "Coming with [feature]" until its feature ships. 'calendar' is no
- * longer returned by any item (connect_calendar is real now) but stays so copy/setup.ts still compiles.
+ * The later-spec items; each shows "Coming with [feature]" until its feature ships. Every feature has
+ * shipped, so no item returns one now; the values stay so the API shape and copy/setup.ts still compile.
  */
 export const COMING_WITH = ['estimator', 'calendar', 'front_desk', 'storm_scout'] as const;
 export type ComingWith = (typeof COMING_WITH)[number];
@@ -78,9 +78,8 @@ export type SetupView = {
   progress: { done: number; total: number };
 };
 
-const COMING_WITH_BY_KEY: Partial<Record<SetupItemKey, ComingWith>> = {
-  connect_ads: 'storm_scout',
-};
+/** Every item's feature has shipped (connect_ads came with Storm Scout), so none says "Coming with" now. */
+const COMING_WITH_BY_KEY: Partial<Record<SetupItemKey, ComingWith>> = {};
 
 type Resolved = { status: SetupStatus; data: Record<string, unknown> };
 

@@ -1072,6 +1072,8 @@ export const measurements = pgTable(
     pitchX12: numeric('pitch_x12', { precision: 4, scale: 2, mode: 'number' }),
     surfaceSqFt: numeric('surface_sq_ft', { precision: 12, scale: 2, mode: 'number' }),
     edgeFt: numeric('edge_ft', { precision: 12, scale: 2, mode: 'number' }),
+    /** An exact report's eave length (EagleView LengthEave), ft: the gutter total for that measurement. Null otherwise. */
+    eaveFt: numeric('eave_ft', { precision: 12, scale: 2, mode: 'number' }),
     ridgeFt: numeric('ridge_ft', { precision: 12, scale: 2, mode: 'number' }),
     valleyFt: numeric('valley_ft', { precision: 12, scale: 2, mode: 'number' }),
     facets: integer('facets'),
@@ -1100,8 +1102,15 @@ export const measurements = pgTable(
      * sets this to null; our own numbers (outline, faces, pitch, totals) stay. Null: nothing of Google's to delete.
      */
     googleDeleteBy: tstz('google_delete_by'),
-    /** Measure gutters: runs left out, downspouts typed in per run, and a size chosen by hand (see GutterAdjustments). */
-    gutterAdjustments: jsonb('gutter_adjustments').$type<GutterAdjustments>().notNull().default({ excludedRunIds: [], downspouts: {}, size: null }),
+    /**
+     * Measure gutters: runs left out, downspouts typed in per run, a size chosen by hand, runs added by hand, a typed
+     * total and who changed them (see GutterAdjustments). Older rows lack the later keys; repos/gutters.ts reads them
+     * tolerantly.
+     */
+    gutterAdjustments: jsonb('gutter_adjustments')
+      .$type<Pick<GutterAdjustments, 'excludedRunIds' | 'downspouts' | 'size'> & Partial<GutterAdjustments>>()
+      .notNull()
+      .default({ excludedRunIds: [], downspouts: {}, size: null }),
     createdByUserId: userRef('created_by_user_id'),
     ...timestamps(),
   },
@@ -2127,10 +2136,19 @@ export type WindowGeometry = {
   ring: LngLat[];
   /** Where the Street View camera stood, [lng, lat] (null without imagery). */
   camera: LngLat | null;
-  /** The eave's height above the ground from Google's height map, metres (null when unknown). */
+  /** The main eave's height above the ground from Google's height map, metres (null when unknown). */
   eaveHeightM: number | null;
-  /** Where the outline came from. */
-  outlineSource: 'footprint' | 'solar-box';
+  /**
+   * Where the outline came from: a Microsoft footprint, else Google's roof: the outline of its roof mask (the roof in 3D's,
+   * overhangs included), else Google Solar's box for the building (older rows; a last resort).
+   */
+  outlineSource: 'footprint' | 'solar-mask' | 'solar-box';
+  /** Each outline edge's eave above the ground (edge i: ring[i] -> ring[i + 1]), metres; null where unread. Absent on older rows. */
+  wallEavesM?: (number | null)[];
+  /** The roof's top above the ground, metres. Absent on older rows. */
+  ridgeM?: number | null;
+  /** The whole outline's lowest eave (what older rows used for the walls), metres, kept for comparison. */
+  lowestEaveM?: number | null;
 };
 
 /**
@@ -2246,6 +2264,12 @@ export const quoteRequests = pgTable(
     consentText: text('consent_text').notNull(),
     consentVersion: text('consent_version').notNull(),
     consentAt: tstz('consent_at').notNull(),
+    /**
+     * The separate, optional "text me" box was ticked (its exact sentence in text_consent_text). Evidence only: the
+     * customer's texting consent is not changed by a form (Ruling BF).
+     */
+    textConsent: boolean('text_consent').notNull().default(false),
+    textConsentText: text('text_consent_text'),
     ipHash: text('ip_hash'),
     customerId: uuid('customer_id'),
     jobId: uuid('job_id'),

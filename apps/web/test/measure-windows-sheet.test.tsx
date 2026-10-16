@@ -1,5 +1,6 @@
 import {
   priceWindows,
+  SHEET_FOCAL_UNKNOWN_SIGMA,
   windowCounts,
   windowSizeClass,
   type PhotoWindow,
@@ -294,6 +295,24 @@ describe('Measuring sheet: corners snapped onto the frame', () => {
     expect(cornerAt(0)).toEqual(pctOf([340, 410]));
   });
 
+  it('shows no size and cannot be saved until all four corners are placed (the starting corners are a guess)', async () => {
+    renderMeasure();
+    await screen.findByText(copy.sheetFound);
+    const save = () => screen.getByRole('button', { name: copy.save }) as HTMLButtonElement;
+    expect(save().disabled).toBe(true);
+    expect(liveSize()).toContain(copy.cornersFirst(0, 4));
+    expect(liveSize()).not.toContain(copy.sizeExact('35 7/8', '59 3/4'));
+    expect(cv.measure).not.toHaveBeenCalled();
+    for (let i = 0; i < 3; i++) dragTo(i, ROUGH[i]!);
+    await act(async () => {});
+    expect(save().disabled).toBe(true);
+    expect(liveSize()).toContain(copy.cornersFirst(3, 4));
+    dragTo(3, ROUGH[3]);
+    await waitFor(() => expect(document.querySelector('[data-snap="snapped"]')).not.toBeNull());
+    expect(save().disabled).toBe(false);
+    expect(liveSize()).toContain(copy.sizeExact('35 7/8', '59 3/4'));
+  });
+
   it('a corner moved with the keys is not snapped (fine adjustment), and the size follows', async () => {
     renderMeasure();
     await ready();
@@ -332,6 +351,18 @@ describe('Measuring sheet: what is measured, and the size', () => {
     const [input, local] = onSave.mock.calls[0]!;
     expect(input).toEqual({ id: expect.stringMatching(/^photo-/), uploadId: 'up1', label: 'Kitchen', corners: SNAPPED, scale: { kind: 'sheet', paper: 'letter', imagePoints: DETECTION.imagePoints, sheetPointsIn: DETECTION.sheetPointsIn, planeOffsetIn: 1 } });
     expect(local).toMatchObject({ widthIn: 35.87, heightIn: 59.74, uncertaintyIn: MEASURED.uncertaintyIn, distanceIn: 78, viewAngleDeg: 12 });
+  });
+
+  it('a photo with no camera data (no focal length): says the size is less certain and asks the engine for the wider ±', async () => {
+    renderMeasure({ upload: { ...UPLOAD, focal35mm: null } });
+    await ready();
+    expect(document.querySelector('[data-no-camera-data]')!.textContent).toBe(copy.noCameraData);
+    expect(lastMeasureInput().focalSigmaFrac).toBe(SHEET_FOCAL_UNKNOWN_SIGMA);
+    cleanup();
+    renderMeasure();
+    await ready();
+    expect(document.querySelector('[data-no-camera-data]')).toBeNull();
+    expect(lastMeasureInput().focalSigmaFrac).toBeUndefined();
   });
 
   it('asks for a re-take when the size could be off by more than 1/4 in', async () => {

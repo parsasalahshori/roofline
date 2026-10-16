@@ -34,6 +34,7 @@ import { liveCounts, newMarkId, readAdjustments, rulerSizeLabel, shownWindows, t
 import { PhotoStage, wallDrawn, type StageEdit } from './PhotoStage.tsx';
 import { livePhotoWindows, type LocalSheetSize } from './photoModel.ts';
 import { PhotoWindowsFlow, PhotoWindowsList, useWindowUploads, type FlowAt } from './PhotoWindows.tsx';
+import { usePhotoWindowDrafts } from './photoDrafts.ts';
 import { WallsPlan, WindowsCard } from './WindowsCard.tsx';
 import { MeasureSwitch } from './MeasureSwitch.tsx';
 import { OrderStatusChip } from './order/OrderChip.tsx';
@@ -294,10 +295,19 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
     });
   };
 
+  // The Street View tools (WINDOWS_STREET_VIEW_TOOLS, off by default): the wall drawn on the photo, its corners, marking
+  // windows on it and the door ruler. Off, the photo is a read-only "is this the right house?" picture.
+  const tools = v.photoTools === true;
   const photos = v.photos;
   const photo = photos[Math.min(photoIndex, photos.length - 1)] ?? null;
   const shown = useMemo(() => shownWindows(v, adj.marked), [v, adj.marked]);
   const uploads = useWindowUploads(v.id, v.uploads);
+  // Photographed windows not yet on the server are kept on this device, so a closed tab does not lose them
+  const serverPhotoInputs = useMemo(() => v.adjustments.photoWindows ?? [], [v.adjustments]);
+  const drafts = usePhotoWindowDrafts(v.id, serverPhotoInputs, (list) => {
+    setAdj((a) => ({ ...a, photoWindows: list }));
+    save({ photoWindows: list });
+  });
   const [flowAt, setFlowAt] = useState<FlowAt | null>(null);
   const uploadList = uploads.uploads;
   // Sheet-measured windows sized on this device, until the server's size for the same corners arrives
@@ -307,7 +317,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
   const excluded = useMemo(() => new Set(adj.excludedWindowIds), [adj.excludedWindowIds]);
   const numbers = useMemo(() => new Map(shown.map((w, i) => [w.id, i + 1])), [shown]);
   const corners: Corners | null =
-    photo === null ? null : adj.wallCorners?.photoId === photo.id ? adj.wallCorners.corners : (photo.wallOverlay?.corners ?? null);
+    photo === null || !tools ? null : adj.wallCorners?.photoId === photo.id ? adj.wallCorners.corners : (photo.wallOverlay?.corners ?? null);
 
   const version = JSON.stringify([v.adjustments, v.windows.map((w) => `${w.id}:${w.sizeClass}`), v.estimated?.bySizeClass ?? null]);
   const preview = useWindowPreview(v.id, version);
@@ -339,6 +349,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
     const next = adj.photoWindows.some((w) => w.id === input.id) ? adj.photoWindows.map((w) => (w.id === input.id ? input : w)) : [...adj.photoWindows, input];
     setAdj((a) => ({ ...a, photoWindows: next }));
     save({ photoWindows: next });
+    drafts.keep(next);
   };
   const deletePhoto = (which: string | string[]) => {
     const ids = typeof which === 'string' ? [which] : which;
@@ -347,6 +358,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
     if (ids.some((id) => excluded.has(id))) body.excludedWindowIds = adj.excludedWindowIds.filter((x) => !ids.includes(x));
     setAdj((a) => ({ ...a, photoWindows: next, excludedWindowIds: body.excludedWindowIds ?? a.excludedWindowIds }));
     save(body);
+    drafts.keep(next);
   };
   const coverAll = (next: boolean) => {
     setAdj((a) => ({ ...a, photosCoverAllWindows: next }));
@@ -414,7 +426,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
           .filter((r) => r !== 'stand-in-detector')
           .map((r) => (
             <span key={r} className={cardStyles.reason} data-reason={r}>
-              {copy.reviewReason[r]}
+              {!tools && r === 'estimated-from-size' ? copy.estimatedFromSizeNoTools : copy.reviewReason[r]}
             </span>
           ))}
       </div>
@@ -427,7 +439,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
           {windowPhotos.add}
         </Button>
       </section>
-      {corners !== null && photo !== null ? (
+      {tools && corners !== null && photo !== null ? (
         <section className={frame.panel} aria-labelledby={`wall-${v.id}`}>
           <h3 id={`wall-${v.id}`} className={frame.title}>
             {copy.wallTitle}
@@ -440,7 +452,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
           ) : null}
         </section>
       ) : null}
-      {photo !== null ? (
+      {tools && photo !== null ? (
         <section className={frame.panel} aria-labelledby={`mark-${v.id}`}>
           <h3 id={`mark-${v.id}`} className={frame.title}>
             {copy.markTitle}
@@ -464,7 +476,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
           <p className={frame.hint}>{copy.zoomHint}</p>
         </section>
       ) : null}
-      {photo !== null ? (
+      {tools && photo !== null ? (
         <RulerPanel
           id={v.id}
           ruler={adj.ruler}
@@ -530,7 +542,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
   );
 
   const fitChip =
-    overlay !== undefined && done ? (
+    tools && overlay !== undefined && done ? (
       <div className={styles.fitChip} data-fit={overlay.fit} role="status">
         {overlay.fit === 'good' ? (
           <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
@@ -554,11 +566,21 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
         <div className={styles.stage} data-phase={scan.phase} data-editing={editing ? 'true' : 'false'} data-photo={photo === null ? 'none' : undefined}>
           <div className={styles.stageTop}>
             <div className={styles.chips}>
-              <span className={styles.chip} data-tone={scan.phase === 'scanning' || patch.isPending ? 'measuring' : undefined}>
-                {scan.phase === 'scanning' ? copy.measuringChip : captured !== null ? copy.imageryCaptured(captured) : copy.imageryPlain}
+              <span
+                className={styles.chip}
+                data-tone={scan.phase === 'scanning' || patch.isPending ? 'measuring' : undefined}
+                data-right-house={!tools && photo !== null && done ? '' : undefined}
+              >
+                {scan.phase === 'scanning'
+                  ? copy.measuringChip
+                  : !tools && photo !== null && done
+                    ? copy.rightHouse(captured)
+                    : captured !== null
+                      ? copy.imageryCaptured(captured)
+                      : copy.imageryPlain}
               </span>
               {fitChip}
-              {v.ruler != null && done ? (
+              {tools && v.ruler != null && done ? (
                 <span className={styles.chip} data-ruler-chip="" role="status">
                   {copy.rulerUsed(rulerWords(v.ruler).kind, rulerWords(v.ruler).size)}
                 </span>
@@ -612,8 +634,8 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
               corners={corners}
               scan={scan}
               edit={edit}
-              ruler={adj.ruler !== null && adj.ruler.photoId === photo.id ? adj.ruler : null}
-              rulerLabel={adj.ruler !== null ? copy.rulerBoxLabel(rulerWords(adj.ruler).kind, rulerWords(adj.ruler).size) : null}
+              ruler={tools && adj.ruler !== null && adj.ruler.photoId === photo.id ? adj.ruler : null}
+              rulerLabel={tools && adj.ruler !== null ? copy.rulerBoxLabel(rulerWords(adj.ruler).kind, rulerWords(adj.ruler).size) : null}
             />
           ) : (
             <div className={styles.photoArea}>
@@ -645,6 +667,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
               panels={panels}
               notes={notes}
               captured={captured}
+              tools={tools}
               fromPhotos={adj.photosCoverAllWindows}
               onAddPhotos={() => setFlowAt({ step: 'capture' })}
               photos={
@@ -654,7 +677,8 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
                   excluded={excluded}
                   coverAll={adj.photosCoverAllWindows}
                   srcFor={uploads.srcFor}
-                  onOpen={(w) => setFlowAt({ step: 'measure', uploadId: w.uploadId, windowId: w.id })}
+                  waiting={uploads.waiting}
+                  onOpen={(w) => (w.uploadId !== undefined ? setFlowAt({ step: 'measure', uploadId: w.uploadId, windowId: w.id }) : undefined)}
                   onToggle={toggleMany}
                   onDelete={deletePhoto}
                   onCoverAll={coverAll}

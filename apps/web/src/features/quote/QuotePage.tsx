@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { visitTime } from './time.ts';
-import { Banner, Button, Checkbox, Field, Skeleton } from '@roofline/ui';
-import type { PublicQuoteConfig, PublicQuoteSlot, QuoteProduct } from '@roofline/shared';
+import { Banner, Button, Checkbox, Field, IconButton, Skeleton } from '@roofline/ui';
+import { QUOTE_WINDOW_COUNT, type PublicQuoteConfig, type PublicQuoteSlot, type PublicQuoteWindows, type QuoteProduct } from '@roofline/shared';
 import { quote } from '../../copy/quote.ts';
 import { formatPhone } from '../../lib/phone.ts';
 import { ScanOverlay } from '../measure/lift/ScanOverlay.tsx';
@@ -21,8 +21,8 @@ import styles from './QuotePage.module.css';
 type Step =
   | { kind: 'address'; error?: AddressError }
   | { kind: 'measuring'; startedAt: number; answer: EstimateAnswer | null }
-  | { kind: 'results'; answer: EstimateAnswer; showForm: boolean }
-  | { kind: 'done'; firstName: string; booked: { start: string; end: string } | null; timeZone: string };
+  | { kind: 'results'; answer: EstimateAnswer; showForm: boolean; windows: PublicQuoteWindows | null }
+  | { kind: 'done'; firstName: string; booked: { start: string; end: string } | null; slotTaken: boolean; timeZone: string };
 
 const TICK_MS = 80;
 
@@ -104,12 +104,16 @@ export function QuotePage({ slug }: { slug: string }) {
           />
         ) : null}
         {step.kind === 'measuring' ? (
-          <Measuring step={step} onDone={(answer) => setStep({ kind: 'results', answer, showForm: answer.status === 'fallback' })} />
+          <Measuring step={step} onDone={(answer) => setStep({ kind: 'results', answer, showForm: answer.status === 'fallback', windows: answer.windows })} />
         ) : null}
         {step.kind === 'results' ? (
           <>
             <Results
+              slug={slug}
+              config={c}
               answer={step.answer}
+              windows={step.windows}
+              onWindows={(windows) => setStep((s) => (s.kind === 'results' ? { ...s, windows } : s))}
               onContinue={() => setStep({ ...step, showForm: true })}
               showContinue={!step.showForm}
               onStartOver={() => setStep({ kind: 'address' })}
@@ -119,12 +123,13 @@ export function QuotePage({ slug }: { slug: string }) {
                 slug={slug}
                 config={c}
                 answer={step.answer}
-                onDone={(firstName, booked, timeZone) => setStep({ kind: 'done', firstName, booked, timeZone })}
+                windowCount={step.windows !== null && step.windows.count !== step.answer.windows?.count ? step.windows.count : null}
+                onDone={(firstName, booked, slotTaken, timeZone) => setStep({ kind: 'done', firstName, booked, slotTaken, timeZone })}
               />
             ) : null}
           </>
         ) : null}
-        {step.kind === 'done' ? <Done config={c} firstName={step.firstName} booked={step.booked} timeZone={step.timeZone} /> : null}
+        {step.kind === 'done' ? <Done config={c} firstName={step.firstName} booked={step.booked} slotTaken={step.slotTaken} timeZone={step.timeZone} /> : null}
       </main>
     </div>
   );
@@ -269,7 +274,25 @@ function Measuring({ step, onDone }: { step: Extract<Step, { kind: 'measuring' }
 
 const stageIndex = (s: ScanStage) => ['finding', 'tracing', 'reading', 'pricing'].indexOf(s);
 
-function Results({ answer, onContinue, showContinue, onStartOver }: { answer: EstimateAnswer; onContinue: () => void; showContinue: boolean; onStartOver: () => void }) {
+function Results({
+  slug,
+  config,
+  answer,
+  windows,
+  onWindows,
+  onContinue,
+  showContinue,
+  onStartOver,
+}: {
+  slug: string;
+  config: PublicQuoteConfig;
+  answer: EstimateAnswer;
+  windows: PublicQuoteWindows | null;
+  onWindows: (w: PublicQuoteWindows) => void;
+  onContinue: () => void;
+  showContinue: boolean;
+  onStartOver: () => void;
+}) {
   const headingId = useId();
   if (answer.status === 'fallback') {
     return (
@@ -295,22 +318,17 @@ function Results({ answer, onContinue, showContinue, onStartOver }: { answer: Es
         </div>
       ) : null}
       <ul className={styles.ranges}>
-        {answer.windows ? (
-          <li>
-            <span className={styles.rangeLabel}>{quote.windowsLine(answer.windows.count)}</span>
-            <span className={styles.rangeValue}>{quote.range(answer.windows.range.lowCents, answer.windows.range.highCents)}</span>
-          </li>
-        ) : null}
+        {windows ? <WindowsLine slug={slug} quoteId={answer.quoteId} windows={windows} onWindows={onWindows} /> : null}
         {answer.roof ? (
           <li>
             <span className={styles.rangeLabel}>{quote.roofLine(answer.roof.squares)}</span>
             <span className={styles.rangeValue}>{quote.range(answer.roof.range.lowCents, answer.roof.range.highCents)}</span>
           </li>
         ) : null}
-        {answer.gutters ? (
+        {config.products.includes('gutters') ? (
           <li>
-            <span className={styles.rangeLabel}>{quote.guttersLine(answer.gutters.feet)}</span>
-            <span className={styles.rangeValue}>{quote.range(answer.gutters.range.lowCents, answer.gutters.range.highCents)}</span>
+            <span className={styles.rangeLabel}>{quote.guttersLine}</span>
+            <span className={styles.atVisit}>{quote.guttersAtVisit}</span>
           </li>
         ) : null}
       </ul>
@@ -329,7 +347,89 @@ function Results({ answer, onContinue, showContinue, onStartOver }: { answer: Es
   );
 }
 
-type FormState = { firstName: string; lastName: string; email: string; phone: string; postalCode: string; products: QuoteProduct[]; consent: boolean; slotId: string; website: string };
+/** How long a run of taps on the window count waits before the price is asked for again. */
+const REPRICE_MS = 350;
+
+/**
+ * The window count as a stepper: the count is a guess from above, so the homeowner may set it (1 to 80). The price
+ * comes from the server for each count (the page never prices on its own); while it is on its way the old range
+ * stays, marked as updating.
+ */
+function WindowsLine({ slug, quoteId, windows, onWindows }: { slug: string; quoteId: string; windows: PublicQuoteWindows; onWindows: (w: PublicQuoteWindows) => void }) {
+  const [count, setCount] = useState(windows.count);
+  const [failed, setFailed] = useState(false);
+  const pending = count !== windows.count;
+  const report = useRef(onWindows);
+  useEffect(() => {
+    report.current = onWindows;
+  }, [onWindows]);
+  useEffect(() => {
+    if (count === windows.count) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      quoteApi.windows(slug, { quoteId, count }, controller.signal).then(
+        (w) => {
+          setFailed(false);
+          report.current(w);
+        },
+        (err: unknown) => {
+          if (err instanceof DOMException && err.name === 'AbortError') return;
+          setFailed(true);
+          setCount(windows.count);
+        },
+      );
+    }, REPRICE_MS);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [count, windows.count, slug, quoteId]);
+  const step = (by: number) => setCount((n) => Math.min(QUOTE_WINDOW_COUNT.max, Math.max(QUOTE_WINDOW_COUNT.min, n + by)));
+  return (
+    <li>
+      <div className={styles.windowsRow}>
+        <span className={styles.rangeLabel} aria-live="polite">
+          {quote.windowsLine(count)}
+        </span>
+        <div className={styles.stepper}>
+          <IconButton label={quote.windowsFewer} icon={<StepIcon minus />} onClick={() => step(-1)} disabled={count <= QUOTE_WINDOW_COUNT.min} />
+          <IconButton label={quote.windowsMore} icon={<StepIcon />} onClick={() => step(1)} disabled={count >= QUOTE_WINDOW_COUNT.max} />
+        </div>
+      </div>
+      <span className={styles.small}>{quote.windowsAdjust}</span>
+      <span className={styles.rangeValue} data-pending={pending ? true : undefined} aria-busy={pending}>
+        {quote.range(windows.range.lowCents, windows.range.highCents)}
+      </span>
+      {pending ? <span className="visually-hidden">{quote.windowsUpdating}</span> : null}
+      {failed ? (
+        <span className={styles.error} role="alert">
+          {quote.windowsFailed}
+        </span>
+      ) : null}
+    </li>
+  );
+}
+
+function StepIcon({ minus = false }: { minus?: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+      <path d={minus ? 'M5 12h14' : 'M5 12h14M12 5v14'} />
+    </svg>
+  );
+}
+
+type FormState = {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  postalCode: string;
+  products: QuoteProduct[];
+  consent: boolean;
+  textConsent: boolean;
+  slotId: string;
+  website: string;
+};
 type FormKey = 'firstName' | 'lastName' | 'email' | 'phone' | 'postalCode' | 'products' | 'consent';
 
 /** The checks the server makes too, so most mistakes are shown before anything is sent. */
@@ -353,12 +453,15 @@ function LeadForm({
   slug,
   config,
   answer,
+  windowCount,
   onDone,
 }: {
   slug: string;
   config: PublicQuoteConfig;
   answer: EstimateAnswer;
-  onDone: (firstName: string, booked: { start: string; end: string } | null, timeZone: string) => void;
+  /** The window count the homeowner set, when it is not the estimated one. */
+  windowCount: number | null;
+  onDone: (firstName: string, booked: { start: string; end: string } | null, slotTaken: boolean, timeZone: string) => void;
 }) {
   // Products with a range shown are ticked; with nothing measured (fallback), every product the page offers is.
   const shown: QuoteProduct[] = config.products.filter((p) => (p === 'roof' ? answer.roof : p === 'windows' ? answer.windows : answer.gutters) !== null);
@@ -370,6 +473,7 @@ function LeadForm({
     postalCode: zipOf(answer.address),
     products: shown.length > 0 ? shown : [...config.products],
     consent: false,
+    textConsent: false,
     slotId: '',
     website: '',
   });
@@ -413,6 +517,8 @@ function LeadForm({
         postalCode: form.postalCode.trim(),
         products: form.products,
         consent: true,
+        textConsent: form.textConsent,
+        ...(windowCount !== null && { windowCount }),
         consentVersion: config.consent.version,
         formToken: answer.formToken,
         website: form.website,
@@ -420,7 +526,7 @@ function LeadForm({
         ...(config.turnstileSiteKey !== null && { turnstileToken: human }),
       })
       .then(
-        (res) => onDone(form.firstName.trim(), res.booked, slots?.timeZone ?? 'UTC'),
+        (res) => onDone(form.firstName.trim(), res.booked, res.slotTaken === true, slots?.timeZone ?? 'UTC'),
         (err: unknown) => {
           setSending(false);
           setHuman('');
@@ -485,7 +591,19 @@ function LeadForm({
             )}
           </fieldset>
         ) : null}
-        <Checkbox checked={form.consent} onChange={(on) => set('consent', on)} label={quote.consentLabel} description={config.consent.text} error={fieldError('consent')} />
+        <div className={styles.consent}>
+          <Checkbox checked={form.consent} onChange={(on) => set('consent', on)} label={quote.consentLabel} description={config.consent.text} error={fieldError('consent')} />
+          <Checkbox checked={form.textConsent} onChange={(on) => set('textConsent', on)} label={quote.textConsentLabel} description={config.consent.textingText} />
+          <p className={styles.policyLinks}>
+            <a href={config.consent.privacyUrl} target="_blank" rel="noopener noreferrer">
+              {quote.privacyLink}
+            </a>
+            <span aria-hidden="true">{' · '}</span>
+            <a href={config.consent.termsUrl} target="_blank" rel="noopener noreferrer">
+              {quote.termsLink}
+            </a>
+          </p>
+        </div>
         <Honeypot value={form.website} onChange={(v) => set('website', v)} />
         <Turnstile key={humanRound} siteKey={config.turnstileSiteKey} onToken={setHuman} />
         <Button type="submit" size="lg" className={styles.primary} busy={sending} disabled={config.turnstileSiteKey !== null && human === ''}>
@@ -497,7 +615,19 @@ function LeadForm({
   );
 }
 
-function Done({ config, firstName, booked, timeZone }: { config: PublicQuoteConfig; firstName: string; booked: { start: string; end: string } | null; timeZone: string }) {
+function Done({
+  config,
+  firstName,
+  booked,
+  slotTaken,
+  timeZone,
+}: {
+  config: PublicQuoteConfig;
+  firstName: string;
+  booked: { start: string; end: string } | null;
+  slotTaken: boolean;
+  timeZone: string;
+}) {
   const ref = useRef<HTMLHeadingElement>(null);
   useEffect(() => ref.current?.focus(), []);
   const when = booked ? visitTime(booked.start, timeZone, 'long') : null;
@@ -513,6 +643,7 @@ function Done({ config, firstName, booked, timeZone }: { config: PublicQuoteConf
       </h1>
       <p className={styles.text}>{when === null ? quote.doneBody : quote.doneBodyBooked}</p>
       {when !== null ? <p className={styles.text}>{quote.doneBooked(when)}</p> : null}
+      {when === null && slotTaken ? <p className={styles.text}>{quote.doneSlotTaken}</p> : null}
       {config.phone ? <p className={styles.small}>{quote.doneCall(formatPhone(config.phone))}</p> : null}
     </section>
   );

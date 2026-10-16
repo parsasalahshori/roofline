@@ -1,4 +1,4 @@
-import { instantEstimate } from '@roofline/shared';
+import { instantEstimate, DEFAULT_WINDOW_ORDER_SETTINGS } from '@roofline/shared';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
@@ -217,6 +217,7 @@ describe('E1 windows', () => {
       'GET /api/tier-templates': () => ({ body: { templates: DEFAULT_TIER_TEMPLATES.map((t) => ({ ...t, addOns: [...t.addOns], highlights: [...t.highlights] })) } }),
       'GET /api/estimator/settings': () => ({ body: settingsBody }),
       'GET /api/instant-quote/settings': () => ({ body: { enabled: false, slug: null, products: ['windows', 'roof'], rangePct: 12, dailyCap: 50, embedOrigins: [], booking: false, accentColor: null, pageUrl: null } }),
+      'GET /api/window-order-settings': () => ({ body: DEFAULT_WINDOW_ORDER_SETTINGS }),
       'GET /api/pricebook': () => ({ body: { prices: defaultPricebook, defaults: { wastePercent: 12, markupPercent: 25, taxPercent: 0, material: 'architectural' }, isExample: false } }),
     });
     renderApp('/settings/prices');

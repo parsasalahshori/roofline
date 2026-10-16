@@ -3,7 +3,10 @@ import { photoWindowKey, type PhotoWindow, type PhotoWindowInput, type WindowPho
 import { createPortal } from 'react-dom';
 import { Suspense, useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { measureWindows, windowPhotos as copy } from '../../../copy/measureWindows.ts';
-import { UPLOAD_MAX_BYTES, UPLOAD_TYPES, uploadSrc, uploadWindowPhoto } from './api.ts';
+import { uploadSrc, uploadWindowPhoto } from './api.ts';
+import { pendingStore, type PendingStore } from './pendingStore.ts';
+import { preparePhoto, type PhotoCodec } from './preparePhoto.ts';
+import { ApiError } from '../../../api/client.ts';
 import { PhotoMeasure, type WindowGroup } from './PhotoMeasure.tsx';
 import { usePhotoEngine } from './photoEngine.tsx';
 import { asMeasurement, inchesFraction, plusMinusFraction, type LocalSheetSize } from './photoModel.ts';
@@ -17,83 +20,181 @@ import flow from './PhotoWindows.module.css';
 export type UploadItem = {
   key: string;
   name: string;
+  /** The file as it uploads (converted from HEIC or made smaller where needed, once). */
   file: File;
+  /** Whether `file` is already the prepared one. */
+  prepared: boolean;
+  /** False when trying again cannot help (a format this phone's browser cannot open): only Remove is offered. */
+  retryable: boolean;
   /** A local copy to show at once (null where the browser cannot make one). */
   preview: string | null;
   progress: number;
-  status: 'uploading' | 'done' | 'error';
+  status: 'preparing' | 'uploading' | 'waiting' | 'done' | 'error';
   error: string | null;
   upload: WindowPhotoUpload | null;
 };
 
-function checkFile(file: File): string | null {
-  const type = file.type.toLowerCase();
-  const heic = /\.(heic|heif)$/i.test(file.name);
-  if (!(UPLOAD_TYPES as readonly string[]).includes(type) && !heic) return copy.wrongType;
-  if (file.size > UPLOAD_MAX_BYTES) return copy.tooBig;
-  return null;
-}
+const REFUSED = { type: copy.wrongType, heic: copy.heicUnsupported, 'too-big': copy.tooBig } as const;
 
-/** The photos taken on this screen, uploading one by one with their progress, plus those the server already has. */
-export function useWindowUploads(measurementId: string, serverUploads: readonly WindowPhotoUpload[] | undefined) {
+/** Network failures (no answer, a stall, the server busy) are tried again by themselves this many times in all. */
+const AUTO_TRIES = 3;
+const BACKOFF_MS = [2000, 6000];
+const offline = () => {
+  try {
+    return typeof navigator !== 'undefined' && navigator.onLine === false;
+  } catch {
+    // A wrapped navigator (a web view, a test) that cannot answer: assume online
+    return false;
+  }
+};
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * The photos taken on this screen, uploading one by one with their progress, plus those the server already has. A
+ * photo not yet on the server is kept on this device (pendingStore) and picked up again if the tab was closed; with
+ * no connection it waits and goes when the phone is back online.
+ */
+export function useWindowUploads(
+  measurementId: string,
+  serverUploads: readonly WindowPhotoUpload[] | undefined,
+  { codec, store = pendingStore, backoffMs = BACKOFF_MS }: { codec?: PhotoCodec; store?: PendingStore; backoffMs?: readonly number[] } = {},
+) {
   const [items, setItems] = useState<UploadItem[]>([]);
+  const itemsRef = useRef(items);
+  useEffect(() => {
+    itemsRef.current = items;
+  });
   const seq = useRef(0);
   const patch = (key: string, next: Partial<UploadItem>) => setItems((list) => list.map((it) => (it.key === key ? { ...it, ...next } : it)));
-  /** Sends one row's file; resolves with the upload, or rejects (the row then shows why). */
-  const send = (key: string, file: File): Promise<WindowPhotoUpload> => {
-    const refused = checkFile(file);
-    if (refused !== null) {
-      patch(key, { status: 'error', error: refused });
-      return Promise.reject(new Error(refused));
+  /** Sends one row's file (made ready first: HEIC to JPEG, over 12 MB smaller); resolves with the upload, or rejects. */
+  const send = async (key: string, original: File, prepared: boolean): Promise<WindowPhotoUpload> => {
+    let file = original;
+    if (!prepared) {
+      patch(key, { status: 'preparing', error: null, progress: 0 });
+      const p = await preparePhoto(original, codec);
+      if (!p.ok) {
+        patch(key, { status: 'error', error: REFUSED[p.reason], retryable: false });
+        void store.deleteUpload(key);
+        throw new Error(REFUSED[p.reason]);
+      }
+      file = p.file;
+      // The row keeps the ready file (a retry sends it again as it is) and shows it (a HEIC has no preview of its own)
+      const preview = p.converted !== 'none' && typeof URL.createObjectURL === 'function' ? URL.createObjectURL(file) : undefined;
+      setItems((list) =>
+        list.map((it) => {
+          if (it.key !== key) return it;
+          if (preview !== undefined && it.preview !== null) URL.revokeObjectURL?.(it.preview);
+          return { ...it, file, prepared: true, ...(preview !== undefined && { preview }) };
+        }),
+      );
+      if (p.converted !== 'none') void store.putUpload({ key, measurementId, name: original.name, type: file.type, blob: file, prepared: true, addedAt: Date.now() });
     }
-    patch(key, { status: 'uploading', error: null, progress: 0 });
-    return uploadWindowPhoto(measurementId, file, (share) => patch(key, { progress: share })).then(
-      (upload) => {
+    for (let attempt = 0; ; attempt++) {
+      if (offline()) {
+        patch(key, { status: 'waiting', error: null, progress: 0 });
+        throw new Error('offline');
+      }
+      patch(key, { status: 'uploading', error: null, progress: 0 });
+      try {
+        const upload = await uploadWindowPhoto(measurementId, file, (share) => patch(key, { progress: share }));
         patch(key, { status: 'done', progress: 1, upload });
+        void store.deleteUpload(key);
         return upload;
-      },
-      (error: unknown) => {
+      } catch (error: unknown) {
+        const status = error instanceof ApiError ? error.status : 0;
+        const transient = status === 0 || status === 408 || status === 429 || status >= 500;
+        // Lost the connection on the way: wait for it to come back rather than fail
+        if (transient && offline()) {
+          patch(key, { status: 'waiting', error: null, progress: 0 });
+          throw error instanceof Error ? error : new Error('offline');
+        }
+        if (transient && attempt + 1 < AUTO_TRIES) {
+          await sleep(backoffMs[attempt] ?? backoffMs.at(-1) ?? 0);
+          continue;
+        }
         const message = error instanceof Error && error.message !== '' ? error.message : copy.uploadFailed;
-        patch(key, { status: 'error', error: message });
-        throw new Error(message);
-      },
-    );
+        patch(key, { status: 'error', error: message, retryable: true });
+        throw new Error(message, { cause: error });
+      }
+    }
   };
-  const rowFor = (file: File): UploadItem => {
+  const rowFor = (file: File, key?: string, prepared = false): UploadItem => {
     seq.current += 1;
-    const preview = typeof URL.createObjectURL === 'function' ? URL.createObjectURL(file) : null;
-    return { key: `u${seq.current}`, name: file.name, file, preview, progress: 0, status: 'uploading', error: null, upload: null };
+    // A HEIC cannot be shown by most browsers: no broken thumbnail, its JPEG replaces it once converted
+    const heic = /\.(heic|heif)$/i.test(file.name) || /heic|heif/i.test(file.type);
+    const preview = !heic && typeof URL.createObjectURL === 'function' ? URL.createObjectURL(file) : null;
+    const id = key ?? `u${Date.now().toString(36)}-${seq.current}`;
+    return { key: id, name: file.name, file, prepared, retryable: true, preview, progress: 0, status: 'preparing', error: null, upload: null };
   };
+  /** Kept on this device until the server has it (the original; replaced by the ready JPEG when it was converted). */
+  const keep = (it: UploadItem) => void store.putUpload({ key: it.key, measurementId, name: it.name, type: it.file.type, blob: it.file, prepared: it.prepared, addedAt: Date.now() });
   const add = (files: FileList | File[]) => {
-    const made = [...files].map(rowFor);
+    const made = [...files].map((f) => rowFor(f));
     setItems((current) => [...current, ...made]);
+    made.forEach(keep);
     // After the rows exist, so each one's progress has somewhere to go
-    queueMicrotask(() => made.forEach((it) => void send(it.key, it.file).catch(() => undefined)));
+    queueMicrotask(() => made.forEach((it) => void send(it.key, it.file, false).catch(() => undefined)));
   };
   /** One file sent now (the picture AR keeps, or the photo taken for it), listed like the others. */
   const uploadFile = (file: File): Promise<WindowPhotoUpload> => {
     const it = rowFor(file);
     setItems((current) => [...current, it]);
-    return send(it.key, it.file);
+    keep(it);
+    return send(it.key, it.file, false);
   };
   const retry = (key: string) => {
-    const it = items.find((x) => x.key === key);
-    if (it) void send(key, it.file).catch(() => undefined);
+    const it = itemsRef.current.find((x) => x.key === key);
+    if (it && it.retryable) void send(key, it.file, it.prepared).catch(() => undefined);
   };
-  const remove = (key: string) => setItems((list) => list.filter((x) => x.key !== key));
+  const remove = (key: string) => {
+    const it = itemsRef.current.find((x) => x.key === key);
+    if (it?.preview) URL.revokeObjectURL?.(it.preview);
+    void store.deleteUpload(key);
+    setItems((list) => list.filter((x) => x.key !== key));
+  };
+  // Photos left from a closed tab: listed again and sent
+  useEffect(() => {
+    if (measurementId === '') return;
+    let live = true;
+    void store.listUploads(measurementId).then((left) => {
+      if (!live || left.length === 0) return;
+      const known = new Set(itemsRef.current.map((it) => it.key));
+      const rows = left
+        .filter((u) => !known.has(u.key))
+        .map((u) => rowFor(new File([u.blob], u.name, { type: u.type || u.blob.type, lastModified: u.addedAt }), u.key, u.prepared));
+      if (rows.length === 0) return;
+      setItems((current) => [...current, ...rows]);
+      queueMicrotask(() => rows.forEach((it) => void send(it.key, it.file, it.prepared).catch(() => undefined)));
+    });
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per measurement
+  }, [measurementId]);
+  // Back online: the waiting photos go
+  useEffect(() => {
+    const resume = () => {
+      for (const it of itemsRef.current) if (it.status === 'waiting') void send(it.key, it.file, it.prepared).catch(() => undefined);
+    };
+    window.addEventListener('online', resume);
+    return () => window.removeEventListener('online', resume);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- send reads the latest rows through itemsRef
+  }, [measurementId]);
+  // Leaving the screen frees every local preview (the rows as they are then, not as they were at first)
   useEffect(
     () => () => {
-      for (const it of items) if (it.preview !== null) URL.revokeObjectURL?.(it.preview);
+      for (const it of itemsRef.current) if (it.preview !== null) URL.revokeObjectURL?.(it.preview);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on leaving the screen
     [],
   );
+  /** Photos not on the server yet (getting ready, uploading, waiting for a connection, or failed and kept). */
+  const waiting = items.filter((it) => it.status !== 'done' && !(it.status === 'error' && !it.retryable)).length;
   // Every upload the screen knows: the server's, then this session's that finished
   const known = new Map<string, WindowPhotoUpload>();
   for (const u of serverUploads ?? []) known.set(u.id, u);
   for (const it of items) if (it.upload !== null) known.set(it.upload.id, it.upload);
   const srcFor = (uploadId: string) => items.find((it) => it.upload?.id === uploadId)?.preview ?? uploadSrc(measurementId, uploadId);
-  return { items, add, uploadFile, retry, remove, uploads: [...known.values()], srcFor };
+  return { items, add, uploadFile, retry, remove, uploads: [...known.values()], srcFor, waiting };
 }
 
 export type Uploads = ReturnType<typeof useWindowUploads>;
@@ -307,7 +408,13 @@ function UploadList({ uploads, inputs, go }: { uploads: Uploads; inputs: readonl
     </li>
   );
   return (
-    <ul className={flow.uploads}>
+    <>
+      {uploads.waiting > 0 ? (
+        <p className={flow.waiting} role="status" data-uploads-waiting={uploads.waiting}>
+          {copy.photosWaiting(uploads.waiting)}
+        </p>
+      ) : null}
+      <ul className={flow.uploads}>
       {older.map((u, index) => {
         const n = index + 1;
         const count = measuredOn(u.id);
@@ -327,7 +434,13 @@ function UploadList({ uploads, inputs, go }: { uploads: Uploads; inputs: readonl
           it.key,
           it.preview ?? (it.upload !== null ? uploads.srcFor(it.upload.id) : null),
           copy.photoNumber(n),
-          it.status === 'uploading' ? (
+          it.status === 'preparing' ? (
+            <span role="status">{copy.preparing}</span>
+          ) : it.status === 'waiting' ? (
+            <span role="status" data-waiting="">
+              {copy.waitingOffline}
+            </span>
+          ) : it.status === 'uploading' ? (
             <ProgressBar value={Math.round(it.progress * 100)} max={100} label={copy.uploading(it.name)} />
           ) : it.status === 'error' ? (
             <div role="alert" className={flow.uploadError}>
@@ -342,9 +455,11 @@ function UploadList({ uploads, inputs, go }: { uploads: Uploads; inputs: readonl
             <Button onClick={() => go({ step: 'measure', uploadId: it.upload!.id, windowId: null })}>{copy.measure}</Button>
           ) : it.status === 'error' ? (
             <>
-              <Button variant="ghost" onClick={() => uploads.retry(it.key)}>
-                {copy.retry}
-              </Button>
+              {it.retryable ? (
+                <Button variant="ghost" onClick={() => uploads.retry(it.key)}>
+                  {copy.retry}
+                </Button>
+              ) : null}
               <Button variant="ghost" onClick={() => uploads.remove(it.key)}>
                 {copy.remove}
               </Button>
@@ -353,7 +468,8 @@ function UploadList({ uploads, inputs, go }: { uploads: Uploads; inputs: readonl
           it.status,
         );
       })}
-    </ul>
+      </ul>
+    </>
   );
 }
 
@@ -393,6 +509,7 @@ export function PhotoWindowsList({
   excluded,
   coverAll,
   srcFor,
+  waiting = 0,
   onOpen,
   onToggle,
   onDelete,
@@ -403,6 +520,9 @@ export function PhotoWindowsList({
   excluded: ReadonlySet<string>;
   coverAll: boolean;
   srcFor: (uploadId: string) => string;
+  /** Photos taken on this device and not on the server yet (they upload by themselves). */
+  waiting?: number;
+  /** Opens a window on its photo (a room-scan window with no photo has none to open: the caller ignores it). */
   onOpen: (w: PhotoWindowInput) => void;
   /** Leave a window (all its photos) out of the quote, or put it back. */
   onToggle: (ids: string[]) => void;
@@ -412,16 +532,25 @@ export function PhotoWindowsList({
   const groups = windowGroups(inputs);
   const several = groups.some((g) => inputs.filter((w) => photoWindowKey(w) === g.key).length > 1);
   const engine = usePhotoEngine(several);
-  if (inputs.length === 0) return null;
+  const waitingNote =
+    waiting > 0 ? (
+      <p className={flow.waiting} role="status" data-uploads-waiting={waiting}>
+        {copy.photosWaiting(waiting)}
+      </p>
+    ) : null;
+  if (inputs.length === 0) return waitingNote;
   return (
     <section className={flow.list} aria-labelledby="photo-windows-list">
       <h3 id="photo-windows-list" className={flow.listTitle}>
         {copy.listTitle}
       </h3>
+      {waitingNote}
       <ul className={flow.rows}>
         {groups.map((g) => {
           const members = inputs.filter((w) => photoWindowKey(w) === g.key);
           const first = members[0]!;
+          // A room-scan window from the iPhone may have no photo: the first member that has one is the thumbnail
+          const withPhoto = members.find((w) => w.uploadId !== undefined);
           const ids = members.map((w) => w.id);
           const sized = members.flatMap((m) => windows.filter((w) => w.id === m.id));
           const shown = groupSize(sized, engine.cv === null ? null : (ms) => engine.cv!.combine(ms));
@@ -429,8 +558,8 @@ export function PhotoWindowsList({
           const out = ids.every((id) => excluded.has(id));
           return (
             <li key={g.key} className={flow.row} data-photo-window={first.id} data-photos={members.length} data-out={out ? 'true' : undefined}>
-              <Button variant="ghost" className={flow.rowOpen} aria-label={copy.rowLabel(g.name, size)} onClick={() => onOpen(first)}>
-                <img className={flow.rowThumb} src={srcFor(first.uploadId)} alt="" />
+              <Button variant="ghost" className={flow.rowOpen} aria-label={copy.rowLabel(g.name, size)} onClick={() => onOpen(withPhoto ?? first)}>
+                {withPhoto?.uploadId !== undefined ? <img className={flow.rowThumb} src={srcFor(withPhoto.uploadId)} alt="" /> : <span className={flow.rowThumb} aria-hidden="true" />}
                 <span className={flow.rowText}>
                   <span className={flow.rowName}>
                     {g.name}
