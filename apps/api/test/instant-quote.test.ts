@@ -198,7 +198,7 @@ describe('POST /api/public/quote/:slug/estimate', () => {
     const third = await estimated();
     expect(third.quoteId).not.toBe(second.quoteId);
     const settings = await agent.get('/api/instant-quote/settings');
-    const body = { ...(settings.body as Record<string, unknown>), rangePct: 15 };
+    const body: Record<string, unknown> = { ...(settings.body as Record<string, unknown>), rangePct: 15 };
     delete body.pageUrl;
     expect((await agent.put('/api/instant-quote/settings').send(body)).status).toBe(200);
     const fourth = await estimated();
