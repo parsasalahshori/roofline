@@ -1,5 +1,17 @@
-/* Sizing a photographed window: phone-first, the photo as large as the screen allows, the controls under it. */
+/*
+ * Sizing a photographed window: phone-first, the photo as large as the screen allows, the controls under it. The photo
+ * area and what is drawn on it (corners, loupe, outlines, letters) sit on a photograph, so their few marks are literal
+ * on purpose, in the first rule; every other colour is a token. Rules on a kit button name [data-variant] so they
+ * outrank the kit's variant rules.
+ */
 .measure {
+  /* literal: drawn over a photograph, the same in both themes */
+  --over-backdrop: #1d2329;
+  --over-white: #fff;
+  --over-ink: #151c22;
+  --over-black: #000;
+  --over-glow: rgb(255 255 255 / 0.18);
+  --over-shadow: rgb(0 0 0 / 0.45);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -14,8 +26,8 @@
   grid-auto-flow: column;
   gap: 4px;
   padding: 4px;
-  border-radius: 12px;
-  background: var(--surface-2);
+  border-radius: var(--r-3);
+  background: var(--sunken);
 }
 
 .method {
@@ -23,16 +35,17 @@
   gap: 0;
   min-height: 44px;
   padding: 4px 6px;
-  border-radius: 9px;
+  border-radius: var(--r-2);
   color: var(--ink-3);
   font-size: 14px;
   font-weight: 600;
 }
 
-.method[data-selected="true"] {
-  background: var(--surface);
+.methods .method[data-selected="true"][data-variant],
+.methods .method[data-selected="true"][data-variant]:hover {
+  background: var(--raised);
   color: var(--ink);
-  box-shadow: 0 1px 3px rgba(21, 28, 34, 0.15);
+  box-shadow: var(--e-1);
 }
 
 .recommended {
@@ -67,8 +80,8 @@
   place-items: center;
   min-height: 220px;
   padding: 12px;
-  border-radius: 12px;
-  background: #1d2329;
+  border-radius: var(--r-3);
+  background: var(--over-backdrop);
   container-type: size;
 }
 
@@ -120,13 +133,15 @@
 }
 
 .window {
-  fill: rgba(255, 194, 26, 0.14);
+  fill: var(--tape);
+  fill-opacity: 0.14;
   stroke: var(--tape);
   stroke-width: 2.5;
 }
 
 .paper {
-  fill: rgba(47, 111, 222, 0.18);
+  fill: var(--info);
+  fill-opacity: 0.18;
   stroke: var(--info);
   stroke-width: 2.5;
 }
@@ -149,7 +164,7 @@
 
 .handle:hover,
 .handle:active {
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--over-glow);
 }
 
 .dot {
@@ -158,7 +173,7 @@
   border: 3px solid var(--tape);
   border-radius: 50%;
   background: var(--ink);
-  box-shadow: 0 0 0 1.5px #fff;
+  box-shadow: 0 0 0 1.5px var(--over-white);
 }
 
 .handle[data-which="paper"] {
@@ -170,7 +185,7 @@
 }
 
 .handle:focus-visible .dot {
-  outline: 2px solid #fff;
+  outline: 2px solid var(--over-white);
   outline-offset: 3px;
 }
 
@@ -181,11 +196,11 @@
   top: 8px;
   width: 112px;
   height: 112px;
-  border: 3px solid #fff;
+  border: 3px solid var(--over-white);
   border-radius: 50%;
-  background-color: #000;
+  background-color: var(--over-black);
   background-repeat: no-repeat;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 4px 16px var(--over-shadow);
   pointer-events: none;
 }
 
@@ -231,24 +246,24 @@
   align-items: baseline;
   gap: 4px 10px;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: var(--r-3);
   background: var(--tape-tint);
+  color: var(--tape-ink);
   font-size: 14px;
 }
 
 .sizeLabel {
-  color: var(--ink-3);
+  color: var(--tape-ink);
   font-size: 12px;
 }
 
 .sizeValue {
-  font-size: 20px;
-  font-variant-numeric: tabular-nums;
+  font: 600 20px / 1.2 var(--f-mono);
 }
 
 .sizeSource {
   margin-left: auto;
-  color: var(--ink-3);
+  color: var(--tape-ink);
   font-size: 12px;
 }
 
@@ -294,7 +309,7 @@
   gap: 4px 10px;
   margin: 0;
   padding: 8px 12px;
-  border-radius: 10px;
+  border-radius: var(--r-3);
   background: var(--surface-2);
   font-size: 14px;
 }
@@ -319,9 +334,10 @@
   flex-direction: column;
   gap: 6px;
   padding: 10px 12px;
-  border: 1px solid var(--bad);
-  border-radius: 10px;
+  border-radius: var(--r-3);
   background: var(--bad-tint);
+  box-shadow: inset 0 0 0 1px var(--bad);
+  color: var(--bad-text);
   font-size: 14px;
   line-height: 1.4;
 }
@@ -339,7 +355,8 @@
 }
 
 .sheet {
-  fill: rgba(31, 168, 90, 0.16);
+  fill: var(--ok);
+  fill-opacity: 0.16;
   stroke: var(--ok);
   stroke-width: 2.5;
 }
@@ -366,7 +383,7 @@
   padding: 3px 8px;
   border-radius: 999px;
   background: var(--bad);
-  color: #fff;
+  color: var(--bad-ink);
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
@@ -410,22 +427,23 @@
   gap: 10px;
   min-height: 48px;
   padding: 6px 12px;
-  border: 1px solid var(--line, #dde2e6);
-  border-radius: 10px;
+  border: 1px solid var(--line-ctl);
+  border-radius: var(--r-3);
   background: var(--surface);
   cursor: pointer;
 }
 
 .target[data-checked="true"] {
-  border-color: var(--tape-ink);
-  box-shadow: inset 0 0 0 1px var(--tape-ink);
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  box-shadow: inset 0 0 0 1px var(--brand);
 }
 
 .target input {
   width: 20px;
   height: 20px;
   margin: 0;
-  accent-color: var(--tape-ink);
+  accent-color: var(--brand);
 }
 
 .target:focus-within {
@@ -478,6 +496,7 @@
 
 .size[data-retake="true"] {
   background: var(--bad-tint);
+  color: var(--bad-text);
 }
 
 .combined {
@@ -487,7 +506,7 @@
   align-items: baseline;
   gap: 2px 8px;
   padding-top: 6px;
-  border-top: 1px solid rgba(21, 28, 34, 0.12);
+  border-top: 1px solid var(--tape-line);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -512,9 +531,9 @@
   place-items: center;
   width: 22px;
   height: 22px;
-  border: 2px solid #fff;
+  border: 2px solid var(--over-white);
   border-radius: 50%;
-  color: #151c22;
+  color: var(--over-ink);
   font-size: 12px;
   font-weight: 800;
   transform: translate(-50%, -50%);
@@ -535,7 +554,7 @@
 }
 
 .candidateTag[data-picked="true"] {
-  box-shadow: 0 0 0 2px #151c22;
+  box-shadow: 0 0 0 2px var(--over-ink);
 }
 
 .pick {
@@ -545,9 +564,9 @@
   gap: 6px;
   margin: 0;
   padding: 10px 12px;
-  border: 2px solid var(--tape-ink);
-  border-radius: 12px;
+  border-radius: var(--r-3);
   background: var(--surface);
+  box-shadow: inset 0 0 0 2px var(--brand);
 }
 
 .pickOption {
@@ -556,14 +575,15 @@
   gap: 10px;
   min-height: 72px;
   padding: 4px 8px;
-  border: 1px solid var(--line, #dde2e6);
-  border-radius: 10px;
+  border: 1px solid var(--line-ctl);
+  border-radius: var(--r-3);
   cursor: pointer;
 }
 
 .pickOption[data-checked="true"] {
-  border-color: var(--tape-ink);
-  box-shadow: inset 0 0 0 1px var(--tape-ink);
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  box-shadow: inset 0 0 0 1px var(--brand);
 }
 
 .pickOption:focus-within {
@@ -575,7 +595,7 @@
   width: 20px;
   height: 20px;
   margin: 0;
-  accent-color: var(--tape-ink);
+  accent-color: var(--brand);
 }
 
 .pickLetter {
@@ -585,7 +605,7 @@
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  color: #151c22;
+  color: var(--over-ink);
   font-weight: 800;
 }
 
@@ -595,7 +615,7 @@
   height: 64px;
   border: 3px solid;
   border-radius: 50%;
-  background-color: #000;
+  background-color: var(--over-black);
   background-repeat: no-repeat;
 }
 

@@ -1,5 +1,10 @@
-/* "Photograph windows": a full-screen sheet on a phone, a large one on a desktop. */
+/*
+ * "Photograph windows": a full-screen sheet on a phone, a large one on a desktop. The dimming round the sheet is a scrim
+ * over the whole page, so its colour is literal on purpose; every other colour is a token.
+ */
 .overlay {
+  /* literal: a scrim over the page, dark in both themes */
+  --over-scrim: rgb(21 28 34 / 0.45);
   position: fixed;
   z-index: 1000;
   inset: 0;
@@ -13,8 +18,8 @@
 @media (min-width: 900px) {
   .overlay {
     inset: 32px max(32px, calc(50% - 420px));
-    border-radius: 16px;
-    box-shadow: 0 0 0 100vmax rgba(21, 28, 34, 0.45), var(--e-2);
+    border-radius: var(--r-4);
+    box-shadow: 0 0 0 100vmax var(--over-scrim), var(--e-2);
   }
 }
 
@@ -25,7 +30,7 @@
   gap: 8px;
   min-height: 56px;
   padding: 0 8px 0 16px;
-  border-bottom: 1px solid var(--line, #dde2e6);
+  border-bottom: 1px solid var(--line);
 }
 
 .title {
@@ -66,6 +71,7 @@
   padding: 12px 14px;
   border-radius: 12px;
   background: var(--tape-tint);
+  color: var(--tape-ink);
   font-size: 14px;
   line-height: 1.45;
 }
@@ -110,7 +116,7 @@
   padding: 8px;
   border-radius: 12px;
   background: var(--surface);
-  box-shadow: 0 0 0 1px var(--line, #dde2e6);
+  box-shadow: var(--e-1);
 }
 
 .thumb {
@@ -163,9 +169,10 @@
   margin: 0;
   font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-3);
+  font-family: var(--f-mono);
 }
 
 .rows {
@@ -183,7 +190,7 @@
   align-items: center;
   gap: 0 8px;
   padding: 4px 0;
-  border-bottom: 1px solid var(--line, #dde2e6);
+  border-bottom: 1px solid var(--line);
 }
 
 /* Name and size on the first line; the quote checkbox and Remove under it, so nothing is squeezed on a phone */
@@ -258,7 +265,7 @@
   flex-direction: column;
   gap: 8px;
   padding: 12px 14px;
-  border: 1px solid var(--line, #dde2e6);
+  border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
 }
@@ -282,7 +289,7 @@
 .printButton,
 .another {
   min-height: 48px;
-  border: 1px solid var(--line, #dde2e6);
+  border: 1px solid var(--line);
   font-weight: 600;
 }
 
