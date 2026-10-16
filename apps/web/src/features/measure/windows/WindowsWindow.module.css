@@ -756,37 +756,47 @@
   touch-action: none;
 }
 
+.photoArea[data-fit="zoom"] {
+  min-height: min(380px, 56vh);
+}
+
+/* Phones: the card under the photo needs the room; the photo zooms instead */
+@media (max-width: 899.98px) {
+  .photoArea[data-fit="zoom"] {
+    min-height: 220px;
+  }
+
+  /* While adjusting on a phone the chips over the photo give their room to the photo and the panels (the same facts
+     are in the panels: the ruler, the front wall, the notes) */
+  .stage[data-editing="true"] .stageTop {
+    display: none;
+  }
+}
+
+/* Under the photo in Adjust: zoom out, the zoom, zoom in, zoom to the wall, the whole photo */
 .zoomBar {
-  position: absolute;
-  z-index: 6;
-  right: 8px;
-  bottom: 8px;
   display: flex;
+  flex: 0 0 auto;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
-  max-width: calc(100% - 16px);
-  padding: 4px;
-  border-radius: 10px;
-  background: rgba(21, 28, 34, 0.78);
+  gap: 2px;
   color: #fff;
 }
 
-.zoomButton,
-.zoomText {
+.zoomBar button[data-variant="ghost"] {
   min-width: 44px;
   min-height: 44px;
+  padding: 0 10px;
   color: #fff;
+  font-size: 14px;
 }
 
-.zoomText {
-  padding: 0 10px;
-  font-size: 13px;
+.zoomBar button[data-variant="ghost"]:disabled {
+  color: rgba(255, 255, 255, 0.45);
 }
 
 .zoomValue {
-  min-width: 44px;
+  min-width: 48px;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
   text-align: center;

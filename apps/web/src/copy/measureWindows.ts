@@ -63,7 +63,7 @@ export const measureWindows = {
   zoomLabel: 'Zoom',
   zoomIn: 'Zoom in',
   zoomOut: 'Zoom out',
-  zoomWall: 'Zoom to the wall',
+  zoomWall: 'Zoom to wall',
   zoomWhole: 'Whole photo',
   zoomHint: 'Pinch, scroll or use + and \u2212 to zoom. Drag the photo to move it, or with two fingers while marking.',
 

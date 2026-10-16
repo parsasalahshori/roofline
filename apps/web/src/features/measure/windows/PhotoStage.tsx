@@ -375,143 +375,145 @@ export function PhotoStage({
   const zoomPct = Math.round(zoom.z * 100);
 
   return (
-    <div ref={areaRef} className={styles.photoArea} data-fit={fit} data-zoom={canEdit ? String(Math.round(zoom.z * 100) / 100) : undefined}>
-      <div
-        ref={frameRef}
-        className={styles.photoFrame}
-        style={frameStyle}
-        data-marking={drawing_ ? 'true' : 'false'}
-        data-ruler-marking={rulerMarking ? 'true' : undefined}
-        data-adjusting={canEdit ? 'true' : undefined}
-        data-dragging={drag !== null ? drag.kind : undefined}
-        role="group"
-        aria-label={copy.photoLabel}
-        onPointerDown={onSurfaceDown}
-        onPointerMove={onMove}
-        onPointerUp={onUp}
-        onPointerCancel={onCancel}
-      >
-        {failed ? (
-          <p className={styles.photoFailed}>{copy.photoFailed}</p>
-        ) : (
-          <img className={styles.photo} src={src} alt={copy.photoAlt(address)} draggable={false} onError={() => setFailed(true)} />
-        )}
-        {shownCorners !== null && p > 0.3 ? <WallOverlay corners={shownCorners} drawn={scan.phase === 'done' ? 1 : wallDrawn(p)} /> : null}
-        {scanning ? <ScanOverlay box={bracketBox} sweeping={p < 0.55} /> : null}
-        {ruler !== null && scan.phase === 'done' && !(drag?.kind === 'draw' && drag.ruler) ? (
-          <div
-            className={styles.rulerBox}
-            style={{ left: pct(ruler.box.x), top: pct(ruler.box.y), width: pct(ruler.box.w), height: pct(ruler.box.h) }}
-            data-ruler={ruler.kind}
-            role="img"
-            aria-label={rulerLabel ?? undefined}
-          >
-            <span className={styles.rulerLabel} aria-hidden="true">
-              {rulerLabel}
-            </span>
-          </div>
-        ) : null}
-        {windows.map((w, i) => {
-          // Before the scan nothing is measured yet; during it the windows come in one by one
-          if (scan.phase === 'idle' || (scanning && p < windowShownAt(i, n))) return null;
-          const box = drag?.kind === 'box' && drag.id === w.id ? drag.box : w.box;
-          const number = numberOf(w.id);
-          const out = excluded.has(w.id);
-          const size = w.sized !== null ? copy.size(w.sized.widthIn, w.sized.heightIn) : copy.sizing;
-          const showSize = !scanning || p >= sizeShownAt(i, n);
-          const selected = marking && edit.selected === w.id;
-          const fresh = scanning && p < windowShownAt(i, n) + 0.06;
-          return (
+    <>
+      <div ref={areaRef} className={styles.photoArea} data-fit={fit} data-zoom={canEdit ? String(Math.round(zoom.z * 100) / 100) : undefined}>
+        <div
+          ref={frameRef}
+          className={styles.photoFrame}
+          style={frameStyle}
+          data-marking={drawing_ ? 'true' : 'false'}
+          data-ruler-marking={rulerMarking ? 'true' : undefined}
+          data-adjusting={canEdit ? 'true' : undefined}
+          data-dragging={drag !== null ? drag.kind : undefined}
+          role="group"
+          aria-label={copy.photoLabel}
+          onPointerDown={onSurfaceDown}
+          onPointerMove={onMove}
+          onPointerUp={onUp}
+          onPointerCancel={onCancel}
+        >
+          {failed ? (
+            <p className={styles.photoFailed}>{copy.photoFailed}</p>
+          ) : (
+            <img className={styles.photo} src={src} alt={copy.photoAlt(address)} draggable={false} onError={() => setFailed(true)} />
+          )}
+          {shownCorners !== null && p > 0.3 ? <WallOverlay corners={shownCorners} drawn={scan.phase === 'done' ? 1 : wallDrawn(p)} /> : null}
+          {scanning ? <ScanOverlay box={bracketBox} sweeping={p < 0.55} /> : null}
+          {ruler !== null && scan.phase === 'done' && !(drag?.kind === 'draw' && drag.ruler) ? (
             <div
-              key={w.id}
-              className={styles.box}
-              style={{ left: pct(box.x), top: pct(box.y), width: pct(box.w), height: pct(box.h) }}
-              data-window={w.id}
-              data-source={w.source}
-              data-out={out ? 'true' : undefined}
-              data-selected={selected ? 'true' : undefined}
-              data-fresh={fresh ? 'true' : undefined}
+              className={styles.rulerBox}
+              style={{ left: pct(ruler.box.x), top: pct(ruler.box.y), width: pct(ruler.box.w), height: pct(ruler.box.h) }}
+              data-ruler={ruler.kind}
+              role="img"
+              aria-label={rulerLabel ?? undefined}
             >
-              <Button
-                variant="ghost"
-                className={styles.boxButton}
-                aria-label={marking && w.source === 'marked' ? copy.markedLabel(number, size) : copy.windowLabel(number, size, !out)}
-                aria-pressed={marking ? selected : !out}
-                disabled={scanning || edit.locked || rulerMarking || (marking && w.source !== 'marked')}
-                onPointerDown={onBoxDown(w, 'move')}
-                onKeyDown={onBoxKey(w)}
-                onClick={() => {
-                  if (marking) edit.select(w.id);
-                  else edit.toggle(w.id);
-                }}
-              />
-              {showSize ? (
-                <span className={styles.boxLabel} aria-hidden="true">
-                  {out ? copy.leftOut : size}
-                </span>
-              ) : null}
-              {w.source === 'detector' && (!scanning || p >= sizeShownAt(i, n)) ? (
-                <span className={styles.autoChip} aria-hidden="true">
-                  {copy.autoFound}
-                </span>
-              ) : null}
-              {selected
-                ? RESIZE_HANDLES.map((h) => (
-                    <span key={h} className={styles.handle} data-handle={h} aria-hidden="true" onPointerDown={onBoxDown(w, h)} />
-                  ))
-                : null}
-              {selected ? (
-                <Button variant="ghost" className={styles.removeBox} aria-label={copy.removeLabel(number)} onPointerDown={(e) => e.stopPropagation()} onClick={() => edit.remove(w.id)}>
-                  {copy.remove}
-                </Button>
-              ) : null}
+              <span className={styles.rulerLabel} aria-hidden="true">
+                {rulerLabel}
+              </span>
             </div>
-          );
-        })}
-        {drawing !== null ? (
-          <div
-            className={styles.drawing}
-            data-ruler={drag?.kind === 'draw' && drag.ruler ? 'true' : undefined}
-            style={{ left: pct(drawing.x), top: pct(drawing.y), width: pct(drawing.w), height: pct(drawing.h) }}
-            aria-hidden="true"
-          />
-        ) : null}
-        {canEdit && shownCorners !== null
-          ? shownCorners.map((c, i) => (
-              <Button
-                key={CORNER_KEYS[i]}
-                variant="ghost"
-                className={styles.corner}
-                style={{ left: pct(c[0]), top: pct(c[1]) }}
-                data-wall-corner={CORNER_KEYS[i]}
-                aria-label={copy.wallCornerLabel(copy.wallCorner[CORNER_KEYS[i]!])}
-                onPointerDown={onCornerDown(i)}
-                onKeyDown={onCornerKey(i)}
+          ) : null}
+          {windows.map((w, i) => {
+            // Before the scan nothing is measured yet; during it the windows come in one by one
+            if (scan.phase === 'idle' || (scanning && p < windowShownAt(i, n))) return null;
+            const box = drag?.kind === 'box' && drag.id === w.id ? drag.box : w.box;
+            const number = numberOf(w.id);
+            const out = excluded.has(w.id);
+            const size = w.sized !== null ? copy.size(w.sized.widthIn, w.sized.heightIn) : copy.sizing;
+            const showSize = !scanning || p >= sizeShownAt(i, n);
+            const selected = marking && edit.selected === w.id;
+            const fresh = scanning && p < windowShownAt(i, n) + 0.06;
+            return (
+              <div
+                key={w.id}
+                className={styles.box}
+                style={{ left: pct(box.x), top: pct(box.y), width: pct(box.w), height: pct(box.h) }}
+                data-window={w.id}
+                data-source={w.source}
+                data-out={out ? 'true' : undefined}
+                data-selected={selected ? 'true' : undefined}
+                data-fresh={fresh ? 'true' : undefined}
               >
-                <span className={styles.cornerDot} aria-hidden="true" />
-              </Button>
-            ))
-          : null}
+                <Button
+                  variant="ghost"
+                  className={styles.boxButton}
+                  aria-label={marking && w.source === 'marked' ? copy.markedLabel(number, size) : copy.windowLabel(number, size, !out)}
+                  aria-pressed={marking ? selected : !out}
+                  disabled={scanning || edit.locked || rulerMarking || (marking && w.source !== 'marked')}
+                  onPointerDown={onBoxDown(w, 'move')}
+                  onKeyDown={onBoxKey(w)}
+                  onClick={() => {
+                    if (marking) edit.select(w.id);
+                    else edit.toggle(w.id);
+                  }}
+                />
+                {showSize ? (
+                  <span className={styles.boxLabel} aria-hidden="true">
+                    {out ? copy.leftOut : size}
+                  </span>
+                ) : null}
+                {w.source === 'detector' && (!scanning || p >= sizeShownAt(i, n)) ? (
+                  <span className={styles.autoChip} aria-hidden="true">
+                    {copy.autoFound}
+                  </span>
+                ) : null}
+                {selected
+                  ? RESIZE_HANDLES.map((h) => (
+                      <span key={h} className={styles.handle} data-handle={h} aria-hidden="true" onPointerDown={onBoxDown(w, h)} />
+                    ))
+                  : null}
+                {selected ? (
+                  <Button variant="ghost" className={styles.removeBox} aria-label={copy.removeLabel(number)} onPointerDown={(e) => e.stopPropagation()} onClick={() => edit.remove(w.id)}>
+                    {copy.remove}
+                  </Button>
+                ) : null}
+              </div>
+            );
+          })}
+          {drawing !== null ? (
+            <div
+              className={styles.drawing}
+              data-ruler={drag?.kind === 'draw' && drag.ruler ? 'true' : undefined}
+              style={{ left: pct(drawing.x), top: pct(drawing.y), width: pct(drawing.w), height: pct(drawing.h) }}
+              aria-hidden="true"
+            />
+          ) : null}
+          {canEdit && shownCorners !== null
+            ? shownCorners.map((c, i) => (
+                <Button
+                  key={CORNER_KEYS[i]}
+                  variant="ghost"
+                  className={styles.corner}
+                  style={{ left: pct(c[0]), top: pct(c[1]) }}
+                  data-wall-corner={CORNER_KEYS[i]}
+                  aria-label={copy.wallCornerLabel(copy.wallCorner[CORNER_KEYS[i]!])}
+                  onPointerDown={onCornerDown(i)}
+                  onKeyDown={onCornerKey(i)}
+                >
+                  <span className={styles.cornerDot} aria-hidden="true" />
+                </Button>
+              ))
+            : null}
+        </div>
       </div>
       {canEdit ? (
         <div className={styles.zoomBar} role="toolbar" aria-label={copy.zoomLabel}>
-          <Button variant="ghost" className={styles.zoomButton} aria-label={copy.zoomOut} disabled={zoom.z <= 1} onClick={() => zoomBy(1 / ZOOM_STEP)}>
+          <Button variant="ghost" aria-label={copy.zoomOut} disabled={zoom.z <= 1} onClick={() => zoomBy(1 / ZOOM_STEP)}>
             {copy.minus}
           </Button>
           <output className={styles.zoomValue} aria-live="polite">
             {`${zoomPct}%`}
           </output>
-          <Button variant="ghost" className={styles.zoomButton} aria-label={copy.zoomIn} onClick={() => zoomBy(ZOOM_STEP)}>
+          <Button variant="ghost" aria-label={copy.zoomIn} onClick={() => zoomBy(ZOOM_STEP)}>
             {copy.plus}
           </Button>
-          <Button variant="ghost" className={styles.zoomText} onClick={() => setZoom(sized ? zoomTo(area.w, area.h, ratio, focus) : zoom)}>
+          <Button variant="ghost" onClick={() => setZoom(sized ? zoomTo(area.w, area.h, ratio, focus) : zoom)}>
             {copy.zoomWall}
           </Button>
-          <Button variant="ghost" className={styles.zoomText} disabled={zoom.z <= 1} onClick={() => setZoom(WHOLE_PHOTO)}>
+          <Button variant="ghost" disabled={zoom.z <= 1} onClick={() => setZoom(WHOLE_PHOTO)}>
             {copy.zoomWhole}
           </Button>
         </div>
       ) : null}
-    </div>
+    </>
   );
 }
