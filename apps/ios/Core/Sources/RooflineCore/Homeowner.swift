@@ -85,30 +85,81 @@ public struct HomeownerTrust: Codable, Equatable, Sendable {
     }
 }
 
+/// The consent words the contact screen shows verbatim next to its two boxes, and the version the server expects back.
+public struct HomeownerConsent: Codable, Equatable, Sendable {
+    public var version: String
+    /// The required box: calls and email about this request. It names the button "Send my request".
+    public var text: String
+    /// The optional box: texts.
+    public var textingText: String
+
+    public init(version: String, text: String, textingText: String) {
+        self.version = version
+        self.text = text
+        self.textingText = textingText
+    }
+}
+
+public struct HomeownerLimits: Codable, Equatable, Sendable {
+    public var maxWindows: Int
+    public var maxPhotoBytes: Int
+    public var maxRoomLength: Int
+    public var maxLabelLength: Int
+    public var tokenDays: Int
+
+    public init(maxWindows: Int = 60, maxPhotoBytes: Int = 12_582_912, maxRoomLength: Int = 40, maxLabelLength: Int = 80, tokenDays: Int = 60) {
+        self.maxWindows = maxWindows
+        self.maxPhotoBytes = maxPhotoBytes
+        self.maxRoomLength = maxRoomLength
+        self.maxLabelLength = maxLabelLength
+        self.tokenDays = tokenDays
+    }
+
+    private enum Keys: String, CodingKey { case maxWindows, maxPhotoBytes, maxRoomLength, maxLabelLength, tokenDays }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        let d = HomeownerLimits()
+        maxWindows = c.soft(Int.self, .maxWindows) ?? d.maxWindows
+        maxPhotoBytes = c.soft(Int.self, .maxPhotoBytes) ?? d.maxPhotoBytes
+        maxRoomLength = c.soft(Int.self, .maxRoomLength) ?? d.maxRoomLength
+        maxLabelLength = c.soft(Int.self, .maxLabelLength) ?? d.maxLabelLength
+        tokenDays = c.soft(Int.self, .tokenDays) ?? d.tokenDays
+    }
+}
+
 /// GET /company.
 public struct HomeownerCompany: Codable, Equatable, Sendable {
     public var name: String
     public var brandColor: String?
     public var phone: String?
     public var services: [HomeownerService]
+    /// False: the company has no online visit times; offer only "Call me".
+    public var booking: Bool
     public var privacyUrl: String?
     public var termsUrl: String?
+    public var consent: HomeownerConsent?
     public var windowStyles: [HomeownerStyleOption]
     public var trust: HomeownerTrust?
+    public var limits: HomeownerLimits
 
-    public init(name: String, brandColor: String? = nil, phone: String? = nil, services: [HomeownerService] = HomeownerService.allCases,
-                privacyUrl: String? = nil, termsUrl: String? = nil, windowStyles: [HomeownerStyleOption] = [], trust: HomeownerTrust? = nil) {
+    public init(name: String, brandColor: String? = nil, phone: String? = nil, services: [HomeownerService] = HomeownerService.allCases, booking: Bool = true,
+                privacyUrl: String? = nil, termsUrl: String? = nil, consent: HomeownerConsent? = nil, windowStyles: [HomeownerStyleOption] = [],
+                trust: HomeownerTrust? = nil, limits: HomeownerLimits = HomeownerLimits()) {
         self.name = name
         self.brandColor = brandColor
         self.phone = phone
         self.services = services
+        self.booking = booking
         self.privacyUrl = privacyUrl
         self.termsUrl = termsUrl
+        self.consent = consent
         self.windowStyles = windowStyles
         self.trust = trust
+        self.limits = limits
     }
 
-    private enum Keys: String, CodingKey { case name, brandColor, phone, services, privacyUrl, termsUrl, windowStyles, trust }
+    private enum Keys: String, CodingKey { case name, brandColor, phone, services, booking, privacyUrl, termsUrl, consent, windowStyles, trust, limits, apiVersion }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -116,10 +167,13 @@ public struct HomeownerCompany: Codable, Equatable, Sendable {
         brandColor = c.soft(String.self, .brandColor)
         phone = c.soft(String.self, .phone)
         services = (c.soft([String].self, .services) ?? []).compactMap(HomeownerService.init(rawValue:))
+        booking = c.soft(Bool.self, .booking) ?? true
         privacyUrl = c.soft(String.self, .privacyUrl)
         termsUrl = c.soft(String.self, .termsUrl)
+        consent = c.soft(HomeownerConsent.self, .consent)
         windowStyles = c.lossyList(HomeownerStyleOption.self, .windowStyles)
         trust = c.soft(HomeownerTrust.self, .trust)
+        limits = c.soft(HomeownerLimits.self, .limits) ?? HomeownerLimits()
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -128,10 +182,13 @@ public struct HomeownerCompany: Codable, Equatable, Sendable {
         try c.encodeIfPresent(brandColor, forKey: .brandColor)
         try c.encodeIfPresent(phone, forKey: .phone)
         try c.encode(services.map { $0.rawValue }, forKey: .services)
+        try c.encode(booking, forKey: .booking)
         try c.encodeIfPresent(privacyUrl, forKey: .privacyUrl)
         try c.encodeIfPresent(termsUrl, forKey: .termsUrl)
+        try c.encodeIfPresent(consent, forKey: .consent)
         try c.encode(windowStyles, forKey: .windowStyles)
         try c.encodeIfPresent(trust, forKey: .trust)
+        try c.encode(limits, forKey: .limits)
     }
 }
 
@@ -144,24 +201,53 @@ public enum HomeownerRequestStatus: String, Codable, Sendable {
     case callback
 }
 
-public struct HomeownerHome: Codable, Equatable, Sendable {
-    public var address: String
-    public var floors: Int?
-    public var photoUrl: String?
+/// The main roof's corners as [longitude, latitude], to draw on the app's own map.
+public struct HomeownerOutline: Codable, Equatable, Sendable {
+    public var center: [Double]
+    public var ring: [[Double]]
 
-    public init(address: String, floors: Int? = nil, photoUrl: String? = nil) {
-        self.address = address
-        self.floors = floors
-        self.photoUrl = photoUrl
+    public init(center: [Double], ring: [[Double]]) {
+        self.center = center
+        self.ring = ring
     }
 
-    private enum Keys: String, CodingKey { case address, floors, photoUrl }
+    /// The ring as (longitude, latitude) pairs, skipping any point that is not two numbers.
+    public var points: [(lon: Double, lat: Double)] {
+        ring.compactMap { $0.count >= 2 ? (lon: $0[0], lat: $0[1]) : nil }
+    }
+
+    public var centerPoint: (lon: Double, lat: Double)? {
+        center.count >= 2 ? (lon: center[0], lat: center[1]) : nil
+    }
+}
+
+public struct HomeownerHome: Codable, Equatable, Sendable {
+    public var address: String
+    /// 1, 1.5, 2 or 3; nil when the height is not known.
+    public var floors: Double?
+    public var outline: HomeownerOutline?
+
+    public init(address: String, floors: Double? = nil, outline: HomeownerOutline? = nil) {
+        self.address = address
+        self.floors = floors
+        self.outline = outline
+    }
+
+    private enum Keys: String, CodingKey { case address, floors, outline }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         address = c.soft(String.self, .address) ?? ""
-        floors = c.soft(Int.self, .floors)
-        photoUrl = c.soft(String.self, .photoUrl)
+        floors = c.soft(Double.self, .floors)
+        outline = c.soft(HomeownerOutline.self, .outline)
+    }
+
+    /// "2 floors", "1 floor", "1 1/2 floors" for the results screen; nil when unknown.
+    public var floorsText: String? {
+        guard let f = floors, f > 0 else { return nil }
+        if f == 1 { return "1 floor" }
+        if f == f.rounded() { return "\(Int(f)) floors" }
+        return "\(Int(f.rounded(.down))) 1/2 floors"
     }
 }
 
@@ -243,30 +329,38 @@ public struct HomeownerEstimate: Codable, Equatable, Sendable {
 public struct HomeownerCreated: Decodable, Equatable, Sendable {
     public var requestId: String
     public var token: String
+    public var expiresAt: Date?
     public var status: HomeownerRequestStatus
+    /// Why a person calls instead: unit, address, home or busy.
     public var callbackReason: String?
     public var home: HomeownerHome
     public var estimate: HomeownerEstimate
+    public var services: [HomeownerService]
 
-    public init(requestId: String, token: String, status: HomeownerRequestStatus, callbackReason: String? = nil, home: HomeownerHome, estimate: HomeownerEstimate) {
+    public init(requestId: String, token: String, expiresAt: Date? = nil, status: HomeownerRequestStatus, callbackReason: String? = nil,
+                home: HomeownerHome, estimate: HomeownerEstimate, services: [HomeownerService] = []) {
         self.requestId = requestId
         self.token = token
+        self.expiresAt = expiresAt
         self.status = status
         self.callbackReason = callbackReason
         self.home = home
         self.estimate = estimate
+        self.services = services
     }
 
-    private enum Keys: String, CodingKey { case requestId, token, status, callbackReason, home, estimate }
+    private enum Keys: String, CodingKey { case requestId, token, expiresAt, status, callbackReason, home, estimate, services }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         requestId = try c.decode(String.self, forKey: .requestId)
         token = try c.decode(String.self, forKey: .token)
+        expiresAt = c.soft(String.self, .expiresAt).flatMap(VisitTimes.parse)
         status = c.soft(HomeownerRequestStatus.self, .status) ?? .ready
         callbackReason = c.soft(String.self, .callbackReason)
         home = c.soft(HomeownerHome.self, .home) ?? HomeownerHome(address: "")
         estimate = c.soft(HomeownerEstimate.self, .estimate) ?? HomeownerEstimate()
+        services = (c.soft([String].self, .services) ?? []).compactMap(HomeownerService.init(rawValue:))
     }
 }
 
@@ -294,14 +388,18 @@ public struct HomeownerWindow: Decodable, Equatable, Sendable, Identifiable {
     public var reasons: [String]
     /// The server's own wording, e.g. "35 5/8 x 59 5/8".
     public var sizeLabel: String?
+    /// The server's own wording for how far off it may be, e.g. "about ±1/2 in" (the larger of the two, rounded up).
+    public var uncertaintyLabel: String?
+    public var sizeClass: String?
 
     public var id: String { input.id }
     public var room: String { input.room ?? "" }
     public var needsCheck: Bool { quality == "check" }
 
-    private enum Keys: String, CodingKey { case widthIn, heightIn, uncertaintyIn, quality, reasons, sizeLabel }
+    private enum Keys: String, CodingKey { case widthIn, heightIn, uncertaintyIn, quality, reasons, sizeLabel, uncertaintyLabel, sizeClass }
 
-    public init(input: PhotoWindowInput, widthIn: Double, heightIn: Double, uncertaintyIn: Double?, quality: String = "good", reasons: [String] = [], sizeLabel: String? = nil) {
+    public init(input: PhotoWindowInput, widthIn: Double, heightIn: Double, uncertaintyIn: Double?, quality: String = "good", reasons: [String] = [],
+                sizeLabel: String? = nil, uncertaintyLabel: String? = nil, sizeClass: String? = nil) {
         self.input = input
         self.widthIn = widthIn
         self.heightIn = heightIn
@@ -309,6 +407,8 @@ public struct HomeownerWindow: Decodable, Equatable, Sendable, Identifiable {
         self.quality = quality
         self.reasons = reasons
         self.sizeLabel = sizeLabel
+        self.uncertaintyLabel = uncertaintyLabel
+        self.sizeClass = sizeClass
     }
 
     public init(from decoder: Decoder) throws {
@@ -327,6 +427,8 @@ public struct HomeownerWindow: Decodable, Equatable, Sendable, Identifiable {
         quality = c.soft(String.self, .quality) ?? "good"
         reasons = c.soft([String].self, .reasons) ?? []
         sizeLabel = c.soft(String.self, .sizeLabel)
+        uncertaintyLabel = c.soft(String.self, .uncertaintyLabel)
+        sizeClass = c.soft(String.self, .sizeClass)
     }
 }
 
@@ -358,6 +460,9 @@ public struct HomeownerWindowPrice: Codable, Equatable, Sendable {
 public struct HomeownerTier: Codable, Equatable, Sendable, Identifiable {
     public var key: String
     public var label: String
+    /// The company's name for it ("Vinyl double-hung") and a line about what it is, when the server gives them.
+    public var name: String?
+    public var detail: String?
     /// Whole dollars, measured windows plus estimated ones.
     public var total: Double
     public var perWindow: [HomeownerWindowPrice]
@@ -366,21 +471,25 @@ public struct HomeownerTier: Codable, Equatable, Sendable, Identifiable {
 
     public var id: String { key }
 
-    public init(key: String, label: String, total: Double, perWindow: [HomeownerWindowPrice] = [], estimatedCount: Int = 0, estimatedTotal: Double = 0) {
+    public init(key: String, label: String, name: String? = nil, detail: String? = nil, total: Double, perWindow: [HomeownerWindowPrice] = [], estimatedCount: Int = 0, estimatedTotal: Double = 0) {
         self.key = key
         self.label = label
+        self.name = name
+        self.detail = detail
         self.total = total
         self.perWindow = perWindow
         self.estimatedCount = estimatedCount
         self.estimatedTotal = estimatedTotal
     }
 
-    private enum Keys: String, CodingKey { case key, label, total, totalCents, perWindow, estimatedCount, estimatedTotal, estimatedTotalCents }
+    private enum Keys: String, CodingKey { case key, label, name, description, total, totalCents, perWindow, estimatedCount, estimatedTotal, estimatedTotalCents }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         key = try c.decode(String.self, forKey: .key)
         label = c.soft(String.self, .label) ?? key.capitalized
+        name = c.soft(String.self, .name)
+        detail = c.soft(String.self, .description)
         total = c.dollars(.total, cents: .totalCents) ?? 0
         perWindow = c.lossyList(HomeownerWindowPrice.self, .perWindow)
         estimatedCount = c.soft(Int.self, .estimatedCount) ?? 0
@@ -391,6 +500,8 @@ public struct HomeownerTier: Codable, Equatable, Sendable, Identifiable {
         var c = encoder.container(keyedBy: Keys.self)
         try c.encode(key, forKey: .key)
         try c.encode(label, forKey: .label)
+        try c.encodeIfPresent(name, forKey: .name)
+        try c.encodeIfPresent(detail, forKey: .description)
         try c.encode(total, forKey: .total)
         try c.encode(perWindow, forKey: .perWindow)
         try c.encode(estimatedCount, forKey: .estimatedCount)
@@ -398,13 +509,44 @@ public struct HomeownerTier: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
+/// "We think your home has about 12 to 16 windows and you have measured 1. Did we miss any?"
+public struct HomeownerMissingHint: Codable, Equatable, Sendable {
+    public var measured: Int
+    public var expectedLow: Int
+    public var expectedHigh: Int
+    public var expectedLikely: Int
+    public var text: String
+
+    public init(measured: Int, expectedLow: Int, expectedHigh: Int, expectedLikely: Int, text: String) {
+        self.measured = measured
+        self.expectedLow = expectedLow
+        self.expectedHigh = expectedHigh
+        self.expectedLikely = expectedLikely
+        self.text = text
+    }
+
+    private enum Keys: String, CodingKey { case measured, expectedLow, expectedHigh, expectedLikely, text }
+
+    public init(from decoder: Decoder) throws {
+        // An older server sent the sentence alone
+        if let only = try? decoder.singleValueContainer().decode(String.self) {
+            self.init(measured: 0, expectedLow: 0, expectedHigh: 0, expectedLikely: 0, text: only)
+            return
+        }
+        let c = try decoder.container(keyedBy: Keys.self)
+        let low = c.soft(Int.self, .expectedLow) ?? 0
+        self.init(measured: c.soft(Int.self, .measured) ?? 0, expectedLow: low, expectedHigh: c.soft(Int.self, .expectedHigh) ?? low,
+                  expectedLikely: c.soft(Int.self, .expectedLikely) ?? low, text: c.soft(String.self, .text) ?? "")
+    }
+}
+
 public struct HomeownerQuote: Codable, Equatable, Sendable {
     public var tiers: [HomeownerTier]
     public var measuredCount: Int
     public var estimatedCount: Int
-    public var missingHint: String?
+    public var missingHint: HomeownerMissingHint?
 
-    public init(tiers: [HomeownerTier], measuredCount: Int, estimatedCount: Int, missingHint: String? = nil) {
+    public init(tiers: [HomeownerTier], measuredCount: Int, estimatedCount: Int, missingHint: HomeownerMissingHint? = nil) {
         self.tiers = tiers
         self.measuredCount = measuredCount
         self.estimatedCount = estimatedCount
@@ -418,7 +560,7 @@ public struct HomeownerQuote: Codable, Equatable, Sendable {
         tiers = c.lossyList(HomeownerTier.self, .tiers)
         measuredCount = c.soft(Int.self, .measuredCount) ?? 0
         estimatedCount = c.soft(Int.self, .estimatedCount) ?? 0
-        missingHint = c.soft(String.self, .missingHint)
+        missingHint = c.soft(HomeownerMissingHint.self, .missingHint)
     }
 
     /// Windows the price covers (measured plus estimated).
@@ -469,8 +611,12 @@ public struct HomeownerContact: Codable, Equatable, Sendable {
     public var contactConsent: Bool
     /// Optional, unchecked to start.
     public var textConsent: Bool
+    /// The version of the consent words that were on the screen (GET /company, consent.version): the server stores it
+    /// with the exact words as evidence, and refuses (409 consent_changed) a version that is no longer current.
+    public var consentVersion: String
 
-    public init(firstName: String = "", lastName: String = "", phone: String = "", email: String = "", zip: String = "", contactConsent: Bool = false, textConsent: Bool = false) {
+    public init(firstName: String = "", lastName: String = "", phone: String = "", email: String = "", zip: String = "",
+                contactConsent: Bool = false, textConsent: Bool = false, consentVersion: String = "") {
         self.firstName = firstName
         self.lastName = lastName
         self.phone = phone
@@ -478,6 +624,7 @@ public struct HomeownerContact: Codable, Equatable, Sendable {
         self.zip = zip
         self.contactConsent = contactConsent
         self.textConsent = textConsent
+        self.consentVersion = consentVersion
     }
 }
 
@@ -580,46 +727,50 @@ public struct HomeownerBookBody: Encodable, Sendable {
     }
 }
 
-/// A booked visit, or "we will call you".
+/// A booked visit, or "we will call you". The server says `{ visit: { start, end, timeZone } | null, callMe }`.
 public struct HomeownerBooking: Codable, Equatable, Sendable {
     public var slotStart: String?
     public var slotEnd: String?
     public var callMe: Bool
-    public var rep: HomeownerRep?
-    public var address: String?
     public var timeZone: String?
 
     public var isVisit: Bool { slotStart != nil }
 
-    public init(slotStart: String? = nil, slotEnd: String? = nil, callMe: Bool = false, rep: HomeownerRep? = nil, address: String? = nil, timeZone: String? = nil) {
+    public init(slotStart: String? = nil, slotEnd: String? = nil, callMe: Bool = false, timeZone: String? = nil) {
         self.slotStart = slotStart
         self.slotEnd = slotEnd
         self.callMe = callMe
-        self.rep = rep
-        self.address = address
         self.timeZone = timeZone
     }
 
-    private enum Keys: String, CodingKey { case slotStart, slotEnd, start, end, callMe, rep, address, timeZone }
+    private enum Keys: String, CodingKey { case visit, callMe, slotStart, slotEnd, timeZone }
+    private enum VisitKeys: String, CodingKey { case start, end, timeZone }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
-        slotStart = c.soft(String.self, .slotStart) ?? c.soft(String.self, .start)
-        slotEnd = c.soft(String.self, .slotEnd) ?? c.soft(String.self, .end)
         callMe = c.soft(Bool.self, .callMe) ?? false
-        rep = c.soft(HomeownerRep.self, .rep)
-        address = c.soft(String.self, .address)
-        timeZone = c.soft(String.self, .timeZone)
+        if let v = try? c.nestedContainer(keyedBy: VisitKeys.self, forKey: .visit) {
+            slotStart = v.soft(String.self, .start)
+            slotEnd = v.soft(String.self, .end)
+            timeZone = v.soft(String.self, .timeZone)
+        } else {
+            slotStart = c.soft(String.self, .slotStart)
+            slotEnd = c.soft(String.self, .slotEnd)
+            timeZone = c.soft(String.self, .timeZone)
+        }
     }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: Keys.self)
-        try c.encodeIfPresent(slotStart, forKey: .slotStart)
-        try c.encodeIfPresent(slotEnd, forKey: .slotEnd)
         try c.encode(callMe, forKey: .callMe)
-        try c.encodeIfPresent(rep, forKey: .rep)
-        try c.encodeIfPresent(address, forKey: .address)
-        try c.encodeIfPresent(timeZone, forKey: .timeZone)
+        if let start = slotStart {
+            var v = c.nestedContainer(keyedBy: VisitKeys.self, forKey: .visit)
+            try v.encode(start, forKey: .start)
+            try v.encodeIfPresent(slotEnd, forKey: .end)
+            try v.encodeIfPresent(timeZone, forKey: .timeZone)
+        } else {
+            try c.encodeNil(forKey: .visit)
+        }
     }
 }
 
@@ -638,33 +789,44 @@ public enum HomeownerStage: String, Codable, CaseIterable, Sendable, Comparable 
     }
 }
 
-/// GET /requests/:id/status.
+/// GET /requests/:id/status: `{ stage, dates: { requestedAt, visit, measuredAt, orderedAt, installedAt }, rep: { name }, timeZone }`.
 public struct HomeownerStatus: Codable, Equatable, Sendable {
     public var stage: HomeownerStage
-    /// ISO dates by stage name ("visit-booked", "measured", "shipped", ...), as far as the server knows them.
+    /// ISO times by stage, as far as the server knows them, under the keys requested, visit, measured, ordered, built,
+    /// shipped, installed (the server's "measuredAt" is read as "measured").
     public var dates: [String: String]
     public var rep: HomeownerRep?
     public var orderNumber: String?
     /// The expected ship (or install) date, ISO, when the factory has said.
     public var eta: String?
+    public var timeZone: String?
 
-    public init(stage: HomeownerStage, dates: [String: String] = [:], rep: HomeownerRep? = nil, orderNumber: String? = nil, eta: String? = nil) {
+    public init(stage: HomeownerStage, dates: [String: String] = [:], rep: HomeownerRep? = nil, orderNumber: String? = nil, eta: String? = nil, timeZone: String? = nil) {
         self.stage = stage
         self.dates = dates
         self.rep = rep
         self.orderNumber = orderNumber
         self.eta = eta
+        self.timeZone = timeZone
     }
 
-    private enum Keys: String, CodingKey { case stage, dates, rep, orderNumber, eta }
+    private enum Keys: String, CodingKey { case stage, dates, rep, orderNumber, eta, timeZone }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         stage = c.soft(HomeownerStage.self, .stage) ?? .requested
-        dates = c.soft([String: String].self, .dates) ?? [:]
+        // Values may be null ("measuredAt": null): those are dropped, the rest read
+        var normalized: [String: String] = [:]
+        for (key, value) in c.soft([String: Lossy<String>].self, .dates) ?? [:] {
+            guard let v = value.value else { continue }
+            let k = key.hasSuffix("At") ? String(key.dropLast(2)) : key
+            normalized[k] = v
+        }
+        dates = normalized
         rep = c.soft(HomeownerRep.self, .rep)
         orderNumber = c.soft(String.self, .orderNumber)
         eta = c.soft(String.self, .eta)
+        timeZone = c.soft(String.self, .timeZone)
     }
 }
 
@@ -679,12 +841,15 @@ public struct HomeownerRequestInfo: Decodable, Equatable, Sendable {
     public var callbackReason: String?
     /// "I have 18 windows" (PATCH estimatedTotalOverride).
     public var estimatedTotalOverride: Int?
-    /// The contact form was sent.
+    /// The contact form was sent (the request is filed with the company).
     public var contacted: Bool
     public var selectedTier: String?
+    public var createdAt: Date?
+    public var expiresAt: Date?
 
     public init(id: String? = nil, status: HomeownerRequestStatus? = nil, address: String? = nil, services: [HomeownerService] = [], home: HomeownerHome? = nil,
-                estimate: HomeownerEstimate? = nil, callbackReason: String? = nil, estimatedTotalOverride: Int? = nil, contacted: Bool = false, selectedTier: String? = nil) {
+                estimate: HomeownerEstimate? = nil, callbackReason: String? = nil, estimatedTotalOverride: Int? = nil, contacted: Bool = false, selectedTier: String? = nil,
+                createdAt: Date? = nil, expiresAt: Date? = nil) {
         self.id = id
         self.status = status
         self.address = address
@@ -695,22 +860,28 @@ public struct HomeownerRequestInfo: Decodable, Equatable, Sendable {
         self.estimatedTotalOverride = estimatedTotalOverride
         self.contacted = contacted
         self.selectedTier = selectedTier
+        self.createdAt = createdAt
+        self.expiresAt = expiresAt
     }
 
-    private enum Keys: String, CodingKey { case id, status, address, services, home, estimate, callbackReason, estimatedTotalOverride, contacted, contactSubmitted, selectedTier, tier }
+    private enum Keys: String, CodingKey {
+        case id, status, address, services, home, estimate, callbackReason, estimatedTotalOverride, contacted, contactFiled, contactSubmitted, selectedTier, tier, createdAt, expiresAt
+    }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         id = c.soft(String.self, .id)
         status = c.soft(HomeownerRequestStatus.self, .status)
-        address = c.soft(String.self, .address)
         services = (c.soft([String].self, .services) ?? []).compactMap(HomeownerService.init(rawValue:))
         home = c.soft(HomeownerHome.self, .home)
+        address = c.soft(String.self, .address) ?? home?.address
         estimate = c.soft(HomeownerEstimate.self, .estimate)
         callbackReason = c.soft(String.self, .callbackReason)
         estimatedTotalOverride = c.soft(Int.self, .estimatedTotalOverride)
-        contacted = c.soft(Bool.self, .contacted) ?? c.soft(Bool.self, .contactSubmitted) ?? false
+        contacted = c.soft(Bool.self, .contactFiled) ?? c.soft(Bool.self, .contacted) ?? c.soft(Bool.self, .contactSubmitted) ?? false
         selectedTier = c.soft(String.self, .selectedTier) ?? c.soft(String.self, .tier)
+        createdAt = c.soft(String.self, .createdAt).flatMap(VisitTimes.parse)
+        expiresAt = c.soft(String.self, .expiresAt).flatMap(VisitTimes.parse)
     }
 }
 
@@ -757,46 +928,63 @@ public struct HomeownerSession: Codable, Equatable, Sendable {
     public var address: String
     public var services: [HomeownerService]
     public var createdAt: Date
+    /// When the server says the token stops working (60 days from the request); nil on a session saved before it was known.
+    public var expiresAt: Date?
 
-    public init(requestId: String, token: String, slug: String, address: String, services: [HomeownerService], createdAt: Date = Date()) {
+    public init(requestId: String, token: String, slug: String, address: String, services: [HomeownerService], createdAt: Date = Date(), expiresAt: Date? = nil) {
         self.requestId = requestId
         self.token = token
         self.slug = slug
         self.address = address
         self.services = services
         self.createdAt = createdAt
+        self.expiresAt = expiresAt
     }
 
     /// The server's tokens last 60 days.
     public static let lifetimeDays = 60
 
     public func isExpired(now: Date = Date()) -> Bool {
-        now.timeIntervalSince(createdAt) > Double(Self.lifetimeDays) * 86_400
+        if let e = expiresAt { return now >= e }
+        return now.timeIntervalSince(createdAt) > Double(Self.lifetimeDays) * 86_400
     }
 }
 
 // MARK: - Errors
 
-/// An error to show a homeowner: the server's own sentence when it gave one, else plain words.
+/// An error to show a homeowner: the server's own sentence when it gave one, else plain words. The server's body is
+/// `{ error, field?, code }`: show `message`, switch on `code`.
 public struct HomeownerAPIError: Error, LocalizedError, Equatable, Sendable {
     public var status: Int?
     public var message: String
     public var field: String?
+    public var code: String?
+    /// Seconds to wait before trying again (429's Retry-After).
+    public var retryAfter: Double?
 
-    public init(status: Int?, message: String, field: String? = nil) {
+    public init(status: Int?, message: String, field: String? = nil, code: String? = nil, retryAfter: Double? = nil) {
         self.status = status
         self.message = message
         self.field = field
+        self.code = code
+        self.retryAfter = retryAfter
     }
 
     public var errorDescription: String? { message }
-    /// The token was not accepted.
-    public var isUnauthorized: Bool { status == 401 || status == 403 }
-    /// The request is gone (expired, or the server was reset): start over.
+    /// The token was not accepted (or is past its 60 days): the saved request cannot be used any more.
+    public var isUnauthorized: Bool { status == 401 || code == "unauthorized" || code == "token_expired" }
+    public var isTokenExpired: Bool { code == "token_expired" }
+    /// The request is gone (the server was reset, or it was removed): start over.
     public var isGone: Bool { status == 404 || status == 410 }
     public var isRateLimited: Bool { status == 429 }
     /// No answer at all (offline, timed out).
     public var isNetwork: Bool { status == nil }
+    /// The picked visit time is no longer open: fetch the times again.
+    public var isSlotTaken: Bool { code == "slot_taken" }
+    /// The consent words changed since the screen was loaded: fetch GET /company again.
+    public var isConsentChanged: Bool { code == "consent_changed" }
+    /// The window cannot be sized from what was sent: its `message` says what to redo.
+    public var isWindowUnsizable: Bool { code == "window_unsizable" }
 
     public var transport: TransportError { TransportError(status: status, message: message) }
 }

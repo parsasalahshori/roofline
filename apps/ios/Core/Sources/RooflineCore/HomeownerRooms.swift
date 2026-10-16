@@ -93,21 +93,21 @@ public enum StyleGuess {
         public var hint: String
     }
 
-    /// The style keys the app knows how to draw. A company's own keys outside this list still work (no icon of their own).
-    public static let knownKeys = ["double-hung", "single-hung", "slider", "picture", "casement-awning", "bay-bow"]
+    /// The nine styles the server knows (GET /company, windowStyles). A company's own keys outside this list still work.
+    public static let knownKeys = ["double-hung", "single-hung", "slider-2", "slider-3", "picture", "casement", "awning", "arch", "circle"]
 
     public static func suggestion(widthIn: Double, heightIn: Double, offered: [String]) -> Suggestion {
         let w = max(widthIn, 1), h = max(heightIn, 1)
         let candidates: [String]
         let hint: String
         if w / h >= 1.15 {
-            candidates = ["slider", "picture"]
+            candidates = ["slider-2", "picture", "slider-3"]
             hint = "wide, so most homes use a slider or picture"
         } else if h / w >= 1.3 {
             candidates = ["double-hung", "single-hung"]
             hint = "tall, so most homes use a double-hung or single-hung"
         } else {
-            candidates = ["double-hung", "casement-awning", "single-hung"]
+            candidates = ["double-hung", "casement", "single-hung"]
             hint = "close to square, so most homes use a double-hung or casement"
         }
         let available = offered.isEmpty ? candidates : candidates.filter { offered.contains($0) }

@@ -16,21 +16,15 @@ public enum CallbackCopy {
         case "unit", "multi-unit":
             return Reason(lead: "This building looks like it has more than one home.",
                           rest: "Measuring from a phone could give the wrong price for apartments and duplexes, so a person will help you instead.")
-        case "not-rooftop":
-            return Reason(lead: "We could not place your address on the house itself.",
-                          rest: "We would rather not guess your price, so a person will help you instead.")
-        case "street-changed":
-            return Reason(lead: "We found a slightly different address than the one you typed.",
-                          rest: "A person will check it with you so the price is for the right home.")
-        case "roof-review":
-            return Reason(lead: "Your roof looks a little unusual from above.",
-                          rest: "A person will look at it with you instead of a phone guessing.")
-        case "too-big":
-            return Reason(lead: "This looks like a large building.",
-                          rest: "A person will help you with the price instead of a phone guessing.")
-        case "flat-unmeasured":
-            return Reason(lead: "Flat roofs are hard to measure from above.",
-                          rest: "A person will help you with the price instead of a phone guessing.")
+        case "address", "not-rooftop", "street-changed":
+            return Reason(lead: "We could not place your address on one house.",
+                          rest: "We would rather not guess your price, so a person will check it with you instead.")
+        case "home", "roof-review", "too-big", "flat-unmeasured":
+            return Reason(lead: "This home needs a person to look at it.",
+                          rest: "It looks large, flat or hard to see from above, and a phone could give the wrong price. A person will help you instead.")
+        case "busy":
+            return Reason(lead: "We can't price this one from the app right now.",
+                          rest: "A person will help you with it instead, usually the same day.")
         default:
             return Reason(lead: "We can't price this one from the app right now.",
                           rest: "A person will help you with it instead, usually the same day.")

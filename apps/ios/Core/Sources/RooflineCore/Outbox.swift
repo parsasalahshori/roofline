@@ -123,7 +123,12 @@ public enum OutboxMachine {
         i.window.uploadId = upload.id
         // The corners are in the JPEG's pixels; if the server reads the photo at another size, follow it
         if upload.widthPx != i.imageWidthPx || upload.heightPx != i.imageHeightPx, upload.widthPx > 0, upload.heightPx > 0 {
-            i.window.corners = i.window.corners.map { ImageMapping.rescale($0, from: (Double(i.imageWidthPx), Double(i.imageHeightPx)), to: (Double(upload.widthPx), Double(upload.heightPx))) }
+            let from = (Double(i.imageWidthPx), Double(i.imageHeightPx)), to = (Double(upload.widthPx), Double(upload.heightPx))
+            i.window.corners = i.window.corners.map { ImageMapping.rescale($0, from: from, to: to) }
+            // A card window has a second set of corners in the same photo
+            if case .card(let c) = i.window.scale {
+                i.window.scale = .card(CardScale(cardCorners: ImageMapping.rescale(c.cardCorners, from: from, to: to), card: c.card))
+            }
             i.imageWidthPx = upload.widthPx
             i.imageHeightPx = upload.heightPx
         }

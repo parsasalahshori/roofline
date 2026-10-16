@@ -106,6 +106,40 @@ private let wordingChecks: [Check] = [
 
 // MARK: - The homeowner API's JSON
 
+// The examples are the ones in docs/windows/homeowner-api.md (the contract): if the server's shapes change, these say so.
+private let contractView = """
+{
+  "request": {
+    "id": "0b6a3b0e-0000-4000-8000-000000000001", "status": "ready", "services": ["windows", "roof"],
+    "home": { "address": "123 Main St, Irvine, CA 92620", "floors": 1.5, "outline": { "center": [-117.8, 33.68], "ring": [[-117.80001, 33.68001], [-117.8, 33.68002]] } },
+    "estimate": { "windows": { "low": 12, "high": 16, "likely": 14 }, "roof": { "low": 14000, "high": 18000, "squares": 28.5 }, "gutters": null },
+    "estimatedTotalOverride": null, "contactFiled": true, "createdAt": "2026-10-16T20:00:00.000Z", "expiresAt": "2026-12-15T20:00:00.000Z"
+  },
+  "windows": [
+    { "id": "w-kitchen-1", "room": "Kitchen", "label": "Over the sink", "style": "double-hung",
+      "scale": { "kind": "card", "cardCorners": [[100, 100], [400, 100], [400, 290], [100, 290]], "card": { "widthMm": 85.6, "heightMm": 53.98 } },
+      "uploadId": "7d4e1d3a-0000-4000-8000-000000000002", "corners": [[300, 400], [1300, 400], [1300, 1900], [300, 1900]],
+      "widthIn": 35.6, "heightIn": 59.6, "sizeClass": "standard", "uncertaintyIn": { "width": 0.3, "height": 0.4 }, "quality": "good", "reasons": [],
+      "sizeLabel": "35 5/8 x 59 5/8", "uncertaintyLabel": "about ±1/2 in" },
+    { "id": "broken", "scale": { "kind": "ar" } },
+    { "id": "w-hall", "room": "Hall", "style": "slider-2", "scale": { "kind": "roomplan", "widthM": 0.9, "heightM": 1.2, "confidence": "medium" },
+      "widthIn": 35.4, "heightIn": 47.2, "uncertaintyIn": 1, "quality": "check", "reasons": ["a scan"] }
+  ],
+  "rooms": ["Kitchen", "Hall"],
+  "quote": {
+    "tiers": [
+      { "key": "good", "label": "Good", "name": "Vinyl double-hung", "description": "Double-pane, Low-E glass, standard install", "total": 8400,
+        "perWindow": [{ "windowId": "w-kitchen-1", "price": 600 }], "estimatedCount": 13, "estimatedTotal": 7800 },
+      { "key": "better", "label": "Better", "total": 11200, "perWindow": [], "estimatedCount": 14, "estimatedTotal": 11200 }
+    ],
+    "measuredCount": 1, "estimatedCount": 13,
+    "missingHint": { "measured": 1, "expectedLow": 12, "expectedHigh": 16, "expectedLikely": 14, "text": "We think your home has about 12 to 16 windows and you have measured 1. Did we miss any?" }
+  },
+  "booking": { "visit": { "start": "2026-10-17T16:00:00.000Z", "end": "2026-10-17T17:00:00.000Z", "timeZone": "America/Los_Angeles" }, "callMe": false },
+  "status": { "stage": "visit-booked", "dates": { "requestedAt": "2026-10-16T20:05:00.000Z", "visit": "2026-10-17T16:00:00.000Z", "measuredAt": null, "orderedAt": null, "installedAt": null }, "rep": { "name": "Sam" }, "timeZone": "America/Los_Angeles" }
+}
+"""
+
 private let homeownerApiChecks: [Check] = [
     Check("HomeownerWindowInput: a card window encodes exactly the server's keys, no nulls") { ctx in
         var w = PhotoWindowInput(
@@ -129,105 +163,139 @@ private let homeownerApiChecks: [Check] = [
         ctx.expect(try json(w)["room"] == nil && json(w)["style"] == nil)
         // And a card window reads back as a card
         let back = try JSONDecoder().decode(PhotoWindowInput.self, from: JSONEncoder().encode(PhotoWindowInput(id: "c", uploadId: "u", label: nil, windowKey: nil, corners: nil,
-            scale: .card(CardScale(cardCorners: [Vec2(1, 2), Vec2(3, 2), Vec2(3, 4), Vec2(1, 4)])), room: "Kitchen", style: "slider")))
+            scale: .card(CardScale(cardCorners: [Vec2(1, 2), Vec2(3, 2), Vec2(3, 4), Vec2(1, 4)])), room: "Kitchen", style: "slider-2")))
         ctx.equal(back.scale.kind, "card")
         ctx.equal(back.room, "Kitchen")
-        ctx.equal(back.style, "slider")
+        ctx.equal(back.style, "slider-2")
     },
-    Check("Homeowner API: the request view decodes, and a bad item is skipped, not fatal") { ctx in
-        let view = try decodeView("""
-        { "request": { "id": "r1", "status": "ready", "services": ["windows", "roof", "bogus"], "contactSubmitted": true,
-                       "estimatedTotalOverride": 9, "home": { "address": "305 Ridgeway Dr, Little Rock, AR 72205", "floors": 1 },
-                       "estimate": { "windows": { "low": 7, "high": 9, "likely": 8 }, "roof": { "low": 9800, "high": 12100, "squares": 23 }, "gutters": "at-visit" } },
-          "windows": [
-            { "id": "w1", "room": "Kitchen", "style": "double-hung", "uploadId": "u1", "corners": [[1,1],[9,1],[9,9],[1,9]],
-              "scale": { "kind": "ar", "pointsM": [[0,1,-1],[1,1,-1],[1,0,-1],[0,0,-1]], "trackingLostCount": 0, "device": "arkit-lidar" },
-              "widthIn": 35.625, "heightIn": 59.625, "uncertaintyIn": 0.125, "quality": "good", "reasons": [], "sizeLabel": "35 5/8 x 59 5/8" },
-            { "id": "broken", "scale": { "kind": "ar" } },
-            { "id": "w2", "room": "Hall", "style": "slider",
-              "scale": { "kind": "roomplan", "widthM": 0.9, "heightM": 1.2, "confidence": "medium" },
-              "widthIn": 35.4, "heightIn": 47.2, "uncertaintyIn": { "width": 1, "height": 1.5 }, "quality": "check", "reasons": ["a scan"] }
-          ],
-          "rooms": ["Kitchen", "Hall"],
-          "quote": { "tiers": [
-              { "key": "good", "label": "Good", "total": 4200, "perWindow": [ { "windowId": "w1", "price": 600 } ], "estimatedCount": 0, "estimatedTotal": 0 },
-              { "key": "better", "label": "Better", "totalCents": 560000, "estimatedCount": 2, "estimatedTotalCents": 160000 } ],
-            "measuredCount": 7, "estimatedCount": 0, "missingHint": "Homes like yours usually have 7 to 9." },
-          "booking": { "slotStart": "2026-10-20T12:30:00-05:00", "slotEnd": "2026-10-20T13:00:00-05:00", "rep": { "name": "Casey Moreno", "city": "Little Rock" } },
-          "status": { "stage": "visit-booked", "dates": { "visit-booked": "2026-10-16" }, "orderNumber": "24-1187" } }
-        """)
-        ctx.equal(view.request.services, [.windows, .roof], "an unknown service is dropped")
-        ctx.expect(view.request.contacted)
-        ctx.equal(view.request.estimatedTotalOverride, 9)
-        ctx.equal(view.request.estimate?.windows?.likely, 8)
-        ctx.near(view.request.estimate?.roof?.low, 9800)
-        ctx.equal(view.request.estimate?.gutters, "at-visit")
-        ctx.equal(view.windows.map { $0.id }, ["w1", "w2"], "the broken window is skipped")
-        ctx.near(view.windows[0].uncertaintyIn, 0.125)
-        ctx.near(view.windows[1].uncertaintyIn, 1.5, 1e-9, "{width, height} reads as the larger one")
+    Check("Homeowner API: the contract's request view decodes, and a bad item is skipped, not fatal") { ctx in
+        let view = try decodeView(contractView)
+        ctx.equal(view.request.services, [.windows, .roof])
+        ctx.expect(view.request.contacted, "contactFiled")
+        ctx.equal(view.request.estimatedTotalOverride, nil)
+        ctx.equal(view.request.estimate?.windows?.likely, 14)
+        ctx.near(view.request.estimate?.roof?.low, 14000)
+        ctx.equal(view.request.estimate?.gutters, nil)
+        ctx.equal(view.request.home?.floors, 1.5)
+        ctx.equal(view.request.home?.floorsText, "1 1/2 floors")
+        ctx.equal(view.request.home?.outline?.points.count, 2)
+        ctx.equal(view.request.address, "123 Main St, Irvine, CA 92620", "the address comes from home when the request has none")
+        ctx.expect(view.request.expiresAt != nil && view.request.createdAt != nil)
+        ctx.equal(view.windows.map { $0.id }, ["w-kitchen-1", "w-hall"], "the broken window is skipped")
+        ctx.near(view.windows[0].uncertaintyIn, 0.4, 1e-9, "{width, height} reads as the larger one")
+        ctx.equal(view.windows[0].uncertaintyLabel, "about ±1/2 in")
+        ctx.equal(view.windows[0].sizeClass, "standard")
+        ctx.equal(view.windows[0].input.scale.kind, "card")
         ctx.expect(view.windows[1].needsCheck && !view.windows[0].needsCheck)
+        ctx.near(view.windows[1].uncertaintyIn, 1)
         ctx.equal(view.windows[0].room, "Kitchen")
         ctx.equal(view.windows[0].sizeLabel, "35 5/8 x 59 5/8")
+        ctx.equal(view.rooms, ["Kitchen", "Hall"])
         ctx.equal(view.quote?.tiers.count, 2)
-        ctx.near(view.quote?.tier("better")?.total, 5600, 1e-9, "cents read as dollars")
-        ctx.equal(view.quote?.tier("better")?.estimatedCount, 2)
+        ctx.near(view.quote?.tier("good")?.total, 8400)
+        ctx.equal(view.quote?.tier("good")?.name, "Vinyl double-hung")
+        ctx.equal(view.quote?.tier("good")?.detail, "Double-pane, Low-E glass, standard install")
+        ctx.equal(view.quote?.tier("good")?.estimatedCount, 13)
         ctx.near(view.quote?.tier("good")?.perWindow.first?.price, 600)
-        ctx.equal(view.quote?.windowCount, 7)
+        ctx.equal(view.quote?.windowCount, 14)
+        ctx.equal(view.quote?.missingHint?.expectedLow, 12)
+        ctx.expect(view.quote?.missingHint?.text.hasSuffix("Did we miss any?") == true)
         ctx.equal(view.booking?.isVisit, true)
-        ctx.equal(view.booking?.rep?.area, "Little Rock", "city reads as the rep's area")
+        ctx.equal(view.booking?.callMe, false)
+        ctx.equal(view.booking?.timeZone, "America/Los_Angeles")
         ctx.equal(view.status?.stage, .visitBooked)
-        ctx.equal(view.status?.orderNumber, "24-1187")
+        ctx.equal(view.status?.rep?.name, "Sam")
+        ctx.equal(view.status?.dates["requested"], "2026-10-16T20:05:00.000Z", "requestedAt reads as requested")
+        ctx.equal(view.status?.dates["visit"], "2026-10-17T16:00:00.000Z")
+        ctx.expect(view.status?.dates["measured"] == nil, "a null date is dropped")
         // Nothing but an empty object still decodes (a newer or older server)
         let empty = try decodeView("{}")
         ctx.equal(empty.windows.count, 0)
         ctx.expect(empty.quote == nil && empty.booking == nil && empty.status == nil)
+        // An older shape of the hint (just a sentence) and of the booking (flat) still read
+        let old = try decodeView(#"{ "quote": { "tiers": [], "missingHint": "Did we miss any?" }, "booking": { "slotStart": "2026-10-17T16:00:00Z", "callMe": false } }"#)
+        ctx.equal(old.quote?.missingHint?.text, "Did we miss any?")
+        ctx.equal(old.booking?.slotStart, "2026-10-17T16:00:00Z")
+        // A call-me booking has no visit
+        let call = try decodeView(#"{ "booking": { "visit": null, "callMe": true } }"#)
+        ctx.equal(call.booking?.isVisit, false)
+        ctx.equal(call.booking?.callMe, true)
     },
     Check("Homeowner API: created request, company, slots and booking bodies") { ctx in
         let created = try JSONDecoder().decode(HomeownerCreated.self, from: Data("""
-        { "requestId": "req-1", "token": "tok", "status": "callback", "callbackReason": "unit",
-          "home": { "address": "2210 Leavenworth St, Little Rock, AR", "floors": 2, "photoUrl": "https://x/y.jpg" },
-          "estimate": { "windows": null, "roof": null, "gutters": "at-visit" } }
+        { "requestId": "req-1", "token": "tok", "expiresAt": "2026-12-15T20:00:00.000Z", "status": "callback", "callbackReason": "unit",
+          "home": { "address": "2210 Leavenworth St, Little Rock, AR", "floors": null, "outline": null },
+          "estimate": { "windows": null, "roof": null, "gutters": "at-visit" }, "services": ["gutters", "bogus"] }
         """.utf8))
         ctx.equal(created.status, .callback)
         ctx.equal(created.callbackReason, "unit")
-        ctx.equal(created.home.floors, 2)
+        ctx.equal(created.home.floors, nil)
         ctx.expect(created.estimate.windows == nil && created.estimate.roof == nil)
+        ctx.equal(created.estimate.gutters, "at-visit")
+        ctx.equal(created.services, [.gutters])
+        ctx.expect(created.expiresAt != nil)
         let body = try json(HomeownerCreateBody(address: "305 Ridgeway Dr", services: [.roof, .windows]))
         ctx.equal(body["services"] as? [String], ["windows", "roof"], "services are sent in the screen order")
         ctx.equal(Set(body.keys), ["address", "services"])
 
         let company = try JSONDecoder().decode(HomeownerCompany.self, from: Data("""
-        { "name": "Summit Ridge", "brandColor": "#ED3A2B", "phone": "+15015550100", "services": ["roof", "windows", "gutters"],
+        { "apiVersion": 1, "name": "Summit Ridge Roofing", "brandColor": "#155EAB", "phone": "+19495550123", "services": ["roof", "windows", "gutters"], "booking": false,
           "privacyUrl": "https://p", "termsUrl": "https://t",
-          "windowStyles": [ { "key": "double-hung", "label": "Double-hung" }, { "bad": 1 } ], "trust": { "reviews": 4.9, "since": 2004 } }
+          "consent": { "version": "2026-10-16", "text": "By checking this box and clicking \\"Send my request\\", I agree ...", "textingText": "Text me too ..." },
+          "windowStyles": [ { "key": "double-hung", "label": "Double-hung" }, { "bad": 1 } ], "trust": { "reviews": 4.9, "since": 2004 },
+          "limits": { "maxWindows": 60, "maxPhotoBytes": 12582912, "maxRoomLength": 40, "maxLabelLength": 80, "tokenDays": 60 } }
         """.utf8))
         ctx.equal(company.services, [.roof, .windows, .gutters])
+        ctx.equal(company.booking, false)
+        ctx.equal(company.consent?.version, "2026-10-16")
+        ctx.expect(company.consent?.text.contains("\"Send my request\"") == true)
         ctx.equal(company.windowStyles, [HomeownerStyleOption(key: "double-hung", label: "Double-hung")])
         ctx.equal(company.trust?.since, "2004", "a number the company typed reads as text")
         ctx.equal(company.trust?.reviews, "4.9")
+        ctx.equal(company.limits.maxWindows, 60)
+        ctx.equal(company.limits.maxRoomLength, 40)
+        // Without a consent block or limits (an older server) the defaults hold
+        let bare = try JSONDecoder().decode(HomeownerCompany.self, from: Data(#"{ "name": "X" }"#.utf8))
+        ctx.equal(bare.booking, true)
+        ctx.expect(bare.consent == nil)
+        ctx.equal(bare.limits.maxPhotoBytes, 12_582_912)
 
         let slots = HomeownerSlots.decode(Data("""
-        { "timeZone": "America/Chicago", "slots": [ { "id": "a", "start": "2026-10-20T12:30:00-05:00", "end": "2026-10-20T13:00:00-05:00" }, { "x": 1 } ] }
+        { "timeZone": "America/Chicago", "slots": [ { "id": "a", "start": "2026-10-20T17:30:00.000Z", "end": "2026-10-20T18:30:00.000Z" }, { "x": 1 } ] }
         """.utf8))
         ctx.equal(slots?.slots.count, 1)
         ctx.equal(slots?.timeZone, "America/Chicago")
-        let bare = HomeownerSlots.decode(Data(#"[ { "start": "2026-10-21T09:00:00-05:00" } ]"#.utf8))
-        ctx.equal(bare?.slots.first?.id, "2026-10-21T09:00:00-05:00", "no id: the start is the id")
+        let bareSlots = HomeownerSlots.decode(Data(#"[ { "start": "2026-10-21T09:00:00-05:00" } ]"#.utf8))
+        ctx.equal(bareSlots?.slots.first?.id, "2026-10-21T09:00:00-05:00", "no id: the start is the id")
 
         let slot = HomeownerSlot(id: "a", start: "2026-10-20T12:30:00-05:00")
         ctx.equal(Set(try json(HomeownerBookBody(.slot(slot))).keys), ["slotStart"])
         ctx.equal(Set(try json(HomeownerBookBody(.callMe(bestTime: "afternoon"))).keys), ["callMe"], "the best time is not sent unless the server takes it")
         ctx.equal(Set(try json(HomeownerBookBody(.callMe(bestTime: "afternoon"), sendBestTime: true)).keys), ["callMe", "bestTime"])
+
+        // The contact body is exactly the contract's keys
+        let contact = HomeownerContact(firstName: "Alex", lastName: "Rivera", phone: "(949) 555-0147", email: "alex@example.com", zip: "92620", contactConsent: true, textConsent: false, consentVersion: "2026-10-16")
+        ctx.equal(Set(try json(contact).keys), ["firstName", "lastName", "phone", "email", "zip", "contactConsent", "textConsent", "consentVersion"])
     },
     Check("HomeownerSession and errors") { ctx in
         let s = HomeownerSession(requestId: "r", token: "t", slug: "summit-ridge", address: "305 Ridgeway Dr", services: [.windows], createdAt: Date(timeIntervalSince1970: 1_000_000))
         ctx.expect(!s.isExpired(now: Date(timeIntervalSince1970: 1_000_000 + 59 * 86_400)))
         ctx.expect(s.isExpired(now: Date(timeIntervalSince1970: 1_000_000 + 61 * 86_400)), "tokens last 60 days")
+        var withExpiry = s
+        withExpiry.expiresAt = Date(timeIntervalSince1970: 1_000_000 + 10 * 86_400)
+        ctx.expect(withExpiry.isExpired(now: Date(timeIntervalSince1970: 1_000_000 + 11 * 86_400)), "the server's own expiry wins")
         let back = try JSONDecoder().decode(HomeownerSession.self, from: JSONEncoder().encode(s))
         ctx.equal(back, s)
-        ctx.expect(HomeownerAPIError(status: 401, message: "").isUnauthorized)
+        // A session saved before expiresAt existed still reads
+        let oldJSON = #"{"requestId":"r","token":"t","slug":"x","address":"a","services":["windows"],"createdAt":0}"#
+        ctx.expect((try? JSONDecoder().decode(HomeownerSession.self, from: Data(oldJSON.utf8))) != nil)
+        ctx.expect(HomeownerAPIError(status: 401, message: "", code: "unauthorized").isUnauthorized)
+        ctx.expect(HomeownerAPIError(status: 401, message: "", code: "token_expired").isTokenExpired)
         ctx.expect(HomeownerAPIError(status: 410, message: "").isGone && HomeownerAPIError(status: 404, message: "").isGone)
         ctx.expect(HomeownerAPIError(status: nil, message: "offline").isNetwork)
+        ctx.expect(HomeownerAPIError(status: 409, message: "", code: "slot_taken").isSlotTaken)
+        ctx.expect(HomeownerAPIError(status: 409, message: "", code: "consent_changed").isConsentChanged)
+        ctx.expect(HomeownerAPIError(status: 422, message: "Retake it.", code: "window_unsizable").isWindowUnsizable)
         ctx.expect(HomeownerAPIError(status: 429, message: "").transport.isRetryable)
         ctx.expect(!HomeownerAPIError(status: 422, message: "").transport.isRetryable)
     },
@@ -396,7 +464,7 @@ private let homeownerFlowChecks: [Check] = [
     Check("Callback and order copy: plain words for each reason and each stage") { ctx in
         ctx.expect(CallbackCopy.reason("unit").lead.hasPrefix("This building looks like it has more than one home."))
         ctx.expect(CallbackCopy.reason("unit").rest.contains("apartments and duplexes"))
-        for code in ["unit", "not-rooftop", "street-changed", "roof-review", "too-big", "flat-unmeasured", nil, "something-new"] {
+        for code in ["unit", "address", "home", "busy", "not-rooftop", "roof-review", nil, "something-new"] {
             let r = CallbackCopy.reason(code)
             ctx.expect(!r.lead.isEmpty && !r.rest.isEmpty)
             ctx.expect(!(r.lead + r.rest).lowercased().contains("error"), "a call-back is not an error")
@@ -405,6 +473,7 @@ private let homeownerFlowChecks: [Check] = [
         ctx.equal(CallbackCopy.button(bestTime: nil), "Call me")
         ctx.equal(OrderTimeline.headline(.ordered), "Being built")
         ctx.equal(OrderTimeline.subhead(.ordered), "Your windows are on the line in Mountain Pine, Arkansas.")
+        ctx.expect(CallbackCopy.reason("address").lead != CallbackCopy.reason("unit").lead && CallbackCopy.reason("home").lead != CallbackCopy.reason("busy").lead)
         let steps = OrderTimeline.steps(stage: .ordered, dates: ["requested": "2026-10-03", "measured": "2026-10-06"], windowCount: 7, city: "Little Rock", visitDate: nil)
         ctx.equal(steps.map { $0.state }, [.done, .done, .now, .pending, .pending])
         ctx.equal(steps.map { $0.title }, ["You measured", "Rep confirmed sizes", "Being built", "Shipped to Little Rock", "Installed"])
@@ -522,13 +591,13 @@ private let homeownerFormChecks: [Check] = [
         ctx.equal(RoomNames.room(for: .hall, current: "Bedroom 2", existing: ["Kitchen"]), "Hall")
         ctx.equal(RoomNames.room(for: .bedroom, current: "Kitchen", existing: ["Kitchen"]), "Bedroom 1")
         ctx.equal(RoomNames.nextNumbered("Bedroom", existing: ["Bedroom 1", "bedroom 2"]), "Bedroom 3")
-        let offered = ["double-hung", "single-hung", "slider", "picture", "casement-awning", "bay-bow"]
+        let offered = StyleGuess.knownKeys
         let wide = StyleGuess.suggestion(widthIn: 71.25, heightIn: 59.375, offered: offered)
-        ctx.equal(wide.keys, ["slider", "picture"])
+        ctx.equal(wide.keys, ["slider-2", "picture", "slider-3"])
         ctx.equal(wide.hint, "wide, so most homes use a slider or picture")
         ctx.equal(StyleGuess.suggestion(widthIn: 35.625, heightIn: 59.625, offered: offered).keys.first, "double-hung")
         ctx.equal(StyleGuess.suggestion(widthIn: 36, heightIn: 36, offered: offered).keys.first, "double-hung")
-        ctx.equal(StyleGuess.suggestion(widthIn: 71, heightIn: 59, offered: ["picture", "bay-bow"]).keys, ["picture"], "only styles the company offers")
-        ctx.equal(StyleGuess.suggestion(widthIn: 71, heightIn: 59, offered: ["bay-bow"]).keys, ["bay-bow"], "nothing likely offered: the company's first")
+        ctx.equal(StyleGuess.suggestion(widthIn: 71, heightIn: 59, offered: ["picture", "arch"]).keys, ["picture"], "only styles the company offers")
+        ctx.equal(StyleGuess.suggestion(widthIn: 71, heightIn: 59, offered: ["arch"]).keys, ["arch"], "nothing likely offered: the company's first")
     },
 ]
