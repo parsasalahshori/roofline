@@ -240,7 +240,7 @@ export function windowMeasurementRoutes(deps: AppDeps): Router {
     const { ctx } = req;
     const row = await withTenant(pools, ctx, (tx) => getWindowMeasurement(tx, ctx, idParam(req.params.id)));
     if (row === null) throw new AppError(404, MESSAGES.notFound);
-    res.json(toWindowView(row, clock.now()));
+    res.json(toWindowView(row, clock.now(), { photoTools: deps.config.WINDOWS_STREET_VIEW_TOOLS === true }));
   });
 
   router.patch('/:id', async (req, res) => {
@@ -331,7 +331,7 @@ export function windowMeasurementRoutes(deps: AppDeps): Router {
       return updateWindowMeasurement(tx, ctx, id, change, clock.now());
     });
     if (row === null) throw new AppError(404, MESSAGES.notFound);
-    res.json(toWindowView(row, clock.now()));
+    res.json(toWindowView(row, clock.now(), { photoTools: deps.config.WINDOWS_STREET_VIEW_TOOLS === true }));
   });
 
   // Google's Street View photo of the front, as taken for this measurement (anyone who may see the measurement).

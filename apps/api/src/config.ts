@@ -172,6 +172,15 @@ const ConfigSchema = z
       .transform((v) => path.resolve(REPO_ROOT, v))
       .optional(),
     /**
+     * Measure windows' Street View tools: the front wall drawn on the photo and lined up with it, dragging its corners,
+     * marking windows on the photo and the door ruler. Off by default (owner's decision, 2026-10-16: on 13 real houses
+     * the line-up never confirmed a wall and window sizes swung 2x with the rep's input). Off, the street photo is only
+     * an "is this the right house?" picture with its date, the server skips the line-up, and the walls estimate and
+     * "Add windows from photos" (photos taken on site) are the ways to count. 1 turns the tools back on. The API routes
+     * for marks, corners and the ruler stay either way. See docs/windows/street-view-tools.md.
+     */
+    WINDOWS_STREET_VIEW_TOOLS: flag,
+    /**
      * Whether Measure buys Google Solar's Data Layers (the height map and roof mask) to reconstruct each roof in 3D
      * (real outline, faces and lines) when GOOGLE_SOLAR_API_KEY is set. Default on; 0 turns it off (the roof is then
      * guessed from its outline, as before). An Enterprise SKU: 1,000 free a month, then about $75 per 1,000.

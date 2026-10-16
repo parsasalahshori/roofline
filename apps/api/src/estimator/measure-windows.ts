@@ -20,19 +20,21 @@ import { StreetViewUnavailableError, type StreetViewPano } from '../providers/st
 import { DetectorUnconfiguredError } from '../providers/window-detector.ts';
 import { ensureFootprintTiles } from './footprint-tiles.ts';
 import { FOOTPRINT_SEARCH_M, homeFromAddress, mainOf, pointOf, tilesFor } from './measure.ts';
-import { heightLayersFor } from './roof-3d.ts';
+import { heightLayersFor, roof3dForHome } from './roof-3d.ts';
 import { solarForHome } from './solar.ts';
 import { estimateAllSides } from './windows-estimate.ts';
-import { centreRange, facadeRegion, frontWalls, planShots, type Shot } from './windows-geometry.ts';
-import { eaveHeightAboveGround } from './windows-heights.ts';
+import { centreRange, facadeRegion, frontWalls, type PanoCandidate, panoSearchPoints, pickPano, planShots, SIDE_SEARCH_RADIUS_M, type Shot } from './windows-geometry.ts';
+import { wallHeights, type WallHeights } from './windows-heights.ts';
 import { decodeGray, lineUp, mainWall, sobel } from './windows-lineup.ts';
 import { ASSUMED_EAVE_M, countedOn, planOf, rawCamera, sizeOnPhoto, toWindowView, wallsFor } from './windows-view.ts';
 
 /*
  * Measure windows, POST /api/window-measurements. Like Measure roof, the default needs no AI:
- *   address -> saved home and point -> the house's outline (Microsoft footprint, else Google Solar's box) and Google's
- *   height map (eave height above ground) -> the walls estimate; and in parallel Street View's panorama nearest the
- *   house -> photos aimed at the outline's front wall -> the wall drawn into each photo and lined up with its edges.
+ *   address -> saved home and point -> the house's outline (Microsoft footprint, else the outline of Google's roof mask
+ *   as Measure roof reconstructs it, else Google Solar's box) and Google's height map (each wall's eave height above
+ *   ground, the main eave, the ridge) -> the walls estimate; and in parallel Street View's panorama on the address's
+ *   side of the house -> photos aimed at the outline's front wall. With WINDOWS_STREET_VIEW_TOOLS on, the wall is also
+ *   drawn into each photo and lined up with its edges; off (the default), the photo is only a picture of the house.
  * The optional detector (WINDOW_DETECTOR=owlv2) then finds front windows. Every failure after the address is found
  * becomes a typed `missing` reason, with the walls estimate still there whenever the outline is known; nothing throws
  * into the request except a missing address (404) or an unreachable geocoder (503), as for the roof.
@@ -59,7 +61,11 @@ async function homeOf(deps: AppDeps, ctx: TenantContext, i: { propertyId?: strin
   throw new AppError(400, 'Pick an address.', 'address');
 }
 
-/** The outline: the footprint at the home (as Measure roof picks it), else Google Solar's box for the building. */
+/**
+ * The outline: the footprint at the home (as Measure roof picks it); else the roof's real outline from Google's roof
+ * mask (the roof in 3D, kept from Measure roof or made now on the height map the walls' heights read anyway); else, as
+ * a last resort, Google Solar's box for the building (a box round the whole roof: its perimeter runs long).
+ */
 async function outlineOf(deps: AppDeps, ctx: TenantContext, property: PropertyRow, point: LngLat): Promise<{ ring: LngLat[]; source: WindowGeometry['outlineSource'] } | null> {
   const { tiles, state } = tilesFor(property, point);
   try {
@@ -73,31 +79,85 @@ async function outlineOf(deps: AppDeps, ctx: TenantContext, property: PropertyRo
     const ring = main.ring.length > 1 && main.ring[0]![0] === main.ring.at(-1)![0] && main.ring[0]![1] === main.ring.at(-1)![1] ? main.ring.slice(0, -1) : main.ring;
     return { ring: ring.map((p) => [p[0], p[1]] as LngLat), source: 'footprint' };
   }
-  const solar = await solarForHome(deps, ctx, property.id, point);
+  const solarAsked = solarForHome(deps, ctx, property.id, point);
+  try {
+    const r3 = await roof3dForHome(deps, ctx, property.id, point, solarAsked.then((sol) => (sol === null ? undefined : sol.building)));
+    const outline = r3?.roof?.outline ?? null;
+    if (outline !== null && outline.length >= 3) return { ring: outline.map((p) => [p[0], p[1]] as LngLat), source: 'solar-mask' };
+  } catch (err) {
+    deps.logError?.(err, 'window-outline');
+  }
+  const solar = await solarAsked;
   const box = solar?.building?.box ?? null;
   if (box === null) return null;
   return { ring: [box.sw, [box.ne[0], box.sw[1]], box.ne, [box.sw[0], box.ne[1]]], source: 'solar-box' };
 }
 
-async function eaveOf(deps: AppDeps, ctx: TenantContext, property: PropertyRow, point: LngLat, ring: LngLat[]): Promise<number | null> {
+/** The walls' heights round `ring` from Google's height map; null when there is none for the house. */
+async function heightsOf(deps: AppDeps, ctx: TenantContext, property: PropertyRow, point: LngLat, ring: LngLat[]): Promise<WallHeights | null> {
   try {
     const solar = await solarForHome(deps, ctx, property.id, point);
     const layers = await heightLayersFor(deps, point, solar?.building ?? null, HEIGHTS_BUDGET_MS);
-    return layers === null ? null : eaveHeightAboveGround(layers, ring);
+    return layers === null ? null : wallHeights(layers, ring);
   } catch (err) {
     deps.logError?.(err, 'window-heights');
     return null;
   }
 }
 
-async function panoOf(deps: AppDeps, centre: LngLat): Promise<StreetViewPano | 'none' | 'error'> {
-  if (!deps.streetView.configured) return 'error';
+/**
+ * One line of JSON per Street View step that did not give a photo, and per panorama chosen: the step and the failure's
+ * reason (StreetViewUnavailableError.reason), never the key, the URL or the address. Quiet under tests.
+ */
+export function logStreetView(deps: AppDeps, detail: Record<string, string | number | boolean | null>): void {
   try {
-    return (await deps.streetView.metadata(centre, { radiusM: STREET_VIEW_RADIUS_M })) ?? 'none';
-  } catch (err) {
-    if (!(err instanceof StreetViewUnavailableError)) deps.logError?.(err, 'street-view');
+    if (deps.config?.NODE_ENV === 'test') return;
+    console.info(JSON.stringify({ event: 'street-view', ...detail }));
+  } catch {
+    // Logging must never fail a Measure.
+  }
+}
+
+/**
+ * The panorama to photograph the house from (windows-geometry pickPano): Google's own panorama on the address's side.
+ * Searched at once: the address itself (Google answers with a panorama on the address's street), the outline's middle,
+ * and a point past each of its four sides. Metadata requests are free. 'none': no imagery round the house; 'error':
+ * Street View is not set up or every search failed.
+ */
+async function panoOf(deps: AppDeps, address: string, ring: LngLat[], centre: LngLat): Promise<StreetViewPano | 'none' | 'error'> {
+  if (!deps.streetView.configured) {
+    logStreetView(deps, { step: 'metadata', outcome: 'unavailable', reason: 'unconfigured' });
     return 'error';
   }
+  const asks: { where: LngLat | string; radiusM: number; from: PanoCandidate['from'] }[] = [
+    { where: address, radiusM: STREET_VIEW_RADIUS_M, from: 'address' },
+    { where: centre, radiusM: STREET_VIEW_RADIUS_M, from: 'centre' },
+    ...panoSearchPoints(ring).map((p) => ({ where: p, radiusM: SIDE_SEARCH_RADIUS_M, from: 'side' as const })),
+  ];
+  let failed = 0;
+  const found = await Promise.all(
+    asks.map(async (a) => {
+      try {
+        const pano = await deps.streetView.metadata(a.where, { radiusM: a.radiusM });
+        return pano === null ? null : { ...pano, from: a.from };
+      } catch (err) {
+        failed += 1;
+        if (err instanceof StreetViewUnavailableError) logStreetView(deps, { step: 'metadata', search: a.from, outcome: 'unavailable', reason: err.reason });
+        else deps.logError?.(err, 'street-view');
+        return null;
+      }
+    }),
+  );
+  const candidates = found.filter((c): c is StreetViewPano & { from: PanoCandidate['from'] } => c !== null);
+  const picked = pickPano(ring, candidates);
+  if (picked === null) {
+    const outcome = failed === asks.length ? 'error' : 'none';
+    logStreetView(deps, { step: 'pick', outcome: outcome === 'error' ? 'unavailable' : 'no-pano', searched: asks.length, failed, found: candidates.length });
+    return outcome;
+  }
+  const { from, ...pano } = picked.pano;
+  logStreetView(deps, { step: 'pick', outcome: 'picked', from, byGoogle: pano.byGoogle, onAddressSide: picked.onAddressSide, found: candidates.length });
+  return pano;
 }
 
 export type TakenPhoto = {
@@ -118,12 +178,15 @@ export async function takePhoto(
   now: Date,
   /** The eave height is Google's (not assumed): the photo's eave height must then agree with it for a 'good' line-up. */
   heightKnown = false,
+  /** Line the wall up with the photo (WINDOWS_STREET_VIEW_TOOLS); off, the photo is kept as a picture only. */
+  lineUpOn = true,
 ): Promise<TakenPhoto | null> {
   let bytes: Uint8Array;
   try {
     bytes = await deps.streetView.image({ panoId: pano.panoId, heading: shot.heading, fov: shot.fov, pitch: shot.pitch, widthPx: PHOTO_PX, heightPx: PHOTO_PX });
   } catch (err) {
-    if (!(err instanceof StreetViewUnavailableError)) deps.logError?.(err, 'street-view');
+    if (err instanceof StreetViewUnavailableError) logStreetView(deps, { step: 'image', outcome: 'unavailable', reason: err.reason });
+    else deps.logError?.(err, 'street-view');
     return null;
   }
   const id = randomUUID();
@@ -154,6 +217,7 @@ export async function takePhoto(
   const cam = rawCamera(plan, base)!;
   const front = frontWalls(plan.walls, cam.pos);
   base.distanceM = Math.round((centreRange(cam, front) ?? 0) * 10) / 10;
+  if (!lineUpOn) return { stored: base, bytes, blurred: false, outside: false };
   const wall = mainWall(plan.walls, cam.pos);
   const gray = decodeGray(bytes);
   if (wall === null || gray === null) return { stored: base, bytes, blurred: false, outside: false };
@@ -230,8 +294,15 @@ export async function measureWindows(deps: AppDeps, ctx: TenantContext, i: { pro
   } else {
     const n = outline.ring.length;
     const centre: LngLat = [outline.ring.reduce((t, p) => t + p[0], 0) / n, outline.ring.reduce((t, p) => t + p[1], 0) / n];
-    const [eave, pano] = await Promise.all([eaveOf(deps, ctx, property, point, outline.ring), panoOf(deps, centre)]);
-    geometry = { ring: outline.ring, camera: typeof pano === 'object' ? pano.location : null, eaveHeightM: eave, outlineSource: outline.source };
+    const [heights, pano] = await Promise.all([heightsOf(deps, ctx, property, point, outline.ring), panoOf(deps, lineOf(property), outline.ring, centre)]);
+    const eave = heights?.eaveM ?? null;
+    geometry = {
+      ring: outline.ring,
+      camera: typeof pano === 'object' ? pano.location : null,
+      eaveHeightM: eave,
+      outlineSource: outline.source,
+      ...(heights !== null ? { wallEavesM: heights.wallEavesM, ridgeM: heights.ridgeM, lowestEaveM: heights.lowestEaveM } : {}),
+    };
     const plan = planOf(geometry);
     if (typeof pano !== 'object') {
       missing = 'no-street-view';
@@ -241,7 +312,8 @@ export async function measureWindows(deps: AppDeps, ctx: TenantContext, i: { pro
       const front = frontWalls(plan.walls, plan.camera);
       const shots = planShots(front, plan.camera);
       const eaveM = eave ?? ASSUMED_EAVE_M;
-      const taken = (await Promise.all(shots.map((s) => takePhoto(deps, pano, s, plan, eaveM, now, eave !== null)))).filter((t): t is TakenPhoto => t !== null);
+      const tools = deps.config.WINDOWS_STREET_VIEW_TOOLS === true;
+      const taken = (await Promise.all(shots.map((s) => takePhoto(deps, pano, s, plan, eaveM, now, eave !== null, tools)))).filter((t): t is TakenPhoto => t !== null);
       photos.push(...taken.map((t) => t.stored));
       const counted = taken.filter((t) => t.stored.measure);
       if (shots.length === 0) missing = 'facade-hidden';
@@ -276,7 +348,8 @@ export async function measureWindows(deps: AppDeps, ctx: TenantContext, i: { pro
           photos,
           windows,
           estimated,
-          stories: walls !== null && walls.heightSource !== 'assumed' ? walls.floors : null,
+          // A whole number of floors in the table (1.5 is kept as 2: the gutters read it for the eave's height).
+          stories: walls !== null && walls.heightSource !== 'assumed' ? Math.round(walls.floors) : null,
           geometry,
           detector,
           missingReason: missing,
@@ -291,5 +364,5 @@ export async function measureWindows(deps: AppDeps, ctx: TenantContext, i: { pro
     if (err instanceof WindowMeasurementPropertyNotFoundError) throw new AppError(404, MESSAGES.notFound);
     throw err;
   }
-  return toWindowView(row, now);
+  return toWindowView(row, now, { photoTools: deps.config.WINDOWS_STREET_VIEW_TOOLS === true });
 }
