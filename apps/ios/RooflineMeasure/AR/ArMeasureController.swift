@@ -137,7 +137,8 @@ final class ArMeasureController {
             trackingLost(reason: nil)
             return
         }
-        capture.setTracking(normal: true)
+        // Observed properties are only written when they change: SwiftUI redraws on every write
+        if !capture.tracking { capture.setTracking(normal: true) }
 
         let forward = -Vec3(simd_float3(cam.transform.columns.2.x, cam.transform.columns.2.y, cam.transform.columns.2.z))
         let still = stillness.update(time: frame.timestamp, position: viewer, forward: forward)
@@ -164,48 +165,57 @@ final class ArMeasureController {
         let estimatedQuery = sceneView.raycastQuery(from: viewCenter, allowing: .estimatedPlane, alignment: .any)
         let rawHit: Vec3? = estimatedQuery.flatMap { sceneView.session.raycast($0).first }.map { Vec3($0.worldTransform.translation) }
 
+        let aimNow: Vec3?
         if let wall = capture.wallPlane, let q = estimatedQuery {
             let local = localFramePlane(wall: wall, depthPoints: depth, maxOffsetM: CornerCapture.maxOffPlaneM)
-            aim = local.intersect(rayOrigin: Vec3(q.origin), direction: Vec3(q.direction))
+            aimNow = local.intersect(rayOrigin: Vec3(q.origin), direction: Vec3(q.direction))
         } else {
-            aim = rawHit
+            aimNow = rawHit
         }
+        // The shown aim follows to the nearest 2 mm (the samples use the exact value)
+        if (aimNow == nil) != (aim == nil) || (aimNow.map { a in aim.map { a.distance(to: $0) > 0.002 } ?? true } ?? false) { aim = aimNow }
 
         if sampling {
-            if limitedReason == nil, still, let a = aim {
+            if limitedReason == nil, still, let a = aimNow {
                 sampler.add(a)
                 samplingDepth.append(contentsOf: depth.isEmpty ? (rawHit.map { [$0] } ?? []) : depth)
             }
-            sampleProgress = sampler.progress
+            if sampleProgress != sampler.progress { sampleProgress = sampler.progress }
             if sampler.isFull || Date() >= samplingDeadline { finishSampling(viewer: viewer) }
         }
 
         // Phase
+        let next: Phase
         if capture.isComplete {
-            phase = .complete
-            if frameCount % 3 == 0 { cornersInPhoto = FrameCapture.projectCorners(finished?.pointsM ?? capture.points, camera: cam).allInView }
+            next = .complete
+            if frameCount % 3 == 0 {
+                let inPhoto = FrameCapture.projectCorners(finished?.pointsM ?? capture.points, camera: cam).allInView
+                if inPhoto != cornersInPhoto { cornersInPhoto = inPhoto }
+            }
         } else if sampling {
-            phase = still && limitedReason == nil ? .sampling : .holdStill
+            next = still && limitedReason == nil ? .sampling : .holdStill
         } else if let r = limitedReason {
-            phase = .limited(r)
+            next = .limited(r)
         } else {
-            phase = aim == nil ? .searching : .aiming
+            next = aimNow == nil ? .searching : .aiming
         }
+        if next != phase { phase = next }
 
         updateOverlay(wallNormal: capture.wallPlane?.normal)
         if frameCount % 6 == 0, !capture.isComplete { loupe = makeLoupe() }
     }
 
     private func trackingLost(reason: String?) {
-        if capture.setTracking(normal: false) {
+        // Once per loss (while lost, every frame lands here): count it, and restart a window in progress
+        if capture.tracking, capture.setTracking(normal: false) {
             cancelSampling()
             finished = nil
             preview = nil
             message = (reason ?? "Tracking was lost.") + " Start this window again from its first corner."
             haptics.notificationOccurred(.warning)
         }
-        aim = nil
-        phase = .lost
+        if aim != nil { aim = nil }
+        if phase != .lost { phase = .lost }
         updateOverlay(wallNormal: nil)
     }
 
