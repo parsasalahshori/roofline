@@ -131,7 +131,7 @@ export function ForwardingGuide() {
   return (
     <div id="forwarding" ref={sectionRef} className={styles.guide}>
       <Panel title={forwarding.title}>
-        <div className={styles.card}>
+        <div className={styles.stack}>
           {hasNumbers ? (
             <dl className={form.facts}>
               {businessNumber !== null ? (

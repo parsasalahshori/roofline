@@ -121,10 +121,24 @@ it('owner sees the plan, usage and plans', async () => {
   renderApp('/settings/billing');
 
   expect(await screen.findByText(billing.noPlan)).toBeInTheDocument();
+  expect(screen.getByText(billing.usageHeading)).toBeInTheDocument();
+  expect(screen.getByRole('region', { name: billing.noPlan })).toHaveAttribute('data-padded', 'true');
   expect(await screen.findByText('6 so far')).toBeInTheDocument();
   expect(screen.getAllByText('12 of 300 AI call minutes').length).toBeGreaterThan(0);
   expect(screen.getByText('$199/month')).toBeInTheDocument();
   expect(screen.getByText('Includes 300 AI call minutes and 1,000 text segments')).toBeInTheDocument();
+});
+
+it('a company with no meters has no usage heading, and no empty panel body', async () => {
+  signedIn({
+    status: 'trial_ended',
+    view: billingView({ status: 'trial_ended', hasPaymentMethod: false, usage: [], plans: [STARTER] }),
+  });
+  renderApp('/settings/billing');
+
+  expect(await screen.findByText(billing.noPlan)).toBeInTheDocument();
+  expect(screen.queryByText(billing.usageHeading)).not.toBeInTheDocument();
+  expect(screen.getByRole('region', { name: billing.noPlan })).toHaveAttribute('data-padded', 'false');
 });
 
 it('Pick this plan goes to checkout', async () => {
