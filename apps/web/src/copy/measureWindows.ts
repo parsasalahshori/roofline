@@ -313,6 +313,7 @@ export const windowPhotos = {
   // AR on an Android phone (WebXR): tap the frame's corners through the camera
   methodAr: 'AR (Android)',
   arHint: 'Point the phone at the window and tap its four frame corners. No sheet needed.',
+  arNoSize: 'Tap the four frame corners in AR to size the window.',
   arGuidance: [
     "Tap the window FRAME corners, not the glass (glass doesn't give AR hits)",
     'Move the phone slowly side to side first so AR finds the wall',

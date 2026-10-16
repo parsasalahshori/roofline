@@ -541,7 +541,7 @@ export function PhotoMeasure({
         )}
         <div className={styles.size} role="status" data-live-size={size === null ? 'none' : 'live'} data-retake={retake ? 'true' : undefined}>
           <span className={styles.sizeLabel}>{copy.sizeLabel}</span>
-          {sizeText !== null ? <strong className={styles.sizeValue}>{sizeText}</strong> : <span>{method === 'known-side' && !(inches > 0) ? copy.typeSide : copy.noSize}</span>}
+          {sizeText !== null ? <strong className={styles.sizeValue}>{sizeText}</strong> : <span>{arMode ? copy.arNoSize : method === 'known-side' && !(inches > 0) ? copy.typeSide : copy.noSize}</span>}
           {sizeText !== null && uMax !== null && (sheetMode || arMode || unchanged) ? (
             <span className={styles.plusMinus} data-plus-minus="">
               {copy.plusMinus(plusMinusFraction(uMax))}

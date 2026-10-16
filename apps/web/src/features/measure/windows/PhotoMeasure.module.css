@@ -41,6 +41,17 @@
   font-weight: 600;
 }
 
+/* Four tabs (AR shown) on a phone: tighter, and "Recommended" never breaks mid-word */
+.methods:has(> :nth-child(4)) .method {
+  padding: 4px 2px;
+  font-size: 13px;
+}
+
+.methods:has(> :nth-child(4)) .recommended {
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
 .hint {
   flex: none;
   margin: 0;
