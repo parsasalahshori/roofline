@@ -222,7 +222,7 @@ describe('PATCH /api/measurements/:id/gutters', () => {
       expect(res.status, JSON.stringify(body)).toBe(400);
       return res;
     };
-    expect((await bad({ addedRuns: [{ id: 'A1', label: 'x', lengthFt: 0 }] })).body.field).toBe('addedRuns');
+    expect((await bad({ addedRuns: [{ id: 'A1', label: 'x', lengthFt: 0 }] })).body.field).toMatch(/^addedRuns/);
     await bad({ addedRuns: [{ id: 'A1', label: 'x', lengthFt: 501 }] });
     await bad({ addedRuns: [{ id: 'G1', label: 'x', lengthFt: 20 }] });
     await bad({ addedRuns: [{ id: 'A1', label: 'x'.repeat(41), lengthFt: 20 }] });

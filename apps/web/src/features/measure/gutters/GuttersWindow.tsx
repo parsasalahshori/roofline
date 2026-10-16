@@ -610,17 +610,6 @@ function GuttersCard({
         {saveFailed ? <Banner tone="danger">{copy.saveFailed}</Banner> : null}
         {open ? (
           <div id={adjustId} className={cardStyles.adjust}>
-            <section className={styles.panel} aria-labelledby={`${adjustId}-runs`}>
-              <h3 id={`${adjustId}-runs`} className={styles.panelTitle}>
-                {copy.runsTitle}
-              </h3>
-              <p className={styles.small}>{copy.runsHint}</p>
-              <ul className={styles.runList}>
-                {view.runs.map((r, i) => (
-                  <RunRow key={r.id} run={r} index={i} onToggle={() => onToggle(r.id)} onDownspouts={(n) => onDownspouts(r.id, n)} />
-                ))}
-              </ul>
-            </section>
             <section className={styles.panel} aria-labelledby={`${adjustId}-added`} data-added-runs="">
               <h3 id={`${adjustId}-added`} className={styles.panelTitle}>
                 {copy.addedTitle}
@@ -640,6 +629,17 @@ function GuttersCard({
                 {copy.totalTitle}
               </h3>
               <TotalForm totalFt={view.adjustments.totalFt} runsFt={view.totals.measuredFt + view.totals.addedFt} onTotal={onTotal} />
+            </section>
+            <section className={styles.panel} aria-labelledby={`${adjustId}-runs`}>
+              <h3 id={`${adjustId}-runs`} className={styles.panelTitle}>
+                {copy.runsTitle}
+              </h3>
+              <p className={styles.small}>{copy.runsHint}</p>
+              <ul className={styles.runList}>
+                {view.runs.map((r, i) => (
+                  <RunRow key={r.id} run={r} index={i} onToggle={() => onToggle(r.id)} onDownspouts={(n) => onDownspouts(r.id, n)} />
+                ))}
+              </ul>
             </section>
             <section className={styles.panel}>
               <h3 className={styles.panelTitle}>{copy.sizeTitle}</h3>
