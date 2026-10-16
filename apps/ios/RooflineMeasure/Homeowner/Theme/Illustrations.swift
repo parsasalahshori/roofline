@@ -31,8 +31,8 @@ struct StyledMap: View {
                 RoundedRectangle(cornerRadius: 4 * sx).fill(Theme.mapLot)
                     .frame(width: 130 * sx, height: 70 * sy).offset(x: 110 * sx, y: 90 * sy)
                 Text(streetName)
-                    .font(.system(size: 11 * sx, design: .monospaced))
-                    .foregroundStyle(Theme.ink3)
+                    .font(.system(size: 12 * sx, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Theme.ink2)
                     .offset(x: 100 * sx, y: 49 * sy)
                 // The house
                 Rectangle().fill(Theme.surface).frame(width: 58 * sx, height: 42 * sy)

@@ -20,6 +20,7 @@ struct CoachingScreen: View {
                     } else {
                         InfoPanel(icon: .alert, text: "This device can't measure with a camera. Open WinChoice on your iPhone to measure your windows.", tint: Theme.warnTint, iconColor: Theme.warn).padding(.top, 2)
                     }
+                    WCScrollFooter()
                 }
                 .padding(.horizontal, Theme.gutter)
                 .padding(.bottom, 24)

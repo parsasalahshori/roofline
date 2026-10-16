@@ -8,22 +8,27 @@ struct WelcomeScreen: View {
     @State private var showServerSetting = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            hero
-            VStack(alignment: .leading, spacing: 10) {
-                Text("What are you looking for? Pick one or more.")
-                    .wc(15, .semibold, relativeTo: .subheadline)
-                    .foregroundStyle(Theme.ink2)
-                    .padding(.horizontal, 2)
-                    .accessibilityAddTraits(.isHeader)
-                ForEach(store.offeredServices, id: \.self) { service in
-                    ServiceOption(service: service, isOn: store.selectedServices.contains(service)) { store.toggle(service) }
+        // It scrolls when the text is large (it sits still when everything fits)
+        ScrollView {
+            VStack(spacing: 0) {
+                hero
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("What are you looking for? Pick one or more.")
+                        .wc(15, .semibold, relativeTo: .subheadline)
+                        .foregroundStyle(Theme.ink2)
+                        .padding(.horizontal, 2)
+                        .accessibilityAddTraits(.isHeader)
+                    ForEach(store.offeredServices, id: \.self) { service in
+                        ServiceOption(service: service, isOn: store.selectedServices.contains(service)) { store.toggle(service) }
+                    }
                 }
+                .padding(Theme.gutter)
+                WCScrollFooter().padding(.horizontal, Theme.gutter)
             }
-            .padding(Theme.gutter)
-            Spacer(minLength: 0)
+            .frame(maxWidth: .infinity, alignment: .top)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .scrollBounceBehavior(.basedOnSize)
+        .wcNoTopScrollFade()
         .background(Theme.ground.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
         .wcFooter {

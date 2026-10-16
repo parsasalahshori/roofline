@@ -55,7 +55,7 @@ final class RoomScanner {
     var found: [Found] = []
     /// The room's walls and where its windows and doors are (for drawing it), once the scan is processed.
     private(set) var plan: ScanPlan?
-    /// Seconds the scan took (shown as "Room scanned in 41 seconds").
+    /// Seconds the scan took (shown as "Scanned in 41 seconds").
     private(set) var scanSeconds = 0
 
     @ObservationIgnored let captureView: RoomCaptureView

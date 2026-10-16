@@ -41,6 +41,7 @@ struct BookScreen: View {
                     if let e = store.bookError {
                         InfoPanel(icon: .alert, text: e, tint: Theme.warnTint, iconColor: Theme.warn).padding(.top, 14)
                     }
+                    WCScrollFooter()
                 }
                 .padding(.horizontal, Theme.gutter)
                 .padding(.bottom, 24)

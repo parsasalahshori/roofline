@@ -40,6 +40,7 @@ struct AddressScreen: View {
                         .padding(.horizontal, 4)
                         .accessibilityElement(children: .combine)
                     }
+                    WCScrollFooter()
                 }
                 .padding(.horizontal, Theme.gutter)
                 .padding(.bottom, 24)
@@ -62,7 +63,9 @@ struct AddressScreen: View {
         @Bindable var store = store
         return HStack(spacing: 10) {
             IconView(icon: .pin, size: 20).foregroundStyle(Theme.ink3)
-            TextField("", text: $store.addressText, prompt: Text("Street address").foregroundColor(Theme.ink3))
+            // A long address wraps (up to three lines) instead of being cut off at the edge
+            TextField("", text: $store.addressText, prompt: Text("Street address").foregroundColor(Theme.ink3), axis: .vertical)
+                .lineLimit(1...3)
                 .wc(18, relativeTo: .body)
                 .foregroundStyle(Theme.ink)
                 .textContentType(.fullStreetAddress)
@@ -72,6 +75,12 @@ struct AddressScreen: View {
                 .focused($focused)
                 .disabled(store.addressLocked)
                 .onChange(of: store.addressText) { _, text in
+                    // Return ends the entry (the field is several lines tall, so it would add a line break)
+                    if text.contains("\n") {
+                        store.addressText = text.replacingOccurrences(of: "\n", with: "")
+                        focused = false
+                        return
+                    }
                     if store.addressPlace?.oneLine != text { store.addressPlace = nil }
                     store.addressError = nil
                     if focused { search.update(query: text) }
@@ -91,6 +100,7 @@ struct AddressScreen: View {
         }
         .padding(.leading, 14)
         .padding(.trailing, 4)
+        .padding(.vertical, 4)
         .frame(minHeight: 54)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(focused || showCard ? Theme.blue : Theme.line2, lineWidth: focused || showCard ? 2 : 1))

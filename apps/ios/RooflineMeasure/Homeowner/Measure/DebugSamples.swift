@@ -140,7 +140,7 @@ struct DebugHudSample: View {
             GeometryReader { geo in
                 ZStack {
                     if let image = backdrop {
-                        Image(uiImage: image).resizable().frame(width: geo.size.width, height: geo.size.height)
+                        Image(uiImage: image).resizable().frame(width: geo.size.width, height: geo.size.height).accessibilityHidden(true)
                     } else {
                         Color.black
                     }

@@ -54,6 +54,7 @@ struct QuoteScreen: View {
                                    subtitle: store.offline ? "You're offline. Your windows are saved on this phone and send when you're back." : "Something got in the way. Try again in a moment.")
                         WCSecondaryButton(title: "Try again", icon: .refresh) { Task { await store.prepareQuote() } }.padding(.top, 8)
                     }
+                    WCScrollFooter()
                 }
                 .padding(.horizontal, Theme.gutter)
                 .padding(.bottom, 24)
@@ -91,6 +92,7 @@ struct QuoteScreen: View {
 
 private struct TierCard: View {
     @Environment(HomeownerStore.self) private var store
+    @Environment(\.dynamicTypeSize) private var typeSize
     let tier: HomeownerTier
     let windowCount: Int
     let selected: Bool
@@ -109,6 +111,28 @@ private struct TierCard: View {
         return "\(Money.dollars(tier.total / Double(windowCount))) / window"
     }
 
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            AdaptiveStack(spacing: 8) {
+                Text(tier.label).wc(20, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
+                if let b = badge {
+                    Text(b).wc(13, .semibold, relativeTo: .footnote).foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Theme.blue, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                }
+            }
+            Text(detail).wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var priceLine: some View {
+        Text(Money.dollars(tier.total)).wcHeading(21, .heavy, relativeTo: .title3).foregroundStyle(Theme.ink).minimumScaleFactor(0.7).lineLimit(1)
+    }
+
+    private var perWindowLine: some View {
+        Text(perWindow).wc(14, relativeTo: .footnote).foregroundStyle(Theme.ink3).lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
+    }
+
     var body: some View {
         Button(action: {
             Haptics.tap()
@@ -116,21 +140,16 @@ private struct TierCard: View {
         }) {
             HStack(alignment: .top, spacing: 14) {
                 WCRadio(isOn: selected, size: 24).padding(.top, 2)
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Text(tier.label).wc(20, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
-                        if let b = badge {
-                            Text(b).wc(13, .semibold, relativeTo: .footnote).foregroundStyle(.white)
-                                .padding(.horizontal, 8).padding(.vertical, 3)
-                                .background(Theme.blue, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        }
+                if typeSize.isAccessibilitySize {
+                    // Large text: the price goes under the name and the words, at the full width
+                    VStack(alignment: .leading, spacing: 8) {
+                        titleBlock
+                        VStack(alignment: .leading, spacing: 2) { priceLine; perWindowLine }
                     }
-                    Text(detail).wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(Money.dollars(tier.total)).wcHeading(21, .heavy, relativeTo: .title3).foregroundStyle(Theme.ink).minimumScaleFactor(0.7).lineLimit(1)
-                    Text(perWindow).wc(14, relativeTo: .footnote).foregroundStyle(Theme.ink3).lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    titleBlock.frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .trailing, spacing: 2) { priceLine; perWindowLine }
                 }
             }
             .padding(14)

@@ -43,6 +43,7 @@ struct CallbackScreen: View {
                     }
                     .padding(.top, 22)
                     if store.features.bestTime { bestTimeRow.padding(.top, 18) }
+                    WCScrollFooter()
                 }
                 .padding(.horizontal, Theme.gutter)
                 .padding(.bottom, 24)
@@ -108,6 +109,7 @@ struct CallbackSentScreen: View {
     }
 
     var body: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 0) {
             ZStack {
                 Circle().fill(Theme.ok)
@@ -129,11 +131,14 @@ struct CallbackSentScreen: View {
             }
             .wcCard(radius: 16)
             .padding(.top, 20)
-            Spacer(minLength: 0)
+            WCScrollFooter()
         }
         .padding(.horizontal, Theme.gutter)
         .padding(.top, 14)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.bottom, 16)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .scrollBounceBehavior(.basedOnSize)
         .background(Theme.ground.ignoresSafeArea())
         .wcFooter {
             if let tel = store.companyPhone.flatMap(Self.telURL) {
@@ -148,10 +153,15 @@ struct CallbackSentScreen: View {
                     .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.line2, lineWidth: 1))
                 }
             }
-            Button("Start a new request") { confirmStartOver = true }
-                .wc(15, .medium, relativeTo: .subheadline)
-                .foregroundStyle(Theme.ink3)
-                .frame(minHeight: Theme.minTap)
+            Button {
+                confirmStartOver = true
+            } label: {
+                Text("Start a new request")
+                    .wc(15, .medium, relativeTo: .subheadline)
+                    .foregroundStyle(Theme.ink3)
+                    .frame(maxWidth: .infinity, minHeight: Theme.minTap)
+                    .contentShape(Rectangle())
+            }
         }
         .confirmationDialog("Start a new request?", isPresented: $confirmStartOver, titleVisibility: .visible) {
             Button("Start a new request", role: .destructive) { store.startOver() }

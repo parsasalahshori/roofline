@@ -91,6 +91,7 @@ struct LaunchScreen: View {
 /// A transient message over the top of any screen (a failed call, a window that could not be sent).
 struct NoticeBanner: View {
     @Environment(HomeownerStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         if let notice = store.notice {
@@ -110,8 +111,10 @@ struct NoticeBanner: View {
             .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
             .padding(.horizontal, Theme.gutter)
             .padding(.top, 8)
-            .transition(.move(edge: .top).combined(with: .opacity))
+            .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
             .task(id: notice.id) {
+                // VoiceOver says it when it appears (an error that only shows is missed)
+                AccessibilityNotification.Announcement(notice.text).post()
                 try? await Task.sleep(nanoseconds: 6_000_000_000)
                 if store.notice?.id == notice.id { store.dismissNotice() }
             }

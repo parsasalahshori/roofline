@@ -59,6 +59,7 @@ struct CardPhotoFlow: View {
                         InfoPanel(icon: .camera, text: "Camera access is off. Turn it on in Settings, then come back.", tint: Theme.warnTint, iconColor: Theme.warn)
                     }
                     if let note = cameraNote { InfoPanel(icon: .info, text: note) }
+                    WCScrollFooter()
                 }
                 .padding(.horizontal, Theme.gutter).padding(.bottom, 24)
             }
@@ -113,6 +114,8 @@ struct CardPhotoFlow: View {
         .padding(.horizontal, 12)
         .background(Color.black.ignoresSafeArea())
         .environment(\.colorScheme, .dark)
+        // The photo needs the room: the controls around it stop at the largest ordinary text size
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }
 
     /// A debug seed opens the card step zoomed in on the card (the real photo starts with the whole photo in view).

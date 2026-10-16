@@ -5,6 +5,7 @@ import SwiftUI
 /// The shape of the window suggests the likeliest style. A window left without a style takes that suggestion.
 struct StylesScreen: View {
     @Environment(HomeownerStore.self) private var store
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var picked: String?
     @State private var color: String?
     @State private var working = false
@@ -26,7 +27,8 @@ struct StylesScreen: View {
                         WCHeadline(text: "Pick a style")
                         windowCard(row).padding(.top, 14)
                         GroupHeader(text: "Style").padding(.top, 18)
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+                        // Three tiles across; with large text one, so the names are not cut
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: typeSize.isAccessibilitySize ? 1 : 3), spacing: 8) {
                             ForEach(store.styles) { style in
                                 StyleTile(style: style, selected: picked == style.key) {
                                     picked = style.key
@@ -42,6 +44,7 @@ struct StylesScreen: View {
                         .padding(.top, 14)
                         .padding(.horizontal, 4)
                         .accessibilityElement(children: .combine)
+                        WCScrollFooter()
                     }
                     .padding(.horizontal, Theme.gutter)
                     .padding(.bottom, 24)
@@ -65,7 +68,7 @@ struct StylesScreen: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(row.title).wc(17, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
                 if let w = row.widthIn, let h = row.heightIn {
-                    Text(sizeLine(w, h)).fixedSize(horizontal: false, vertical: true)
+                    StyleSizeLine(widthIn: w, heightIn: h, hint: suggestion?.hint)
                         .accessibilityLabel("\(SizeWording.spokenSize(widthIn: w, heightIn: h)). \(suggestion?.hint ?? "")")
                 }
             }
@@ -75,18 +78,6 @@ struct StylesScreen: View {
         .padding(.vertical, 12)
         .wcCard()
         .accessibilityElement(children: .combine)
-    }
-
-    /// "71 1/4 x 59 3/8 in, wide, so most homes use a slider or picture"
-    private func sizeLine(_ w: Double, _ h: Double) -> AttributedString {
-        var line = SizeFormat.pair(w, h, size: 15, weight: .regular, color: Theme.ink3, unit: true)
-        if let hint = suggestion?.hint {
-            var tail = AttributedString(" \u{00B7} \(hint)")
-            tail.font = .system(size: 14)
-            tail.foregroundColor = Theme.ink3
-            line += tail
-        }
-        return line
     }
 
     private var colorRow: some View {
@@ -188,6 +179,26 @@ enum StyleLabel {
             return (title, detail.isEmpty ? nil : detail)
         }
         return (label, nil)
+    }
+}
+
+/// "71 1/4 x 59 3/8 in, wide, so most homes use a slider or picture": the size with its stacked fractions, then the hint; it
+/// grows with Dynamic Type like the rest.
+private struct StyleSizeLine: View {
+    let widthIn: Double
+    let heightIn: Double
+    let hint: String?
+    @ScaledMetric(relativeTo: .subheadline) private var size: CGFloat = 15
+
+    var body: some View {
+        var line = SizeFormat.pair(widthIn, heightIn, size: size, weight: .regular, color: Theme.ink3, unit: true)
+        if let hint = hint {
+            var tail = AttributedString(" \u{00B7} \(hint)")
+            tail.font = .system(size: size - 1)
+            tail.foregroundColor = Theme.ink3
+            line += tail
+        }
+        return Text(line).fixedSize(horizontal: false, vertical: true)
     }
 }
 

@@ -22,6 +22,7 @@ struct ResultsScreen: View {
                     if store.offline {
                         InfoPanel(icon: .info, text: "You're offline. We'll refresh this when you're back.", tint: Theme.warnTint, iconColor: Theme.warn)
                     }
+                    WCScrollFooter()
                 }
                 .padding(.horizontal, Theme.gutter)
                 .padding(.bottom, 24)
@@ -105,13 +106,27 @@ struct ResultsScreen: View {
 
     private var roofCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
-                IconTile(icon: .roof, size: 34, iconSize: 18)
-                Text("Roof").wc(17, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
-                Spacer()
-                if let r = store.roofEstimate {
-                    Text(Money.range(r.low, r.high)).wcHeading(20, .heavy, relativeTo: .title3).foregroundStyle(Theme.ink)
-                        .minimumScaleFactor(0.7).lineLimit(1)
+            // The price sits beside the name when it fits, under it when it does not (large text), never cut or squeezed
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    IconTile(icon: .roof, size: 34, iconSize: 18)
+                    Text("Roof").wc(17, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
+                    Spacer(minLength: 8)
+                    roofPrice.fixedSize()
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 12) {
+                        IconTile(icon: .roof, size: 34, iconSize: 18)
+                        Text("Roof").wc(17, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
+                    }
+                    roofPrice.fixedSize()
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 12) {
+                        IconTile(icon: .roof, size: 34, iconSize: 18)
+                        Text("Roof").wc(17, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
+                    }
+                    roofPrice.lineLimit(2)
                 }
             }
             Text(roofBody).wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
@@ -120,6 +135,12 @@ struct ResultsScreen: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .wcCard(radius: 16)
         .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder private var roofPrice: some View {
+        if let r = store.roofEstimate {
+            Text(Money.range(r.low, r.high)).wcHeading(20, .heavy, relativeTo: .title3).foregroundStyle(Theme.ink)
+        }
     }
 
     private var roofBody: String {

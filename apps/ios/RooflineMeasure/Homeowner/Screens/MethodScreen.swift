@@ -25,6 +25,7 @@ struct MethodScreen: View {
                     if store.capabilities.methodCount == 0 {
                         InfoPanel(icon: .alert, text: "Measuring needs an iPhone with a camera. Your request is saved. Open WinChoice on your iPhone to measure.", tint: Theme.warnTint, iconColor: Theme.warn)
                     }
+                    WCScrollFooter()
                 }
                 .padding(.horizontal, Theme.gutter)
                 .padding(.bottom, 24)

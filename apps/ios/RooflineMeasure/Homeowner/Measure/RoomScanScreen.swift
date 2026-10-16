@@ -80,6 +80,8 @@ struct RoomScanScreen: View {
                 WCPrimaryButton(title: "Done scanning") { scanner.stop() }
                     .padding(.horizontal, Theme.gutter).padding(.vertical, 12)
             }
+            // Over the camera the controls stop at the largest ordinary text size, so the room stays in view
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         }
     }
 

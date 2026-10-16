@@ -51,6 +51,7 @@ struct RoomsScreen: View {
                             .onSubmit { addTyped() }
                             .accessibilityLabel("Type a room name")
                     }
+                    WCScrollFooter()
                 }
                 .padding(.horizontal, Theme.gutter)
                 .padding(.bottom, 24)

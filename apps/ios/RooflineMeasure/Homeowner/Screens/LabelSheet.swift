@@ -5,6 +5,7 @@ import SwiftUI
 /// here. A bottom sheet over the frozen camera picture.
 struct LabelSheet: View {
     @Environment(HomeownerStore.self) private var store
+    @Environment(\.dynamicTypeSize) private var typeSize
     let pending: PendingWindow
     /// "Measure it again": the caller discards this one and starts the measure over.
     let onAgain: () -> Void
@@ -50,25 +51,20 @@ struct LabelSheet: View {
                         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(nameFocused ? Theme.blue : Theme.line2, lineWidth: nameFocused ? 2 : 1))
                         .padding(.top, 16)
                         .accessibilityLabel("Optional name for this window")
+                    // With large text the buttons would fill the sheet: they come at the end of what scrolls
+                    if typeSize.isAccessibilitySize { buttons.padding(.top, 20) }
                 }
                 .padding(.horizontal, Theme.gutter)
                 .padding(.top, 14)
                 .padding(.bottom, 12)
             }
             .scrollDismissesKeyboard(.interactively)
-            VStack(spacing: 10) {
-                WCPrimaryButton(title: "Save window \(pending.number)", isLoading: saving) {
-                    saving = true
-                    Task {
-                        await store.savePending(room: room, name: name)
-                        saving = false
-                    }
-                }
-                WCSecondaryButton(title: "Measure it again") { onAgain() }
+            if !typeSize.isAccessibilitySize {
+                buttons
+                    .padding(.horizontal, Theme.gutter)
+                    .padding(.bottom, 8)
+                    .padding(.top, 6)
             }
-            .padding(.horizontal, Theme.gutter)
-            .padding(.bottom, 8)
-            .padding(.top, 6)
         }
         .background(Theme.ground)
         .presentationDetents([.fraction(0.74), .large], selection: $detent)
@@ -79,6 +75,19 @@ struct LabelSheet: View {
         .presentationBackground(Theme.ground)
         .presentationCornerRadius(28)
         .interactiveDismissDisabled()
+    }
+
+    private var buttons: some View {
+        VStack(spacing: 10) {
+            WCPrimaryButton(title: "Save window \(pending.number)", isLoading: saving) {
+                saving = true
+                Task {
+                    await store.savePending(room: room, name: name)
+                    saving = false
+                }
+            }
+            WCSecondaryButton(title: "Measure it again") { onAgain() }
+        }
     }
 
     private var sizeCard: some View {

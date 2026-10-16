@@ -72,6 +72,7 @@ struct PhotoTapView: View {
     var startZoom: CGFloat = 1
     var onEdit: () -> Void = {}
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var zoom: CGFloat = 1
     @State private var pan: CGSize = .zero
     @State private var touch: Touch?
@@ -177,7 +178,7 @@ struct PhotoTapView: View {
             .overlay(alignment: .topTrailing) {
                 if zoom > 1.05 {
                     Button {
-                        withAnimation(.easeOut(duration: 0.2)) {
+                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
                             zoom = 1
                             pan = .zero
                         }

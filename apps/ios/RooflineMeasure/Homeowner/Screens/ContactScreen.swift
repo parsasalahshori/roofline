@@ -6,6 +6,7 @@ import SwiftUI
 /// consent sentence, so it says exactly "Send my request".
 struct ContactScreen: View {
     @Environment(HomeownerStore.self) private var store
+    @Environment(\.dynamicTypeSize) private var typeSize
     @FocusState private var focus: ContactField?
 
     private var callback: Bool { store.requestStatus == .callback }
@@ -18,7 +19,7 @@ struct ContactScreen: View {
                 VStack(alignment: .leading, spacing: 14) {
                     WCHeadline(text: callback ? "A few details so we can call" : "Where should we send your quote?",
                                subtitle: callback ? "A person calls you about your price. It takes a minute." : nil)
-                    HStack(alignment: .top, spacing: 14) {
+                    AdaptiveStack(alignment: .top, spacing: 14) {
                         WCField(label: "First name", text: $store.contactDraft.firstName, content: .givenName, capitalization: .words, error: store.contactErrors[.firstName]) { focus = .lastName }
                             .focused($focus, equals: .firstName)
                         WCField(label: "Last name", text: $store.contactDraft.lastName, content: .familyName, capitalization: .words, error: store.contactErrors[.lastName]) { focus = .phone }
@@ -26,25 +27,22 @@ struct ContactScreen: View {
                     }
                     WCField(label: "Mobile", text: phoneBinding, prompt: "(501) 555-0177", keyboard: .phonePad, content: .telephoneNumber, capitalization: .never, mono: true, error: store.contactErrors[.phone], submitLabel: .next) { focus = .email }
                         .focused($focus, equals: .phone)
-                    HStack(alignment: .top, spacing: 14) {
+                    AdaptiveStack(alignment: .top, spacing: 14) {
                         WCField(label: "Email", text: $store.contactDraft.email, keyboard: .emailAddress, content: .emailAddress, capitalization: .never, error: store.contactErrors[.email]) { focus = .zip }
                             .focused($focus, equals: .email)
                         WCField(label: "ZIP code", text: $store.contactDraft.zip, keyboard: .numberPad, content: .postalCode, capitalization: .never, mono: true, error: store.contactErrors[.zip], submitLabel: .done) { focus = nil }
                             .focused($focus, equals: .zip)
-                            .frame(maxWidth: 140)
+                            .frame(maxWidth: typeSize.isAccessibilitySize ? .infinity : 140)
                     }
                     consent
-                    HStack(spacing: 4) {
-                        Text("We never sell your details.").foregroundStyle(Theme.ink3)
-                        if let p = store.company.privacyUrl.flatMap(URL.init) { Link("Privacy", destination: p) }
-                        Text("·").foregroundStyle(Theme.ink3)
-                        if let t = store.company.termsUrl.flatMap(URL.init) { Link("Terms", destination: t) }
-                    }
-                    .wc(14, relativeTo: .footnote)
-                    .foregroundStyle(Theme.blue)
+                    // One line of text with two links, so it wraps like any sentence at any text size
+                    Text(legalLine)
+                        .wc(14, relativeTo: .footnote)
+                        .fixedSize(horizontal: false, vertical: true)
                     if let e = store.contactError {
                         InfoPanel(icon: .alert, text: e, tint: Theme.warnTint, iconColor: Theme.warn)
                     }
+                    WCScrollFooter()
                 }
                 .padding(.horizontal, Theme.gutter)
                 .padding(.bottom, 24)
@@ -59,6 +57,26 @@ struct ContactScreen: View {
         }
         .wcScreenChrome()
         .task { await store.prepareContact() }
+    }
+
+    private var legalLine: AttributedString {
+        var out = AttributedString("We never sell your details.")
+        out.foregroundColor = Theme.ink3
+        func add(_ title: String, _ url: URL) {
+            var link = AttributedString(title)
+            link.link = url
+            link.foregroundColor = Theme.blue
+            out += AttributedString(" ") + link
+        }
+        let privacy = store.company.privacyUrl.flatMap(URL.init), terms = store.company.termsUrl.flatMap(URL.init)
+        if let p = privacy { add("Privacy", p) }
+        if privacy != nil, terms != nil {
+            var dot = AttributedString(" \u{00B7}")
+            dot.foregroundColor = Theme.ink3
+            out += dot
+        }
+        if let t = terms { add("Terms", t) }
+        return out
     }
 
     private var phoneBinding: Binding<String> {

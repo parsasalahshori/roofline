@@ -86,6 +86,9 @@ struct ArHud: View {
             }
         }
         .environment(\.colorScheme, .dark)
+        // Over the camera the controls stop at the largest ordinary text size: bigger would hide the window being measured
+        // (VoiceOver reads the same words at any size)
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }
 
     private var topBar: some View {

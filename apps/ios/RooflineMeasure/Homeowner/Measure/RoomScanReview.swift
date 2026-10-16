@@ -23,6 +23,7 @@ struct ScanReviewRow: Identifiable, Equatable {
 /// moved to another room (touch and hold).
 struct RoomScanReview: View {
     @Environment(HomeownerStore.self) private var store
+    @Environment(\.dynamicTypeSize) private var typeSize
     let room: String
     let seconds: Int
     let plan: ScanPlan
@@ -42,17 +43,20 @@ struct RoomScanReview: View {
                 Button("Cancel", action: onCancel).wc(17, relativeTo: .body).foregroundStyle(Theme.blue).frame(minWidth: Theme.minTap, minHeight: Theme.minTap, alignment: .leading)
                 Spacer()
                 Text(room).wc(17, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink).accessibilityAddTraits(.isHeader)
+                    .lineLimit(1).minimumScaleFactor(0.7)
                 Spacer()
                 Color.clear.frame(width: 60, height: 1)
             }
             .padding(.horizontal, Theme.gutter)
+            // the title row stops growing at the first accessibility size, like the system's bars
+            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     diagramCard
-                    HStack(alignment: .firstTextBaseline) {
+                    AdaptiveStack(alignment: .firstTextBaseline, spacing: 2) {
                         Text(rows.isEmpty ? "We didn't find a window" : "We found \(rows.count) window\(rows.count == 1 ? "" : "s")")
                             .wc(19, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink).accessibilityAddTraits(.isHeader)
-                        Spacer()
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         if let u = rows.map({ RoomPlanLimits.uncertaintyIn($0.confidence) }).max() {
                             Text(SizeWording.plusMinusEach(u)).wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink3)
                         }
@@ -71,6 +75,7 @@ struct RoomScanReview: View {
                         SmallNote(text: "Tap a window to leave it out. Touch and hold to move it to another room.").padding(.top, 8).padding(.horizontal, 6)
                     }
                     InfoPanel(icon: .alert, text: "Good enough for your quote. Want it closer? Tap the 4 corners of each window (about 1/8 inch). Your rep checks every size anyway.", tint: Theme.infoTint, iconColor: Theme.info).padding(.top, 14)
+                    WCScrollFooter()
                 }
                 .padding(.horizontal, Theme.gutter)
                 .padding(.top, 8)
@@ -93,7 +98,7 @@ struct RoomScanReview: View {
             HStack(alignment: .top) {
                 HStack(spacing: 6) {
                     IconView(icon: .cube, size: 16, weight: 1.9)
-                    Text("Room scanned in \(seconds) seconds").wc(14, .semibold, relativeTo: .footnote).lineLimit(1).minimumScaleFactor(0.75)
+                    Text("Scanned in \(seconds) seconds").wc(14, .semibold, relativeTo: .footnote).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
                 .foregroundStyle(Theme.blue)
                 .padding(.horizontal, 10).padding(.vertical, 6)
@@ -106,6 +111,8 @@ struct RoomScanReview: View {
                 .frame(width: 104)
             }
             .padding(12)
+            // the picture is a drawing of a fixed size: its labels stop at the largest ordinary size
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         }
         .frame(height: 270)
         .frame(maxWidth: .infinity)
@@ -119,18 +126,18 @@ struct RoomScanReview: View {
             rows[index].included.toggle()
             Haptics.tap()
         } label: {
-            HStack(spacing: 12) {
+            HStack(alignment: typeSize.isAccessibilitySize ? .top : .center, spacing: 12) {
                 Text(row.letter).wcMono(16, .bold, relativeTo: .body).foregroundStyle(row.included ? Theme.blue : Theme.ink3)
                     .frame(width: 30, height: 30).background(row.included ? Theme.blueTint : Theme.surface2, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .padding(.top, typeSize.isAccessibilitySize ? 4 : 0)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(row.name).wc(17, .semibold, relativeTo: .body).foregroundStyle(row.included ? Theme.ink : Theme.ink3).strikethrough(!row.included)
-                    Text(row.included ? looksLike(row) : "Left out. Tap to add it.").wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink3).lineLimit(2)
+                    Text(row.included ? looksLike(row) : "Left out. Tap to add it.").wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink3).lineLimit(typeSize.isAccessibilitySize ? nil : 2)
+                    // with large text the size goes under the name instead of beside it
+                    if typeSize.isAccessibilitySize { sizeBlock(row, alignment: .leading) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                VStack(alignment: .trailing, spacing: 1) {
-                    Text(SizeFormat.pair(row.widthIn.rounded(), row.heightIn.rounded(), size: 20, weight: .bold, color: row.included ? Theme.ink : Theme.ink3)).lineLimit(1).minimumScaleFactor(0.7)
-                    Text(SizeWording.plusMinus(RoomPlanLimits.uncertaintyIn(row.confidence))).wc(14, relativeTo: .footnote).foregroundStyle(Theme.ink3)
-                }
+                if !typeSize.isAccessibilitySize { sizeBlock(row, alignment: .trailing) }
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
             .frame(minHeight: 64)
@@ -146,6 +153,13 @@ struct RoomScanReview: View {
         .accessibilityLabel("Window \(row.letter), \(row.name). \(SizeWording.spokenSize(widthIn: row.widthIn.rounded(), heightIn: row.heightIn.rounded())), \(SizeWording.spokenAccuracy(RoomPlanLimits.uncertaintyIn(row.confidence))). \(row.included ? "Will be added" : "Left out")")
         .accessibilityHint("Double tap to \(row.included ? "leave it out" : "add it")")
         .accessibilityAddTraits(.isButton)
+    }
+
+    private func sizeBlock(_ row: ScanReviewRow, alignment: HorizontalAlignment) -> some View {
+        VStack(alignment: alignment, spacing: 1) {
+            SizeText(widthIn: row.widthIn.rounded(), heightIn: row.heightIn.rounded(), size: 20, weight: .bold, color: row.included ? Theme.ink : Theme.ink3, relativeTo: .title3)
+            Text(SizeWording.plusMinus(RoomPlanLimits.uncertaintyIn(row.confidence))).wc(14, relativeTo: .footnote).foregroundStyle(Theme.ink3)
+        }
     }
 
     private func looksLike(_ row: ScanReviewRow) -> String {
@@ -192,7 +206,17 @@ struct RoomDiagram: View {
             case .threeD: drawIso(&ctx, size)
             }
         }
-        .accessibilityHidden(true)
+        .accessibilityElement()
+        .accessibilityLabel(summary)
+    }
+
+    /// What the drawing shows, in words: the room's size and which windows are marked.
+    private var summary: String {
+        let b = bounds
+        let size = "\(FeetInches.text(metres: b.maxY - b.minY)) by \(FeetInches.text(metres: b.maxX - b.minX))"
+        let marked = letters.sorted { $0.value < $1.value }.map { "\($0.value)\(included.contains($0.key) ? "" : " (left out)")" }
+        let windows = marked.isEmpty ? "No windows marked." : "Windows marked: \(marked.joined(separator: ", "))."
+        return "Drawing of the room you scanned, \(size). \(windows)"
     }
 
     private var bounds: (minX: Double, maxX: Double, minY: Double, maxY: Double) {

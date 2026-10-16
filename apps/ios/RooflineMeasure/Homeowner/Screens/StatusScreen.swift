@@ -43,9 +43,12 @@ private struct OrderTab: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                HStack {
+                AdaptiveStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text(store.brand.wordmark).wcHeading(20, .heavy, relativeTo: .title3).foregroundStyle(Theme.ink).accessibilityAddTraits(.isHeader)
-                    Spacer()
+                        // the name never breaks across lines
+                        .lineLimit(1).minimumScaleFactor(0.6)
+                        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     if let n = store.status?.orderNumber { Text("Order \(n)").wc(15, .regular, relativeTo: .subheadline).foregroundStyle(Theme.ink3) }
                 }
                 .padding(.top, 10)
@@ -57,10 +60,10 @@ private struct OrderTab: View {
                     HStack(spacing: 10) {
                         IconView(icon: .truck, size: 20).foregroundStyle(Theme.blue)
                         Text("Expected to ship \(VisitTimes.monthDay(eta, zone))").wc(17, .medium, relativeTo: .body).foregroundStyle(Theme.blue)
-                        Spacer()
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .padding(.horizontal, 16).frame(minHeight: 44)
-                    .background(Theme.blueTint, in: Capsule())
+                    .padding(.horizontal, 16).padding(.vertical, 8).frame(minHeight: 44)
+                    .background(Theme.blueTint, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                     .padding(.top, 14)
                     .accessibilityElement(children: .combine)
                 }
@@ -84,18 +87,18 @@ private struct OrderTab: View {
     }
 
     private var questions: some View {
-        HStack(spacing: 14) {
+        AdaptiveStack(spacing: 14) {
             IconView(icon: .message, size: 26).foregroundStyle(Theme.ink3)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Questions?").wc(18, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
                 Text(store.repName.map { "Text \($0) or the \(store.brand.name) office" } ?? "Text or call the \(store.brand.name) office").wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
             if let sms = store.companyPhone.flatMap({ URL(string: "sms:\($0.filter { $0.isNumber || $0 == "+" })") }) {
                 Link(destination: sms) {
                     HStack(spacing: 8) {
                         IconView(icon: .message, size: 18, weight: 1.9)
-                        Text("Text").wc(17, .semibold, relativeTo: .headline)
+                        Text("Text").wc(18, .bold, relativeTo: .headline)
                     }
                     .foregroundStyle(Theme.onRed)
                     .padding(.horizontal, 20).frame(minHeight: 50)

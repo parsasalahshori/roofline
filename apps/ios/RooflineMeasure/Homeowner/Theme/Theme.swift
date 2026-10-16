@@ -23,7 +23,9 @@ enum Theme {
 
     static let ink = Color(light: Color.parse(brand.navy), dark: 0xE7ECF3)
     static let ink2 = Color(light: 0x3B4A5E, dark: 0xA9B6C6)
-    static let ink3 = Color(light: 0x66748A, dark: 0x7F8C9D)
+    /// The quiet text. A touch darker than the mockups' #66748A / #7F8C9D so small text clears 4.5:1 on every tint and surface
+    /// (Apple's accessibility audit flagged the original as nearly passing).
+    static let ink3 = Color(light: 0x5B687D, dark: 0x8A97A8)
 
     static let line = Color(light: 0xDCE0DF, dark: 0x203045)
     static let line2 = Color(light: 0xC5CBCB, dark: 0x2C3F57)
@@ -41,9 +43,9 @@ enum Theme {
     static let navy = Color(light: Color.parse(brand.navyDeep), dark: Color.parse(brand.navyDeep))
     static let heroText = Color(light: 0xC3CFDE, dark: 0xC3CFDE)
 
-    static let ok = Color(light: 0x17804A, dark: 0x48C27F)
+    static let ok = Color(light: 0x157545, dark: 0x48C27F)
     static let okTint = Color(light: 0xE2F2E8, dark: 0x0F2A1C)
-    static let warn = Color(light: 0xA35F00, dark: 0xF0A63A)
+    static let warn = Color(light: 0x985800, dark: 0xF0A63A)
     static let warnTint = Color(light: 0xFCEFD9, dark: 0x33230A)
     static let info = Color(light: 0x2563C9, dark: 0x6FA2FF)
     static let infoTint = Color(light: 0xE3ECFA, dark: 0x11223F)

@@ -12,34 +12,40 @@ struct BookedScreen: View {
     private var start: Date? { store.visitStart }
 
     var body: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 0) {
-            ZStack {
-                Circle().fill(Theme.ok)
-                IconView(icon: .check, size: 24, weight: 1.7).foregroundStyle(.white)
+            HStack(alignment: .top) {
+                ZStack {
+                    Circle().fill(Theme.ok)
+                    IconView(icon: .check, size: 24, weight: 1.7).foregroundStyle(.white)
+                }
+                .frame(width: 56, height: 56)
+                .accessibilityHidden(true)
+                Spacer(minLength: 8)
+                NavTextButton(title: "My order") { store.showStatus() }
+                    .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             }
-            .frame(width: 56, height: 56)
-            .accessibilityHidden(true)
             Text("Your visit is booked").wcHeading(28, .heavy, relativeTo: .title).foregroundStyle(Theme.ink).padding(.top, 20).accessibilityAddTraits(.isHeader)
             Text(savedLine).wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink2).padding(.top, 6).fixedSize(horizontal: false, vertical: true)
             VStack(spacing: 0) {
-                HStack(spacing: 14) {
+                AdaptiveStack(spacing: 14) {
                     if let s = start { CalendarTile(month: VisitTimes.monthShortCaps(s, zone), day: VisitTimes.dayNumber(s, zone)) }
                     VStack(alignment: .leading, spacing: 3) {
                         Text(start.map { VisitTimes.confirmation($0, zone) } ?? "Your visit").wc(20, .semibold, relativeTo: .title3).foregroundStyle(Theme.ink)
                         Text("About 30 minutes · \(store.address.split(separator: ",").first.map(String.init) ?? store.address)")
                             .wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
                     }
-                    Spacer(minLength: 0)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(14)
                 RowDivider(inset: 14)
-                HStack(spacing: 14) {
+                AdaptiveStack(spacing: 14) {
                     RepAvatar(size: 44)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(store.repName ?? "A \(store.brand.name) rep").wc(18, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
                         Text("Re-measures your \(store.windowCount) window\(store.windowCount == 1 ? "" : "s") by hand").wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink3)
                     }
-                    Spacer(minLength: 0)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(14)
             }
@@ -50,30 +56,31 @@ struct BookedScreen: View {
                 tip("You can still add windows in the app until then")
             }
             .padding(.top, 16).padding(.horizontal, 4)
-            Spacer(minLength: 0)
+            WCScrollFooter()
         }
         .padding(.horizontal, Theme.gutter)
         .padding(.top, 14)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .overlay(alignment: .topTrailing) {
-            NavTextButton(title: "My order") { store.showStatus() }
-                .padding(.trailing, Theme.gutter)
+        .padding(.bottom, 16)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         }
+        .scrollBounceBehavior(.basedOnSize)
         .background(Theme.ground.ignoresSafeArea())
         .wcFooter {
             WCSecondaryButton(title: "Add to Calendar", icon: .calendar) { showCalendar = true }
-            Group {
-                if let tel = store.companyPhone.flatMap(CallbackSentScreen.telURL) {
-                    HStack(spacing: 4) {
-                        Text("Need another time?").foregroundStyle(Theme.ink3)
-                        Link("Call us.", destination: tel).foregroundStyle(Theme.blue)
-                    }
-                } else {
-                    Text("Need another time? Contact \(store.brand.name).").foregroundStyle(Theme.ink3)
+            if let tel = store.companyPhone.flatMap(CallbackSentScreen.telURL) {
+                // The whole line is the link, so there is a full-size target to hit
+                Link(destination: tel) {
+                    Text(callLine)
+                        .wc(14, relativeTo: .footnote)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity, minHeight: Theme.minTap)
+                        .contentShape(Rectangle())
                 }
+            } else {
+                Text("Need another time? Contact \(store.brand.name).").foregroundStyle(Theme.ink3)
+                    .wc(14, relativeTo: .footnote)
+                    .frame(minHeight: Theme.minTap)
             }
-            .wc(14, relativeTo: .footnote)
-            .frame(minHeight: Theme.minTap)
         }
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showCalendar) {
@@ -82,6 +89,15 @@ struct BookedScreen: View {
                     .ignoresSafeArea()
             }
         }
+    }
+
+    /// "Need another time? Call us." (the second sentence is the link's blue)
+    private var callLine: AttributedString {
+        var question = AttributedString("Need another time? ")
+        question.foregroundColor = Theme.ink3
+        var call = AttributedString("Call us.")
+        call.foregroundColor = Theme.blue
+        return question + call
     }
 
     private var savedLine: String {

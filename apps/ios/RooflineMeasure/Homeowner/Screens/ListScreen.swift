@@ -5,6 +5,7 @@ import SwiftUI
 /// any?" against what homes like theirs have, and the way on to styles and the quote.
 struct ListScreen: View {
     @Environment(HomeownerStore.self) private var store
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var actionRow: WindowRow?
     @State private var askTotal = false
     @State private var total = 8
@@ -29,14 +30,17 @@ struct ListScreen: View {
                         }
                         .padding(.top, 12)
                     }
-                    if store.unsentCount > 0 || !store.failedItems.isEmpty { sendingNote.padding(.top, 12) }
+                    if store.sendingCount > 0 || !store.failedItems.isEmpty { sendingNote.padding(.top, 12) }
+                    // With large text the panel would fill the pinned area: it scrolls with the list instead
+                    if typeSize.isAccessibilitySize { missPanel.padding(.top, 12) }
+                    WCScrollFooter()
                 }
                 .padding(.horizontal, Theme.gutter)
                 .padding(.bottom, 24)
             }
         }
         .wcFooter {
-            missPanel
+            if !typeSize.isAccessibilitySize { missPanel }
             WCPrimaryButton(title: footerTitle, icon: .arrow, isEnabled: !rows.isEmpty) {
                 Task { await store.continueFromList() }
             }
@@ -61,7 +65,7 @@ struct ListScreen: View {
     }
 
     private var missPanel: some View {
-        HStack(alignment: .center, spacing: 10) {
+        AdaptiveStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Did we miss any?").wc(16, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
                 Text(WindowCountHint.detail(measured: rows.count, estimate: store.windowEstimate))
@@ -90,10 +94,16 @@ struct ListScreen: View {
                     IconView(icon: .alert, size: 18).foregroundStyle(Theme.warn)
                     Text(first.lastError ?? "A window could not be sent.").wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
                 }
+            } else if let held = store.heldBackNote {
+                // The server asked the phone to wait: its sentence, calmly. They go by themselves when the wait is over.
+                HStack(alignment: .top, spacing: 10) {
+                    IconView(icon: .clock, size: 18).foregroundStyle(Theme.ink3)
+                    Text("Saved on this phone. \(held)").wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+                }
             } else {
                 HStack(spacing: 10) {
                     ProgressView()
-                    Text(store.offline ? "Saved on this phone. They send when you're back online." : "Sending \(store.unsentCount) window\(store.unsentCount == 1 ? "" : "s")…")
+                    Text(store.offline ? "Saved on this phone. They send when you're back online." : "Sending \(store.sendingCount) window\(store.sendingCount == 1 ? "" : "s")…")
                         .wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink2)
                 }
             }
@@ -112,10 +122,10 @@ private struct SummaryCard: View {
     var body: some View {
         let checks = rows.filter { $0.flagged }.count
         VStack(spacing: 8) {
-            HStack {
+            AdaptiveStack(spacing: 4) {
                 Text(checks == 0 ? "\(rows.count) sure" : "\(rows.count - checks) sure, \(checks) to check")
                     .wc(16, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
-                Spacer()
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Text("Ready for a quote").wc(16, .semibold, relativeTo: .headline).foregroundStyle(Theme.ok)
             }
             HStack(spacing: 4) {
@@ -132,28 +142,29 @@ private struct SummaryCard: View {
 }
 
 struct WindowListRow: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     let row: WindowRow
     let action: () -> Void
 
+    private var large: Bool { typeSize.isAccessibilitySize }
+
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
+            HStack(alignment: large ? .top : .center, spacing: 12) {
                 Text("\(row.number)")
                     .wcMono(16, .bold, relativeTo: .body)
                     .foregroundStyle(Theme.blue)
                     .frame(width: 30, height: 30)
                     .background(Theme.blueTint, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .padding(.top, large ? 4 : 0)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(row.title).wc(17, .semibold, relativeTo: .body).foregroundStyle(Theme.ink).lineLimit(1)
+                    Text(row.title).wc(17, .semibold, relativeTo: .body).foregroundStyle(Theme.ink).lineLimit(large ? nil : 2)
                     secondLine
+                    // With large text the size goes under the name instead of beside it
+                    if large { sizeView }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                if row.hasSize, let w = row.widthIn, let h = row.heightIn {
-                    SizeText(widthIn: w, heightIn: h, size: 17, weight: .bold, relativeTo: .body)
-                        .fixedSize()
-                } else {
-                    Text("Size after upload").wc(13, relativeTo: .footnote).foregroundStyle(Theme.ink3)
-                }
+                if !large { sizeView }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
@@ -165,6 +176,18 @@ struct WindowListRow: View {
         .accessibilityLabel("Window \(row.number), \(row.title). \(row.spokenSize). \(row.flagged ? "Needs a check. " : "")\(statusWords)")
         .accessibilityHint("Opens options for this window")
         .accessibilityAddTraits(.isButton)
+    }
+
+    @ViewBuilder private var sizeView: some View {
+        if row.hasSize, let w = row.widthIn, let h = row.heightIn {
+            if large {
+                SizeText(widthIn: w, heightIn: h, size: 17, weight: .bold, relativeTo: .body)
+            } else {
+                SizeText(widthIn: w, heightIn: h, size: 17, weight: .bold, relativeTo: .body).fixedSize()
+            }
+        } else {
+            Text("Size after upload").wc(13, relativeTo: .footnote).foregroundStyle(Theme.ink3)
+        }
     }
 
     private var statusWords: String {
@@ -192,7 +215,7 @@ struct WindowListRow: View {
                     Text("measure again").wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink3)
                 }
             } else {
-                Text(row.methodLine).wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink3).lineLimit(1)
+                Text(row.methodLine).wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink3).lineLimit(large ? nil : 2)
             }
         }
     }

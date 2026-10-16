@@ -10,14 +10,15 @@ import SwiftUI
 /// whatever belongs at the right (step dots, "Skip", "Add", a share icon). Drawn by hand so it looks the same on every
 /// version of iOS; the back swipe still works (see SwipeBack).
 struct WCNavBar<Trailing: View>: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     var title: String?
     /// Draw the title as the WinChoice wordmark (expanded, heavy).
     var wordmark = false
     var onBack: (() -> Void)?
     @ViewBuilder var trailing: Trailing
 
-    var body: some View {
-        HStack(spacing: 8) {
+    private var back: some View {
+        Group {
             if let onBack = onBack {
                 Button(action: onBack) {
                     IconView(icon: .chevLeft, size: 22, weight: 2)
@@ -30,7 +31,11 @@ struct WCNavBar<Trailing: View>: View {
             } else {
                 Color.clear.frame(width: 1, height: Theme.minTap)
             }
-            Spacer(minLength: 4)
+        }
+    }
+
+    private func titleText(lines: Int?) -> some View {
+        Group {
             if let title = title {
                 Group {
                     if wordmark {
@@ -40,16 +45,39 @@ struct WCNavBar<Trailing: View>: View {
                     }
                 }
                 .foregroundStyle(Theme.ink)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .lineLimit(lines)
+                .minimumScaleFactor(wordmark ? 0.5 : 0.7)
                 .accessibilityAddTraits(.isHeader)
             }
-            Spacer(minLength: 4)
-            trailing
-                .frame(minHeight: Theme.minTap)
         }
-        .padding(.horizontal, Theme.gutter)
-        .frame(minHeight: 44)
+    }
+
+    var body: some View {
+        if typeSize.isAccessibilitySize {
+            // Large text: the buttons on one row, the title under them at the full size
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 8) {
+                    back
+                    Spacer(minLength: 4)
+                    trailing.frame(minHeight: Theme.minTap)
+                }
+                titleText(lines: wordmark ? 1 : nil)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, 4)
+            }
+            .padding(.horizontal, Theme.gutter)
+        } else {
+            HStack(spacing: 8) {
+                back
+                Spacer(minLength: 4)
+                titleText(lines: 1)
+                Spacer(minLength: 4)
+                trailing
+                    .frame(minHeight: Theme.minTap)
+            }
+            .padding(.horizontal, Theme.gutter)
+            .frame(minHeight: 44)
+        }
     }
 }
 
@@ -72,6 +100,7 @@ struct StepDots: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Step \(filled) of \(total)")
+        .accessibilityAddTraits(.isStaticText)
     }
 }
 
@@ -133,7 +162,7 @@ struct WCPrimaryButton: View {
                     ProgressView().tint(Theme.onRed)
                 } else {
                     if let icon = icon, iconLeading { IconView(icon: icon, size: 16, weight: 2) }
-                    Text(title).wc(17, .semibold, relativeTo: .headline).multilineTextAlignment(.center)
+                    Text(title).wc(18, .bold, relativeTo: .headline).multilineTextAlignment(.center)
                     if let icon = icon, !iconLeading { IconView(icon: icon, size: 16, weight: 2) }
                 }
             }
@@ -177,9 +206,11 @@ struct WCSecondaryButton: View {
 }
 
 struct PressScaleStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
             .opacity(configuration.isPressed ? 0.92 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
@@ -188,15 +219,53 @@ struct PressScaleStyle: ButtonStyle {
 // MARK: - Footer
 
 extension View {
-    /// The bottom area with the main button(s): the page's ground colour, 16 pt gutters, content scrolls above it.
+    /// The bottom area with the main button(s): the page's ground colour, 16 pt gutters, content scrolls above it. With
+    /// accessibility text sizes a pinned area would fill the screen, so there it is not pinned: the screen's scrolling content
+    /// ends with `WCScrollFooter()`, which draws the same buttons at the full text size.
     func wcFooter<Footer: View>(@ViewBuilder _ footer: () -> Footer) -> some View {
-        safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 10) { footer() }
-                .padding(.horizontal, Theme.gutter)
-                .padding(.top, 10)
-                .padding(.bottom, 8)
-                .frame(maxWidth: .infinity)
-                .background(Theme.ground.opacity(0.96))
+        modifier(WCFooterModifier(footer: footer()))
+    }
+}
+
+private struct WCFooterModifier<Footer: View>: ViewModifier {
+    @Environment(\.dynamicTypeSize) private var typeSize
+    let footer: Footer
+
+    func body(content: Content) -> some View {
+        if typeSize.isAccessibilitySize {
+            content.environment(\.wcFooterView, AnyView(VStack(spacing: 10) { footer }))
+        } else {
+            content.safeAreaInset(edge: .bottom, spacing: 0) {
+                VStack(spacing: 10) { footer }
+                    .padding(.horizontal, Theme.gutter)
+                    .padding(.top, 10)
+                    .padding(.bottom, 8)
+                    .frame(maxWidth: .infinity)
+                    .background(Theme.ground)
+            }
+        }
+    }
+}
+
+private struct WCFooterViewKey: EnvironmentKey {
+    static let defaultValue: AnyView? = nil
+}
+
+extension EnvironmentValues {
+    /// The screen's footer, handed down so the scrolling content can end with it at accessibility text sizes.
+    fileprivate var wcFooterView: AnyView? {
+        get { self[WCFooterViewKey.self] }
+        set { self[WCFooterViewKey.self] = newValue }
+    }
+}
+
+/// The last thing in a screen's scrolling content: the screen's `wcFooter` buttons, when the text is too large to pin them.
+struct WCScrollFooter: View {
+    @Environment(\.wcFooterView) private var footer
+
+    var body: some View {
+        if let footer = footer {
+            footer.padding(.top, 20).padding(.bottom, 8)
         }
     }
 }
@@ -431,6 +500,20 @@ private struct MonoIf: ViewModifier {
     }
 }
 
+// MARK: - Scroll edge
+
+extension View {
+    /// iOS 26 fades the top of a scroll view under the status bar; a hero that is drawn up there on purpose (the navy welcome)
+    /// should not get that fade.
+    @ViewBuilder func wcNoTopScrollFade() -> some View {
+        if #available(iOS 26.0, *) {
+            scrollEdgeEffectHidden(true, for: .top)
+        } else {
+            self
+        }
+    }
+}
+
 // MARK: - Swipe back
 
 /// The system's swipe-from-the-edge back gesture keeps working with the hidden navigation bar.
@@ -531,17 +614,30 @@ struct WCTabBar: View {
         var icon: WCIcon
     }
 
+    @Environment(\.dynamicTypeSize) private var typeSize
     let items: [Item]
     @Binding var selection: String
 
     var body: some View {
+        Group {
+            if typeSize.isAccessibilitySize {
+                menu
+            } else {
+                bar
+            }
+        }
+        .background(Theme.surface.ignoresSafeArea(edges: .bottom))
+        .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+    }
+
+    private var bar: some View {
         HStack(spacing: 0) {
             ForEach(items) { item in
                 Button {
                     selection = item.id
                 } label: {
                     VStack(spacing: 4) {
-                        IconView(icon: item.icon, size: 24)
+                        IconView(icon: item.icon, size: 24, weight: 2.1)
                         Text(item.title).wc(12, .medium, relativeTo: .caption)
                     }
                     .foregroundStyle(selection == item.id ? Theme.blue : Theme.ink3)
@@ -555,8 +651,32 @@ struct WCTabBar: View {
         }
         .padding(.top, 8)
         .padding(.bottom, 2)
-        .background(Theme.surface.ignoresSafeArea(edges: .bottom))
-        .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+    }
+
+    /// Three tabs do not fit side by side at accessibility text sizes: one button at the full size opens the list.
+    private var menu: some View {
+        let current = items.first { $0.id == selection } ?? items[0]
+        return Menu {
+            ForEach(items) { item in
+                Button {
+                    selection = item.id
+                } label: {
+                    Label(item.title, systemImage: item.id == selection ? "checkmark" : "circle")
+                }
+            }
+        } label: {
+            HStack(spacing: 10) {
+                IconView(icon: current.icon, size: 24)
+                Text(current.title).wc(17, .semibold, relativeTo: .headline)
+                Image(systemName: "chevron.up.chevron.down").imageScale(.small)
+            }
+            .foregroundStyle(Theme.blue)
+            .frame(maxWidth: .infinity, minHeight: 56)
+            .padding(.horizontal, Theme.gutter)
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel("\(current.title). Choose a section")
+        .padding(.top, 4)
     }
 }
 
@@ -615,6 +735,7 @@ struct SizeText: View {
     var unit = false
     var color: Color = Theme.ink
     @ScaledMetric private var scaled: CGFloat
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     init(widthIn: Double, heightIn: Double, size: CGFloat = 20, weight: Font.Weight = .semibold, unit: Bool = false, color: Color = Theme.ink, relativeTo style: Font.TextStyle = .title3) {
         self.widthIn = widthIn
@@ -628,13 +749,32 @@ struct SizeText: View {
 
     var body: some View {
         Text(SizeFormat.pair(widthIn, heightIn, size: scaled, weight: weight, color: color, unit: unit))
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
+            // One line that shrinks a little at ordinary sizes; with large text it wraps instead (the width, then the height)
+            .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
+            .minimumScaleFactor(typeSize.isAccessibilitySize ? 1 : 0.7)
             .accessibilityLabel(SizeWording.spokenSize(widthIn: widthIn, heightIn: heightIn))
     }
 }
 
 // MARK: - Layout helpers
+
+/// Side by side at ordinary text sizes, stacked at the accessibility sizes (where two things in a row no longer fit and the
+/// words would be cut short). Keep `Spacer`s out of the content; give the flexible child `.frame(maxWidth: .infinity, alignment: .leading)`.
+struct AdaptiveStack<Content: View>: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
+    var alignment: VerticalAlignment = .center
+    var stackedAlignment: HorizontalAlignment = .leading
+    var spacing: CGFloat?
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        if typeSize.isAccessibilitySize {
+            VStack(alignment: stackedAlignment, spacing: spacing) { content }
+        } else {
+            HStack(alignment: alignment, spacing: spacing) { content }
+        }
+    }
+}
 
 /// Chips that wrap onto the next line (the room chips of the label sheet).
 struct FlowLayout: Layout {
