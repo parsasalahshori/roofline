@@ -1,9 +1,20 @@
 /** Words for Measure windows (features/measure/windows): the photo of the front, the scan, the card and the quote. */
+import type { SizeCopy } from '@roofline/ui';
+
 const plural = (n: number, one: string, many: string) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
 const inches = (n: number) => `${Math.round(n)}`;
 /** "2 floors (from the height map)", "1.5 floors (from the height map)", "1 floor (assumed: no height data)". */
 const measureWindowsFloors = (floors: number, from: 'height-map' | 'photo' | 'assumed') =>
   `${floors === 1 ? '1 floor' : `${floors} floors`} (${from === 'assumed' ? 'assumed: no height data' : from === 'photo' ? 'from the photo' : 'from the height map'})`;
+
+/** The words a size readout speaks and names its method with (the kit holds no words of its own). */
+export const sizeCopy: SizeCopy = {
+  by: 'by',
+  inches: 'inches',
+  about: 'about',
+  plusMinus: 'plus or minus',
+  methods: { lidar: 'LiDAR', sheet: 'Sheet photo', room: 'Room scan', walls: 'From walls' },
+};
 
 export const measureWindows = {
   title: 'Measure',
@@ -12,16 +23,93 @@ export const measureWindows = {
   switchRoof: 'Roof',
   switchWindows: 'Windows',
 
+
+  // The head of the page: the street is the title, and this is the line under it
+  headDot: '\u00b7',
+  headFloors: (floors: number) => (floors === 1 ? '1 floor' : `${floors} floors`),
+  headWall: (ft: number) => `${Math.round(ft).toLocaleString()} ft of wall`,
+  headMeasured: (seconds: number) => `measured by Estimator in ${seconds.toFixed(1)} s`,
+  replayScan: 'Run the scan again',
+
+  // The front elevation: a drawing of the front from what was measured
+  elevation: {
+    title: 'Front elevation',
+    label: (windows: number) => `Front elevation with ${windows === 1 ? '1 window' : `${windows} windows`} numbered`,
+    feet: (ft: number) => `${ft} ft`,
+    inches: (fraction: string) => `${fraction} in`,
+    more: (n: number) => `+${n} more`,
+    noWalls: 'The walls of this house are not known yet, so there is nothing to draw.',
+    views: { label: 'View', drawing: 'Drawing', photo: 'Photo', plan: 'Plan' },
+    photoWhen: (when: string) => `Photo \u00b7 ${when}`,
+    scale: 'Sizes are to scale. Where each window sits along the wall is not known.',
+    measuringTitle: 'Measuring',
+  },
+
+  // How precisely each window is measured: the three rungs under every result
+  ladder: {
+    label: 'How precisely the windows are measured',
+    estimate: 'Estimate from walls',
+    quote: 'Quote-grade',
+    order: 'Order-grade',
+    estimateNote: 'Count \u00b12 \u00b7 quote only',
+    quoteNote: 'Room scan \u00b7 size \u00b11 in',
+    orderNote: 'LiDAR or sheet photo \u00b7 \u00b11/8 in',
+    of: (total: number) => ` of ${total}`,
+  },
+
+  // The windows table
+  table: {
+    label: 'Windows',
+    columns: { tag: '#', location: 'Location', sizeClass: 'Size class', size: 'W \u00d7 H (in)', method: 'Method', status: 'Status' },
+    methods: {
+      lidar: 'LiDAR',
+      ar: 'Phone AR',
+      sheet: 'Sheet photo',
+      paper: 'Paper photo',
+      hand: 'By hand',
+      room: 'Room scan',
+      street: 'Street photo',
+      walls: 'From walls',
+    },
+    status: { ready: 'Order-ready', remeasure: 'Re-measure', quote: 'Quote-grade', estimate: 'Estimate', out: 'Left out' },
+    selectRow: (tag: string, name: string) => `${tag}, ${name}`,
+    estimateRowName: (count: number, cls: string) => (count === 1 ? `${cls} window, estimated` : `${count} ${cls.toLowerCase()} windows, estimated`),
+    streetName: (floor: number) => (floor > 1 ? `Front, floor ${floor}` : 'Front'),
+    united: (range: string) => `${range} united`,
+    empty: 'No windows to list yet.',
+    summary: (windows: number, measured: number) =>
+      measured === 0 ? `${plural(windows, 'window', 'windows')}, all estimated` : `${plural(windows, 'window', 'windows')} \u00b7 ${measured.toLocaleString()} measured`,
+    summaryFromPhotos: (windows: number) => `${plural(windows, 'window', 'windows')}, counted from photos`,
+    summaryRange: (low: number, high: number, likely: number) => `About ${low}\u2060\u2013\u2060${high} windows, most likely ${likely}`,
+    adjustCounts: 'Adjust counts',
+    countsLabel: 'Estimated window counts',
+    reasonsLabel: 'Why measure again',
+    reasonUnclear: 'A photo of this window was steep or unclear: check its corners, or measure it by hand.',
+    reasonDoubt: (inches: string) => `The size could be off by ${inches} in, more than a factory order allows. Take another photo or measure by hand.`,
+    streetDetail: 'Sized from the street photo, so it is good for a quote, not an order.',
+    streetWas: (w: number, h: number) => `It was ${inches(w)} \u00d7 ${inches(h)} in before the door ruler.`,
+    fine: 'Measured on site. Good to order from.',
+    estimateDetail: (cls: string, covers: 'all-sides' | 'sides-and-back') =>
+      `Worked out from the walls of ${covers === 'all-sides' ? 'every side' : 'the sides and back'}, not measured. Measure a window to replace a guess with a size, or adjust the counts below.`,
+    measureOne: 'Add on-site photos',
+    measureAgain: 'Measure again',
+    sizeRule: 'Sizes by united inches: width plus height.',
+  },
+
   // The left column: an address to measure
   startTitle: 'Measure windows',
   startSubtitle: 'Type an address. Estimator works the windows out from the house’s walls.',
+  startSteps: [
+    'Type an address. Estimator finds the house and counts its windows from the walls.',
+    'Add on-site photos for exact sizes: LiDAR, or the measuring sheet.',
+    'Quote Good, Better and Best, or order from the factory.',
+  ],
   addressLabel: 'Address',
   addressPlaceholder: '12 Elm St, Omaha, NE',
   measure: 'Measure this address',
   measuring: 'Finding the house',
   measureFailed: 'We could not measure the windows at that address.',
   opened: 'Open now',
-  pickAddress: 'Type an address to measure its windows.',
   loading: 'Loading the windows…',
   loadFailed: 'We could not load these windows.',
 
@@ -227,14 +315,17 @@ export const measureWindows = {
     'no-street-view': 'No street-level photo of this house. The quote uses the estimate from the walls.',
     'house-blurred': 'The owner had this house blurred in street-level imagery, so no window could be marked. The quote uses the estimate from the walls.',
     'facade-hidden': 'Trees, fences or cars hide the front of the house on the photo. The quote uses the estimate from the walls.',
-    'no-footprint': 'No building outline was found for this address, so the walls could not be measured. Type in the window counts under Adjust.',
+    'no-footprint': 'No building outline was found for this address, so the walls could not be measured. Type in the window counts with Adjust counts.',
     'detector-unconfigured': 'No window finder is set up. Mark the front windows on the photo, or use the estimate.',
     'detector-error': 'The window finder did not answer. Mark the front windows on the photo, or use the estimate.',
   },
-  noEstimate: 'No estimate for this house. Type in the window counts under Adjust.',
+  noEstimate: 'No estimate for this house. Type in the window counts with Adjust counts.',
 
   // The quote
   quoteTitle: 'Window quote',
+  quoteWaits: 'The quote appears when Estimator has measured the windows: Good, Better and Best, line by line.',
+  quoteStillEstimates: (n: number) => `${n === 1 ? '1 window is' : `${n.toLocaleString()} windows are`} still an estimate, so this price can change once it is measured.`,
+  quoteBar: { label: (tier: string, windows: number) => `${tier} \u00b7 ${windows === 1 ? '1 window' : `${windows.toLocaleString()} windows`}`, open: 'Quote' },
   quoteLine: (windows: number, measured: number) =>
     measured === 0 ? `${plural(windows, 'window', 'windows')}, all estimated` : `${plural(windows, 'window', 'windows')}, ${measured.toLocaleString()} measured`,
   quoteGroup: (tier: string) => `Windows for ${tier}`,
@@ -249,7 +340,7 @@ export const measureWindows = {
 
 /** Words for sizing windows from photos taken on site (features/measure/windows/photos). */
 export const windowPhotos = {
-  add: 'Add windows from photos',
+  add: 'Add on-site photos',
   title: 'Photograph windows',
   close: 'Done',
   back: 'Back to the photos',

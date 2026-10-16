@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
-import { Banner, Button, Field, Skeleton, UiLink } from '@roofline/ui';
+import { Banner, Button, Field, Icon, Skeleton, Tag, UiLink, type IconName, type TagTone } from '@roofline/ui';
 import { ApiError } from '../../../api/client.ts';
 import { measure } from '../../../copy/measure.ts';
 import { useMeasure, usePrefetchMeasure } from '../../estimator/api.ts';
 import { looksCompleteAddress } from '../address.ts';
 import type { MeasureHandoff } from '../handoff.ts';
-import { useRequestRows } from './requests.ts';
+import { useRequestRows, type RequestStatus } from './requests.ts';
 import styles from './RequestsList.module.css';
 
 /** How long the person has to stop typing before the search runs. */
@@ -15,6 +15,14 @@ const DEBOUNCE_MS = 250;
 const PREFETCH_MS = 400;
 /** Measuring that takes longer than this is loading a new area: say so, and roughly how long. */
 const SLOW_MS = 3000;
+
+/** Each request's status as a tag: its word, with a glyph, so the colour is never the only signal. */
+const STATUS_TAG: Record<RequestStatus, { tone: TagTone; icon: IconName }> = {
+  new_lead: { tone: 'info', icon: 'inbox' },
+  inspection: { tone: 'warn', icon: 'clock' },
+  estimate_sent: { tone: 'neutral', icon: 'msg' },
+  signed: { tone: 'ok', icon: 'check' },
+};
 
 /** The left column: measurement requests (proposals and their measurements), searchable, the open one highlighted. */
 export function RequestsList({ selectedId, onPick }: { selectedId: string; onPick?: () => void }) {
@@ -110,10 +118,7 @@ export function RequestsList({ selectedId, onPick }: { selectedId: string; onPic
       </header>
       <p className={styles.subtitle}>{measure.requestsSubtitle}</p>
       <div className={styles.search}>
-        <svg className={styles.glass} viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-          <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-          <path d="m10.5 10.5 3 3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
+        <Icon name="search" size={16} className={styles.glass} />
         <Field
           label={measure.requestsSearch}
           labelHidden
@@ -149,9 +154,9 @@ export function RequestsList({ selectedId, onPick }: { selectedId: string; onPic
                 <span className={styles.name}>{row.name}</span>
                 <span className={styles.address}>{row.address}</span>
                 {row.material !== null ? <span className={styles.material}>{row.material}</span> : null}
-                <span className={styles.chip} data-status={row.status}>
+                <Tag className={styles.chip} tone={STATUS_TAG[row.status].tone} icon={STATUS_TAG[row.status].icon} data-status={row.status}>
                   {measure.status[row.status]}
-                </span>
+                </Tag>
                 {row.squares !== null ? <span className={styles.squares}>{measure.squaresShort(row.squares)}</span> : null}
               </UiLink>
               {row.status === 'estimate_sent' || row.status === 'signed' ? (
@@ -187,7 +192,7 @@ export function RequestsList({ selectedId, onPick }: { selectedId: string; onPic
         </div>
       ) : null}
       {list.hasNextPage ? (
-        <Button variant="ghost" busy={list.isFetchingNextPage} onClick={() => void list.fetchNextPage()}>
+        <Button variant="default" busy={list.isFetchingNextPage} onClick={() => void list.fetchNextPage()}>
           {measure.requestsShowMore}
         </Button>
       ) : null}

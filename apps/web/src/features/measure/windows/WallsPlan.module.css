@@ -1,0 +1,47 @@
+/* The plan of the walls: the outline's box, traced by the scan, with the front wall drawn heavier. */
+.plan {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  min-height: 176px;
+  background-color: var(--surface-2);
+  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-position: -1px -1px;
+  background-size: 24px 24px;
+}
+
+.plan svg {
+  flex: none;
+}
+
+.rect {
+  fill: var(--tape-tint);
+  stroke: var(--tape);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+
+.front {
+  stroke: var(--ink);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border-radius: var(--r-2);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+  color: var(--ink-2);
+  font: 500 13px/1.35 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.text strong {
+  color: var(--ink);
+  font-weight: 600;
+}

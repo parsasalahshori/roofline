@@ -21,7 +21,7 @@ export function EstimateChoice({ choice, onChoose, disabled = false }: { choice:
         {OPTIONS.map((o) => (
           <Button
             key={o.value}
-            variant="ghost"
+            variant="default"
             className={styles.option}
             aria-pressed={choice === o.value}
             data-state={choice === o.value ? 'on' : 'off'}

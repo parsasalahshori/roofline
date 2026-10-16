@@ -249,10 +249,18 @@ async function open(v: WindowMeasurementView = view()) {
     </Providers>,
   );
   fireEvent.click(await screen.findByRole('button', { name: measureWindows.scanButton }));
-  await screen.findByRole('heading', { name: measureWindows.measuredBy });
+  await waitFor(() => expect(card().dataset.phase).toBe('done'));
 }
 const card = () => screen.getByRole('region', { name: measureWindows.statsLabel });
-const stat = () => card().querySelector('[data-stat="windows"]')?.textContent;
+/** The table's foot: "16 windows · 1 measured". */
+const stat = () => card().querySelector('[data-windows-total]')?.textContent;
+/** The table row of a photographed window, picked (its detail opens under it). */
+function pickRow(id: string) {
+  const row = card().querySelector(`[data-photo-window="${id}"]`) as HTMLElement;
+  if (row.dataset.selected !== 'true') fireEvent.click(within(row).getByRole('button', { pressed: false }));
+  return row;
+}
+const openCounts = () => fireEvent.click(within(card()).getByRole('button', { name: measureWindows.table.adjustCounts }));
 
 beforeEach(() => {
   forgetRevealed();
@@ -287,7 +295,7 @@ afterEach(() => {
 describe('Photograph windows on site', () => {
   it('take a photo, upload it with progress, size the window on it, save: one PATCH after 500 ms, listed in the card', async () => {
     await open();
-    fireEvent.click(within(card()).getByRole('button', { name: copy.add }));
+    fireEvent.click(screen.getByRole('button', { name: copy.add }));
     const dialog = screen.getByRole('dialog', { name: copy.title });
     expect(within(dialog).getByText(copy.guidance)).toBeTruthy();
     const camera = within(dialog).getByLabelText(copy.takeLabel) as HTMLInputElement;
@@ -316,17 +324,17 @@ describe('Photograph windows on site', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     const row = card().querySelector('[data-photo-window]')!;
     expect(row.textContent).toContain('Kitchen');
-    expect(row.textContent).toContain(copy.chip);
+    expect(row.textContent).toContain(measureWindows.table.methods.paper);
     const s = sizePhotoWindow({ corners: WIN, scale: { kind: 'reference', reference: 'letter', corners: PAPER } }, UPLOAD)!;
-    expect(row.textContent).toContain(measureWindows.size(s.widthIn, s.heightIn));
+    expect(row.querySelector(`[data-size="${s.widthIn}x${s.heightIn}"]`)).not.toBeNull();
     // Measured now: 1 photographed + 15 estimated
-    expect(stat()).toBe('16');
+    expect(stat()).toBe(measureWindows.table.summary(16, 1));
   });
 
   it('a photo the server refuses says why, and can be tried again', async () => {
     xhrReplies = [{ status: 422, body: { error: 'The photo could not be read.' } }];
     await open();
-    fireEvent.click(within(card()).getByRole('button', { name: copy.add }));
+    fireEvent.click(screen.getByRole('button', { name: copy.add }));
     fireEvent.change(screen.getByLabelText(copy.libraryLabel), { target: { files: [new File(['x'], 'a.png', { type: 'image/png' })] } });
     expect(await screen.findByText('The photo could not be read.')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: copy.retry }));
@@ -336,7 +344,7 @@ describe('Photograph windows on site', () => {
 
   it('a photo over 12 MB or of the wrong type is refused before it is sent', async () => {
     await open();
-    fireEvent.click(within(card()).getByRole('button', { name: copy.add }));
+    fireEvent.click(screen.getByRole('button', { name: copy.add }));
     const big = new File(['x'], 'big.jpg', { type: 'image/jpeg' });
     Object.defineProperty(big, 'size', { value: 13 * 1024 * 1024 });
     fireEvent.change(screen.getByLabelText(copy.takeLabel), { target: { files: [big, new File(['x'], 'notes.pdf', { type: 'application/pdf' })] } });
@@ -347,7 +355,7 @@ describe('Photograph windows on site', () => {
 
   it('a HEIC this browser cannot open: says what to change on the phone, no broken thumbnail, no useless retry', async () => {
     await open();
-    fireEvent.click(within(card()).getByRole('button', { name: copy.add }));
+    fireEvent.click(screen.getByRole('button', { name: copy.add }));
     const heic = new File([new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63, 0, 0, 0, 0])], 'IMG_0001.HEIC', { type: 'image/heic' });
     fireEvent.change(screen.getByLabelText(copy.takeLabel), { target: { files: [heic] } });
     const alert = await screen.findByText(copy.heicUnsupported);
@@ -360,23 +368,23 @@ describe('Photograph windows on site', () => {
 
   it('"I photographed every window" zeroes the estimate and says the count is from photos', async () => {
     await open(savedView());
-    expect(stat()).toBe('16');
+    expect(stat()).toBe(measureWindows.table.summary(16, 1));
+    openCounts();
     fireEvent.click(screen.getByRole('checkbox', { name: new RegExp(copy.coverAll) }));
-    expect(stat()).toBe('1');
-    expect(within(card()).getByText(copy.fromPhotos)).toBeTruthy();
-    const estimated = [...card().querySelectorAll('td[data-col="estimated"]')].map((td) => td.textContent);
-    expect(estimated).toEqual(['0', '0', '0', '0']);
+    expect(stat()).toBe(measureWindows.table.summaryFromPhotos(1));
+    // Nothing is estimated now: the table has the photographed window alone
+    expect(card().querySelectorAll('[data-row^="estimate:"]')).toHaveLength(0);
     await waitFor(() => expect(sent(PATCH)).toEqual([{ photosCoverAllWindows: true }]));
   });
 
   it('a photographed window can be left out of the quote, and deleted', async () => {
     await open(savedView());
-    const row = card().querySelector('[data-photo-window="pw1"]') as HTMLElement;
-    fireEvent.click(within(row).getByRole('checkbox', { name: copy.inQuote }));
-    expect(stat()).toBe('15');
+    const row = pickRow('pw1');
+    fireEvent.click(within(card()).getByRole('checkbox', { name: copy.inQuote }));
+    expect(stat()).toBe(measureWindows.table.summary(15, 0));
     expect(row.textContent).toContain(measureWindows.leftOut);
     await waitFor(() => expect(sent(PATCH)).toEqual([{ excludedWindowIds: ['pw1'] }]));
-    fireEvent.click(within(row).getByRole('button', { name: copy.deleteRow('Kitchen') }));
+    fireEvent.click(within(card()).getByRole('button', { name: copy.deleteRow('Kitchen') }));
     expect(card().querySelector('[data-photo-window]')).toBeNull();
     await waitFor(() => expect(sent(PATCH)).toHaveLength(2));
     expect(sent(PATCH)[1]).toEqual({ photoWindows: [], excludedWindowIds: [] });
@@ -385,6 +393,7 @@ describe('Photograph windows on site', () => {
   it('tapping a photographed window reopens it to edit, with the server’s size', async () => {
     await open(savedView());
     const s = savedView().photoWindows![0]!;
+    pickRow('pw1');
     fireEvent.click(within(card()).getByRole('button', { name: copy.rowLabel('Kitchen', measureWindows.size(s.widthIn, s.heightIn)) }));
     expect(screen.getByRole('dialog', { name: copy.measureTitle })).toBeTruthy();
     expect(liveSize()).toContain(copy.fromServer);
@@ -393,12 +402,11 @@ describe('Photograph windows on site', () => {
     await waitFor(() => expect(sent(PATCH)).toEqual([{ photoWindows: [] }]));
   });
 
-  it('Adjust offers the photos too', async () => {
+  it('an estimated row offers the photos too: that is how a guess becomes a size', async () => {
     await open();
-    fireEvent.click(within(card()).getByRole('button', { name: new RegExp(measureWindows.adjust) }));
-    const inAdjust = within(card()).getAllByRole('button', { name: copy.add });
-    expect(inAdjust).toHaveLength(2);
-    fireEvent.click(inAdjust[0]!);
+    fireEvent.click(within(card().querySelector('[data-row="estimate:standard"]') as HTMLElement).getByRole('button'));
+    const inRow = within(card()).getByRole('button', { name: copy.add });
+    fireEvent.click(inRow);
     expect(screen.getByRole('dialog', { name: copy.title })).toBeTruthy();
   });
 });

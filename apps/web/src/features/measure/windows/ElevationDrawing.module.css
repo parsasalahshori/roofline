@@ -1,0 +1,181 @@
+/*
+ * The front elevation on grid paper. The paper is the surface and the 24px grid is the hairline colour, so it reads
+ * the same in both themes. Tape yellow is for the dimension lines and the selected window only.
+ */
+.paper {
+  position: relative;
+  height: 268px;
+  background-color: var(--surface-2);
+  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-position: -1px -1px;
+  background-size: 24px 24px;
+}
+
+@media (max-width: 767.98px) {
+  .paper {
+    height: 176px;
+    background-size: 16px 16px;
+  }
+}
+
+.svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.roof,
+.wall {
+  stroke: var(--ink);
+  stroke-linejoin: round;
+  stroke-width: 1.6;
+}
+
+.roof {
+  fill: var(--sunken);
+}
+
+.wall {
+  fill: var(--surface);
+}
+
+.laps {
+  fill: none;
+  stroke: var(--line-2);
+  stroke-width: 1;
+}
+
+.ground {
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+
+/* A window: its frame and the glass inside it. Dashed means nobody measured it. */
+.window {
+  cursor: pointer;
+}
+
+.frame {
+  fill: var(--surface);
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+
+.glass {
+  fill: none;
+  stroke: var(--line-2);
+  stroke-width: 1;
+}
+
+.window[data-status="remeasure"] .frame {
+  stroke: var(--warn);
+}
+
+.window[data-status="quote"] .frame {
+  stroke: var(--info);
+}
+
+.window[data-estimated="true"] .frame {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-dasharray: 4 3;
+  stroke-width: 1.4;
+}
+
+.window[data-status="out"] {
+  opacity: 0.45;
+}
+
+.window[data-selected="true"] .frame {
+  fill: var(--tape-tint);
+  stroke: var(--tape);
+  stroke-width: 2.5;
+}
+
+.window[data-selected="true"][data-status="remeasure"] .frame {
+  stroke: var(--warn);
+}
+
+.window:hover .frame {
+  stroke-width: 2.5;
+}
+
+/* The W1 chip over each window */
+.tag rect {
+  fill: var(--ink);
+}
+
+.tag text {
+  fill: var(--ink-inv);
+  font: 600 12px var(--f-mono);
+}
+
+.tag[data-status="remeasure"] rect {
+  fill: var(--warn);
+}
+
+.tag[data-status="quote"] rect {
+  fill: var(--info);
+}
+
+.tag[data-status="estimate"] rect,
+.tag[data-status="out"] rect {
+  fill: var(--sunken);
+  stroke: var(--line-2);
+}
+
+.tag[data-status="estimate"] text,
+.tag[data-status="out"] text {
+  fill: var(--ink-2);
+}
+
+.tag[data-selected="true"] rect {
+  fill: var(--tape-tint);
+  stroke: var(--tape);
+}
+
+.tag[data-selected="true"] text {
+  fill: var(--tape-ink);
+}
+
+/* Dimension lines: tape yellow, with their numbers in mono */
+.dim {
+  fill: none;
+  stroke: var(--tape);
+  stroke-width: 2;
+}
+
+.dimLabel rect {
+  fill: var(--surface-2);
+}
+
+.dimLabel text {
+  fill: var(--ink);
+  font: 500 13px var(--f-mono);
+}
+
+.sizeChip rect {
+  fill: var(--ink);
+}
+
+.sizeChip text {
+  fill: var(--ink-inv);
+  font: 500 12px var(--f-mono);
+}
+
+.more {
+  fill: var(--ink-3);
+  font: 500 12px var(--f-mono);
+}
+
+.unknown {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0 24px;
+  color: var(--ink-3);
+  text-align: center;
+}

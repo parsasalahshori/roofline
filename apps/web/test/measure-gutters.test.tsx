@@ -178,8 +178,8 @@ describe('Measure gutters', () => {
     // Good, Better and Best
     const panel = screen.getByRole('complementary', { name: liftProposal.label });
     expect(within(panel).getAllByRole('radio')).toHaveLength(3);
-    // The switch shows Gutters as the page
-    expect(screen.getByRole('link', { name: copy.switchGutters }).getAttribute('aria-current')).toBe('page');
+    // The switch in the top bar shows Gutters as the page
+    expect(screen.getByRole('radio', { name: copy.switchGutters })).toBeChecked();
   });
 
   it('a gable draws its rakes greyed and no gutter on them', async () => {
@@ -318,6 +318,6 @@ describe('Measure gutters', () => {
     await open();
     expect(stat('gutter-ft')).not.toBe('');
     expect(screen.getByText(copy.noMoney)).toBeTruthy();
-    expect(screen.queryAllByRole('radio')).toHaveLength(0);
+    expect(screen.queryByRole('radiogroup', { name: liftProposal.tiersLabel })).toBeNull();
   });
 });

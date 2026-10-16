@@ -631,6 +631,21 @@ describe('PrecisionLadder', () => {
     );
     for (const rung of screen.getAllByRole('listitem')) expect(rung.querySelector('[style]')).toHaveStyle({ width: '0%' });
   });
+
+  it('is a stack by default and a strip when asked, with the same rungs either way', () => {
+    const rungs = [
+      { key: 'estimate', label: 'Estimate', note: 'n', count: 1 },
+      { key: 'quote', label: 'Quote-grade', note: 'n', count: 0 },
+      { key: 'order', label: 'Order-grade', note: 'n', count: 2 },
+    ] as const;
+    const { rerender } = render(<PrecisionLadder label="Grade" rungs={rungs} ofLabel={(total) => `of ${total}`} />);
+    expect(screen.getByRole('list', { name: 'Grade' })).toHaveAttribute('data-layout', 'stack');
+    rerender(<PrecisionLadder label="Grade" rungs={rungs} ofLabel={(total) => `of ${total}`} layout="strip" />);
+    const list = screen.getByRole('list', { name: 'Grade' });
+    expect(list).toHaveAttribute('data-layout', 'strip');
+    expect(within(list).getAllByRole('listitem')).toHaveLength(3);
+    expect(within(list).getAllByRole('listitem')[2]).toHaveTextContent('2of 3');
+  });
 });
 
 describe('ApprovalCard', () => {

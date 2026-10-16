@@ -25,7 +25,7 @@ import {
   type ShownWindow,
   type Zoom,
 } from './model.ts';
-import styles from './WindowsWindow.module.css';
+import styles from './PhotoStage.module.css';
 
 /** Keyboard step for moving a box or a corner, as a share of the photo. */
 const KEY_STEP = 0.005;

@@ -1,6 +1,7 @@
-import { Button, Select } from '@roofline/ui';
+import { Button, Listbox, Panel, Size, Table, Td, Th, Tr } from '@roofline/ui';
 import type { FrameColor, GlassPackage, GridType, OrderGroup, OrderTotals, ScreenType, WindowStyle } from '@roofline/shared';
 import { useState } from 'react';
+import { sizeCopy } from '../../../../copy/measureWindows.ts';
 import { windowOrder as copy } from '../../../../copy/windowOrder.ts';
 import { colorOptions, glassOptions, gridOptions, screenOptions, styleOptions } from './OrderLine.tsx';
 import styles from './OrderWindow.module.css';
@@ -44,13 +45,13 @@ export function BulkBar({ count, onApply, onClear }: { count: number; onApply: (
         {copy.bulkSelected(count)}
       </p>
       <div className={styles.bulkFields}>
-        <Select label={copy.style} value={style} options={[leave, ...styleOptions]} onChange={setStyle} />
-        <Select label={copy.exterior} value={ext} options={[leave, ...colorOptions]} onChange={setExt} />
-        <Select label={copy.interior} value={int} options={[leave, ...colorOptions]} onChange={setInt} />
-        <Select label={copy.grid} value={grid} options={[leave, ...gridOptions]} onChange={setGrid} />
-        <Select label={copy.glass} value={glass} options={[leave, ...glassOptions]} onChange={setGlass} />
-        <Select label={copy.screen} value={screen} options={[leave, ...screenOptions]} onChange={setScreen} />
-        <Select
+        <Listbox label={copy.style} value={style} options={[leave, ...styleOptions]} onChange={setStyle} />
+        <Listbox label={copy.exterior} value={ext} options={[leave, ...colorOptions]} onChange={setExt} />
+        <Listbox label={copy.interior} value={int} options={[leave, ...colorOptions]} onChange={setInt} />
+        <Listbox label={copy.grid} value={grid} options={[leave, ...gridOptions]} onChange={setGrid} />
+        <Listbox label={copy.glass} value={glass} options={[leave, ...glassOptions]} onChange={setGlass} />
+        <Listbox label={copy.screen} value={screen} options={[leave, ...screenOptions]} onChange={setScreen} />
+        <Listbox
           label={copy.tempered}
           value={tempered}
           options={[leave, { value: 'yes', label: copy.bulkTemperedYes }, { value: 'no', label: copy.bulkTemperedNo }]}
@@ -58,10 +59,10 @@ export function BulkBar({ count, onApply, onClear }: { count: number; onApply: (
         />
       </div>
       <div className={styles.bulkActions}>
-        <Button className={styles.tall} disabled={empty} onClick={() => onApply(change)}>
+        <Button disabled={empty} onClick={() => onApply(change)}>
           {copy.bulkApply(count)}
         </Button>
-        <Button variant="ghost" className={styles.tall} onClick={onClear}>
+        <Button variant="default" onClick={onClear}>
           {copy.bulkClear}
         </Button>
       </div>
@@ -101,11 +102,8 @@ export function OrderSummary({ totals, groups }: { totals: OrderTotals; groups: 
     [copy.totals.specialOrders, totals.specialOrders.toLocaleString()],
   ];
   return (
-    <>
-      <section className={styles.panel} aria-labelledby="order-totals-title">
-        <h3 id="order-totals-title" className={styles.panelTitle}>
-          {copy.totalsTitle}
-        </h3>
+    <div className={styles.summary}>
+      <Panel title={copy.totalsTitle} headingLevel={2}>
         <dl className={styles.totals} data-totals="">
           {items.map(([label, value]) => (
             <div key={label} className={styles.total}>
@@ -114,43 +112,40 @@ export function OrderSummary({ totals, groups }: { totals: OrderTotals; groups: 
             </div>
           ))}
         </dl>
-      </section>
-      <section className={styles.panel} aria-labelledby="order-sheet-title">
-        <h3 id="order-sheet-title" className={styles.panelTitle}>
-          {copy.sheetTitle}
-        </h3>
+      </Panel>
+      <Panel title={copy.sheetTitle} headingLevel={2} padded={false}>
         {groups.length === 0 ? (
-          <p className={styles.muted}>{copy.sheetEmpty}</p>
+          <p className={styles.sheetEmpty}>{copy.sheetEmpty}</p>
         ) : (
-          <div className={styles.sheetScroll}>
-            <table className={styles.sheet}>
-              <caption className={styles.sheetCaption}>{copy.sheetCaption}</caption>
-              <thead>
-                <tr>
-                  <th scope="col">{copy.sheetColumns.line}</th>
-                  <th scope="col">{copy.sheetColumns.qty}</th>
-                  <th scope="col">{copy.sheetColumns.locations}</th>
-                  <th scope="col">{copy.sheetColumns.style}</th>
-                  <th scope="col">{copy.sheetColumns.size}</th>
-                  <th scope="col">{copy.sheetColumns.options}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {groups.map((g) => (
-                  <tr key={g.lineNo} data-group={g.lineNo}>
-                    <td>{g.lineNo}</td>
-                    <td>{g.quantity}</td>
-                    <td>{g.locations.join(', ')}</td>
-                    <td>{copy.styles[g.style]}</td>
-                    <td className={styles.nowrap}>{copy.size(g.widthIn, g.heightIn)}</td>
-                    <td>{optionsText(g)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table className={styles.preview} regionLabel={copy.sheetTitle}>
+            <caption className="visually-hidden">{copy.sheetCaption}</caption>
+            <thead>
+              <tr>
+                <Th>{copy.sheetColumns.line}</Th>
+                <Th numeric>{copy.sheetColumns.qty}</Th>
+                <Th>{copy.sheetColumns.locations}</Th>
+                <Th>{copy.sheetColumns.style}</Th>
+                <Th>{copy.sheetColumns.size}</Th>
+                <Th>{copy.sheetColumns.options}</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {groups.map((g) => (
+                <Tr key={g.lineNo} data-group={g.lineNo}>
+                  <Td numeric>{g.lineNo}</Td>
+                  <Td numeric>{g.quantity}</Td>
+                  <Td>{g.locations.join(', ')}</Td>
+                  <Td>{copy.styles[g.style]}</Td>
+                  <Td className={styles.nowrap}>
+                    <Size w={g.widthIn} h={g.heightIn} copy={sizeCopy} />
+                  </Td>
+                  <Td>{optionsText(g)}</Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
         )}
-      </section>
-    </>
+      </Panel>
+    </div>
   );
 }

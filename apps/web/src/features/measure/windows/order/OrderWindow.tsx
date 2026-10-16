@@ -1,22 +1,23 @@
-import { Banner, Button, Checkbox, EmptyState, Field, Skeleton } from '@roofline/ui';
-import { deriveOrder, MAX_PO_LENGTH, type WindowOrderLinePatch, type WindowOrderPatch, type WindowOrderStatus, type WindowOrderView } from '@roofline/shared';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Banner, Button, EmptyState, Icon, Panel, Skeleton } from '@roofline/ui';
+import { deriveOrder, type OrderLineStatus, type WindowOrderLinePatch, type WindowOrderPatch, type WindowOrderView } from '@roofline/shared';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams } from 'react-router';
 import { ApiError } from '../../../../api/client.ts';
 import { windowOrder as copy } from '../../../../copy/windowOrder.ts';
-import frame from '../../MeasureWindow.module.css';
-import { sheetCsvHref, sheetPdfHref, useCreateWindowOrder, useMarkReady, useMeasurementOrder, usePatchWindowOrder, useReopen } from './api.ts';
-import { OrderLine, type LineEdit } from './OrderLine.tsx';
+import { MeasurePage } from '../../MeasurePage.tsx';
+import { useCreateWindowOrder, useMarkReady, useMeasurementOrder, usePatchWindowOrder, useReopen } from './api.ts';
+import { LineDetail, type LineEdit } from './OrderLine.tsx';
+import { OrderSheet } from './OrderSheet.tsx';
 import { BulkBar, OrderSummary, type BulkChange } from './OrderSummary.tsx';
+import { orderRule, OrderStatusPill, OrderTicket } from './OrderTicket.tsx';
 import styles from './OrderWindow.module.css';
 
 export { OrderStatusChip } from './OrderChip.tsx';
+export { OrderStatusPill };
 
 /** Edits wait this long after the last change, then one PATCH carries them all. */
 export const ORDER_SAVE_DEBOUNCE_MS = 400;
 
-// A plain download link (same origin, cookie auth): Button passes the download attribute through to the anchor.
-const DOWNLOAD = { download: true };
 const windowsHref = (measurementId: string) => `/estimator/windows/${encodeURIComponent(measurementId)}`;
 const messageOf = (error: unknown): string => (error instanceof ApiError && error.message !== '' ? error.message : copy.actionFailed);
 
@@ -28,15 +29,35 @@ const draftOf = (v: WindowOrderView): Draft => ({ lines: v.lines, poNumber: v.po
 const emptyPending = (): Pending => ({ lines: new Map() });
 const isEmpty = (p: Pending) => p.poNumber === undefined && p.lines.size === 0;
 
-/** The order's status as a chip: a word, never colour alone. */
-export function OrderStatusPill({ status }: { status: WindowOrderStatus }) {
+/** The page every state of the order sits in: the trail "Factory orders > street" and, when there is one, the save state. */
+function OrderFrame({ address, titleHidden = false, barExtra, children }: { address: string | null; titleHidden?: boolean; barExtra?: ReactNode; children: ReactNode }) {
   return (
-    <span className={styles.statusPill} data-status={status}>
-      <span className="visually-hidden">{copy.statusLabel}</span>
-      {copy.status[status]}
-    </span>
+    <MeasurePage section="order" address={address} title={copy.title} subtitle={copy.subtitle} titleHidden={titleHidden} barExtra={barExtra} layout="flow">
+      {children}
+    </MeasurePage>
   );
 }
+
+/** "All changes saved" at the top right, as the work goes: saving, saved, or what went wrong. A locked order has nothing to save. */
+function SaveStateText({ save, error, locked }: { save: SaveState; error: string; locked: boolean }) {
+  const busy = save === 'saving' || save === 'waiting';
+  return (
+    <p className={styles.saveState} aria-live="polite" data-save={save === 'idle' ? 'saved' : save}>
+      {locked ? null : (
+        <>
+          <Icon name={save === 'error' ? 'alert' : busy ? 'clock' : 'check'} size={16} />
+          {busy ? copy.saving : save === 'error' ? copy.saveFailed(error) : copy.saved}
+        </>
+      )}
+    </p>
+  );
+}
+
+const tally = (checked: readonly { status: OrderLineStatus }[]) => ({
+  ready: checked.filter((c) => c.status === 'ready').length,
+  check: checked.filter((c) => c.status === 'check').length,
+  hold: checked.filter((c) => c.status === 'error').length,
+});
 
 function Editor({ view, onResync }: { view: WindowOrderView; onResync: () => void }) {
   const locked = view.status !== 'draft';
@@ -44,11 +65,18 @@ function Editor({ view, onResync }: { view: WindowOrderView; onResync: () => voi
   const ready = useMarkReady(view.id);
   const reopen = useReopen(view.id);
   const refresh = useCreateWindowOrder(view.windowMeasurementId);
+  const reasonId = useId();
 
   const [draft, setDraft] = useState<Draft>(() => draftOf(view));
   const [save, setSave] = useState<SaveState>('idle');
   const [saveError, setSaveError] = useState('');
-  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
+  const [ticked, setTicked] = useState<ReadonlySet<string>>(() => new Set());
+  // The window in the panel beside the table starts as the first that needs a look (else the first) and stays until
+  // another is picked, however the edits change what needs a look
+  const [picked, setPicked] = useState<string | null>(() => {
+    const first = view.checked.findIndex((c) => c.status !== 'ready');
+    return view.lines[first >= 0 ? first : 0]?.id ?? null;
+  });
 
   // A new view from the server (marked ready, reopened, refreshed, or reloaded after a failed save) replaces what is
   // shown, unless the person has changes on the way: those win, and the next save brings the server in step.
@@ -121,7 +149,7 @@ function Editor({ view, onResync }: { view: WindowOrderView; onResync: () => voi
   const applyBulk = (change: BulkChange) => {
     const edits = new Map<string, LineEdit>();
     for (const line of draft.lines) {
-      if (!selected.has(line.id)) continue;
+      if (!ticked.has(line.id)) continue;
       const { gridType, ...rest } = change;
       edits.set(line.id, { ...rest, ...(gridType !== undefined && { grid: { ...line.grid, type: gridType } }) });
     }
@@ -131,16 +159,20 @@ function Editor({ view, onResync }: { view: WindowOrderView; onResync: () => voi
   };
 
   const derived = useMemo(() => deriveOrder(draft.lines, view.settings), [draft.lines, view.settings]);
+  const counts = tally(derived.checked);
   const attention = derived.checked.filter((c) => !c.orderable).length;
   const canMark = view.status === 'draft' && view.mayMarkReady && derived.canMarkReady;
-  const allSelected = draft.lines.length > 0 && draft.lines.every((l) => selected.has(l.id));
-  const toggle = (id: string, next: boolean) =>
-    setSelected((s) => {
+  const tick = (id: string, next: boolean) =>
+    setTicked((s) => {
       const out = new Set(s);
       if (next) out.add(id);
       else out.delete(id);
       return out;
     });
+
+  // A window that went away (new photo windows brought in) gives way to the first
+  const pickedId = picked !== null && draft.lines.some((l) => l.id === picked) ? picked : (draft.lines[0]?.id ?? null);
+  const pickedAt = draft.lines.findIndex((l) => l.id === pickedId);
 
   const markReady = () => {
     void flush().then(() => ready.mutate());
@@ -149,135 +181,123 @@ function Editor({ view, onResync }: { view: WindowOrderView; onResync: () => voi
     void flush().then(() => refresh.mutate());
   };
   const actionError = ready.error ?? reopen.error ?? refresh.error;
+  const rule = orderRule(view.settings);
+
+  const foot = (
+    <div className={styles.foot}>
+      <div className={styles.footText}>
+        {draft.lines.length > 0 ? (
+          <p className={styles.counts} data-counts="">
+            {counts.ready > 0 ? <span data-count="ready">{copy.counts.ready(counts.ready)}</span> : null}
+            {counts.check > 0 ? <span data-count="check">{copy.counts.check(counts.check)}</span> : null}
+            {counts.hold > 0 ? <span data-count="hold">{copy.counts.hold(counts.hold)}</span> : null}
+          </p>
+        ) : null}
+        <div id={reasonId} className={styles.footReasons}>
+          {view.status === 'draft' ? (
+            <>
+              {!view.mayMarkReady ? <p className={styles.reason}>{copy.ownerMarksReady}</p> : null}
+              {draft.lines.length > 0 && attention > 0 ? (
+                <p className={styles.reason} data-tone={counts.hold > 0 ? 'stop' : 'look'}>
+                  <Icon name="alert" size={16} />
+                  {copy.linesNeedAttention(attention)}
+                </p>
+              ) : null}
+              <p className={styles.note}>{copy.sendNote}</p>
+            </>
+          ) : view.status === 'ready' ? (
+            <p className={styles.note}>{copy.readyLocked}</p>
+          ) : (
+            <p className={styles.note}>{copy.sentLocked}</p>
+          )}
+        </div>
+      </div>
+      <div className={styles.footActions}>
+        {view.status === 'draft' ? (
+          <>
+            <Button variant="default" onClick={() => void flush()}>
+              {copy.saveDraft}
+            </Button>
+            <Button disabled={!canMark} busy={ready.isPending} aria-describedby={reasonId} onClick={markReady}>
+              {ready.isPending ? copy.markingReady : copy.markReady}
+            </Button>
+          </>
+        ) : view.status === 'ready' && view.mayMarkReady ? (
+          <Button variant="default" busy={reopen.isPending} onClick={() => reopen.mutate()}>
+            {reopen.isPending ? copy.reopening : copy.reopen}
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
 
   return (
-    <div className={styles.scroll}>
-      <div className={styles.content}>
-        <section className={styles.top} aria-labelledby="order-address">
-          <div className={styles.topLine}>
-            <h3 id="order-address" className={styles.address}>
-              {view.address}
-            </h3>
-            <OrderStatusPill status={view.status} />
-            <p className={styles.saveState} aria-live="polite" data-save={save}>
-              {save === 'saving' || save === 'waiting' ? copy.saving : save === 'saved' ? copy.saved : save === 'error' ? copy.saveFailed(saveError) : null}
-            </p>
+    <OrderFrame address={view.address} titleHidden barExtra={<SaveStateText save={save} error={saveError} locked={locked} />}>
+      <div className={styles.host} data-window-order="">
+        <OrderTicket
+          id={view.id}
+          address={view.address}
+          status={view.status}
+          poNumber={draft.poNumber}
+          lineCount={draft.lines.length}
+          locked={locked}
+          onPo={editPo}
+          windowsHref={windowsHref(view.windowMeasurementId)}
+        />
+        <div className={styles.rule}>
+          <Icon name="ruler" size={16} />
+          <div>
+            <p>{rule}</p>
+            <p>{copy.onlyPhotoNote}</p>
           </div>
-          <div className={styles.topLine}>
-            {locked ? (
-              view.poNumber !== '' ? (
-                <span className={styles.po}>{copy.poShown(view.poNumber)}</span>
-              ) : null
-            ) : (
-              <Field
-                className={styles.poField}
-                label={copy.poLabel}
-                placeholder={copy.poPlaceholder}
-                value={draft.poNumber}
-                maxLength={MAX_PO_LENGTH}
-                onChange={(e) => editPo(e.currentTarget.value)}
-              />
-            )}
-            {!locked ? (
-              <Button variant="ghost" className={styles.tall} busy={refresh.isPending} onClick={bringIn}>
-                {refresh.isPending ? copy.refreshing : copy.refresh}
-              </Button>
-            ) : null}
-          </div>
-          <Banner tone="info">{copy.onlyPhotoNote}</Banner>
-        </section>
-
-        {!locked && selected.size > 0 ? <BulkBar count={selected.size} onApply={applyBulk} onClear={() => setSelected(new Set())} /> : null}
+        </div>
+        {actionError ? <Banner tone="danger">{messageOf(actionError)}</Banner> : null}
 
         {draft.lines.length === 0 ? (
           <EmptyState title={copy.noLines} />
         ) : (
-          <>
-            {!locked ? (
-              <div className={styles.selectAll}>
-                <Checkbox
-                  checked={allSelected}
-                  label={copy.selectAll}
-                  onChange={(next) => setSelected(next ? new Set(draft.lines.map((l) => l.id)) : new Set())}
-                />
-              </div>
-            ) : null}
-            <table className={styles.lines}>
-              <caption className={styles.caption}>{copy.tableCaption}</caption>
-              <thead>
-                <tr>
-                  <th scope="col">
-                    <span className="visually-hidden">{copy.columns.select}</span>
-                  </th>
-                  <th scope="col">{copy.columns.photo}</th>
-                  <th scope="col">{copy.columns.location}</th>
-                  <th scope="col">{copy.columns.measured}</th>
-                  <th scope="col">
-                    <span title={copy.orderHint}>{copy.columns.order}</span>
-                  </th>
-                  <th scope="col">{copy.columns.quantity}</th>
-                  <th scope="col">{copy.columns.status}</th>
-                </tr>
-              </thead>
-              {draft.lines.map((line, i) => (
-                <OrderLine
-                  key={line.id}
-                  line={line}
-                  checked={derived.checked[i]!}
-                  n={i + 1}
-                  measurementId={view.windowMeasurementId}
-                  locked={locked}
-                  selected={selected.has(line.id)}
-                  onSelect={(next) => toggle(line.id, next)}
-                  onEdit={(edit, localOnly) => editLine(line.id, edit, localOnly)}
-                />
-              ))}
-            </table>
-          </>
+          <div className={styles.work}>
+            <OrderSheet
+              lines={draft.lines}
+              checked={derived.checked}
+              locked={locked}
+              pickedId={pickedId}
+              onPick={setPicked}
+              ticked={ticked}
+              onTick={tick}
+              onTickAll={(next) => setTicked(next ? new Set(draft.lines.map((l) => l.id)) : new Set())}
+              onEdit={editLine}
+              actions={
+                !locked ? (
+                  <Button variant="default" size="sm" className={styles.refresh} busy={refresh.isPending} onClick={bringIn}>
+                    {refresh.isPending ? copy.refreshing : copy.refresh}
+                  </Button>
+                ) : null
+              }
+              bar={!locked && ticked.size > 0 ? <BulkBar count={ticked.size} onApply={applyBulk} onClear={() => setTicked(new Set())} /> : null}
+              foot={foot}
+            />
+            {pickedAt >= 0 ? (
+              <LineDetail
+                key={pickedId}
+                line={draft.lines[pickedAt]!}
+                checked={derived.checked[pickedAt]!}
+                n={pickedAt + 1}
+                measurementId={view.windowMeasurementId}
+                locked={locked}
+                onEdit={(edit) => editLine(pickedId!, edit)}
+              />
+            ) : (
+              <Panel as="aside" title={copy.detailLabel}>
+                <p className={styles.note}>{copy.nothingPicked}</p>
+              </Panel>
+            )}
+          </div>
         )}
 
-        <div className={styles.bottom}>
-          <OrderSummary totals={derived.totals} groups={derived.groups} />
-          <section className={styles.panel} aria-labelledby="order-actions-title">
-            <h3 id="order-actions-title" className={styles.panelTitle}>
-              {copy.actionsTitle}
-            </h3>
-            {view.status === 'draft' ? (
-              <>
-                <Button className={styles.tall} disabled={!canMark} busy={ready.isPending} onClick={markReady}>
-                  {ready.isPending ? copy.markingReady : copy.markReady}
-                </Button>
-                {!view.mayMarkReady ? <p className={styles.muted}>{copy.ownerMarksReady}</p> : null}
-                {draft.lines.length > 0 && attention > 0 ? <p className={styles.muted}>{copy.linesNeedAttention(attention)}</p> : null}
-              </>
-            ) : view.status === 'ready' ? (
-              <>
-                <p className={styles.muted}>{copy.readyLocked}</p>
-                {view.mayMarkReady ? (
-                  <Button variant="ghost" className={styles.tall} busy={reopen.isPending} onClick={() => reopen.mutate()}>
-                    {reopen.isPending ? copy.reopening : copy.reopen}
-                  </Button>
-                ) : null}
-              </>
-            ) : (
-              <p className={styles.muted}>{copy.sentLocked}</p>
-            )}
-            {actionError ? <Banner tone="danger">{messageOf(actionError)}</Banner> : null}
-            <div className={styles.downloads}>
-              {view.status !== 'draft' ? (
-                <Button className={styles.tall} href={sheetCsvHref(view.id)} {...DOWNLOAD}>
-                  {copy.downloadCsv}
-                </Button>
-              ) : null}
-              <Button variant="ghost" className={styles.tall} href={sheetPdfHref(view.id)} {...DOWNLOAD}>
-                {view.status === 'draft' ? copy.draftPdf : copy.downloadPdf}
-              </Button>
-            </div>
-            <p className={styles.muted}>{copy.sendNote}</p>
-          </section>
-        </div>
+        <OrderSummary totals={derived.totals} groups={derived.groups} />
       </div>
-    </div>
+    </OrderFrame>
   );
 }
 
@@ -299,7 +319,7 @@ function OrderBody({ measurementId }: { measurementId: string }) {
   }, [none]);
 
   const back = (
-    <Button variant="ghost" className={styles.tall} href={windowsHref(measurementId)}>
+    <Button variant="default" href={windowsHref(measurementId)}>
       {copy.back}
     </Button>
   );
@@ -308,61 +328,51 @@ function OrderBody({ measurementId }: { measurementId: string }) {
   if (create.isError) {
     if (create.error instanceof ApiError && create.error.status === 422) {
       return (
-        <div className={styles.centre}>
-          <EmptyState title={copy.noPhotoWindowsTitle} body={create.error.message !== '' ? create.error.message : copy.noPhotoWindowsBody} action={back} />
-        </div>
+        <OrderFrame address={null}>
+          <div className={styles.centre}>
+            <EmptyState title={copy.noPhotoWindowsTitle} body={create.error.message !== '' ? create.error.message : copy.noPhotoWindowsBody} action={back} />
+          </div>
+        </OrderFrame>
       );
     }
     return (
-      <div className={styles.centre}>
-        <EmptyState
-          title={copy.loadFailed}
-          body={messageOf(create.error)}
-          action={
-            <Button className={styles.tall} onClick={() => create.mutate()}>
-              {copy.tryAgain}
-            </Button>
-          }
-        />
-      </div>
+      <OrderFrame address={null}>
+        <div className={styles.centre}>
+          <EmptyState
+            title={copy.loadFailed}
+            body={messageOf(create.error)}
+            action={
+              <Button onClick={() => create.mutate()}>
+                {copy.tryAgain}
+              </Button>
+            }
+          />
+        </div>
+      </OrderFrame>
     );
   }
   if (query.isError) {
     return (
-      <div className={styles.centre}>
-        <EmptyState title={copy.loadFailed} body={messageOf(query.error)} action={back} />
-      </div>
+      <OrderFrame address={null}>
+        <div className={styles.centre}>
+          <EmptyState title={copy.loadFailed} body={messageOf(query.error)} action={back} />
+        </div>
+      </OrderFrame>
     );
   }
   return (
-    <div className={styles.centre} role="status">
-      <p className={styles.preparing}>{none ? copy.preparing : copy.loading}</p>
-      {none ? <p className={styles.muted}>{copy.preparingBody}</p> : null}
-      <Skeleton lines={4} height="1.25rem" width="min(480px, 90%)" />
-    </div>
+    <OrderFrame address={null}>
+      <div className={styles.centre} role="status">
+        <p className={styles.preparing}>{none ? copy.preparing : copy.loading}</p>
+        {none ? <p className={styles.note}>{copy.preparingBody}</p> : null}
+        <Skeleton lines={4} height="1.25rem" width="min(480px, 90%)" />
+      </div>
+    </OrderFrame>
   );
 }
 
 /** The factory order for a window measurement: /estimator/windows/:windowMeasurementId/order. */
 export function OrderWindow() {
   const { windowMeasurementId = '' } = useParams();
-  return (
-    <div className={frame.window} data-window-order="">
-      <header className={frame.header}>
-        <span className={frame.appIcon} aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="14" height="14" focusable="false">
-            <path d="M4 3h16v18H4zM4 12h16M12 3v18" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinejoin="round" />
-          </svg>
-        </span>
-        <h2 className={frame.heading}>{copy.title}</h2>
-        <span className={frame.subtitle}>{copy.subtitle}</span>
-        <span className={styles.headerBack}>
-          <Button variant="ghost" className={styles.tall} href={windowsHref(windowMeasurementId)}>
-            {copy.back}
-          </Button>
-        </span>
-      </header>
-      <OrderBody key={windowMeasurementId} measurementId={windowMeasurementId} />
-    </div>
-  );
+  return <OrderBody key={windowMeasurementId} measurementId={windowMeasurementId} />;
 }

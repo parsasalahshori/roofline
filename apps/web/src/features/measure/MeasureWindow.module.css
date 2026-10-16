@@ -1,93 +1,37 @@
-/* The Measure window, matched to the reference app: a 50px header, then requests | roof | proposal. */
-.window {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-  min-width: 0;
-  max-width: 100%;
-  background: var(--ground);
-  color: var(--ink);
-  font-family: var(--f-ui);
-  font-size: 13px;
-}
-
-.header {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 12px;
-  height: 50px;
-  padding: 0 56px 0 16px;
-  box-sizing: border-box;
-  border-bottom: 1px solid var(--line, #dde2e6);
-  background: rgba(255, 255, 255, 0.7);
-}
-
-/* The app's yellow tile in front of the title */
-.appIcon {
-  display: inline-grid;
-  flex: none;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 7.28px;
-  background: var(--tape);
-  color: var(--ink);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), inset 0 -1px 0 rgba(0, 0, 0, 0.18), 0 1px 2px rgba(21, 28, 34, 0.25);
-}
-
-.heading {
-  flex: none;
-  margin: 0;
-  font-size: 16px;
-  font-stretch: 125%;
-  font-weight: 700;
-}
-
-.subtitle {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink-3);
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.body {
-  position: relative;
-  display: flex;
+/*
+ * The roof and gutters screens, under the page head: the requests, the map with its card, and the quote. They sit side
+ * by side where the page is 980px wide or more (MeasureHost's container, see MeasurePage.module.css); under that they
+ * are the three steps and one shows at a time. The columns take the page's height and scroll inside.
+ */
+.work {
+  display: grid;
   flex: 1 1 auto;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+  min-height: 480px;
+}
+
+.list,
+.main,
+.proposal {
   min-width: 0;
   min-height: 0;
 }
 
 .list {
   display: flex;
-  flex: none;
   flex-direction: column;
-  width: 280px;
-  min-height: 0;
-  overflow: hidden;
-  border-right: 1px solid var(--line, #dde2e6);
-  background: var(--surface);
 }
 
 .main {
   display: flex;
-  flex: 1 1 auto;
   flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  padding: 0 12px 12px;
-  box-sizing: border-box;
 }
 
 .proposal {
   display: flex;
-  flex: none;
-  min-height: 0;
-  animation: slideIn 0.25s ease-out;
+  animation: slideIn var(--t-mid) var(--ease);
 }
 
 @keyframes slideIn {
@@ -102,22 +46,67 @@
   }
 }
 
+@container measure (min-width: 980px) {
+  .work {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+
+  .work[data-proposal="true"] {
+    grid-template-columns: 240px minmax(0, 1fr) 332px;
+  }
+}
+
+/* One step at a time: the numbered steps over the columns choose which */
+@container measure (max-width: 979.98px) {
+  .work[data-step="requests"] > .main,
+  .work[data-step="requests"] > .proposal,
+  .work[data-step="roof"] > .list,
+  .work[data-step="roof"] > .proposal,
+  .work[data-step="proposal"] > .list,
+  .work[data-step="proposal"] > .main {
+    display: none;
+  }
+}
+
 .loading {
   margin: 16px;
   color: var(--ink-3);
 }
 
-/* The phone's numbered steps; hidden on a desktop, where all three columns show */
-.steps {
-  display: none;
+/* Nothing open: one quiet card in the middle */
+.pick {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 320px;
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: var(--e-1);
 }
 
 /* The controls that change the estimate. They live inside the measure card under Adjust, so they are flat. */
 .hint {
   margin: 0;
   color: var(--ink-3);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.4;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* A mono caps eyebrow, as the kit's table heads */
+.title {
+  margin: 0;
+  color: var(--ink-3);
+  font: 500 var(--font-size-min) / 1.2 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 /* The buildings near the home: one row each, outlined on the photo while the row is hovered or focused */
@@ -144,35 +133,14 @@
   min-width: 0;
 }
 
+/* The outline on the photo is tape yellow: the row it belongs to is too */
 .building[data-hovered="true"] {
   background: var(--tape-tint);
-  box-shadow: inset 0 0 0 1px rgba(217, 158, 0, 0.45);
+  box-shadow: inset 0 0 0 1px var(--tape-line);
 }
 
 .measureOther {
   flex: none;
-  min-height: 30px;
-  padding: 0 10px;
-  border: 1px solid var(--line, #dde2e6);
-  border-radius: var(--r-2);
-  background: var(--surface);
-  font-size: 12.5px;
-}
-
-.panel {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-
-.title {
-  margin: 0;
-  color: var(--ink-3);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .pitches {
@@ -181,24 +149,24 @@
   gap: 6px;
 }
 
+/*
+ * The pitch picker: the kit's hairline buttons, the chosen one in the company's colour. The chosen rules name
+ * [data-variant] so they outrank the kit's variant rules whatever order the stylesheets load in.
+ */
 .pitch {
-  min-height: 40px;
-  min-width: 40px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   gap: 4px;
+  min-width: 40px;
+  min-height: 40px;
   padding: 0 6px;
-  border: 1px solid var(--line, #dde2e6);
-  border-radius: var(--r-2);
-  background: var(--surface);
-  font-size: 12px;
+  font: 500 var(--font-size-min) / 1 var(--f-mono);
 }
 
-.pitch[data-state="on"] {
-  background: var(--tape);
-  color: var(--ink);
-  border-color: var(--tape);
+.pitch[data-state="on"][data-variant],
+.pitch[data-state="on"][data-variant]:hover {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  box-shadow: inset 0 0 0 1px var(--brand);
+  color: var(--brand-text);
 }
 
 .diagram {
@@ -218,8 +186,8 @@
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  border-bottom: 1px solid var(--line, #dde2e6);
   padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
 }
 
 .row dt {
@@ -228,10 +196,11 @@
 
 .row dd {
   margin: 0;
-  font-weight: 700;
+  font: 600 14px / 1.3 var(--f-mono);
   font-variant-numeric: tabular-nums;
 }
 
+/* The quote's footer: the one primary action, and the way out once it is sent */
 .actions {
   display: flex;
   flex-direction: column;
@@ -240,26 +209,19 @@
 
 .wide {
   width: 100%;
-  min-height: 40px;
 }
 
-/* The big yellow Send proposal (and Request report) button */
 .send {
   width: 100%;
-  min-height: 44px;
   gap: 8px;
-  border-radius: var(--r-2);
-  box-shadow: inset 0 0 0 1px rgba(217, 158, 0, 0.55);
-  font-size: 15px;
 }
 
-.sent {
+.actions .sent[data-variant],
+.actions .sent[data-variant]:hover {
   width: 100%;
-  min-height: 44px;
-  border-radius: var(--r-2);
+  border-color: transparent;
   background: var(--ok-tint);
   color: var(--ok-text);
-  font-size: 15px;
 }
 
 .waiting {
@@ -269,109 +231,6 @@
   padding: 12px;
   border-radius: var(--r-2);
   background: var(--surface-2);
-}
-
-/* Nothing open: one quiet card in the middle */
-.pick {
-  display: flex;
-  flex: 1 1 auto;
-  align-items: center;
-  justify-content: center;
-  min-height: 320px;
-}
-
-/* Phone and narrow windows: one step at a time, chosen with the numbered steps under the header */
-@media (max-width: 899.98px) {
-  .header {
-    height: 56px;
-    padding-left: 16px;
-  }
-
-  .appIcon {
-    width: 32px;
-    height: 32px;
-    border-radius: 9px;
-  }
-
-  .heading {
-    font-size: 20px;
-  }
-
-  .subtitle {
-    display: none;
-  }
-
-  .steps {
-    display: grid;
-    flex: none;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 4px;
-    margin: 10px 12px;
-    padding: 4px;
-    border-radius: 14px;
-    background: var(--surface-2);
-  }
-
-  .step {
-    gap: 8px;
-    min-height: 44px;
-    padding: 0 6px;
-    border: 0;
-    border-radius: 11px;
-    color: var(--ink-3);
-    font-size: 15px;
-    font-weight: 600;
-  }
-
-  .step[data-selected="true"] {
-    background: var(--surface);
-    color: var(--ink);
-    box-shadow: 0 0 0 1px rgba(21, 28, 34, 0.08), 0 2px 6px rgba(21, 28, 34, 0.1);
-  }
-
-  .stepNumber {
-    display: inline-grid;
-    place-items: center;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    background: var(--surface);
-    box-shadow: inset 0 0 0 1.5px var(--line-2);
-    color: var(--ink-2);
-    font-size: 12px;
-    font-weight: 700;
-  }
-
-  .step[data-selected="true"] .stepNumber {
-    background: var(--info);
-    box-shadow: none;
-    color: #fff;
-  }
-
-  .body {
-    border-top: 1px solid var(--line, #dde2e6);
-  }
-
-  .list,
-  .main,
-  .proposal {
-    display: none;
-    width: 100%;
-  }
-
-  .window[data-step="requests"] .list,
-  .window[data-step="roof"] .main,
-  .window[data-step="proposal"] .proposal {
-    display: flex;
-  }
-
-  .list {
-    border-right: 0;
-  }
-
-  .main {
-    padding: 0 8px 8px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
