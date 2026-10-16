@@ -48,10 +48,14 @@ export class MapTilerStaticMap implements StaticMap {
   }
 }
 
-/** The fake with FAKE_PROVIDERS, the MapTiler one when MAPTILER_SERVER_KEY is set, otherwise the unconfigured one. */
+/**
+ * The MapTiler one whenever MAPTILER_SERVER_KEY is set (the demo sets it from its MapTiler key, so its claim
+ * packets show the real street map, like its real address lookups), else the fake with FAKE_PROVIDERS,
+ * otherwise the unconfigured one. Tests and CI set no key, so they never call MapTiler.
+ */
 export function createStaticMap(config: Config): StaticMap {
-  if (config.FAKE_PROVIDERS) return new FakeStaticMap();
   const key = config.MAPTILER_SERVER_KEY;
   if (key !== undefined && key !== '') return new MapTilerStaticMap({ key });
+  if (config.FAKE_PROVIDERS) return new FakeStaticMap();
   return new UnconfiguredStaticMap();
 }

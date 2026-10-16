@@ -56,6 +56,12 @@ describe('createStaticMap', () => {
   test('a key gives MapTiler', () => {
     expect(createStaticMap({ FAKE_PROVIDERS: false, MAPTILER_SERVER_KEY: KEY } as unknown as Config)).toBeInstanceOf(MapTilerStaticMap);
   });
+  test('a key wins over FAKE_PROVIDERS (the demo with its MapTiler key)', () => {
+    expect(createStaticMap({ FAKE_PROVIDERS: true, MAPTILER_SERVER_KEY: KEY } as unknown as Config)).toBeInstanceOf(MapTilerStaticMap);
+  });
+  test('FAKE_PROVIDERS with an empty key still gives the fake', () => {
+    expect(createStaticMap({ FAKE_PROVIDERS: true, MAPTILER_SERVER_KEY: '' } as unknown as Config)).toBeInstanceOf(FakeStaticMap);
+  });
   test('no key gives the unconfigured map, which answers null', async () => {
     const m = createStaticMap({ FAKE_PROVIDERS: false, MAPTILER_SERVER_KEY: undefined } as unknown as Config);
     expect(m).toBeInstanceOf(UnconfiguredStaticMap);
