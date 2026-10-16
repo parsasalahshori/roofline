@@ -1,21 +1,27 @@
 # Homeowner API (the WinChoice phone app)
 
 The contract between the homeowner's phone app and the server. Everything the app needs, signed out: no staff session, no
-cookies. Types for every body are in `packages/shared/src/homeowner.ts` (`Homeowner*`); the code is
-`apps/api/src/public/homeowner*.ts`; the tests are `apps/api/test/homeowner.test.ts`. **Status: final for the iPhone app
-(`apiVersion: 1`). Every example below is real output from `npm run demo` (see "Trying it on this machine").**
+cookies. The shapes of the answers are `Homeowner*` in `packages/shared/src/homeowner.ts`; the request bodies are the
+zod schemas at the top of `apps/api/src/public/homeowner.ts`, which is the code (with `homeowner-auth.ts`,
+`homeowner-view.ts`, `homeowner-upload.ts`); the tests are `apps/api/test/homeowner.test.ts`. **Status: final for the
+iPhone app (`apiVersion: 1`). The examples below are real output from `npm run demo` (see "Trying it on this machine"),
+cut where they say so.**
 
 - Base: `/api/public/homeowner/:slug`. The slug is the company's instant-quote slug (demo company: `summit-ridge`). A slug
-  that does not exist, or whose page is turned off, is a 404 on `GET /company` and `POST /requests`. A request made before
-  the page was turned off can still be looked at, measured and shown its status; the contact form, the visit times and
-  booking answer 404 `not_found`.
-- JSON in and out (`Content-Type: application/json`), except the photo upload. Every answer carries
+  that does not exist, or whose page is turned off, is a 404 `not_found` on `GET /company` and `POST /requests`, and on
+  every `/requests/:id/...` call too (answered before the token is looked at). A request made before the page was turned
+  off can still be looked at, measured and shown its status; the contact form, the visit times and booking answer 404
+  `not_found`.
+- JSON in and out (`Content-Type: application/json`), except the photo upload. Every answer, a refusal included, carries
   `Cache-Control: no-store` and `X-Robots-Tag: noindex`.
 - Money is whole US dollars (integers). Sizes are inches. Times are ISO 8601 with a `Z`.
 - Auth: `POST /requests` returns a **token**; every `/requests/:id/...` call sends `Authorization: Bearer <token>`. The
   token is 32 random bytes in base64url (43 characters). The server keeps only its SHA-256 hash, so a lost token cannot be
   recovered: start a new request. A token lasts **60 days** from the request. Keep `requestId` + `token` in the Keychain.
-- Nothing personal goes in a URL or a log. The only personal details are in the one `POST .../contact` body.
+  The header must be exactly `Authorization: Bearer ` and the 43 characters (anything else is a 401 like a wrong token).
+- Nothing personal goes in a URL or a log. The name, phone, email and ZIP are only in the one `POST .../contact` body; the
+  home address is in the `POST /requests` body (and comes back as `home.address`); photos and the room and label text are
+  in the upload and window bodies. The server logs and audits ids and outcomes only.
 - No cookies, no CORS needs: a native app sends no `Origin` header and is never blocked by the cross-site check.
 
 ## What the app has to do (short list)
@@ -26,11 +32,17 @@ cookies. Types for every body are in `packages/shared/src/homeowner.ts` (`Homeow
 - Treat `quality: "check"` as a normal answer, not an error: it means "quote-grade, we measure again at the free visit".
   With the credit-card method **most real windows come back `check`** (see "Card photo").
 - Retry a window with the same `id` after a lost answer (idempotent); do not retry an upload blindly (see below).
-- Switch on `code`, show `error` (a sentence written for the homeowner). On 429, wait `Retry-After` seconds, retry once.
+- Switch on `code`, show `error` (a sentence written for the homeowner). On 429, wait `Retry-After` seconds (the most you
+  can be made to wait), retry once; nothing was stored by a refused call.
+- Send optional fields by leaving them out, never as `null`, and no keys this document does not list: every body is strict
+  (see "Details that matter when you build the client").
 
 ## Errors
 
-Every error body is `{ "error": "<a sentence to show a person>", "field"?: "<body field>", "code": "<machine code>" }`.
+Every error from a call in this document is `{ "error": "<a sentence to show a person>", "field"?: "<body field>", "code": "<machine code>" }`.
+`field` is the body field the sentence is about, as a dotted path (`services.0`, `scale.card.widthMm`); it is absent when
+the whole body is the problem. One answer has no `code`: an unexpected failure (`500`, `{ "error": "Something went wrong
+on our side. Please try again." }`). Decode `code` as optional, and for a code you do not know, show `error`.
 
 | Status | `code` | When |
 | --- | --- | --- |
@@ -38,7 +50,7 @@ Every error body is `{ "error": "<a sentence to show a person>", "field"?: "<bod
 | 401 | `unauthorized` | No token, a malformed token, a wrong token, an unknown request id, or another company's request. **All look the same**, so request ids cannot be probed. |
 | 401 | `token_expired` | The token is right but is past its 60 days. Start a new request. |
 | 403 | `cross_site` | A browser sent an `Origin` that is not allowed. A native app sends none. |
-| 404 | `not_found` | Unknown slug (or page turned off) on `GET /company` and `POST /requests`; the contact form, slots or booking on a turned-off page; a malformed window id on `DELETE`. |
+| 404 | `not_found` | An unknown slug (or a page turned off) on `GET /company`, `POST /requests` and, before the token is looked at, any `/requests/:id/...` call; the contact form, slots or booking on a turned-off page; a malformed window id on `DELETE`; a path or method that is not in this document (that answer is `{ "error": "We couldn't find that.", "code": "not_found" }`). |
 | 409 | `window_id_taken` | `POST .../windows` with an id already used for a **different** window. |
 | 409 | `windows_full` | The request already has 60 windows. |
 | 409 | `uploads_full` | The request already has 90 photos or 250 MB of photos. |
@@ -49,24 +61,36 @@ Every error body is `{ "error": "<a sentence to show a person>", "field"?: "<bod
 | 409 | `consent_changed` | `consentVersion` is not the current one: fetch `GET /company` again and show the new words. |
 | 409 | `slot_taken` | The picked time is no longer open, or is not one the company offers. Fetch `.../slots` again. The request still stands. |
 | 409 | `booking_off` | `slotStart` sent while the company has online booking off. Send `callMe` instead. |
-| 413 | `too_large` | A photo over 12 MB, or a JSON body over 256 KB. |
+| 413 | `too_large` | A photo over 12 MiB (12,582,912 bytes, `limits.maxPhotoBytes`) that declares its size in `Content-Length` (a normal upload does; a chunked body over the limit gets the connection closed instead of this answer), or a JSON body over 256 KB. |
 | 415 | `unsupported_media` | A photo that is not a JPEG or PNG (a HEIC gets the "set the camera to Most Compatible" sentence). |
 | 422 | `address_not_found` | The address could not be found (`field: "address"`). |
 | 422 | `service_not_offered` | A `services` value this company does not offer (`field: "services"`). |
-| 422 | `window_unsizable` | The window cannot be sized from what was sent (degenerate corners, a card that is not credit-card sized, an AR size outside 6 to 200 in). `error` says what to redo in plain words. Nothing is saved. |
-| 429 | `rate_limited` | Too many calls. The `Retry-After` header says how many seconds to wait. |
+| 422 | `window_unsizable` | The window cannot be sized from what was sent: corners that cross, are not a four-cornered shape or are degenerate; a card too small to tap (under 0.75% of the photo's long side) or bigger than half the window; a `card` that is not 85.6 x 53.98 mm; a size outside its range (AR and room scan: 6 to 200 in on either side; card: 3 to 400 in). `field` is `"scale"`; `error` says what to redo in plain words. Nothing is saved. |
+| 429 | `rate_limited` | Too many calls, or too many photos being received at once. `Retry-After` (seconds) is on every one: 3 for photos, 60 for the per-minute limits, 3600 for the hourly ones. It is the most you can be made to wait, not what is left. Nothing was stored. |
 | 503 | `storage_unavailable` | Photo storage is down. Retry later. |
 | 503 | `unavailable` | The estimate could not be read back right now (rare). Retry. |
 
+A rare `409 conflict` (a clash while the address was being saved: try again) and the fallbacks `403 forbidden`,
+`422 unprocessable` and `error` exist for errors this document does not list; show their `error` sentence.
+
 ## Limits
 
-- Per IP address: 240 calls a minute in all; 10 new requests (`POST /requests`) an hour; 60 `.../slots` an hour.
-- Wrong tokens: 30 an hour per IP address; past that every call from that address is a 429 for the rest of the hour, even
-  with a right token.
+- Per IP address: 240 calls a minute in all; 10 new requests (`POST /requests`) an hour, every call counting, refused ones
+  too; 60 `.../slots` an hour.
+- Wrong tokens: failed sign-ins count 30 an hour per IP address (no or a malformed `Authorization`, a wrong token, an
+  unknown request id; an expired token does not count). Past that, every `/requests/:id/...` call from that address is a
+  429 (`Retry-After: 3600`) until the hour is over, even with a right token. `GET /company` and `POST /requests` are not
+  affected.
 - Per request (token): 120 calls a minute; 60 photo uploads an hour; 120 window saves or deletes an hour; 5
   `.../contact` an hour (counted once the form is valid, so a mistyped phone does not use one up); 20 `.../book` an hour;
-  30 `.../slots` an hour.
-- What one request holds: 60 windows; 90 photos and 250 MB of photos; one photo up to 12 MB.
+  30 `.../slots` an hour. These count calls, including calls refused for another reason (a 409 or 422, an idempotent
+  replay), except where said.
+- Photos being received at once: 3 per request, 6 per IP address, 12 in all on one server (a photo is held in memory
+  until it is stored). A call over that is `429 rate_limited` with `Retry-After: 3` at once: nothing is read, nothing is
+  stored, and the hour's count of uploads is not used. A photo that sends nothing for 20 seconds, or is not whole after
+  3 minutes, is cut off (the connection closes). Upload photos one to three at a time.
+- What one request holds: 60 windows; 90 photos and 250 MiB of photos; one photo up to 12 MiB (a 12-megapixel JPEG at
+  normal quality is 2 to 6 MB: there is no need to send more) and 120 megapixels.
 - Per company: the instant quote page's daily cap of measured addresses is shared with this API. When it is reached,
   `POST /requests` answers `status: "callback"`, `callbackReason: "busy"`. An address measured in the last 30 days costs
   nothing and is answered at once.
@@ -80,6 +104,24 @@ Every error body is `{ "error": "<a sentence to show a person>", "field"?: "<bod
 5. `POST .../contact` -> the lead exists on the company's side (the consent is stored here).
 6. `GET .../slots`, then `POST .../book` with `slotStart` or `callMe`.
 7. `GET .../status` for the progress screen.
+
+## Details that matter when you build the client
+
+- **Bodies are strict.** A key this document does not list is a `400`. Leave optional fields out; `null` for `label`,
+  `uploadId`, `corners`, `cornerSpreadM` or `textConsent` is a `400`. `PATCH` needs the key `estimatedTotalOverride` (`{}`
+  is a `400`, "There's nothing to change"); its value may be `null`.
+- **Ids.** A request id in a URL may be in any case; ids in answers are lower case, and so is an `uploadId` you send. A
+  window `id` is case-sensitive, exactly as you sent it.
+- **Numbers.** Pixel coordinates are within the photo (and within +-100,000); AR points within +-50 m; names 1 to 60
+  characters; `phone` up to 40; `email` up to 254. A body over 256 KB is `413`.
+- **What a call costs.** The limits count calls, not successes: a refused call (a `422`, a `409`, an idempotent replay)
+  still uses one. Counts are per process and in memory, so they restart with the server.
+- **After the contact form.** Windows, uploads and `PATCH` keep working, but the company is told once (at `.../contact`, and
+  again at a booking or "call me"); later changes reach the staff only when a rep starts a measurement of the address and
+  the windows are copied then.
+- **Photos.** Upload one to three at a time (see "Limits"); keep the EXIF; a chunked upload has no declared size, so a
+  photo over 12 MiB sent that way closes the connection instead of answering `413`.
+- **Clock.** Every time is an ISO 8601 string with a `Z`; show visit times in the `timeZone` that comes with them.
 
 ## GET /company
 
@@ -118,6 +160,7 @@ Public, no token. The words in `consent` are shown **verbatim** next to the two 
 ```
 
 - `services`: what the company offers, in the order to list them. The app shows only these.
+- `phone`: the company's number in E.164, or `null` when it has none (then hide "Call us").
 - `brandColor`: `#rrggbb` or `null` (use the app's own colour).
 - `booking`: false means there are no online visit times: offer only "Call me".
 - `trust`: always `null` for now (later: `{ reviews?, since?, license? }`).
@@ -128,8 +171,10 @@ Public, no token. The words in `consent` are shown **verbatim** next to the two 
 ## POST /requests
 
 Body: `{ "address": "<5 to 200 characters>", "services": ["windows", "roof"] }` (1 to 3 of the company's services, no
-repeats). The first call for a new address looks it up and measures it from above (a few seconds); an address measured
-in the last 30 days answers at once.
+repeats; a repeated or unknown value is a `400` with `field: "services.0"`, a known service the company does not offer is
+`422 service_not_offered`). The first call for a new address looks it up and measures it from above (a few seconds); an
+address measured in the last 30 days answers at once. `services` comes back in the fixed order windows, roof, gutters,
+whatever order was sent.
 
 `201`:
 
@@ -160,7 +205,8 @@ in the last 30 days answers at once.
   windows and no roof. Reasons: `unit` (an apartment, suite or unit), `address` (the address could not be pinned to
   one house), `home` (a house a person has to look at: very large, flat or hard to see), `busy` (nothing could be
   measured right now: the company's daily limit, or the address lookup is down). The token is still returned: the
-  contact and booking calls work. Windows calls are refused (`callback_only`). Example:
+  contact and booking calls work. Windows calls are refused (`callback_only`). Example (without the `requestId`, `token`
+  and `expiresAt` that every `201` carries):
   `{"status":"callback","callbackReason":"unit","home":{"address":"2200 Riverfront Dr Apt 1203, Omaha, NE 68102","floors":null,"outline":null},"estimate":{"windows":null,"roof":null,"gutters":null},"services":["windows","roof"]}`
 - `home.floors`: 1, 1.5, 2 or 3, or `null` when the height is not known. `home.outline`: the main roof's corners as
   `[longitude, latitude]` (`ring`, closed or not) and its `center`, to draw on the app's own map, or `null`. There is no
@@ -237,21 +283,32 @@ Needs the token. The view of the whole request, and the answer to every change b
 }
 ```
 
-(`quote.tiers` is cut to Good here; a real answer has Good, Better and Best.)
+(This example is cut: `windows` shows the first of three windows, `request.home.outline.ring` is shortened, and
+`quote.tiers` shows Good only; a real answer has all of them, and Good, Better and Best.)
 
-- `windows` are the homeowner's own, newest last. `rooms` lists the rooms used so far, first use first (for the room
-  picker's "recent" row). Each window is sent back as it was saved plus the server's sizing.
-- `quote` is `null` when the request is not about windows or is `callback`. Otherwise `tiers` has **Good, Better and Best**
-  (the company's enabled tiers). For each tier `total = sum(perWindow.price) + estimatedTotal`. **Measured** windows
-  are priced at their own size class (small up to 72 united inches, standard to 101, large to 120, picture above); the
-  windows not measured yet (`estimatedCount`) are priced from the address estimate (or from `estimatedTotalOverride`)
-  and stay "estimated" in the app. `estimatedCount` is `max(0, expected windows - measured windows)`, where expected is
-  `estimatedTotalOverride`, else `estimate.windows.likely`, else the number measured. With nothing measured the quote is
-  all estimated.
-- `missingHint`: present when the homeowner measured fewer windows than the low end of the address estimate (never
-  when they set `estimatedTotalOverride`). Show `text` as "Did we miss any?".
-- `booking`: absent until `.../book` was called. `{ "visit": { start, end, timeZone } | null, "callMe": boolean }`.
-- `status`: absent until `.../contact` was called; then the same body as `GET .../status`.
+- `windows` are the homeowner's own, newest last. `rooms` lists the distinct rooms of the windows now on the request, in
+  order of first appearance in `windows` (for the room picker's "recent" row); a room goes when its last window is deleted.
+  Each window is sent back as it was saved plus the server's sizing.
+- `quote` is `null` when the request is not about windows or is `callback`. Otherwise `tiers` is always **Good, Better
+  and Best**, with the platform's standard names, descriptions and prices, the same for every company for now (a company's
+  own window prices are not behind this quote yet). For each tier `total = sum(perWindow.price) + estimatedTotal`.
+  **Measured** windows are priced at their own size class (small up to 72 united inches, standard to 101, large to 120,
+  picture above); the windows not measured yet (`estimatedCount`) are priced from the address estimate (or from
+  `estimatedTotalOverride`) and stay "estimated" in the app. `estimatedCount` is `max(0, expected windows - measured
+  windows)`, where expected is `estimatedTotalOverride`, else `estimate.windows.likely`, else the number measured. With
+  nothing measured the quote is all estimated; and when the address has no window estimate (`estimate.windows` is `null`)
+  and nothing is measured and no count was given, every tier is `total: 0` with `estimatedCount: 0`: show no price yet.
+- `missingHint` is present only when at least one window is measured, `estimatedTotalOverride` is `null`, the address has
+  a window estimate, and the measured count is below its `low`. Show `text` as "Did we miss any?".
+- `booking` is present on a filed request (after `.../contact`) while it has a visit that is still on, or the homeowner
+  asked to be called: `{ "visit": { start, end, timeZone } | null, "callMe": boolean }`. A visit the office cancels takes
+  `booking` away again.
+- `status` is absent until `.../contact` was called; then it is the same body as `GET .../status`.
+- Optional keys are left out, never `null`: `windows[].label`, `windows[].uploadId`, `windows[].corners` (a room scan with
+  no photo), `request.callbackReason` (unless `callback`), `booking`, `status`, `status.rep`, `quote.missingHint`. Keys
+  that are always there but can be `null`: `request.estimatedTotalOverride`, `home.floors`, `home.outline`,
+  `estimate.windows`, `estimate.roof`, `estimate.gutters`, `quote`, `booking.visit`, and `status.dates.*` except
+  `requestedAt`.
 - A window is **`quality: "check"`** when it is not a good measure (`reasons` says why in plain words, `uncertaintyLabel`
   says how far off it may be). A `check` window still counts in the quote; the free visit re-measures every window.
 - `sizeLabel` is width x height to the nearest 1/8 inch. `uncertaintyLabel` is the larger of the two uncertainties,
@@ -260,11 +317,17 @@ Needs the token. The view of the whole request, and the answer to every change b
 
 ## POST /requests/:id/uploads
 
-One photo for a window. Send the file's bytes with `Content-Type: image/jpeg` (or `image/png`), or a
-`multipart/form-data` body with the file in the field `photo`. At most 12 MB. The bytes are checked, not the declared
-type. A HEIC is refused (set the camera to JPEG: Settings > Camera > Formats > Most Compatible). Keep the photo's EXIF
-orientation as the camera wrote it; every pixel coordinate you send later is in the photo **as displayed** (EXIF
-orientation applied).
+One photo for a window. Send the file's bytes with `Content-Type: image/jpeg` (or `image/png`) and a `Content-Length`
+(any `URLSession` upload of a `Data` or a file sets one), or a `multipart/form-data` body with the file in the field
+`photo`. At most 12 MiB, 20,000 pixels on a side and 120 megapixels; the bytes are checked, not the declared type. A HEIC
+is refused (set the camera to JPEG: Settings > Camera > Formats > Most Compatible). Keep the photo's EXIF: the server
+reads the orientation, the 35 mm-equivalent focal length and the time taken; with no focal length it assumes 26 mm and
+makes the "about ±" larger (more windows come back `check`). Every pixel coordinate you send later is in the photo **as
+displayed** (EXIF orientation applied).
+
+Only a few photos are received at once (3 per request, 6 per IP address, 12 in all on one server): over that the answer is an
+immediate `429 rate_limited` with `Retry-After: 3` and nothing is stored, so it is safe to wait and send it again. A photo
+that stops arriving for 20 seconds, or takes more than 3 minutes, is cut off.
 
 `201`: `{ "id": "33d44c23-1e91-42a6-bdb4-16c53aec0380", "widthPx": 3024, "heightPx": 4032 }` (displayed size). Upload
 first, then send the window with this `uploadId`. An upload is **not** idempotent: a retried upload makes a second photo
@@ -287,28 +350,36 @@ Body `HomeownerWindowInput`:
 }
 ```
 
-- `id`: made by the app (1 to 64 of letters, digits, `_`, `-`; a UUID is fine). **Idempotent**: sending the same window
-  again (a retry after a lost answer) answers **200** with the view and changes nothing; a **different** window with
-  the same id is `409 window_id_taken`. A new window is **201**.
+- `id`: made by the app (1 to 64 of letters, digits, `_`, `-`; case counts; a UUID is fine). **Idempotent**: sending the
+  same window again (a retry after a lost answer) answers **200** with the view and changes nothing; a window with the
+  same id that differs in any field (room, label, style, scale, `uploadId`, corners) is `409 window_id_taken`. A new
+  window is **201**. There is no call to edit a window: `DELETE` it and send it again (the id can be reused).
 - `room`: 1 to 40 characters (the picker's name or typed). `label`: optional, up to 80. `style`: one of the company's
   `windowStyles` keys.
 - `scale` (one of):
-  - `{ "kind": "ar", "pointsM": [[x,y,z] x4], "trackingLostCount": 0, "device": "arkit" | "arkit-lidar", "cornerSpreadM"?: [n,n,n,n] }`
-    the four frame corners in AR space, metres (any order: the server orders them by gravity). `uploadId` + `corners`
-    (the same four corners as pixels in the photo) are required.
+  - `{ "kind": "ar", "pointsM": [[x,y,z] x4], "trackingLostCount": 0, "device": "arkit" | "arkit-lidar" | "webxr", "cornerSpreadM"?: [n,n,n,n] }`
+    the four frame corners in AR space, metres, each within -50 and 50 (any order: the server orders them by gravity);
+    `trackingLostCount` 0 to 1000; each `cornerSpreadM` 0 to 0.1; the iPhone sends `arkit` or `arkit-lidar`. `uploadId` +
+    `corners` (the same four corners as pixels in the photo) are required.
   - `{ "kind": "roomplan", "widthM": 0.9, "heightM": 1.5, "confidence": "low" | "medium" | "high" }` straight from a room
-    scan. Quote-grade: always `check`, never less than 1 inch of uncertainty. `uploadId` and `corners` are optional (a
-    room-scan window may have no photo).
+    scan (each side above 0 and at most 50 m; the size must come to 6 to 200 in). Quote-grade: always `check`, never less
+    than 1 inch of uncertainty. `uploadId` and `corners` are optional (a room-scan window may have no photo), but `corners`
+    without an `uploadId` is a `400`.
   - `{ "kind": "card", "cardCorners": [[x,y] x4], "card": { "widthMm": 85.6, "heightMm": 53.98 } }` a credit card (any
     ID-1 card: credit, debit, driver licence) lying flat on the glass. `cardCorners` are the card's four corners as
     tapped on the photo (tap the tip of each rounded corner), in order around the card, starting at any corner,
     clockwise or not. `uploadId` + `corners` (the window frame's four corners: top-left, top-right, bottom-right,
     bottom-left, in an upright photo) are required. `card` must be 85.6 x 53.98 mm (either way round, 0.05 mm of slack).
-    Quote-grade: its uncertainty grows with the window's size next to the card, and it is `check` above 3/8 inch
-    (see "Card photo" and `docs/windows/card-method.md`).
+    Quote-grade: its uncertainty grows with the window's size next to the card, and it is `check` above 3/8 inch, and also
+    when the camera is more than 50 degrees off square, the lens is wider than 20 mm (35 mm-equivalent, from the EXIF), the
+    card is under 1.5% of the photo's long side, or the marked card does not look like a flat card; `reasons` says which
+    (see "Card photo" and `docs/windows/card-method.md`). The server only checks the declared `card` size, so a card that
+    is not really on the glass is not refused, only less accurate.
 - All pixel coordinates are in the photo as displayed, inside `0..widthPx` and `0..heightPx` of that upload.
 - The answer is the same view as `GET /requests/:id` (so the app has the new quote and the window's size at once).
-- `422 window_unsizable`: the window cannot be sized (the `error` sentence says what to redo). Nothing is saved.
+- `422 window_unsizable`: the window cannot be sized (the `error` sentence says what to redo; `field` is `"scale"`).
+  Nothing is saved. A corner outside the photo, or an `uploadId` that is not one of this request's photos, is a `400`
+  (`field` `corners` or `uploadId`).
 - Homeowner windows are **quote-grade only**: the company re-measures at the free visit before any factory order.
 
 Real answers for the three kinds, from the demo (a 36 x 60 window by card, a 30 x 48 window by AR, a 1.8 x 1.2 m room scan):
@@ -321,8 +392,9 @@ w-living-1   roomplan  70 7/8 x 47 1/4  about ±1 1/2 in  check  large   "A room
 
 ## DELETE /requests/:id/windows/:windowId
 
-`200` with the view without the window. A window that is not there is also `200` (a retried delete is harmless). Only the
-homeowner's own windows can be removed this way.
+`200` with the view without the window. A window that is not there is also `200` (a retried delete is harmless), also on a
+request that went to the call-back path. Only the homeowner's own windows can be removed this way. The photo it stood on
+stays on the request (it still counts toward the 90).
 
 ## PATCH /requests/:id
 
@@ -354,28 +426,37 @@ After this the company can call.
   unticked to start (may be left out). `consentVersion` is **required** and must be the current `consent.version`. The
   server stores the version and the exact words of each box that was ticked, the time and a hash of the IP address.
   Texting consent stays "none" on the customer (the box is evidence only; the company confirms texting itself).
-- `phone` is any US number; stored as E.164. `zip`: 5 digits (or ZIP+4). `email`: a valid address.
-- `201` the first time, `200` for the same phone again (nothing new is made); both with the view
-  (`request.contactFiled: true`, `status`). Another phone number for the same request is `409 contact_filed`.
-- Sending the same person's details for the same house within a day from a second request reuses their lead: no second job.
+- `phone` is any US number (up to 40 characters); stored as E.164. `zip`: 5 digits, or ZIP+4 with the hyphen
+  (`68132-1234`). `email`: a valid address (up to 254; stored in lower case). Names: 1 to 60 characters, trimmed.
+- `201` when this call made the lead. `200`, with the lead as it already stands, when it already existed: the same phone
+  again on this request, or the same phone and the same house within 24 hours from another request (from the app or the
+  web page; no office alert is made again). In a `200` **nothing is updated**: the first submission's name, email, ZIP and
+  consent stand, whatever was sent now. There is no call to change the details or the consent afterwards (the homeowner
+  tells the company, or replies STOP to a text). Both answers carry the view (`request.contactFiled: true`, `status`).
+  Another phone number for the same request is `409 contact_filed`.
+- A second request that joins an existing lead sees that lead's visit and status (it is the same person's lead).
 
 ## GET /requests/:id/slots
 
 `{ "timeZone": "America/Chicago", "slots": [{ "id": "2026-10-17T13:00:00.000Z", "start": "2026-10-17T13:00:00.000Z", "end": "2026-10-17T14:00:00.000Z" }, ...] }`.
 The next open in-home visit times, from tomorrow, at most two a day, up to 8 (the demo answers 8, over the next few working
-days). Empty (`"timeZone": "UTC"`) when the company has booking off or nothing is open: offer "Call me". Show the times in
-`timeZone`, not the phone's own. No inspector is named before a visit is booked.
+days). With booking off the answer is `{ "timeZone": "UTC", "slots": [] }`; with booking on but nothing open, `slots` is
+empty and `timeZone` is the company's real zone. Either way offer "Call me". Show the times in `timeZone`, not the phone's
+own. No inspector is named before a visit is booked.
 
 ## POST /requests/:id/book
 
 Needs `.../contact` first. Body is **one** of `{ "slotStart": "<a slot's start>" }` or `{ "callMe": true }`.
 
-- `slotStart`: books the free in-home visit. The job moves to Inspection with the visit on the calendar, the office's
-  "call the homeowner" reminder is cleared. `200` with the view and `booking.visit` (and `status.rep.name`, the
-  inspector's first name).
+- `slotStart`: books the free in-home visit; send a `start` from `.../slots` (any visit time still open from tomorrow up to
+  14 days ahead is accepted, but only the listed ones are offered). The job moves to Inspection with the visit on the
+  calendar, the office's "call the homeowner" reminder is cleared. `200` with the view and `booking.visit` (and
+  `status.rep.name`, the inspector's first name). A time that was taken is `409 slot_taken` and the request still stands.
 - `callMe`: the homeowner asks to be called to set up the visit. The job keeps its "call the homeowner" reminder.
   `200` with `booking: { "visit": null, "callMe": true }`.
-- Booking again after a visit is booked answers `200` with the visit already booked (a second time is not booked).
+- Booking again after a visit is booked answers `200` with the visit already booked, whatever is sent (a second time is
+  not booked, not even a different `slotStart` or `callMe`). Two bookings at the same moment (a double tap) make one
+  visit: both answers carry it.
 - Either way the job's timeline gets a line with the homeowner's windows and the quote they saw.
 
 ## GET /requests/:id/status
@@ -389,10 +470,14 @@ Needs `.../contact` first. Body is **one** of `{ "slotStart": "<a slot's start>"
 }
 ```
 
-`stage`: `requested` (asked, nothing booked), `visit-booked`, `measured` (the company measured the windows), `ordered`
-(the factory order is ready or sent), `built`, `shipped`, `installed`. `built` and `shipped` are reserved: the server does
-not send them yet. `rep.name` is a first name and appears once a rep is on the visit. `status` is also valid before
-`.../contact` (it is then `requested`).
+`stage`: `requested` (asked, nothing booked), `visit-booked`, `measured` (the company put windows of its own on a
+measurement of the address, or the job reached Proposal or Won), `ordered` (a factory order is ready or sent),
+`built`, `shipped`, `installed`. `built` and `shipped` are reserved: the server does not send them yet. The stage is
+worked out on every call from the company's records, so it can move back (the office cancels the visit: back to
+`requested`) and can skip ahead. `measured` and `ordered` count only what the company did **after the request was sent**
+(`.../contact`); earlier work at the address is never shown. `rep.name` is the first name of the visit's inspector, or
+failing that of the person the job is assigned to, so it can appear before a visit is booked. `status` is also valid
+before `.../contact` (it is then `requested`).
 
 ## Card photo (what the app should coach)
 
@@ -401,6 +486,9 @@ flat **on the glass**, eight taps. It is quote-grade: on synthetic photos the un
 longest side, so **every window from 24 x 36 inches up comes back `check`** and a 36 x 60 window is about "±1 in". The
 full study and the table of errors by window size, distance and angle are in `docs/windows/card-method.md`. Show the
 `check` answer plainly ("about ±1 in, we confirm at your free visit") and keep going; do not make it look like a failure.
+A card window is also `check` when the camera is more than 50 degrees off square, the lens is wider than 20 mm (35
+mm-equivalent), the card is under 1.5% of the photo's long side, or the marked card does not look like a flat card:
+`reasons` says which, in words for the homeowner.
 
 Coaching text for the card screen:
 
@@ -420,6 +508,7 @@ Coaching text for the card screen:
   windows (11 estimated). Gutters are priced at the visit."
 - The owner's **Today** list shows "Call the homeowner about their app request" until a visit is booked.
 - Booking a time adds the inspection to the calendar and a line on the timeline; "call me" adds a line and keeps the reminder.
+- The progress the app shows (`measured`, `ordered`) is what the company did at the address after the request came in.
 - The **consent** is on the quote request (the words, the version, the time, an IP hash); the customer's texting consent
   stays "none".
 - **Measure windows** on that address (a rep's new measurement, in the web app or the iPhone staff app) starts with the
@@ -430,11 +519,11 @@ Coaching text for the card screen:
 
 ## The instant quote page and the app
 
-`/q/:slug` (the company's web page) starts with "What are you looking for?" (roof, windows, gutters) and, for windows,
-offers "Measure with the WinChoice app" (a store button, and a QR code on a computer) or "Have us measure at a free
-visit". The offer appears only when the server has `HOMEOWNER_APP_URL` (the App Store or TestFlight link); the name is
-`HOMEOWNER_APP_NAME` (default `WinChoice`). The page's config (`GET /api/public/quote/:slug`) carries
-`homeownerApp: { url, name } | null`.
+`/q/:slug` (the company's web page) starts with "What are you looking for?" (roof, windows, gutters). On the results card
+for windows (after the address estimate came back with a window range) it offers "Measure with the WinChoice app" (a
+store button, and a QR code on a computer) or "Have us measure at a free visit". The offer appears only when the server
+has `HOMEOWNER_APP_URL` (the App Store or TestFlight link); the name is `HOMEOWNER_APP_NAME` (default `WinChoice`). The
+page's config (`GET /api/public/quote/:slug`) carries `homeownerApp: { url, name } | null`.
 
 ## Trying it on this machine
 
