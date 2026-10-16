@@ -2,7 +2,6 @@ import type { JobStage } from '@roofline/shared';
 
 /** The Jobs window: tabs, pipeline board, list view, filters, the Move-to menu and sheet. */
 export const jobs = {
-  comingSoon: 'Your jobs, from lead to paid, are coming soon.',
   tabsLabel: 'Jobs and customers',
   tabs: { pipeline: 'Pipeline', customers: 'Customers' },
 

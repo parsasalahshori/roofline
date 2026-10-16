@@ -25,9 +25,9 @@ export function SetupRow({ item, canAct }: SetupRowProps) {
   const skip = useSkip();
   const unskip = useUnskip();
 
-  // The calendar step (C1) and the phone number step (D1, the forwarding guide) are live now: the server
-  // may still say they come later, and the row ignores that
-  const later = item.key === 'connect_calendar' || item.key === 'phone_number' ? null : item.comingWith;
+  // The calendar step (C1), the phone number step (D1, the forwarding guide) and the ad accounts step (S1)
+  // are live now: an older server may still say they come later, and the row ignores that
+  const later = item.key === 'connect_calendar' || item.key === 'phone_number' || item.key === 'connect_ads' ? null : item.comingWith;
   // Connecting the calendar is every member's own action, so it does not wait on the owner
   const offersActions = (canAct || item.key === 'connect_calendar') && later === null && item.status !== 'done';
   const rejected = item.data.rejected === true;
@@ -83,6 +83,13 @@ export function SetupRow({ item, canAct }: SetupRowProps) {
         primary = (
           <Button variant="primary" href="/settings/connections">
             {setup.actions.connectCalendar}
+          </Button>
+        );
+        break;
+      case 'connect_ads':
+        primary = (
+          <Button variant="primary" href="/settings/connections">
+            {setup.actions.connectAds}
           </Button>
         );
         break;

@@ -30,12 +30,10 @@ test('skip the import and the ring moves', async ({ page }) => {
   await expect(page.getByRole('link', { name: `${before + 1} of 5 setup steps done` })).toBeVisible();
 });
 
-test('later steps say Coming with', async ({ page }) => {
-  // The calendar step is real since C1 Task 12, the phone number step since D1 Task 24 and prices since E1 Task 8.
-  await expect(page.getByText(/Coming with/)).toHaveCount(1);
-  for (const line of ['Coming with Storm Scout']) {
-    await expect(page.getByText(line, { exact: true }).first()).toBeVisible();
-  }
+test('no step says Coming with, and the ad accounts step links to Connections', async ({ page }) => {
+  // Every step is real: calendar since C1 Task 12, phone number since D1 Task 24, prices since E1 Task 8, ads since S1.
+  await expect(page.getByText(/Coming with/)).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Connect ad accounts' })).toHaveAttribute('href', '/settings/connections');
 });
 
 test('the phone number step opens the forwarding guide', async ({ page }) => {

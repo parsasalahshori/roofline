@@ -2,7 +2,6 @@ import { connections } from './connections.ts';
 
 /** The appointment form and detail (Task 24). Package C owns this file; A and B only read it. */
 export const appointments = {
-  comingSoon: 'Appointments are coming soon.',
   newTitle: 'New appointment',
   rescheduleTitle: 'Reschedule',
   kindLabel: 'Kind',

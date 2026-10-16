@@ -43,7 +43,7 @@ const DEFAULTS: Record<SetupItemKey, Omit<SetupItemView, 'key'>> = {
   prices_and_tiers: { status: 'todo', comingWith: null, skippable: false, data: {} },
   connect_calendar: { status: 'todo', comingWith: 'calendar', skippable: false, data: {} },
   phone_number: { status: 'todo', comingWith: null, skippable: false, data: {} },
-  connect_ads: { status: 'todo', comingWith: 'storm_scout', skippable: false, data: {} },
+  connect_ads: { status: 'todo', comingWith: null, skippable: false, data: {} },
 };
 
 /** A nine-step checklist: the defaults, with `changes` for the steps a test cares about. */
@@ -117,15 +117,20 @@ describe('setup tab', () => {
     expect(screen.getByText('Waiting on phone carriers (usually 10–15 days)')).toBeInTheDocument();
   });
 
-  it('later steps say what they come with', async () => {
+  it('no step says it is coming later: every feature has shipped', async () => {
     signedInApi(viewOf());
     renderApp('/settings/setup');
 
     await stepList();
-    expect(screen.queryByText('Coming with the Estimator')).not.toBeInTheDocument();
-    expect(screen.queryByText('Coming with the calendar')).not.toBeInTheDocument();
-    expect(screen.queryByText('Coming with Front Desk')).not.toBeInTheDocument();
-    expect(screen.getByText('Coming with Storm Scout')).toBeInTheDocument();
+    expect(screen.queryByText(/^Coming with/)).not.toBeInTheDocument();
+  });
+
+  it('the ad accounts step links the owner to Connections', async () => {
+    signedInApi(viewOf());
+    renderApp('/settings/setup');
+
+    const row = await rowOf(setupItems.connect_ads.title);
+    expect(within(row).getByRole('link', { name: setup.actions.connectAds })).toHaveAttribute('href', '/settings/connections');
   });
 
   it('the phone number step links the owner to the forwarding guide', async () => {

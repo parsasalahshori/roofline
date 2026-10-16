@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../../api/client.ts';
 
 /*
- * Hooks behind Settings -> Prices (E1 Task 18). The API (E1 Task 8) is not built yet: the shapes below
- * follow the spec (GET/PUT /api/tier-templates, GET/PUT /api/estimator/settings). Owners edit; office reads.
+ * Hooks behind Settings -> Prices (E1 Task 18), on the E1 Task 8 API: GET/PUT /api/tier-templates and
+ * GET/PUT /api/estimator/settings. Owners edit; office reads.
  */
 
 export const estimatorKeys = {
