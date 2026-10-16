@@ -9,7 +9,7 @@ import { formatDollars } from './format.ts';
 import { Aging } from './JobCardView.tsx';
 import { MoveJobMenu } from './MoveJobMenu.tsx';
 import { StageTag } from './StageTag.tsx';
-import { EmptyPanel, LoadError } from './states.tsx';
+import { EmptyPanel, LoadError, RowsSkeleton } from './states.tsx';
 import styles from './JobsList.module.css';
 
 const STAGE_ORDER = BOARD_STAGES as readonly JobStage[];
@@ -112,21 +112,6 @@ function ListStage({ column, filter, phone }: ListStageProps) {
   );
 }
 
-/** The ghost of the table while the jobs load: the head and a few rows, in the sunken colour. */
-function ListSkeleton() {
-  return (
-    <div className={styles.skeleton} aria-hidden="true">
-      {[0, 1, 2, 3, 4, 5].map((row) => (
-        <span key={row} className={styles.skeletonRow}>
-          <i className={styles.skeletonDot} />
-          <b className={styles.skeletonBar} />
-          <b className={styles.skeletonBarShort} />
-        </span>
-      ))}
-    </div>
-  );
-}
-
 export type JobsListProps = {
   /** An assignee, a source or a search is narrowing the list. */
   narrowed: boolean;
@@ -153,8 +138,8 @@ export function JobsList({ narrowed }: JobsListProps) {
 
   if (board.data === undefined) {
     return (
-      <div role="status" aria-label={jobs.loading} className={styles.loading}>
-        <ListSkeleton />
+      <div role="status" aria-label={jobs.loading}>
+        <RowsSkeleton />
       </div>
     );
   }

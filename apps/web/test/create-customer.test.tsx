@@ -7,6 +7,7 @@ import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { create } from '../src/copy/create.ts';
 import { ACCOUNT, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
+import { chooseFromListbox } from './crm-helpers.ts';
 
 // The real map loads maplibre-gl, which these tests never need. The stand-in has two pins that open a job and a customer.
 vi.mock('../src/shell/map/MapView.tsx', async () => {
@@ -77,7 +78,7 @@ describe('New customer', () => {
     await user.type(screen.getByLabelText(create.newCustomer.lastName), 'Lee');
     await user.type(screen.getByLabelText(create.address.street), '12 Oak St');
     await user.type(screen.getByLabelText(create.address.city), 'Dallas');
-    await user.selectOptions(screen.getByLabelText(create.address.state), 'TX');
+    await chooseFromListbox(user, create.address.state, 'Texas');
     await user.type(screen.getByLabelText(create.address.zip), '75201');
     await user.click(saveButton());
 
@@ -139,7 +140,7 @@ describe('New customer', () => {
     await user.type(screen.getByLabelText(create.newCustomer.lastName), 'Lee');
     await user.type(screen.getByLabelText(create.address.street), '12 Oak St');
     await user.type(screen.getByLabelText(create.address.city), 'Dallas');
-    await user.selectOptions(screen.getByLabelText(create.address.state), 'TX');
+    await chooseFromListbox(user, create.address.state, 'Texas');
     await user.type(screen.getByLabelText(create.address.zip), '75201');
     await user.click(saveButton());
 

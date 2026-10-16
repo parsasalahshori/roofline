@@ -260,7 +260,8 @@ describe('pipeline board', () => {
     await screen.findByRole('link', { name: /Pat Homeowner/ });
     await moveTo(user, 'Pat Homeowner', jobs.stage.lost);
     const sheet = await screen.findByRole('dialog', { name: jobs.sheetLost });
-    await user.selectOptions(within(sheet).getByLabelText(jobs.lostReasonLabel), 'Price');
+    await user.click(within(sheet).getByLabelText(jobs.lostReasonLabel, { selector: 'button' }));
+    await user.click(await screen.findByRole('option', { name: 'Price' }));
     await user.click(within(sheet).getByRole('button', { name: jobs.confirm }));
 
     await waitFor(() => expect(api.sent('PATCH /api/jobs/j1')).toEqual([{ stage: 'lost', lostReason: 'Price' }]));

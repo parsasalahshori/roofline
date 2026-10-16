@@ -12,6 +12,10 @@ export const create = {
   },
   newCustomer: {
     title: 'New customer',
+    subtitle: 'A name and a way to reach them is enough to start.',
+    stepName: 'Name',
+    stepContact: 'Contact',
+    cancel: 'Cancel',
     firstName: 'First name',
     lastName: 'Last name',
     displayName: 'Name to show',
@@ -25,6 +29,8 @@ export const create = {
   },
   newJob: {
     title: 'New job',
+    subtitle: 'Pick a customer, then the home and the details.',
+    cancel: 'Cancel',
     stepCustomer: 'Customer',
     stepHome: 'Home',
     stepDetails: 'Details',

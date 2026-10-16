@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import { test, expect, moveJob } from './fixtures.ts';
+import { test, expect, moveJob, chooseOption } from './fixtures.ts';
 
 /*
  * Core CRM, start to finish: the pipeline board, the New job form, the job window's timeline and
@@ -62,7 +62,7 @@ test('drag a lead to Inspection, then Lost asks why', async ({ page, loginAs, ma
   await sheet.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(sheet.getByText('Pick why the job was lost.')).toBeVisible();
 
-  await sheet.getByLabel('Reason').selectOption('Price');
+  await chooseOption(sheet, 'Reason', 'Price');
   await sheet.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(sheet).toHaveCount(0);
   await expect(board.getByRole('button', { name: 'Lost (2)', exact: true })).toBeVisible();
@@ -84,7 +84,7 @@ test('a new job from the map home in 2 clicks to its form', async ({ page, login
   await click(search.getByRole('option', { name: new RegExp(`^${NEW_JOB_COPY}`) }));
 
   await expect(page).toHaveURL(/\/jobs\/new$/);
-  const form = page.getByRole('main', { name: 'Jobs', exact: true });
+  const form = page.getByRole('main', { name: 'New job', exact: true });
   await expect(form).toBeVisible();
   await expect(form.getByRole('button', { name: 'New customer', exact: true })).toBeVisible();
   expect(clicks.count).toBeLessThanOrEqual(2);
@@ -94,7 +94,7 @@ test('a new job from the map home in 2 clicks to its form', async ({ page, login
   await form.getByLabel('Name', { exact: true }).fill('Pat Newcomer');
   await form.getByLabel('Street address').fill('100 Test Lane');
   await form.getByLabel('City').fill('Omaha');
-  await form.getByLabel('State', { exact: true }).selectOption('NE');
+  await chooseOption(form, 'State', 'Nebraska');
   await form.getByLabel('ZIP code').fill('68102');
   await form.getByRole('button', { name: 'Create job', exact: true }).click();
 

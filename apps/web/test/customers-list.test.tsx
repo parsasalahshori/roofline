@@ -63,6 +63,12 @@ const listKey = (query: string) => `GET /api/customers?${query}`;
 /** The customers in the table. Consent and tags are read from the same rows. */
 const tableFor = () => screen.findByRole('table', { name: customers.list.tableLabel });
 
+/** Picks an option of a filter chip: the chip is named "Label: current", and its list opens under it. */
+async function chooseChip(user: ReturnType<typeof userEvent.setup>, label: string, current: string, option: string) {
+  await user.click(screen.getByRole('button', { name: `${label}: ${current}` }));
+  await user.click(await screen.findByRole('option', { name: option }));
+}
+
 /** A signed-in person whose list answers from the routes given. */
 function signedIn(account = ACCOUNT, overrides: Routes = {}) {
   api = stubApi({
@@ -144,7 +150,7 @@ describe('customers list', () => {
 
     await tableFor();
     const before = api.count(listKey('limit=50&offset=0'));
-    await user.selectOptions(screen.getByLabelText(customers.list.tagLabel), 'gutter');
+    await chooseChip(user, customers.list.tagLabel, customers.list.allTags, 'gutter');
 
     expect(screen.queryByRole('link', { name: 'Pat Homeowner' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Sam Gutter' })).toBeInTheDocument();
@@ -166,7 +172,7 @@ describe('customers list', () => {
     const { user } = renderApp('/customers');
 
     await tableFor();
-    await user.selectOptions(screen.getByLabelText(customers.list.textingLabel), 'ok');
+    await chooseChip(user, customers.list.textingLabel, customers.list.allTexting, customers.list.textingOk);
 
     expect(screen.getByRole('link', { name: 'Sam Attested' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Lee Written' })).toBeInTheDocument();
@@ -179,7 +185,7 @@ describe('customers list', () => {
     const { user } = renderApp('/customers');
 
     await tableFor();
-    await user.selectOptions(screen.getByLabelText(customers.list.textingLabel), 'not');
+    await chooseChip(user, customers.list.textingLabel, customers.list.allTexting, customers.list.textingNot);
 
     expect(screen.getByRole('link', { name: 'Pat Homeowner' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Sam Express' })).toBeInTheDocument();
@@ -259,5 +265,110 @@ describe('customers list', () => {
     const tabs = within(dialog).getByRole('navigation', { name: jobs.tabsLabel });
     expect(within(tabs).getByRole('link', { name: jobs.tabs.customers })).toHaveAttribute('aria-current', 'page');
     expect(within(dialog).getByRole('link', { name: customers.list.newCustomer })).toBeInTheDocument();
+  });
+
+  it('the head counts the customers, and says how many match a search', async () => {
+    signedIn(ACCOUNT, {
+      [listKey('limit=50&offset=0')]: () => ({ body: page([customer({ id: 'c1', displayName: 'Pat Homeowner' })], 142) }),
+      [listKey('q=smith&limit=50&offset=0')]: () => ({ body: page([customer({ id: 'c2', displayName: 'Ann Smith' })], 3) }),
+    });
+    const { user } = renderApp('/customers');
+
+    const main = await screen.findByRole('main', { name: WINDOW_COPY.customers.title });
+    expect(await within(main).findByText(customers.list.count(142))).toBeInTheDocument();
+    await user.type(within(main).getByRole('searchbox', { name: customers.list.searchLabel }), 'smith');
+    expect(await within(main).findByText(customers.list.matches(3))).toBeInTheDocument();
+  });
+
+  it('the Archived chip asks for archived customers too, and is pressed while on', async () => {
+    signedIn(ACCOUNT, {
+      [listKey('limit=50&offset=0')]: () => ({ body: page([customer({ id: 'c1', displayName: 'Pat Homeowner' })]) }),
+      [listKey('limit=50&offset=0&includeArchived=true')]: () => ({
+        body: page([
+          customer({ id: 'c1', displayName: 'Pat Homeowner' }),
+          customer({ id: 'c2', displayName: 'Old Customer', archivedAt: '2026-09-01T12:00:00.000Z' }),
+        ]),
+      }),
+    });
+    const { user } = renderApp('/customers');
+
+    const chip = await screen.findByRole('button', { name: customers.list.archivedFilter });
+    expect(chip).toHaveAttribute('aria-pressed', 'false');
+    await user.click(chip);
+    expect(await screen.findByRole('link', { name: 'Old Customer' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: customers.list.archivedFilter })).toHaveAttribute('aria-pressed', 'true');
+    // An archived customer says so in a tag
+    expect(within(await tableFor()).getByText(customers.list.archivedChip)).toBeInTheDocument();
+  });
+
+  it('a row shows the phone in mono, the texting tag and the tags; a hold is marked with its words', async () => {
+    signedIn(ACCOUNT, {
+      [listKey('limit=50&offset=0')]: () => ({
+        body: page([
+          customer({
+            id: 'c1',
+            displayName: 'Ashley Thomas',
+            phones: [{ number: '(402) 555-0144', label: null, primary: true }],
+            tags: ['hail'],
+            doNotContact: true,
+            smsConsent: { status: 'written', source: null, at: null },
+          }),
+        ]),
+      }),
+    });
+    renderApp('/customers');
+
+    const row = within(await tableFor()).getByRole('row', { name: /Ashley Thomas/ });
+    expect(within(row).getByText('(402) 555-0144')).toBeInTheDocument();
+    expect(within(row).getByText(customers.consent.written)).toBeInTheDocument();
+    expect(within(row).getByText('hail')).toBeInTheDocument();
+    expect(within(row).getByText(customers.doNotContact)).toBeInTheDocument();
+  });
+
+  it('no customers yet shows what the list is for and a New customer button', async () => {
+    signedIn(ACCOUNT, { [listKey('limit=50&offset=0')]: () => ({ body: page([]) }) });
+    renderApp('/customers');
+
+    expect(await screen.findByText(customers.list.empty)).toBeInTheDocument();
+    expect(screen.getByText(customers.list.emptyBody)).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: customers.list.newCustomer }).length).toBeGreaterThan(1);
+  });
+
+  it('a filter that matches nothing offers to clear the filters', async () => {
+    signedIn(ACCOUNT, {
+      [listKey('limit=50&offset=0')]: () => ({ body: page([customer({ id: 'c1', displayName: 'Pat Homeowner', tags: ['roof'] })]) }),
+    });
+    const { user } = renderApp('/customers');
+
+    await tableFor();
+    await chooseChip(user, customers.list.textingLabel, customers.list.allTexting, customers.list.textingOk);
+    expect(await screen.findByText(customers.list.noMatches)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: customers.list.clearFilters }));
+    expect(await screen.findByRole('link', { name: 'Pat Homeowner' })).toBeInTheDocument();
+  });
+
+  it('a failed list shows the error tag in place', async () => {
+    signedIn(ACCOUNT, { [listKey('limit=50&offset=0')]: () => ({ status: 500, body: { error: 'Nope' } }) });
+    renderApp('/customers');
+
+    expect(await screen.findByText(customers.list.errorTag)).toBeInTheDocument();
+  });
+});
+
+describe('phone numbers', () => {
+  it('a US number reads as (402) 555-0144 in the list; any other number stays as it was typed', async () => {
+    signedIn(ACCOUNT, {
+      [listKey('limit=50&offset=0')]: () => ({
+        body: page([
+          customer({ id: 'c1', displayName: 'Ashley Thomas', phones: [{ number: '+14025550144', label: null, primary: true }] }),
+          customer({ id: 'c2', displayName: 'Pat Abroad', phones: [{ number: '+442071838750', label: null, primary: true }] }),
+        ]),
+      }),
+    });
+    renderApp('/customers');
+
+    const table = within(await tableFor());
+    expect(table.getByText('(402) 555-0144')).toBeInTheDocument();
+    expect(table.getByText('+442071838750')).toBeInTheDocument();
   });
 });

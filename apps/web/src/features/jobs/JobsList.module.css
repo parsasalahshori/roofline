@@ -6,53 +6,6 @@
   overflow: hidden;
 }
 
-/* The loading placeholder keeps the table's height so the list does not jump when it arrives */
-.loading {
-  display: block;
-}
-
-.skeleton {
-  display: grid;
-  gap: 1px;
-  border-radius: var(--r-3);
-  background: var(--surface);
-  box-shadow: var(--e-1);
-}
-
-.skeletonRow {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  height: 56px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--line);
-}
-
-.skeletonDot {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: var(--sunken);
-}
-
-.skeletonBar,
-.skeletonBarShort {
-  display: block;
-  height: 10px;
-  border-radius: 4px;
-  background: var(--sunken);
-}
-
-.skeletonBar {
-  flex: 1 1 auto;
-  max-width: 280px;
-}
-
-.skeletonBarShort {
-  width: 64px;
-  margin-left: auto;
-}
-
 /* Where one stage's rows end and the next stage's begin */
 .group + .group > tr:first-child > td {
   border-top: 1px solid var(--line-2);

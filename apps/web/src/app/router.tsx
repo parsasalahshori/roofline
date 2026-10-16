@@ -12,7 +12,7 @@ import { AcceptInvite } from '../features/auth/AcceptInvite.tsx';
 import { ResetPassword } from '../features/auth/ResetPassword.tsx';
 import { SignIn } from '../features/auth/SignIn.tsx';
 import { VerifyEmail } from '../features/auth/VerifyEmail.tsx';
-import { CustomersWindow } from '../features/customers/CustomersWindow.tsx';
+import { CustomersPage } from '../features/customers/CustomersPage.tsx';
 import { CustomerWindow } from '../features/customers/CustomerWindow.tsx';
 import { NewCustomer } from '../features/create/NewCustomer.tsx';
 import { NewJob } from '../features/create/NewJob.tsx';
@@ -88,12 +88,12 @@ const routes: RouteObject[] = [
           { path: 'agents/waiting', element: <AppPage app="agents"><WaitingWindow /></AppPage> },
           { path: 'agents/:agent', element: <AgentRoute /> },
           { path: 'jobs', element: <JobsPage /> },
-          { path: 'jobs/new', element: <AppPage app="jobs"><NewJob /></AppPage> },
+          { path: 'jobs/new', element: <NewJob /> },
           { path: 'jobs/:jobId', element: <AppPage app="jobs"><JobWindow /></AppPage> },
           { path: 'jobs/:jobId/quotes/:quoteId', element: <AppPage app="jobs"><QuoteWindow /></AppPage> },
-          { path: 'customers', element: <AppPage app="customers"><CustomersWindow /></AppPage> },
-          { path: 'customers/new', element: <AppPage app="customers"><NewCustomer /></AppPage> },
-          { path: 'customers/:customerId', element: <AppPage app="customers"><CustomerWindow /></AppPage> },
+          { path: 'customers', element: <CustomersPage /> },
+          { path: 'customers/new', element: <NewCustomer /> },
+          { path: 'customers/:customerId', element: <CustomerWindow /> },
           { path: 'calendar', element: <AppPage app="calendar"><CalendarWindow /></AppPage> },
           { path: 'calendar/new', element: <AppPage app="calendar"><AppointmentWindow /></AppPage> },
           { path: 'calendar/appointments/:appointmentId', element: <AppPage app="calendar"><AppointmentWindow /></AppPage> },

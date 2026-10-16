@@ -155,12 +155,13 @@ describe('C1 windows', () => {
 });
 
 describe('the New job and New customer screens', () => {
-  it('/jobs/new shows the New job steps in the Jobs window', async () => {
+  it('/jobs/new shows the New job steps on a page titled New job, under Jobs', async () => {
     signedInApi();
     renderApp('/jobs/new');
 
-    const dialog = await screen.findByRole('main', { name: WINDOW_COPY.jobs.title });
-    expect((await within(dialog).findAllByText(create.newJob.stepCustomer)).length).toBeGreaterThan(0);
+    const page = await screen.findByRole('main', { name: create.newJob.title });
+    expect((await within(page).findAllByText(create.newJob.stepCustomer)).length).toBeGreaterThan(0);
+    expect(within(screen.getByRole('navigation', { name: 'Breadcrumb' })).getByRole('link', { name: WINDOW_COPY.jobs.title })).toHaveAttribute('href', '/jobs');
   });
 
   it('/customers/new shows the New customer form in the Customers window', async () => {

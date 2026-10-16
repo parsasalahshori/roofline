@@ -11,6 +11,32 @@
   box-shadow: var(--e-1);
 }
 
+/* Inside a Panel the surface is the panel's own: only a short ghost and the message are drawn */
+.empty[data-variant='inline'] {
+  padding: 0 0 4px;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.empty[data-variant='inline'] .ghost {
+  max-width: none;
+  gap: 6px;
+  padding-bottom: 12px;
+}
+
+.empty[data-variant='inline'] .ghostRow {
+  padding: 6px 10px;
+}
+
+.empty[data-variant='inline'] .ghostRow:nth-child(3) {
+  display: none;
+}
+
+.empty[data-variant='inline'] .title {
+  font-size: 15px;
+}
+
 .ghost {
   display: grid;
   gap: 10px;
@@ -102,4 +128,52 @@
   margin: 0;
   color: var(--ink);
   font-size: var(--font-size-body);
+}
+
+/* The ghost of a list while it loads: the same rows as the real one, in the sunken colour */
+.skeleton {
+  display: grid;
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+}
+
+.skeletonRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.skeletonRow:last-child {
+  border-bottom: 0;
+}
+
+.skeletonDot {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--sunken);
+}
+
+.skeletonBar,
+.skeletonBarShort {
+  display: block;
+  height: 10px;
+  border-radius: 4px;
+  background: var(--sunken);
+}
+
+.skeletonBar {
+  flex: 1 1 auto;
+  max-width: 280px;
+}
+
+.skeletonBarShort {
+  flex: none;
+  width: 64px;
+  margin-left: auto;
 }

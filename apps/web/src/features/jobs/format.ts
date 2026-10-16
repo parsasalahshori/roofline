@@ -17,3 +17,9 @@ export function formatShortDay(ymd: string): string | null {
   const instant = Date.parse(`${ymd.slice(0, 10)}T00:00:00Z`);
   return Number.isNaN(instant) ? null : shortDateFormat.format(new Date(instant));
 }
+
+/** A US number as "(402) 555-0144"; any other number as it was given. The link behind it keeps the full +1 form. */
+export function formatPhone(number: string): string {
+  const match = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(number.replace(/[\s().-]/g, ''));
+  return match ? `(${match[1]}) ${match[2]}-${match[3]}` : number;
+}

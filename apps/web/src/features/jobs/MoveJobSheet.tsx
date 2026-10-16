@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { JobCard, JobStage } from '@roofline/shared';
-import { Button, Field, Select, Sheet } from '@roofline/ui';
+import { Button, Field, Listbox, Sheet } from '@roofline/ui';
 import { jobs } from '../../copy/jobs.ts';
 import { useMoveJob } from './api.ts';
 import styles from './MoveJobSheet.module.css';
@@ -59,10 +59,10 @@ export function MoveJobSheet({ job, to, onDone }: MoveJobSheetProps) {
 
   const footer = (
     <div className={styles.footer}>
-      <Button variant="ghost" onClick={onDone}>
+      <Button variant="quiet" onClick={onDone}>
         {jobs.cancel}
       </Button>
-      <Button busy={move.isPending} onClick={() => void submit()}>
+      <Button variant="primary" busy={move.isPending} onClick={() => void submit()}>
         {jobs.confirm}
       </Button>
     </div>
@@ -73,7 +73,7 @@ export function MoveJobSheet({ job, to, onDone }: MoveJobSheetProps) {
       <div className={styles.body}>
         {to === 'lost' ? (
           <>
-            <Select
+            <Listbox
               label={jobs.lostReasonLabel}
               value={reason}
               options={reasonOptions}

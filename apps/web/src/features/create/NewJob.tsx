@@ -2,11 +2,13 @@ import { useQuery } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { JOB_SOURCES, type JobSource, type JobStage } from '@roofline/shared';
-import { Button, Field, Select, useToast, type SelectOption } from '@roofline/ui';
+import { Button, Field, Icon, Listbox, Panel, useToast, type ListboxOption } from '@roofline/ui';
 import { ApiError, apiFetch } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
 import { create } from '../../copy/create.ts';
 import { errors } from '../../copy/errors.ts';
+import { WINDOW_COPY } from '../../copy/rail.ts';
+import { DetailPage } from '../jobs/DetailPage.tsx';
 import { AddressFields, EMPTY_ADDRESS, type AddressValue } from './AddressFields.tsx';
 import { CustomerPicker } from './CustomerPicker.tsx';
 import { useCreateCustomer, useCreateJob, useCreateProperty, useCustomerHomes, type CustomerInput, type CustomerRecord } from './api.ts';
@@ -44,9 +46,14 @@ function usePresetCustomer(id: string | null) {
 
 // A job is created in one of the first three stages: Won needs a value, Lost needs a reason, and Installed only follows Won
 const CREATE_STAGES = ['lead', 'inspection', 'proposal'] as const satisfies readonly JobStage[];
-const stageOptions: SelectOption[] = CREATE_STAGES.map((stage) => ({ value: stage, label: create.stageNames[stage] }));
+const stageOptions: ListboxOption<JobStage>[] = CREATE_STAGES.map((stage) => ({ value: stage, label: create.stageNames[stage] }));
+
+/** The stage a lane's "+" asks for (`?stage=`), when it is one a job can be made in; Lead otherwise. */
+function presetStage(value: string | null): JobStage {
+  return CREATE_STAGES.find((stage) => stage === value) ?? 'lead';
+}
 // Front Desk jobs are made by the assistant, never picked by a person (C1 Ruling CG); the board filter keeps the source.
-const sourceOptions: SelectOption[] = JOB_SOURCES.filter((source) => source !== 'front_desk').map((source) => ({
+const sourceOptions: ListboxOption<JobSource>[] = JOB_SOURCES.filter((source) => source !== 'front_desk').map((source) => ({
   value: source,
   label: create.sourceNames[source],
 }));
@@ -75,7 +82,7 @@ export function NewJob() {
   // null means the default: the first home if there is one, else a new address
   const [homeChoice, setHomeChoice] = useState<string | null>(null);
   const [address, setAddress] = useState<AddressValue>(EMPTY_ADDRESS);
-  const [stage, setStage] = useState<JobStage>('lead');
+  const [stage, setStage] = useState<JobStage>(presetStage(params.get('stage')));
   const [source, setSource] = useState<JobSource>('manual');
   const [value, setValue] = useState('');
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -101,7 +108,7 @@ export function NewJob() {
   const showDetails = mode === 'new' || customer !== null;
   const ready = me.data !== undefined && (mode === 'new' || (customer !== null && homes.isSuccess));
 
-  const homeOptions: SelectOption[] = [
+  const homeOptions: ListboxOption[] = [
     ...homeList.map((home) => ({ value: home.id, label: `${home.addressLine}, ${home.city}` })),
     { value: NEW_HOME, label: create.newJob.newAddress },
   ];
@@ -180,89 +187,111 @@ export function NewJob() {
   }
 
   return (
-    <div className={styles.page}>
+    <DetailPage
+      app="jobs"
+      title={create.newJob.title}
+      crumbs={[{ label: WINDOW_COPY.jobs.title, href: '/jobs' }, { label: create.newJob.title }]}
+      subtitle={create.newJob.subtitle}
+    >
       <form className={styles.form} onSubmit={(event) => void submit(event)} noValidate>
-        <section className={styles.step}>
-          <h3 className={styles.heading}>{create.newJob.stepCustomer}</h3>
-          {mode === 'existing' && customer !== null ? (
-            <div className={styles.chosen}>
-              <span>{customer.displayName}</span>
-              <Button variant="ghost" onClick={() => chooseCustomer(null)}>
-                {create.newJob.changeCustomer}
-              </Button>
-            </div>
-          ) : null}
-          {mode === 'existing' && customer === null ? (
-            <>
-              <CustomerPicker selected={null} onSelect={(next) => chooseCustomer(next)} />
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  chooseCustomer(null);
-                  setMode('new');
-                }}
-              >
-                {create.newJob.newCustomer}
-              </Button>
-            </>
-          ) : null}
-          {mode === 'new' ? (
-            <>
-              <Field
-                label={create.newJob.newCustomerName}
-                name="name"
-                value={newName}
-                onChange={(event) => setNewName(event.target.value)}
-                error={fieldErrors.name}
-              />
-              <Field
-                label={create.newJob.newCustomerPhone}
-                name="phone"
-                type="tel"
-                value={newPhone}
-                onChange={(event) => setNewPhone(event.target.value)}
-              />
-              <Field
-                label={create.newJob.newCustomerEmail}
-                name="email"
-                type="email"
-                value={newEmail}
-                onChange={(event) => setNewEmail(event.target.value)}
-              />
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setMode('existing');
-                  setHomeChoice(null);
-                  setMadePropertyId(null);
-                }}
-              >
-                {create.newJob.useExisting}
-              </Button>
-            </>
-          ) : null}
-        </section>
+        <Panel title={create.newJob.stepCustomer} className={styles.step}>
+          <div className={styles.fields}>
+            {mode === 'existing' && customer !== null ? (
+              <div className={`${styles.chosen} ${styles.wide}`}>
+                <span className={styles.chosenName}>{customer.displayName}</span>
+                <Button variant="default" size="sm" onClick={() => chooseCustomer(null)}>
+                  {create.newJob.changeCustomer}
+                </Button>
+              </div>
+            ) : null}
+            {mode === 'existing' && customer === null ? (
+              <div className={styles.wide}>
+                <CustomerPicker selected={null} onSelect={(next) => chooseCustomer(next)} />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={styles.link}
+                  onClick={() => {
+                    chooseCustomer(null);
+                    setMode('new');
+                  }}
+                >
+                  <Icon name="plus" size={16} />
+                  {create.newJob.newCustomer}
+                </Button>
+              </div>
+            ) : null}
+            {mode === 'new' ? (
+              <>
+                <Field
+                  className={styles.wide}
+                  label={create.newJob.newCustomerName}
+                  name="name"
+                  value={newName}
+                  onChange={(event) => setNewName(event.target.value)}
+                  error={fieldErrors.name}
+                />
+                <Field
+                  label={create.newJob.newCustomerPhone}
+                  name="phone"
+                  type="tel"
+                  value={newPhone}
+                  onChange={(event) => setNewPhone(event.target.value)}
+                />
+                <Field
+                  label={create.newJob.newCustomerEmail}
+                  name="email"
+                  type="email"
+                  value={newEmail}
+                  onChange={(event) => setNewEmail(event.target.value)}
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={`${styles.link} ${styles.wide}`}
+                  onClick={() => {
+                    setMode('existing');
+                    setHomeChoice(null);
+                    setMadePropertyId(null);
+                  }}
+                >
+                  {create.newJob.useExisting}
+                </Button>
+              </>
+            ) : null}
+          </div>
+        </Panel>
 
         {showDetails ? (
-          <section className={styles.step}>
-            <h3 className={styles.heading}>{create.newJob.stepHome}</h3>
-            {mode === 'existing' && homes.isError ? <p className={styles.note}>{errors.generic}</p> : null}
-            {mode === 'existing' && homes.isSuccess && homeList.length > 0 ? (
-              <Select label={create.newJob.pickHome} value={homeId} options={homeOptions} onChange={(next) => setHomeChoice(next)} />
-            ) : null}
-            {mode === 'existing' && homes.isSuccess && homeList.length === 0 ? <p className={styles.note}>{create.newJob.noHomes}</p> : null}
-            {usesNewHome ? <AddressFields value={address} onChange={(next) => setAddress(next)} errors={addressErrors} /> : null}
-          </section>
+          <Panel title={create.newJob.stepHome} className={styles.step}>
+            <div className={styles.fields}>
+              {mode === 'existing' && homes.isError ? <p className={`${styles.note} ${styles.wide}`}>{errors.generic}</p> : null}
+              {mode === 'existing' && homes.isSuccess && homeList.length > 0 ? (
+                <Listbox
+                  className={styles.wide}
+                  label={create.newJob.pickHome}
+                  value={homeId}
+                  options={homeOptions}
+                  onChange={(next) => setHomeChoice(next)}
+                />
+              ) : null}
+              {mode === 'existing' && homes.isSuccess && homeList.length === 0 ? (
+                <p className={`${styles.note} ${styles.wide}`}>{create.newJob.noHomes}</p>
+              ) : null}
+              {usesNewHome ? (
+                <div className={styles.wide}>
+                  <AddressFields value={address} onChange={(next) => setAddress(next)} errors={addressErrors} />
+                </div>
+              ) : null}
+            </div>
+          </Panel>
         ) : null}
 
         {showDetails ? (
-          <section className={styles.step}>
-            <h3 className={styles.heading}>{create.newJob.stepDetails}</h3>
-            <div className={styles.row}>
-              <Select label={create.newJob.stage} value={stage} options={stageOptions} onChange={(next) => setStage(next as JobStage)} />
-              <Select label={create.newJob.source} value={source} options={sourceOptions} onChange={(next) => setSource(next as JobSource)} />
-            </div>
-            <div className={styles.row}>
+          <Panel title={create.newJob.stepDetails} className={styles.step}>
+            <div className={styles.fields}>
+              <Listbox label={create.newJob.stage} value={stage} options={stageOptions} onChange={setStage} />
+              <Listbox label={create.newJob.source} value={source} options={sourceOptions} onChange={setSource} />
               <Field label={create.newJob.rep} name="rep" value={create.newJob.repYou} readOnly />
               <Field
                 label={create.newJob.value}
@@ -273,12 +302,20 @@ export function NewJob() {
                 error={fieldErrors.value}
               />
             </div>
+          </Panel>
+        ) : null}
+
+        {showDetails ? (
+          <div className={styles.actions}>
             <Button type="submit" variant="primary" busy={busy} disabled={!ready} className={styles.submit}>
               {create.newJob.submit}
             </Button>
-          </section>
+            <Button href="/jobs" variant="quiet" className={styles.cancel}>
+              {create.newJob.cancel}
+            </Button>
+          </div>
         ) : null}
       </form>
-    </div>
+    </DetailPage>
   );
 }
