@@ -48,7 +48,7 @@ function PrintCheck({ paper }: { paper: SheetPaper }) {
           setSaved(scale);
         }}
       >
-        {copy.save}
+        {copy.printCheckSave}
       </Button>
       {saved !== null ? (
         <p role="status" className={styles.intro}>

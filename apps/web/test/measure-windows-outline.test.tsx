@@ -99,6 +99,23 @@ function renderMeasure() {
   return onSave;
 }
 const settled = () => waitFor(() => expect(document.querySelector('[data-snap="snapped"]')).not.toBeNull());
+const handle = (i: number) => document.querySelector(`[data-which="window"][data-corner="${i}"]`) as HTMLElement;
+/** The person drops the four corners roughly on the frame (the snap runs once all four are placed). */
+async function place() {
+  await screen.findByText(copy.sheetFound);
+  const frame = screen.getByRole('group', { name: copy.photoLabel });
+  for (const [i, [x, y]] of FRAME.entries()) {
+    const [sx, sy] = [handle(i).style.left, handle(i).style.top].map((v) => Number.parseFloat(v));
+    fireEvent.pointerDown(handle(i), { clientX: (sx! / 100) * 1200, clientY: (sy! / 100) * 1600, pointerId: 1 });
+    fireEvent.pointerMove(frame, { clientX: x + 5, clientY: y + 5, pointerId: 1 });
+    fireEvent.pointerUp(frame, { clientX: x + 5, clientY: y + 5, pointerId: 1 });
+  }
+}
+async function renderPlaced() {
+  const onSave = renderMeasure();
+  await place();
+  return onSave;
+}
 
 beforeEach(() => {
   makeEngine();
@@ -112,7 +129,7 @@ afterEach(() => {
 
 describe('Which outline are you measuring?', () => {
   it('asks when the top outlines score close, picks the one matching the target, and sizes each', async () => {
-    renderMeasure();
+    await renderPlaced();
     const pickBox = await screen.findByRole('group', { name: copy.pickTitle });
     // Inside of the frame is measured, so B (frame-inner) is picked even though the engine ranked the trim first
     const options = within(pickBox).getAllByRole('radio');
@@ -130,7 +147,7 @@ describe('Which outline are you measuring?', () => {
   });
 
   it('tapping an outline picks it; the target no longer moves a pick the person made', async () => {
-    renderMeasure();
+    await renderPlaced();
     const pickBox = await screen.findByRole('group', { name: copy.pickTitle });
     fireEvent.click(within(pickBox).getAllByRole('radio')[2]!);
     expect(liveSize()).toContain(copy.sizeExact('29', '42'));
@@ -141,7 +158,7 @@ describe('Which outline are you measuring?', () => {
   });
 
   it('the screen’s own pick follows "What are you measuring?"', async () => {
-    renderMeasure();
+    await renderPlaced();
     await screen.findByRole('group', { name: copy.pickTitle });
     fireEvent.click(screen.getByRole('radio', { name: new RegExp(copy.targets.trim.label) }));
     expect(windowPolygon().getAttribute('points')).toBe(pointsOf(TRIM));
@@ -151,7 +168,7 @@ describe('Which outline are you measuring?', () => {
   });
 
   it('per-side "check this edge" and the corner noise belong to the engine’s chosen outline only', async () => {
-    renderMeasure();
+    await renderPlaced();
     const pickBox = await screen.findByRole('group', { name: copy.pickTitle });
     // B is shown: no per-side data for it, corners treated as placed by hand
     expect(document.querySelector('[data-edge-flag]')).toBeNull();
@@ -164,7 +181,7 @@ describe('Which outline are you measuring?', () => {
 
   it('no question when no side has rivals and one outline clearly wins; cornerSigmaPx goes to measure', async () => {
     makeEngine({ snap: { ...CLOSE, quad: FRAME, rivals: [0, 0, 0, 0], candidates: [{ quad: FRAME, layer: 'frame-inner', score: 0.9 }, { quad: GLASS, layer: 'glass', score: 0.4 }] } });
-    renderMeasure();
+    await renderPlaced();
     await settled();
     expect(screen.queryByRole('group', { name: copy.pickTitle })).toBeNull();
     expect(lastMeasure().windowQuad).toEqual(FRAME);
@@ -196,11 +213,14 @@ describe('Corners proposed around the sheet', () => {
     expect(windowPolygon().getAttribute('points')).toBe(pointsOf(FRAME));
   });
 
-  it('falls back to snapping the inset when nothing is proposed', async () => {
+  it('nothing proposed: the corners wait for the person, then snap', async () => {
     makeEngine({ propose: null });
     renderMeasure();
+    await waitFor(() => expect(cv.proposeQuad).toHaveBeenCalledTimes(1));
+    await act(async () => {});
+    expect(cv.snapQuad).not.toHaveBeenCalled();
+    await place();
     await waitFor(() => expect(cv.snapQuad).toHaveBeenCalledTimes(1));
-    expect(cv.proposeQuad).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -214,7 +234,7 @@ describe('Two sheets on a big window', () => {
       sheetIndex: [0, 0, 0, 0, 1, 1, 1, 1],
     };
     makeEngine({ detection: two, snap: { ...CLOSE, quad: FRAME, rivals: [0, 0, 0, 0], candidates: [] } });
-    const onSave = renderMeasure();
+    const onSave = await renderPlaced();
     await settled();
     expect(document.querySelector('[data-two-sheets]')!.textContent).toBe(copy.twoSheets);
     expect(document.querySelector('[data-size-two-sheets]')!.textContent).toBe(copy.twoSheetsSize);
@@ -255,14 +275,14 @@ describe('Print check', () => {
     expect(screen.getByText(copy.printCheckScale('100.0'))).toBeTruthy();
     fireEvent.change(field, { target: { value: '5.94' } });
     expect(screen.getByText(copy.printCheckScale('99.0'))).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: copy.save }));
+    fireEvent.click(screen.getByRole('button', { name: copy.printCheckSave }));
     expect(screen.getByText(copy.printCheckSaved('99.0'))).toBeTruthy();
     expect(readPrintScale('letter')).toBeCloseTo(0.99, 6);
     expect(readPrintScale('a4')).toBe(1);
     // More than 10% off is a misprint
     fireEvent.change(field, { target: { value: '5' } });
     expect(screen.getByText(copy.printCheckOff)).toBeTruthy();
-    expect((screen.getByRole('button', { name: copy.save }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: copy.printCheckSave }) as HTMLButtonElement).disabled).toBe(true);
     // A4's ruler is in centimetres
     fireEvent.change(screen.getByLabelText(copy.printPaper), { target: { value: 'a4' } });
     expect((screen.getByLabelText(copy.printCheckField('cm')) as HTMLInputElement).value).toBe('15');
@@ -271,7 +291,7 @@ describe('Print check', () => {
   it('a checked print scale goes to measure() and is saved with the window', async () => {
     writePrintScale('letter', 0.99);
     makeEngine({ snap: { ...CLOSE, quad: FRAME, rivals: [0, 0, 0, 0], candidates: [] } });
-    const onSave = renderMeasure();
+    const onSave = await renderPlaced();
     await settled();
     expect(lastMeasure().printScale).toBe(0.99);
     expect(document.querySelector('[data-size-print-scale]')!.textContent).toBe(copy.printCheckApplied('99.0'));
@@ -282,7 +302,7 @@ describe('Print check', () => {
 
   it('an unchecked print (100%) sends no printScale', async () => {
     makeEngine({ snap: { ...CLOSE, quad: FRAME, rivals: [0, 0, 0, 0], candidates: [] } });
-    const onSave = renderMeasure();
+    const onSave = await renderPlaced();
     await settled();
     expect(lastMeasure().printScale).toBeUndefined();
     fireEvent.click(screen.getByRole('button', { name: copy.save }));

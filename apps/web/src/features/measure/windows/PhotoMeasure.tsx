@@ -124,6 +124,9 @@ export function PhotoMeasure({
   const [snapping, setSnapping] = useState(false);
   const [snapInfo, setSnapInfo] = useState<SnapInfo | null>(null);
   const [pick, setPick] = useState<Pick_ | null>(null);
+  // The corners the person has put on the frame (a new window). Snapping fits all four edges at once, so it waits
+  // until every corner is roughly on the frame: snapping a quad with corners still far off moves the placed ones.
+  const [placed, setPlaced] = useState<ReadonlySet<number>>(() => new Set(initial !== null ? [0, 1, 2, 3] : []));
   const [drag, setDrag] = useState<Drag | null>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const snapSeq = useRef(0);
@@ -151,6 +154,7 @@ export function PhotoMeasure({
   const applySnap = (s: SnappedQuad) => {
     const { quad, ...info } = s;
     setSnapInfo(info);
+    setPlaced(new Set([0, 1, 2, 3]));
     if (needsOutlinePick(s)) {
       const index = defaultPick(s.candidates!, engineTarget);
       setPick({ index, by: 'auto' });
@@ -176,17 +180,14 @@ export function PhotoMeasure({
   const seeded = useRef(initial !== null);
   const looked = find.status === 'found' || find.status === 'missing' || find.status === 'failed';
   const seed = () => {
-    if (propose === null) {
-      runSnap(windowQuad);
-      return;
-    }
+    // Without a proposal the corners stay where they start until the person places them
+    if (propose === null) return;
     const seq = ++snapSeq.current;
     setSnapping(true);
     void propose(engineTarget).then((s) => {
       if (seq !== snapSeq.current) return;
       setSnapping(false);
       if (s !== null) applySnap(s);
-      else runSnap(windowQuad);
     });
   };
   useEffect(() => {
@@ -322,7 +323,11 @@ export function PhotoMeasure({
     setDrag({ ...drag, x, y });
   };
   const onUp = () => {
-    if (drag !== null && drag.which === 'window' && sheetMode) runSnap(windowQuad);
+    if (drag !== null && drag.which === 'window') {
+      const next = new Set(placed).add(drag.i);
+      setPlaced(next);
+      if (sheetMode && next.size === 4) runSnap(windowQuad);
+    }
     setDrag(null);
   };
 
@@ -567,7 +572,7 @@ export function PhotoMeasure({
             <div className={styles.snapRow}>
               <Checkbox label={copy.noSnap} checked={!snapOn} onChange={(next) => setSnapOn(!next)} />
               <span className={styles.snapState} role="status" data-snap={snapping ? 'snapping' : snapInfo !== null ? 'snapped' : 'none'}>
-                {snapping ? copy.snapping : snapInfo !== null && snapOn ? copy.snapped : ''}
+                {snapping ? copy.snapping : snapInfo !== null && snapOn ? copy.snapped : placed.size < 4 ? copy.placeCorners(placed.size) : ''}
               </span>
             </div>
             {lowSides.length > 0 ? <Banner tone="warning">{copy.checkEdges(lowSides.map((i) => copy.sideNames[i]).join(', '))}</Banner> : null}
