@@ -328,7 +328,7 @@ homeowner's own windows can be removed this way.
 
 Body `{ "estimatedTotalOverride": 18 }`: the homeowner says "I have 18 windows" (1 to 80 in all, measured ones included).
 `null` takes it back to the address estimate. `200` with the view. This changes `quote.estimatedCount` and drops
-`missingHint`. (With 3 windows measured and 18 in all, the demo's quote has `estimatedCount: 15`, `missingHint` absent.)
+`missingHint`. (In the walk-through below, 2 windows measured and 18 in all gives `estimatedCount: 16` and no `missingHint`.)
 Refused with `409 callback_only` / `windows_not_requested` where there is no windows quote.
 
 ## POST /requests/:id/contact
@@ -457,6 +457,20 @@ The same walk with `curl` (needs `jq`). `B` is the base; the commands are the on
 ```sh
 B=http://localhost:4500/api/public/homeowner/summit-ridge
 
+# 0. A synthetic photo for steps 3 and 4 (a 36 x 60 in window with a credit card on its glass, 3024 x 4032, EXIF 26 mm).
+#    Run this first from the repo root; it makes a scratch folder, writes photo.jpg there and prints the corners step 4
+#    sends. Keep that folder as the current one for the steps below. Any real phone photo works the same way.
+REPO=$PWD; cd "$(mktemp -d)"
+cat > card-photo.ts <<EOF
+import { writeFileSync } from 'node:fs';
+import { cardScene } from '$REPO/apps/api/test/homeowner-fixture.ts';
+const s = cardScene({ windowIn: { w: 36, h: 60 }, distanceM: 1.6, yawDeg: 10 });
+writeFileSync('photo.jpg', s.bytes);
+console.log(JSON.stringify({ cardCorners: s.cardCorners.map((p) => p.map(Math.round)), corners: s.windowCorners.map((p) => p.map(Math.round)) }));
+EOF
+$REPO/node_modules/.bin/tsx card-photo.ts
+#   -> {"cardCorners":[[1437,1968],[1587,1969],[1587,2063],[1437,2064]],"corners":[[644,532],[2312,675],[2312,3357],[644,3500]]}
+
 # 1. The company (the consent words and version)
 curl -s $B/company | jq '{name, services, booking, consent: {version: .consent.version}}'
 
@@ -466,7 +480,7 @@ curl -s -X POST $B/requests -H 'Content-Type: application/json' \
 REQ=$(jq -r .requestId req.json); TOKEN=$(jq -r .token req.json)
 jq '{status, estimate}' req.json
 
-# 3. A photo (any JPEG: a phone photo keeps its EXIF; every pixel below is in the photo as displayed)
+# 3. A photo (a phone photo keeps its EXIF; every pixel below is in the photo as displayed)
 UP=$(curl -s -X POST $B/requests/$REQ/uploads -H "Authorization: Bearer $TOKEN" -H 'Content-Type: image/jpeg' --data-binary @photo.jpg | jq -r .id)
 
 # 4. A window: card on the glass, four taps on the card and four on the frame (here a 3024 x 4032 photo)
@@ -474,8 +488,9 @@ curl -s -X POST $B/requests/$REQ/windows -H "Authorization: Bearer $TOKEN" -H 'C
   "id":"w-kitchen-1","room":"Kitchen","label":"Over the sink","style":"double-hung",
   "scale":{"kind":"card","cardCorners":[[1437,1968],[1587,1969],[1587,2063],[1437,2064]],"card":{"widthMm":85.6,"heightMm":53.98}},
   "uploadId":"'$UP'","corners":[[644,532],[2312,675],[2312,3357],[644,3500]]}' \
-  | jq '.windows[0] | {id, sizeLabel, uncertaintyLabel, quality}, .quote.tiers[0] | {total, estimatedCount}'
-#   -> { "id": "w-kitchen-1", "sizeLabel": "36 x 60", "uncertaintyLabel": "about ±1 in", "quality": "check" }
+  | jq '{window: (.windows[0] | {id, sizeLabel, uncertaintyLabel, quality}), good: (.quote.tiers[0] | {total, estimatedCount})}'
+#   -> { "window": { "id": "w-kitchen-1", "sizeLabel": "36 x 60", "uncertaintyLabel": "about ±1 in", "quality": "check" },
+#        "good": { "total": 8450, "estimatedCount": 13 } }
 
 # 5. A room-scan window needs no photo
 curl -s -X POST $B/requests/$REQ/windows -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
