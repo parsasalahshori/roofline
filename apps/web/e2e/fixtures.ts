@@ -169,6 +169,20 @@ export async function moveJob(scope: Locator, stage: string): Promise<void> {
   await scope.page().getByRole('option', { name: stage, exact: true }).click();
 }
 
+/**
+ * Picks an option in a kit Listbox (the page's own select): opens it by its label and clicks the option by its name.
+ * A form field is found by its visible label ("Time zone"); with `chip: true` it is a filter chip, found by its name
+ * ("Assigned to: Everyone" is chosen with label "Assigned to"). `scope` is the page or the part of it to look in.
+ */
+export async function chooseOption(scope: Locator | Page, label: string, option: string, opts: { chip?: boolean } = {}): Promise<void> {
+  const page = 'goto' in scope ? scope : scope.page();
+  const trigger = opts.chip
+    ? scope.getByRole('button', { name: new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:`) })
+    : scope.getByLabel(label, { exact: true });
+  await trigger.click();
+  await page.getByRole('option', { name: option, exact: true }).click();
+}
+
 type Fixtures = {
   scenario: Scenario;
   loginAs: (page: Page, who: Who) => Promise<void>;
