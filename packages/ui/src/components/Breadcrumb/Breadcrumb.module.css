@@ -21,7 +21,13 @@
 }
 
 .sep {
+  flex: none;
   color: var(--ink-3);
+}
+
+/* The links up the trail keep their words whole. In a tight top bar only the page itself, the last, gives way (with an ellipsis). */
+.item:not(:last-child) {
+  flex: none;
 }
 
 .link {

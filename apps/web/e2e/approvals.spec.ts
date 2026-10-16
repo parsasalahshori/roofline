@@ -204,3 +204,36 @@ test.describe('queue on a phone', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   });
 });
+
+test.describe('the trail in a tight top bar', () => {
+  test.use({ viewport: { width: 768, height: 900 } });
+
+  test('a long plan title gives way with an ellipsis and the link up the trail keeps its words', async ({ page, loginAs, markTodaySeen, scenario }) => {
+    await loginAs(page, 'owner');
+    await markTodaySeen('owner@a.test');
+    await page.goto('/approvals/' + scenario.taskId);
+    const trail = page.getByRole('navigation', { name: 'Breadcrumb' });
+    const parent = trail.getByRole('link').first();
+    await expect(parent).toBeVisible({ timeout: 15_000 });
+
+    // Make the page's own crumb far too long for the bar. A page with a long title does this for real.
+    await trail.locator('[aria-current="page"]').evaluate((element) => {
+      element.textContent = 'A plan whose name runs on and on and on and on and on and on and on and on and on and on and on';
+    });
+
+    const measured = await trail.evaluate((nav) => {
+      const link = nav.querySelector('a');
+      const separator = nav.querySelector('li[aria-hidden="true"]');
+      const here = nav.querySelector('[aria-current="page"]');
+      if (!link || !separator || !here) return null;
+      return {
+        // The link's words end before the separator begins; a negative gap is the separator drawn over them
+        gap: separator.getBoundingClientRect().left - link.getBoundingClientRect().right,
+        hereCut: here.scrollWidth > here.clientWidth,
+      };
+    });
+    expect(measured).not.toBeNull();
+    expect(measured!.gap).toBeGreaterThanOrEqual(0);
+    expect(measured!.hereCut).toBe(true);
+  });
+});
