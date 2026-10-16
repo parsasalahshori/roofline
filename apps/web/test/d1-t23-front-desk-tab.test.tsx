@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FrontDeskSettings, FrontDeskVoice } from '@roofline/shared';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
+import { errors } from '../src/copy/errors.ts';
 import { forwarding } from '../src/copy/forwarding.ts';
 import { frontDeskSettings } from '../src/copy/front-desk-settings.ts';
 import { ACCOUNT, SHELL_ROUTES, stubApi } from './helpers.tsx';
@@ -189,7 +190,8 @@ describe('Settings -> Front Desk form', () => {
     expect(screen.getByLabelText(preview).tagName).toBe('AUDIO');
     expect(screen.getByLabelText(preview)).toHaveAttribute('src', 'https://cdn.example/warm.mp3');
 
-    await user.selectOptions(screen.getByLabelText(frontDeskSettings.voice.label), 'claire');
+    await user.click(screen.getByLabelText(frontDeskSettings.voice.label));
+    await user.click(await screen.findByRole('option', { name: 'Plain' }));
     await waitFor(() => expect(screen.queryByLabelText(preview)).not.toBeInTheDocument());
     expect(screen.queryByLabelText(frontDeskSettings.voice.preview('Plain'))).not.toBeInTheDocument();
     expect(document.querySelector('audio')).toBeNull();
@@ -238,6 +240,85 @@ describe('Settings -> Front Desk form', () => {
     const facts = await screen.findByLabelText(frontDeskSettings.facts.label);
     await waitFor(() => expect(facts).toHaveAccessibleDescription(expect.stringContaining('Facts are too long.')));
     expect(within(facts.closest('div') as HTMLElement).getByText('Facts are too long.')).toBeInTheDocument();
+  });
+
+  it('draws its panels under titles: answering, what it may do, ringing and keeping, voice and facts, and who answers', async () => {
+    signIn(makeSettings());
+    renderTab();
+    await screen.findByRole('switch', { name: frontDeskSettings.onOff.label });
+
+    const titles = frontDeskSettings.sections;
+    for (const name of [titles.answering, titles.mayDo, titles.timing, titles.voiceAndFacts, frontDeskSettings.onCall.heading]) {
+      expect(screen.getByRole('region', { name })).toBeInTheDocument();
+    }
+    // Each switch is in the panel its words belong to
+    expect(within(screen.getByRole('region', { name: titles.answering })).getByRole('switch', { name: frontDeskSettings.texts.label })).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: titles.mayDo })).getAllByRole('switch')).toHaveLength(3);
+    expect(within(screen.getByRole('region', { name: titles.timing })).getAllByRole('spinbutton')).toHaveLength(4);
+  });
+
+  it('lists the voices in a pick-one list that shows the chosen voice', async () => {
+    signIn(makeSettings({ voice: 'claire' }));
+    const { user } = renderTab();
+
+    const picker = await screen.findByLabelText(frontDeskSettings.voice.label);
+    expect(picker).toHaveAttribute('aria-haspopup', 'listbox');
+    expect(picker).toHaveTextContent('Plain');
+    await user.click(picker);
+    const options = within(await screen.findByRole('listbox', { name: frontDeskSettings.voice.label })).getAllByRole('option');
+    expect(options.map((option) => option.textContent)).toEqual(['Warm', 'Plain']);
+  });
+
+  it('says why it is blocked with a glyph as well as the words', async () => {
+    signIn(makeSettings({ blockedReason: 'no_number' }));
+    renderTab();
+
+    const note = (await screen.findByText(frontDeskSettings.onOff.blocked.no_number)).closest('p');
+    expect(note?.querySelector('svg')).not.toBeNull();
+  });
+
+  it('asks to confirm in a region of its own, as a warning with both choices', async () => {
+    signIn(makeSettings({ blockedReason: 'forwarding_not_verified' }));
+    const { user } = renderTab();
+
+    const toggle = await screen.findByRole('switch', { name: frontDeskSettings.onOff.label });
+    await waitFor(() => expect(toggle).toBeEnabled());
+    await user.click(toggle);
+    const region = screen.getByRole('region', { name: frontDeskSettings.onOff.overrideYes });
+    expect(within(region).getByText(frontDeskSettings.onOff.overrideConfirm)).toBeInTheDocument();
+    expect(within(region).getByRole('button', { name: frontDeskSettings.onOff.overrideYes })).toBeInTheDocument();
+    expect(within(region).getByRole('button', { name: frontDeskSettings.onOff.overrideNo })).toBeInTheDocument();
+  });
+
+  it('marks the character count when the facts are over the limit', async () => {
+    signIn(makeSettings());
+    renderTab();
+
+    const facts = await screen.findByLabelText(frontDeskSettings.facts.label);
+    const counter = screen.getByText(frontDeskSettings.facts.counter(21, 2000));
+    expect(counter).not.toHaveAttribute('data-over');
+    fireEvent.change(facts, { target: { value: 'x'.repeat(2001) } });
+    expect(screen.getByText(frontDeskSettings.facts.counter(2001, 2000))).toHaveAttribute('data-over', 'true');
+  });
+
+  it('shows the shape of the form while it loads', async () => {
+    signIn(makeSettings());
+    renderTab();
+    expect(await screen.findByRole('status', { name: frontDeskSettings.loading })).toBeInTheDocument();
+    await screen.findByRole('switch', { name: frontDeskSettings.onOff.label });
+    expect(screen.queryByRole('status', { name: frontDeskSettings.loading })).toBeNull();
+  });
+
+  it('says it could not load the settings, with Try again, and Try again loads them', async () => {
+    let failures = 1;
+    signIn(makeSettings(), {
+      'GET /api/front-desk/settings': () => (failures-- > 0 ? { status: 500, body: { error: 'x' } } : { body: makeSettings() }),
+    });
+    const { user } = renderTab();
+
+    expect(await screen.findByText(frontDeskSettings.loadFailed)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: errors.tryAgain }));
+    expect(await screen.findByRole('switch', { name: frontDeskSettings.onOff.label })).toBeInTheDocument();
   });
 
   it('shows the forwarding guide in the slot below the form', async () => {

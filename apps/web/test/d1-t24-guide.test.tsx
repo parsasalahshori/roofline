@@ -66,9 +66,14 @@ function renderGuide({
 const carrierPicker = () => screen.findByLabelText(forwarding.carrierLabel);
 const modePicker = () => screen.findByLabelText(forwarding.modeLabel);
 
-// Picked by value: the label "AT&T" is escaped in the DOM, so user-event cannot match it by text
+/** Opens the pick-one control with this label and picks the option with these words. */
+async function choose(user: ReturnType<typeof userEvent.setup>, picker: HTMLElement, option: string) {
+  await user.click(picker);
+  await user.click(await screen.findByRole('option', { name: option }));
+}
+
 async function pick(user: ReturnType<typeof userEvent.setup>, carrier: Carrier) {
-  await user.selectOptions(await carrierPicker(), carrier);
+  await choose(user, await carrierPicker(), forwarding.carriers[carrier]);
 }
 
 describe('forwarding guide: dial codes', () => {
@@ -83,7 +88,7 @@ describe('forwarding guide: dial codes', () => {
   it('switches to the no-answer code when the mode changes', async () => {
     const { user } = renderGuide();
     await screen.findByText('*724025550100');
-    await user.selectOptions(await modePicker(), forwarding.modes.no_answer);
+    await choose(user, await modePicker(), forwarding.modes.no_answer);
     expect(await screen.findByText('*714025550100')).toBeInTheDocument();
     expect(screen.queryByText('*724025550100')).not.toBeInTheDocument();
   });
@@ -94,6 +99,38 @@ describe('forwarding guide: dial codes', () => {
     await pick(user, 'att');
     expect(await screen.findByText('**21*4025550100#')).toBeInTheDocument();
     expect(screen.getByText('##21#')).toBeInTheDocument();
+  });
+});
+
+describe('forwarding guide: the panel', () => {
+  it('is a region named for what it does, with the two numbers as labelled tiles and the pickers as pick-one lists', async () => {
+    renderGuide();
+    const guide = await screen.findByRole('region', { name: forwarding.title });
+    await screen.findByText('*724025550100');
+    expect(within(guide).getByText(forwarding.businessNumberLabel)).toBeInTheDocument();
+    expect(within(guide).getByText(forwarding.rooflineNumberLabel)).toBeInTheDocument();
+    expect(within(guide).getByText(ROOFLINE)).toBeInTheDocument();
+    for (const label of [forwarding.carrierLabel, forwarding.modeLabel]) {
+      expect(within(guide).getByLabelText(label)).toHaveAttribute('aria-haspopup', 'listbox');
+    }
+    expect(within(guide).getByLabelText(forwarding.carrierLabel)).toHaveTextContent(forwarding.carriers.verizon);
+    expect(within(guide).getByLabelText(forwarding.modeLabel)).toHaveTextContent(forwarding.modes.all);
+  });
+
+  it('offers every phone company in its list', async () => {
+    const { user } = renderGuide();
+    await user.click(await carrierPicker());
+    const options = within(await screen.findByRole('listbox', { name: forwarding.carrierLabel })).getAllByRole('option');
+    expect(options.map((option) => option.textContent)).toEqual(Object.values(forwarding.carriers));
+  });
+
+  it('says it could not load the numbers, with Try again', async () => {
+    api = stubApi({
+      [TEXTING]: () => ({ status: 500, body: { error: 'x' } }),
+      [COMPANY_GET]: () => ({ body: COMPANY_BODY }),
+    });
+    renderAt(<ForwardingGuide />, '/settings/front-desk');
+    expect(await screen.findByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 });
 

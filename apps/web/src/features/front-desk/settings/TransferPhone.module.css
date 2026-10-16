@@ -1,14 +1,13 @@
-/* Your phone for transfers: a card with the heading, the help line, the number field, the ack box and Save */
-.heading {
-  margin: 0 0 4px;
-  font-size: var(--font-size-body);
-  font-weight: 600;
+/* Your phone for transfers: a panel with the help line, the number field, the ack box and Save. Readable width, never full-bleed. */
+.panel {
+  max-width: 560px;
+  min-width: 0;
 }
 
 .help {
-  margin: 0 0 12px;
-  font-size: var(--font-size-min);
+  margin: 0 0 16px;
   color: var(--ink-3);
+  font-size: var(--font-size-body);
 }
 
 .form {
@@ -26,4 +25,10 @@
 .actions {
   display: flex;
   justify-content: flex-start;
+}
+
+@media (max-width: 767.98px) {
+  .actions > button {
+    width: 100%;
+  }
 }

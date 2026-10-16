@@ -1,7 +1,8 @@
 import { toE164, type TransferPhoneView } from '@roofline/shared';
-import { Button, Card, Checkbox, EmptyState, Field, Skeleton, useToast } from '@roofline/ui';
-import { useId, useState, type FormEvent } from 'react';
+import { Banner, Button, Checkbox, Field, Panel, Skeleton, useToast } from '@roofline/ui';
+import { useState, type FormEvent } from 'react';
 import { ApiError } from '../../../api/client.ts';
+import { errors } from '../../../copy/errors.ts';
 import { frontDeskSettings } from '../../../copy/front-desk-settings.ts';
 import { useSaveTransferPhone, useTransferPhone } from './settings-api.ts';
 import styles from './TransferPhone.module.css';
@@ -24,7 +25,6 @@ function TransferPhoneForm({ view }: FormProps) {
   const [value, setValue] = useState(initial);
   const [acknowledged, setAcknowledged] = useState(false);
   const [fieldError, setFieldError] = useState<string | undefined>(undefined);
-  const headingId = useId();
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -58,10 +58,7 @@ function TransferPhoneForm({ view }: FormProps) {
   }
 
   return (
-    <Card as="section" aria-labelledby={headingId}>
-      <h2 id={headingId} className={styles.heading}>
-        {copy.heading}
-      </h2>
+    <Panel as="section" title={copy.heading} className={styles.panel}>
       <p className={styles.help}>{copy.help}</p>
       <form onSubmit={submit} noValidate className={styles.form}>
         <Field
@@ -85,7 +82,7 @@ function TransferPhoneForm({ view }: FormProps) {
           </Button>
         </div>
       </form>
-    </Card>
+    </Panel>
   );
 }
 
@@ -96,12 +93,25 @@ export function TransferPhone() {
   if (phone.data) return <TransferPhoneForm view={phone.data} />;
 
   if (phone.isError) {
-    return <EmptyState title={copy.loadFailed} />;
+    return (
+      <div className={styles.panel}>
+        <Banner
+          tone="danger"
+          action={
+            <Button variant="default" size="sm" onClick={() => void phone.refetch()}>
+              {errors.tryAgain}
+            </Button>
+          }
+        >
+          {copy.loadFailed}
+        </Banner>
+      </div>
+    );
   }
 
   return (
-    <div role="status">
-      <Skeleton lines={2} />
+    <div role="status" aria-label={copy.loading} className={styles.panel}>
+      <Skeleton height="220px" />
     </div>
   );
 }

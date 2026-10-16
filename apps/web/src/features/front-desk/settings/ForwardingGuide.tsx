@@ -1,6 +1,6 @@
 import { CARRIERS, forwardingSteps, type Carrier } from '@roofline/shared';
-import { Banner, Button, Card, EmptyState, Select, Skeleton } from '@roofline/ui';
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { Banner, Button, Icon, Listbox, Panel, Skeleton } from '@roofline/ui';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router';
 import { errors } from '../../../copy/errors.ts';
 import { forwarding } from '../../../copy/forwarding.ts';
@@ -53,7 +53,8 @@ function CodeGroup({
         codes.map((code) => (
           <div key={code} className={styles.codeRow}>
             <code className={styles.code}>{code}</code>
-            <Button variant="ghost" onClick={() => onCopy(code)}>
+            <Button variant="default" size="sm" onClick={() => onCopy(code)}>
+              {copiedCode === code ? <Icon name="check" size={16} /> : <Icon name="doc" size={16} />}
               {copiedCode === code ? forwarding.copied : forwarding.copy}
             </Button>
           </div>
@@ -70,9 +71,8 @@ function CodeGroup({
 }
 
 export function ForwardingGuide() {
-  const headingId = useId();
   const location = useLocation();
-  const sectionRef = useRef<HTMLElement>(null);
+  const sectionRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (location.hash === '#forwarding') sectionRef.current?.scrollIntoView?.({ block: 'start' });
   }, [location.hash]);
@@ -99,14 +99,16 @@ export function ForwardingGuide() {
     body = <Skeleton lines={3} />;
   } else if (texting.isError) {
     body = (
-      <EmptyState
-        title={errors.generic}
+      <Banner
+        tone="danger"
         action={
-          <Button variant="primary" onClick={() => void texting.refetch()}>
+          <Button variant="default" size="sm" onClick={() => void texting.refetch()}>
             {errors.tryAgain}
           </Button>
         }
-      />
+      >
+        {errors.generic}
+      </Banner>
     );
   } else {
     const steps = rooflineNumber === null ? null : forwardingSteps(carrier, mode, rooflineNumber);
@@ -127,55 +129,58 @@ export function ForwardingGuide() {
   }
 
   return (
-    <section id="forwarding" ref={sectionRef} aria-labelledby={headingId} className={styles.guide}>
-      <Card as="div" className={styles.card}>
-        <h2 id={headingId} className={styles.title}>
-          {forwarding.title}
-        </h2>
-
-        <dl className={styles.numbers}>
-          {businessNumber !== null ? (
-            <div className={styles.number}>
-              <dt className={styles.numberLabel}>{forwarding.businessNumberLabel}</dt>
-              <dd className={styles.numberValue}>{businessNumber}</dd>
-            </div>
+    <div id="forwarding" ref={sectionRef} className={styles.guide}>
+      <Panel as="section" title={forwarding.title}>
+        <div className={styles.card}>
+          <dl className={styles.numbers}>
+            {businessNumber !== null ? (
+              <div className={styles.number}>
+                <dt className={styles.numberLabel}>{forwarding.businessNumberLabel}</dt>
+                <dd className={styles.numberValue}>{businessNumber}</dd>
+              </div>
+            ) : null}
+            {rooflineNumber !== null ? (
+              <div className={styles.number}>
+                <dt className={styles.numberLabel}>{forwarding.rooflineNumberLabel}</dt>
+                <dd className={styles.numberValue}>{rooflineNumber}</dd>
+              </div>
+            ) : null}
+          </dl>
+          {company.isSuccess && businessNumber === null ? (
+            <p className={styles.hint}>
+              <Icon name="alert" size={16} />
+              {forwarding.noBusinessNumber}
+            </p>
           ) : null}
-          {rooflineNumber !== null ? (
-            <div className={styles.number}>
-              <dt className={styles.numberLabel}>{forwarding.rooflineNumberLabel}</dt>
-              <dd className={styles.numberValue}>{rooflineNumber}</dd>
-            </div>
-          ) : null}
-        </dl>
-        {company.isSuccess && businessNumber === null ? <p className={styles.hint}>{forwarding.noBusinessNumber}</p> : null}
 
-        <div className={styles.pickers}>
-          <Select
-            label={forwarding.carrierLabel}
-            value={carrier}
-            options={CARRIER_OPTIONS}
-            onChange={(value) => {
-              if (isCarrier(value)) {
-                setCarrier(value);
-                setCopiedCode(null);
-              }
-            }}
-          />
-          <Select
-            label={forwarding.modeLabel}
-            value={mode}
-            options={MODE_OPTIONS}
-            onChange={(value) => {
-              if (isMode(value)) {
-                setMode(value);
-                setCopiedCode(null);
-              }
-            }}
-          />
+          <div className={styles.pickers}>
+            <Listbox
+              label={forwarding.carrierLabel}
+              value={carrier}
+              options={CARRIER_OPTIONS}
+              onChange={(value) => {
+                if (isCarrier(value)) {
+                  setCarrier(value);
+                  setCopiedCode(null);
+                }
+              }}
+            />
+            <Listbox
+              label={forwarding.modeLabel}
+              value={mode}
+              options={MODE_OPTIONS}
+              onChange={(value) => {
+                if (isMode(value)) {
+                  setMode(value);
+                  setCopiedCode(null);
+                }
+              }}
+            />
+          </div>
+
+          {body}
         </div>
-
-        {body}
-      </Card>
-    </section>
+      </Panel>
+    </div>
   );
 }
