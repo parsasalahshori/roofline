@@ -170,16 +170,23 @@ it('the map is its own page on a phone, and Home on a desktop', async () => {
   expect(await screen.findByRole('main', { name: WINDOW_COPY.home.title })).toBeInTheDocument();
 });
 
-it('the compact top bar hides the agents line', async () => {
+it('a phone has no top bar: the page carries search, the bell and the person beside its title', async () => {
   stubPhone(true);
   signedInApi({
     'GET /api/approvals': () => ({ body: { count: 1, tasks: [makeTask({ id: 't1' })] } }),
+    'GET /api/jobs/board': () => ({ body: { columns: [], lost: { count: 0 } } }),
   });
-  renderApp('/');
+  renderApp('/jobs');
 
-  expect(await screen.findByText(shell.needYourOk(1))).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: search.open })).toBeInTheDocument();
+  const main = await screen.findByRole('main', { name: WINDOW_COPY.jobs.title });
+  // No bar over the page: the kit's bar marks its slots
+  expect(document.querySelector('[data-slot]')).toBeNull();
+  expect(within(main).getByRole('button', { name: search.open })).toBeInTheDocument();
+  expect(within(main).getByRole('link', { name: shell.notificationsLabel })).toBeInTheDocument();
+  expect(await within(main).findByRole('button', { name: ACCOUNT.user.name })).toBeInTheDocument();
+  // The agents line and the pill stay on the desktop's bar
   expect(screen.queryByText(shell.agentsWorking(0))).toBeNull();
+  expect(screen.queryByText(shell.needYourOk(1))).toBeNull();
 });
 
 it('desktop keeps the rail and no bottom tabs', async () => {

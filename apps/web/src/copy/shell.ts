@@ -34,7 +34,7 @@ export const shell = {
 
   // The phone's bottom tabs and the More sheet
   tabsLabel: 'Main',
-  tabMyDay: 'My day',
+  tabMyDay: 'Today',
   tabMap: 'Map',
   tabMeasure: 'Measure',
   /** The count on the My day tab. */
@@ -44,4 +44,6 @@ export const shell = {
   tabMore: 'More',
   moreTitle: 'More',
   moreClose: 'Close',
+  /** The demo presenter's tools, in the More sheet (the badge is in the top bar on a desktop). */
+  moreDemo: 'Demo tools',
 } as const;

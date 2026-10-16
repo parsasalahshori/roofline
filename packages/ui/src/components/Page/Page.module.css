@@ -38,6 +38,15 @@
   min-width: 0;
 }
 
+/* A mono caps line over the title: "FRIDAY, OCTOBER 16" */
+.eyebrow {
+  margin: 0 0 6px;
+  color: var(--ink-3);
+  font: 500 var(--font-size-min)/1 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .title {
   margin: 0;
   font: 750 26px/1.05 var(--f-display);
@@ -84,14 +93,64 @@
   flex: none;
 }
 
+/* A phone's way back ("‹ Jobs") with the page's own controls at the right */
+.phoneBar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+  margin-bottom: 4px;
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 40px;
+  margin-left: -6px;
+  padding: 0 8px 0 2px;
+  color: var(--brand-text);
+  font: 500 17px/1.2 var(--f-ui);
+  text-decoration: none;
+}
+
+.phoneBarActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* The shell's search, bell and person, beside a top-level page's title on a phone */
+.trailing {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  margin-right: -6px;
+}
+
 @media (max-width: 767.98px) {
   .page {
     padding: 8px 16px 24px;
   }
 
   .head {
-    align-items: flex-start;
+    flex-wrap: wrap;
+    align-items: center;
     margin-bottom: 12px;
+  }
+
+  /* The title takes the row with the shell's controls; the page's own buttons wrap under it */
+  .titles {
+    flex: 1 1 0;
+  }
+
+  .actions {
+    flex: 1 1 100%;
+    justify-content: flex-start;
   }
 
   .title {

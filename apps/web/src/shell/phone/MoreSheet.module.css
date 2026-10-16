@@ -23,3 +23,35 @@
 .link:hover {
   background: var(--surface-2);
 }
+
+/* The name takes the row; a count sits at the far right */
+.name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Setup progress and the demo badge, under the list when they exist */
+.extras {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 8px 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.setup {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  color: var(--ink-2);
+  font-size: 0.9375rem;
+  text-decoration: none;
+}
+
+.extras:empty {
+  display: none;
+}

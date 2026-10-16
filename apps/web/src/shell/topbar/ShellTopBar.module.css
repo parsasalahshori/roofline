@@ -12,9 +12,3 @@
 .actions:empty {
   display: none;
 }
-
-.mark {
-  display: inline-flex;
-  flex: none;
-  text-decoration: none;
-}

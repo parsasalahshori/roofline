@@ -40,10 +40,11 @@ test('bottom tabs work, with Measure raised in the middle', async ({ page, login
   await expect(page).toHaveURL('/');
   await expect(tabs.getByRole('link', { name: 'Map', exact: true })).toHaveAttribute('aria-current', 'page');
 
-  await tabs.getByRole('link', { name: 'My day', exact: true }).click();
+  // The first tab says Today; the page it opens is My day
+  await tabs.getByRole('link', { name: 'Today', exact: true }).click();
   await expect(page).toHaveURL(/\/today$/);
   await expect(page.getByRole('main', { name: 'My day' })).toBeVisible();
-  await expect(tabs.getByRole('link', { name: 'My day', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(tabs.getByRole('link', { name: 'Today', exact: true })).toHaveAttribute('aria-current', 'page');
 
   // The Measure tab stands above the bar: its tile starts higher than the bar's top edge
   const measure = tabs.getByRole('link', { name: 'Measure', exact: true });
@@ -67,7 +68,8 @@ test('bottom tabs work, with Measure raised in the middle', async ({ page, login
   await expect(page.getByRole('dialog', { name: 'More', exact: true })).toHaveCount(0);
 
   await tabs.getByRole('button', { name: 'More', exact: true }).click();
-  await page.getByRole('dialog', { name: 'More', exact: true }).getByRole('link', { name: 'Storm', exact: true }).click();
+  // Storm carries a count in its name ("Storm 2 plans need your OK"), so the name is matched from its start
+  await page.getByRole('dialog', { name: 'More', exact: true }).getByRole('link', { name: /^Storm/ }).click();
   await expect(page).toHaveURL(/\/storm$/);
   await expect(page.getByRole('dialog', { name: 'More', exact: true })).toHaveCount(0);
 });
@@ -79,34 +81,43 @@ function expectApart(a: { x: number; y: number; width: number; height: number },
 }
 
 for (const width of [360, 390]) {
-  test(`top bar at ${width}px: a long name shows initials and nothing overlaps the OK pill`, async ({ page, loginAs, markTodaySeen, db }) => {
+  test(`phone head at ${width}px: no top bar, a long name shows initials and nothing overlaps`, async ({ page, loginAs, markTodaySeen, db }) => {
     const longName = 'Dana Whitfield-Montgomery';
     await db.query('update users set name = $1 where email = $2', [longName, 'owner@a.test']);
     await page.setViewportSize({ width, height: 800 });
     await loginAs(page, 'owner');
     await markTodaySeen('owner@a.test');
-    await page.goto('/');
 
-    const bar = page.getByRole('banner').first();
-    const pill = bar.getByRole('link', { name: /need your OK/ });
-    const menu = bar.getByRole('button', { name: longName });
-    const search = bar.getByRole('button', { name: 'Search', exact: true });
-    await expect(pill).toBeVisible();
-    await expect(menu).toBeVisible();
-    // Only the initials show on a phone; the full name is the button's label.
-    await expect(bar.getByText(longName, { exact: true })).toHaveCount(0);
+    for (const [path, title] of [
+      ['/', 'Map'],
+      ['/today', 'My day'],
+      ['/jobs', 'Jobs'],
+    ] as const) {
+      await page.goto(path);
+      const main = page.getByRole('main', { name: title });
+      // A phone has no bar over the page: search, the bell and the person sit beside the title
+      await expect(page.getByRole('banner')).toHaveCount(0);
+      const heading = main.getByRole('heading', { level: 1, name: title });
+      const menu = main.getByRole('button', { name: longName });
+      const search = main.getByRole('button', { name: 'Search', exact: true });
+      const bell = main.getByRole('link', { name: 'Notifications' });
+      await expect(menu).toBeVisible();
+      // Only the initials show on a phone; the full name is the button's label.
+      await expect(main.getByText(longName, { exact: true })).toHaveCount(0);
 
-    const [pillBox, menuBox, searchBox, barBox] = await Promise.all([pill.boundingBox(), menu.boundingBox(), search.boundingBox(), bar.boundingBox()]);
-    for (const box of [pillBox, menuBox, searchBox, barBox]) expect(box).not.toBeNull();
-    expectApart(pillBox!, menuBox!);
-    expectApart(pillBox!, searchBox!);
-    expectApart(searchBox!, menuBox!);
-    // Everything stays on the screen.
-    for (const box of [pillBox!, menuBox!, searchBox!]) {
-      expect(box.x).toBeGreaterThanOrEqual(0);
-      expect(box.x + box.width).toBeLessThanOrEqual(width + 1);
+      const [titleBox, menuBox, searchBox, bellBox] = await Promise.all([heading.boundingBox(), menu.boundingBox(), search.boundingBox(), bell.boundingBox()]);
+      for (const box of [titleBox, menuBox, searchBox, bellBox]) expect(box).not.toBeNull();
+      expectApart(titleBox!, searchBox!);
+      expectApart(searchBox!, bellBox!);
+      expectApart(bellBox!, menuBox!);
+      // Everything stays on the screen and beside the title, not under it.
+      for (const box of [menuBox!, searchBox!, bellBox!]) {
+        expect(box.x).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width).toBeLessThanOrEqual(width + 1);
+        expect(Math.abs(box.y - titleBox!.y)).toBeLessThan(40);
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     }
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
   });
 }
 

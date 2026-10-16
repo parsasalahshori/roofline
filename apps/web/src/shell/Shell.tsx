@@ -10,6 +10,7 @@ import type { AppKey } from './apps.ts';
 import { countedDrafts } from './countedDrafts.ts';
 import { BottomTabs } from './phone/BottomTabs.tsx';
 import { MoreSheet } from './phone/MoreSheet.tsx';
+import { PhoneChrome } from './phone/PhoneChrome.tsx';
 import styles from './Shell.module.css';
 import { ShellRail } from './ShellRail.tsx';
 import { ShellTopBar } from './topbar/ShellTopBar.tsx';
@@ -22,7 +23,7 @@ function alert(value: number, label: (count: number) => string): RailCount | und
 }
 
 /**
- * The layout every signed-in page sits in: the rail (or, on a phone, the bottom tabs), the slim top bar, the
+ * The layout every signed-in page sits in: the rail and the slim top bar (on a phone, the bottom tabs and no bar), the
  * banners and the page itself (the route's outlet). The white-label colour is applied here, once. Pages put their
  * breadcrumb and their own controls into the top bar through the slots.
  */
@@ -39,7 +40,9 @@ export function Shell() {
   // State, not refs: the slots are DOM nodes Page portals into, and Page must render again once they exist
   const [crumbs, setCrumbs] = useState<HTMLElement | null>(null);
   const [actions, setActions] = useState<HTMLElement | null>(null);
-  const slots = useMemo(() => ({ crumbs, actions }), [crumbs, actions]);
+  // A phone has no top bar: its pages draw the way back and these controls themselves
+  const trailing = useMemo(() => (phone ? <PhoneChrome /> : null), [phone]);
+  const slots = useMemo(() => ({ crumbs, actions, phone, trailing }), [crumbs, actions, phone, trailing]);
 
   const counts: Partial<Record<AppKey, RailCount>> = {
     approvals: alert(drafts.length, rail.okBadge),
@@ -58,9 +61,11 @@ export function Shell() {
           </div>
         )}
         <div className={styles.main}>
-          <div className={styles.topBar}>
-            <ShellTopBar brand={brand} crumbsRef={setCrumbs} actionsRef={setActions} />
-          </div>
+          {phone ? null : (
+            <div className={styles.topBar}>
+              <ShellTopBar crumbsRef={setCrumbs} actionsRef={setActions} />
+            </div>
+          )}
           <div className={styles.banners}>
             <ShellBanners />
           </div>
@@ -73,7 +78,7 @@ export function Shell() {
             <div className={styles.tabs}>
               <BottomTabs onMore={() => setMoreOpen(true)} moreOpen={sheetOpen} waiting={drafts.length} />
             </div>
-            <MoreSheet open={sheetOpen} onClose={() => setMoreOpen(false)} />
+            <MoreSheet open={sheetOpen} onClose={() => setMoreOpen(false)} counts={counts} />
           </>
         ) : null}
       </div>

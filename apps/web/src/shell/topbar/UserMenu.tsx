@@ -10,9 +10,9 @@ import { useIsPhone } from '../useIsPhone.ts';
 import styles from './UserMenu.module.css';
 
 /**
- * The signed-in person. `rail` is the foot of the left rail (initials, name and role, the menu opening upward);
- * `bar` is the phone's top bar (just the initials, the menu a bottom sheet). The name is the button's accessible name
- * either way. Opens the account menu: a popover on desktop, a sheet on phone.
+ * The signed-in person. `rail` is the foot of the left rail (initials, name and role, the menu opening upward, the setup
+ * ring beside it); `bar` is a phone page's head (just the initials, the menu a bottom sheet). The name is the button's
+ * accessible name either way. Opens the account menu: a popover on desktop, a sheet on phone.
  */
 export function UserMenu({ variant = 'bar' }: { variant?: 'rail' | 'bar' }) {
   const me = useMe();
@@ -57,7 +57,7 @@ export function UserMenu({ variant = 'bar' }: { variant?: 'rail' | 'bar' }) {
           </span>
         ) : null}
       </Button>
-      <SetupRing />
+      {variant === 'rail' ? <SetupRing /> : null}
       {open && !phone ? (
         <div ref={popoverRef} tabIndex={-1} className={styles.popover}>
           <Card as="section" padded={false} aria-label={shell.menuLabel}>

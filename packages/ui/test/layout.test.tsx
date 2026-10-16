@@ -742,7 +742,7 @@ describe('Page', () => {
       const [crumbs, setCrumbs] = useState<HTMLElement | null>(null);
       const [actions, setActions] = useState<HTMLElement | null>(null);
       return (
-        <PageSlotsContext value={{ crumbs, actions }}>
+        <PageSlotsContext value={{ crumbs, actions, phone: false, trailing: null }}>
           <div data-testid="bar">
             <span data-testid="crumbs" ref={setCrumbs} />
             <span data-testid="actions" ref={setActions} />
@@ -758,6 +758,58 @@ describe('Page', () => {
     expect(within(screen.getByTestId('actions')).getByRole('button', { name: 'Roof' })).toBeInTheDocument();
     // Not drawn a second time inside the page
     expect(within(screen.getByRole('main')).queryByRole('navigation')).toBeNull();
+  });
+});
+
+describe('Page on a phone', () => {
+  const phone = { crumbs: null, actions: null, phone: true, trailing: <button type="button">Shell controls</button> };
+
+  it('puts the shell controls beside the title of a top-level page, and draws no trail', () => {
+    render(
+      <PageSlotsContext value={phone}>
+        <Page title="My day" eyebrow="Friday, Oct 16" crumbsLabel="Breadcrumb">
+          body
+        </Page>
+      </PageSlotsContext>,
+    );
+    const main = screen.getByRole('main', { name: 'My day' });
+    expect(within(main).getByRole('button', { name: 'Shell controls' })).toBeInTheDocument();
+    expect(within(main).getByText('Friday, Oct 16')).toBeInTheDocument();
+    expect(within(main).queryByRole('navigation')).toBeNull();
+  });
+
+  it('opens a nested page with the way back and its own controls, and without the shell controls', () => {
+    render(
+      <PageSlotsContext value={phone}>
+        <Page
+          title="Ashley Thomas"
+          crumbsLabel="Breadcrumb"
+          crumbs={[{ label: 'Jobs', href: '/jobs' }, { label: 'Ashley Thomas' }]}
+          barActions={<button type="button">More actions</button>}
+        >
+          body
+        </Page>
+      </PageSlotsContext>,
+    );
+    const main = screen.getByRole('main', { name: 'Ashley Thomas' });
+    expect(within(main).getByRole('link', { name: 'Jobs' })).toHaveAttribute('href', '/jobs');
+    expect(within(main).getByRole('button', { name: 'More actions' })).toBeInTheDocument();
+    expect(within(main).queryByRole('button', { name: 'Shell controls' })).toBeNull();
+    expect(within(main).queryByRole('navigation')).toBeNull();
+  });
+
+  it('shows the page controls without a way back when the trail has no parent', () => {
+    render(
+      <PageSlotsContext value={phone}>
+        <Page title="Measure" crumbsLabel="Breadcrumb" barActions={<button type="button">Roof</button>}>
+          body
+        </Page>
+      </PageSlotsContext>,
+    );
+    expect(screen.getByRole('button', { name: 'Roof' })).toBeInTheDocument();
+    // A top-level page: the shell controls are there too
+    expect(screen.getByRole('button', { name: 'Shell controls' })).toBeInTheDocument();
+    expect(screen.queryByRole('link')).toBeNull();
   });
 });
 

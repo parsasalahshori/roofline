@@ -1,6 +1,8 @@
 import { useContext, useId, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { cx } from '../../cx.ts';
+import { Icon } from '../../icons.tsx';
+import { UiLink } from '../../link.tsx';
 import { Breadcrumb, type BreadcrumbItem } from '../Breadcrumb/Breadcrumb.tsx';
 import styles from './Page.module.css';
 import { PageSlotsContext } from './slots.ts';
@@ -8,6 +10,8 @@ import { PageSlotsContext } from './slots.ts';
 export type PageProps = {
   /** The page's h1, and the name of its main landmark. */
   title: string;
+  /** A mono caps line over the title: the date on My day and Home. */
+  eyebrow?: ReactNode;
   /** Draws no title: the content has its own header. The h1 stays for screen readers. */
   titleHidden?: boolean;
   /** One line under the title: counts, the address, what the page is. */
@@ -18,11 +22,11 @@ export type PageProps = {
   stats?: ReactNode;
   /** A row under the head: PageTabs, a Segmented control. */
   tabs?: ReactNode;
-  /** The trail in the top bar. Left out, it is just the title. */
+  /** The trail in the top bar, and on a phone the way back (the item before the last). Left out, it is just the title. */
   crumbs?: ReadonlyArray<BreadcrumbItem>;
   /** The breadcrumb navigation's accessible name. */
   crumbsLabel: string;
-  /** Controls for the right of the top bar. */
+  /** Controls for the right of the top bar; on a phone, the right of the way-back row (the Roof / Windows switch). */
   barActions?: ReactNode;
   /** flow: the page scrolls. fill: the page is the height of the screen and its panels scroll (a board, a two-column work page). */
   layout?: 'flow' | 'fill';
@@ -33,10 +37,12 @@ export type PageProps = {
 /**
  * The main area of one screen: a titled <main> with a head, optional tabs and the body. The breadcrumb goes
  * to the top bar. There is no window and no focus trap: the rail stays reachable and Tab goes where it
- * would on any page.
+ * would on any page. On a phone there is no top bar: a nested page opens with "‹ Jobs" (and its own controls at the
+ * right), a top-level page has the shell's search, bell and person beside its title.
  */
 export function Page({
   title,
+  eyebrow,
   titleHidden = false,
   subtitle,
   actions,
@@ -52,20 +58,43 @@ export function Page({
   const titleId = useId();
   const slots = useContext(PageSlotsContext);
   const trail = <Breadcrumb label={crumbsLabel} items={crumbs ?? [{ label: title }]} />;
-  // Without a top bar to hold them (a phone, a test) the bar controls sit in the row under the head
-  const inlineBarActions = barActions && !slots.actions ? barActions : null;
+  const { phone } = slots;
+  // A phone's way back: the page above this one, when the trail has one with an address
+  const parent = phone && crumbs && crumbs.length > 1 ? crumbs[crumbs.length - 2] : undefined;
+  // Without a top bar to hold them (a test; a phone has its own row) the bar controls sit in the row under the head
+  const inlineBarActions = barActions && !slots.actions && !phone ? barActions : null;
 
   return (
-    <main aria-labelledby={titleId} className={cx(styles.page, className)} data-layout={layout}>
-      {slots.crumbs ? createPortal(trail, slots.crumbs) : <div className={styles.inlineCrumb}>{trail}</div>}
-      {barActions && slots.actions ? createPortal(barActions, slots.actions) : null}
+    <main aria-labelledby={titleId} className={cx(styles.page, className)} data-layout={layout} data-phone={phone ? 'true' : undefined}>
+      {phone ? (
+        parent || barActions ? (
+          <div className={styles.phoneBar}>
+            {parent?.href !== undefined ? (
+              <UiLink href={parent.href} className={styles.back}>
+                <Icon name="chevl" size={18} />
+                {parent.label}
+              </UiLink>
+            ) : (
+              <span />
+            )}
+            {barActions ? <div className={styles.phoneBarActions}>{barActions}</div> : null}
+          </div>
+        ) : null
+      ) : slots.crumbs ? (
+        createPortal(trail, slots.crumbs)
+      ) : (
+        <div className={styles.inlineCrumb}>{trail}</div>
+      )}
+      {!phone && barActions && slots.actions ? createPortal(barActions, slots.actions) : null}
       <div className={styles.head} data-hidden={titleHidden ? 'true' : undefined}>
         <div className={styles.titles}>
+          {eyebrow && !titleHidden ? <p className={styles.eyebrow}>{eyebrow}</p> : null}
           <h1 id={titleId} className={cx(styles.title, titleHidden && 'visually-hidden')}>
             {title}
           </h1>
           {subtitle && !titleHidden ? <p className={styles.subtitle}>{subtitle}</p> : null}
         </div>
+        {phone && !parent && slots.trailing && !titleHidden ? <div className={styles.trailing}>{slots.trailing}</div> : null}
         {actions && !titleHidden ? <div className={styles.actions}>{actions}</div> : null}
       </div>
       {stats && !titleHidden ? <div className={styles.stats}>{stats}</div> : null}

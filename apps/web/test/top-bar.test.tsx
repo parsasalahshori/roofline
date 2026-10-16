@@ -4,6 +4,7 @@ import { keys } from '../src/api/keys.ts';
 import { search } from '../src/copy/search.ts';
 import { shell } from '../src/copy/shell.ts';
 import { AgentsWorking } from '../src/shell/topbar/AgentsWorking.tsx';
+import { PhoneChrome } from '../src/shell/phone/PhoneChrome.tsx';
 import { ShellTopBar } from '../src/shell/topbar/ShellTopBar.tsx';
 import { ACCOUNT, makeTask, renderAt, SHELL_ROUTES, stubApi } from './helpers.tsx';
 
@@ -43,10 +44,8 @@ describe('agents working', () => {
   });
 });
 
-const BRAND = { name: ACCOUNT.company.name, initials: 'SR', color: null, logoUrl: null, place: 'Omaha, NE' };
-
 function bar() {
-  return <ShellTopBar brand={BRAND} crumbsRef={() => {}} actionsRef={() => {}} />;
+  return <ShellTopBar crumbsRef={() => {}} actionsRef={() => {}} />;
 }
 
 describe('top bar', () => {
@@ -68,20 +67,18 @@ describe('top bar', () => {
     expect(screen.queryByRole('button', { name: ACCOUNT.user.name })).toBeNull();
   });
 
-  it('is compact on a phone: the company mark, the pill, search, the bell and the initials', async () => {
-    vi.stubGlobal('matchMedia', (query: string) => ({ matches: true, media: query, addEventListener: () => {}, removeEventListener: () => {} }));
+  it('has no phone version: a phone draws no bar and its pages carry the controls', async () => {
     api = stubApi({
       ...SHELL_ROUTES,
       'GET /api/auth/me': () => ({ body: ACCOUNT }),
       'GET /api/approvals': () => ({ body: { count: 2, tasks: [makeTask({ id: 't1' }), makeTask({ id: 't2' })] } }),
     });
-    renderAt(bar());
-    expect(screen.getByRole('link', { name: ACCOUNT.company.name })).toHaveAttribute('href', '/');
-    expect(await screen.findByRole('link', { name: shell.needYourOk(2) })).toHaveAttribute('href', '/approvals');
+    renderAt(<PhoneChrome />);
     expect(screen.getByRole('button', { name: search.open })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: shell.notificationsLabel })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: ACCOUNT.user.name })).toBeInTheDocument();
-    // The agents and the clock leave the phone's bar
+    // Not the pill, the agents or the clock: the Today tab and the More sheet count what waits
+    expect(screen.queryByRole('link', { name: shell.needYourOk(2) })).toBeNull();
     expect(screen.queryByText(shell.agentsWorking(0))).toBeNull();
   });
 });

@@ -26,6 +26,19 @@
   width: min(300px, calc(100vw - 32px));
 }
 
+/* On a phone the badge lives in the More sheet: the panel is a card over the foot of the screen */
+@media (max-width: 767.98px) {
+  .popover {
+    position: fixed;
+    top: auto;
+    right: 16px;
+    bottom: 16px;
+    left: 16px;
+    z-index: 70;
+    width: auto;
+  }
+}
+
 /* The popover takes focus only to hold it; the buttons carry the ring */
 .popover:focus-visible {
   outline: none;
