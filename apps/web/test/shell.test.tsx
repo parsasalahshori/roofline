@@ -207,8 +207,8 @@ it('Storm window offers the storm plan', async () => {
   renderApp('/storm');
 
   expect(await screen.findByRole('link', { name: storm.approve })).toHaveAttribute('href', '/storm/plans/t1');
-  expect(screen.getByRole('heading', { level: 2, name: plan.title })).toBeInTheDocument();
-  expect(screen.getByText(plan.summary ?? '')).toBeInTheDocument();
+  // The plan is a card named by its title
+  expect(screen.getByRole('article', { name: plan.title })).toBeInTheDocument();
 });
 
 it('Storm window offers the newest of several storm plans', async () => {

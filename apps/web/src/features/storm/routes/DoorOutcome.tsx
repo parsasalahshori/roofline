@@ -51,6 +51,8 @@ function DoorOutcomeForStop({ routeId, stop }: { routeId: string; stop: DoorStop
           <Button
             key={outcome}
             size="lg"
+            // A lead is the good answer, so it takes the company's colour; the other four are plain
+            variant={outcome === 'wants_check' ? 'primary' : 'default'}
             className={styles.outcome}
             disabled={record.isPending}
             busy={pendingOutcome === outcome}

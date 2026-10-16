@@ -1,13 +1,21 @@
-import { EmptyState, ProgressBar, Skeleton } from '@roofline/ui';
+import { Button, EmptyState, ProgressBar, Skeleton, Tag, type IconName, type TagTone } from '@roofline/ui';
 import { Link } from 'react-router';
 import { doors } from '../../../copy/doors.ts';
 import { useMyRoutes } from './api.ts';
 import styles from './MyRoutes.module.css';
-import type { RouteSummary } from './types.ts';
+import type { DoorRouteStatus, RouteSummary } from './types.ts';
+
+/** A route's state as a tag: ready is the company's colour, started is blue, done is green; each has its glyph. */
+const STATUS_TAG: Record<DoorRouteStatus, { tone: TagTone; icon: IconName }> = {
+  ready: { tone: 'brand', icon: 'route' },
+  in_progress: { tone: 'info', icon: 'refresh' },
+  done: { tone: 'ok', icon: 'check' },
+};
 
 /** One route as a card: the whole card is the link, a 56px-tall target. Owner names are never shown. */
 function RouteCard({ route }: { route: RouteSummary }) {
   const progress = doors.progress(route.doneStops, route.stops);
+  const tag = STATUS_TAG[route.status];
   return (
     <li className={styles.item}>
       <Link
@@ -17,9 +25,9 @@ function RouteCard({ route }: { route: RouteSummary }) {
       >
         <span className={styles.top}>
           <span className={styles.name}>{route.name}</span>
-          <span className={styles.status} data-status={route.status}>
+          <Tag tone={tag.tone} icon={tag.icon}>
             {doors.routeStatus[route.status]}
-          </span>
+          </Tag>
         </span>
         <span className={styles.progress}>{progress}</span>
         <ProgressBar value={route.doneStops} max={route.stops} label={progress} />
@@ -46,7 +54,16 @@ export function MyRoutes() {
 
   const routes = query.data.routes;
   if (routes.length === 0) {
-    return <EmptyState title={doors.myRoutesEmpty} />;
+    return (
+      <EmptyState
+        title={doors.myRoutesEmpty}
+        action={
+          <Button variant="default" href="/storm">
+            {doors.backToStorm}
+          </Button>
+        }
+      />
+    );
   }
 
   return (

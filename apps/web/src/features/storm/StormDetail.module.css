@@ -1,54 +1,91 @@
+/* One storm: the strip of numbers over the head, then the map beside the plan, then the results */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .page {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
   min-width: 0;
 }
 
-.title {
-  margin: 0;
-  font-size: 1.5rem;
-}
-
-.size {
-  margin: 0;
-}
-
-.stats {
+.top {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) 404px;
+  gap: 14px;
+  align-items: start;
+  min-width: 0;
+}
+
+.map {
+  display: flex;
+  min-width: 0;
+  height: 440px;
 }
 
 .plan {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  gap: 14px;
+}
+
+.line {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--font-size-body);
+}
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
 .confirm {
+  max-width: 560px;
+}
+
+/* The way to dismiss is at the foot of the page: it is rarely wanted and should not be easy to hit by accident */
+.footer {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-3);
-  background: var(--surface);
 }
 
-.confirm h2,
-.confirm p {
-  margin: 0;
+@media (max-width: 1180px) {
+  .top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .map {
+    height: 380px;
+  }
 }
 
-.confirm h2 {
-  font-size: 1.125rem;
-}
+@media (max-width: 767.98px) {
+  /* The hail size across the top, the two counts side by side under it */
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  .stats > :first-child {
+    grid-column: 1 / -1;
+  }
+
+  /* The plan is the thing to decide: it goes first, and the map is a short strip under it */
+  .top {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .top > section {
+    order: 1;
+  }
+
+  .map {
+    order: 2;
+    height: 300px;
+  }
 }

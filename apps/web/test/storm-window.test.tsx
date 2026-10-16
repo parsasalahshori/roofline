@@ -1,17 +1,16 @@
-import { cleanup, screen, waitFor } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StormWindow } from '../src/features/storm/StormWindow.tsx';
 import { doors } from '../src/copy/doors.ts';
 import { storm } from '../src/copy/storm.ts';
 import { ACCOUNT, makeTask, renderAt, stubApi, SHELL_ROUTES, where } from './helpers.tsx';
 
-/** The storm plan card for one draft: the approvals list holds just that task. */
-function stubPlan(summary: string | null) {
+/** The approvals list holds these tasks and nothing else. */
+function stubPlans(tasks: ReturnType<typeof makeTask>[], role: 'owner' | 'office' | 'rep' = 'owner') {
   return stubApi({
     ...SHELL_ROUTES,
-    'GET /api/approvals': () => ({
-      body: { count: 1, tasks: [makeTask({ id: 't1', title: 'Storm plan for Maple Ridge', summary })] },
-    }),
+    'GET /api/auth/me': () => ({ body: { ...ACCOUNT, role } }),
+    'GET /api/approvals': () => ({ body: { count: tasks.length, tasks } }),
   });
 }
 
@@ -21,29 +20,39 @@ describe('StormWindow', () => {
     vi.unstubAllGlobals();
   });
 
-  it.each([
-    ['null', null],
-    ['an empty string', ''],
-  ])('a storm plan with a summary of %s shows its title and approve link and no empty paragraph', async (_label, summary) => {
-    const api = stubPlan(summary);
+  it('offers the newest storm plan as a card with its title, the facts and the approve link', async () => {
+    const api = stubPlans([
+      makeTask({ id: 't1', title: 'Storm plan for Maple Ridge', createdAt: '2026-10-12T09:00:00.000Z' }),
+      makeTask({ id: 't2', title: 'Storm plan for Oak Park', createdAt: '2026-10-13T09:00:00.000Z' }),
+    ]);
     renderAt(<StormWindow />);
 
-    expect(await screen.findByText('Storm plan for Maple Ridge')).toBeInTheDocument();
-    const approve = screen.getByRole('link', { name: storm.approve });
-    expect(approve).toHaveAttribute('href', '/storm/plans/t1');
-    const card = screen.getByRole('region', { name: storm.planHeading });
-    expect(card.querySelectorAll('p')).toHaveLength(0);
+    const card = await screen.findByRole('article', { name: 'Storm plan for Oak Park' });
+    const region = screen.getByRole('region', { name: storm.planHeading });
+    expect(region).toContainElement(card);
+    // The newest is the one on offer; the older one is a line under it
+    expect(screen.queryByRole('article', { name: 'Storm plan for Maple Ridge' })).toBeNull();
+    expect(within(card).getByRole('link', { name: storm.approve })).toHaveAttribute('href', '/storm/plans/t2');
+    expect(within(region).getByText('1 more plan needs your OK')).toBeInTheDocument();
     expect(api.unexpected).toEqual([]);
   });
 
-  it('a storm plan with a summary shows it', async () => {
-    const api = stubPlan('Hail hit 120 homes.');
+  it('only counts plans from Storm Scout', async () => {
+    stubPlans([makeTask({ id: 't1', agent: 'scheduler', title: 'Rain on the install day' })]);
     renderAt(<StormWindow />);
 
-    expect(await screen.findByText('Hail hit 120 homes.')).toBeInTheDocument();
-    const card = screen.getByRole('region', { name: storm.planHeading });
-    expect(card.querySelectorAll('p')).toHaveLength(1);
-    expect(api.unexpected).toEqual([]);
+    expect(await screen.findByText(storm.noPlanWaiting)).toBeInTheDocument();
+    expect(screen.getByText(storm.noPlanWaitingHelp)).toBeInTheDocument();
+    expect(screen.queryByRole('article')).toBeNull();
+  });
+
+  it('shows no plan to a rep: plans are for the owner and office', async () => {
+    const api = stubPlans([makeTask({ id: 't1', title: 'Storm plan for Maple Ridge' })], 'rep');
+    renderAt(<StormWindow />);
+
+    expect(await screen.findByText(storm.noPlanWaiting)).toBeInTheDocument();
+    expect(screen.queryByRole('article')).toBeNull();
+    await waitFor(() => expect(api.count('GET /api/storms')).toBeGreaterThan(0));
   });
 
   it.each(['owner', 'rep'] as const)('links to My routes for a %s', async (role) => {

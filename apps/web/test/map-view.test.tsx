@@ -197,11 +197,11 @@ function lastMap() {
   return map;
 }
 
-function renderMap() {
+function renderMap(props: { pins?: boolean } = {}) {
   const onOpen = vi.fn();
   const view = render(
     <Providers client={createQueryClient()}>
-      <MapView onOpen={onOpen} />
+      <MapView onOpen={onOpen} {...props} />
     </Providers>,
   );
   return { ...view, onOpen };
@@ -454,6 +454,24 @@ describe('MapView', () => {
     const group = screen.getByRole('group', { name: mapCopy.layersLabel });
     expect(within(group).getByRole('button', { name: mapCopy.jobsLayer })).toHaveAttribute('aria-pressed', 'true');
     expect(within(group).getByRole('button', { name: mapCopy.hailLayer })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('starts with the Jobs layer off when asked: the switch is not pressed, the pins are hidden once the style loads, the pin key is not drawn', async () => {
+    const user = userEvent.setup();
+    renderMap({ pins: false });
+    const map = lastMap();
+    act(() => {
+      map.emit('style.load');
+    });
+    expect(screen.getByRole('button', { name: mapCopy.jobsLayer })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: mapCopy.hailLayer })).toHaveAttribute('aria-pressed', 'true');
+    expect(map.setLayoutProperty).toHaveBeenCalledWith('jobs', 'visibility', 'none');
+    expect(screen.queryByTestId('pin-legend')).toBeNull();
+
+    // And the switch still brings them
+    await user.click(screen.getByRole('button', { name: mapCopy.jobsLayer }));
+    expect(screen.getByRole('button', { name: mapCopy.jobsLayer })).toHaveAttribute('aria-pressed', 'true');
+    expect(map.setLayoutProperty).toHaveBeenCalledWith('jobs', 'visibility', 'visible');
   });
 
   it('the Jobs switch hides every pin and cluster, and brings them back', async () => {

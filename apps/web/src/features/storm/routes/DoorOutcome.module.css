@@ -2,16 +2,21 @@
 .panel {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
 }
 
+/* A mono caps eyebrow: the question, then its answers */
 .heading {
   margin: 0;
-  font-size: 1rem;
-  color: var(--ink);
+  color: var(--ink-3);
+  font: 600 var(--font-size-min)/1.2 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .buttons {
@@ -31,12 +36,13 @@
   overflow-wrap: anywhere;
 }
 
+/* A refusal or a network failure, in words, beside its colour */
 .alert {
   margin: 0;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-3);
-  background: var(--surface-2);
-  color: var(--ink);
+  padding: 10px 12px;
+  border-radius: var(--r-2);
+  background: var(--bad-tint);
+  color: var(--bad-text);
+  font-size: var(--font-size-body);
   overflow-wrap: anywhere;
 }

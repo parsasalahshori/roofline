@@ -47,7 +47,10 @@ test('storm plan in 2 clicks', async ({ page, loginAs, markTodaySeen, scenario, 
   const textsSent = grid.locator('dl').filter({ has: page.getByText('Texts sent', { exact: true }) });
   await expect(textsSent).toBeVisible();
   await expect(textsSent.locator('dd').first()).not.toHaveText('0');
-  await expect(grid.getByText(/^Ad spend \$/)).toBeVisible();
+  // The ad spend is a tile of its own: the money out so far, and the budget it may reach
+  const adSpend = grid.locator('dl').filter({ has: page.getByText('Ad spend', { exact: true }) });
+  await expect(adSpend).toBeVisible();
+  await expect(adSpend.getByText(/^of \$[\d,.]+ budget$/)).toBeVisible();
 });
 
 test('office approves messages, owner approves spend', async ({
@@ -83,4 +86,36 @@ test('office approves messages, owner approves spend', async ({
   await page.getByRole('button', { name: /^Approve 2 steps · up to \$/ }).click();
   await expect(row(page, google)).toContainText('Done', { timeout: 60_000 });
   await expect(row(page, meta)).toContainText('Done', { timeout: 60_000 });
+});
+
+test('the Storm page: the plan waiting for a yes, the storms in a table, and a way into one storm', async ({
+  page,
+  loginAs,
+  markTodaySeen,
+  scenario,
+}) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/storm');
+
+  const main = page.getByRole('main', { name: 'Storm', exact: true });
+  await expect(main.getByRole('heading', { level: 1, name: 'Storm' })).toBeVisible();
+  await expect(main.getByRole('link', { name: 'My routes' })).toHaveAttribute('href', '/storm/routes');
+  // The plan Storm Scout drafted is a card with the one button that opens its review
+  const card = main.getByRole('article');
+  await expect(card.getByRole('link', { name: 'Approve storm plan' })).toBeVisible({ timeout: 20_000 });
+
+  // The storm is a row: where, how big, how many it hit, and where the plan stands
+  const table = main.getByRole('region', { name: 'Storms in your area' }).getByRole('table');
+  const storm = table.getByRole('row').filter({ hasText: 'Omaha, NE' });
+  await expect(storm).toBeVisible();
+  // The fixture storm has no plan of its own: the card above is the showcase plan, not this storm's
+  await expect(storm.getByText('No plan yet')).toBeVisible();
+  await storm.getByRole('link', { name: 'See this storm' }).click();
+
+  await expect(page).toHaveURL(new RegExp('/storm/' + scenario.companyStormId + '$'));
+  await expect(page.getByRole('heading', { level: 1, name: 'Omaha, NE' })).toBeVisible({ timeout: 20_000 });
+  // The trail back, the numbers, and the results under the map
+  await expect(page.getByRole('main').getByRole('navigation', { name: 'Breadcrumb' }).or(page.getByRole('banner').getByRole('navigation', { name: 'Breadcrumb' })).first()).toContainText('Storm');
+  await expect(page.getByRole('heading', { name: 'Results so far' })).toBeVisible();
 });

@@ -34,6 +34,8 @@ export type MapViewProps = {
    * decides); without it, a click on the map never looks for a roof.
    */
   onEstimate?: (measurementId: string) => void;
+  /** Whether the Jobs layer starts on (the default) or off. The switch over the map still turns it either way. */
+  pins?: boolean;
 };
 
 /** A roof picked on the map: the building under the click, and where the click was. */
@@ -86,7 +88,7 @@ function summarize(result: PinsResult | undefined): string {
  * The map: a MapLibre map that fills the panel it is put in, with customer and job pins and the hail layer. The
  * instance lives in a ref, not in state, so moving the map never re-renders the page. It follows the page's theme.
  */
-export function MapView({ onOpen, onEstimate }: MapViewProps) {
+export function MapView({ onOpen, onEstimate, pins: pinsAtStart = true }: MapViewProps) {
   const mapRef = useRef<MapLibreMap | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   // False from the moment a style is swapped until its style.load arrives: the sources are gone until then.
@@ -105,8 +107,8 @@ export function MapView({ onOpen, onEstimate }: MapViewProps) {
   const hailOnRef = useRef(true);
   const hailToggled = useRef(false);
   // The Jobs switch: every pin and cluster, on or off
-  const [pinsOn, setPinsOn] = useState(true);
-  const pinsOnRef = useRef(true);
+  const [pinsOn, setPinsOn] = useState(pinsAtStart);
+  const pinsOnRef = useRef(pinsAtStart);
   const pinsToggled = useRef(false);
   const stormRef = useRef<StormLayerResponse | undefined>(undefined);
   const [failed, setFailed] = useState(false);

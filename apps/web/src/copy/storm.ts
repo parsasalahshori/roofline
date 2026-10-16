@@ -35,8 +35,35 @@ export const storm = {
   noPlan: 'No plan yet',
   dismissed: 'Dismissed',
 
+  /** The storms table: heads, the count beside the title, and the card that stands in when no plan waits. */
+  count: (n: number) => (n === 1 ? '1 storm' : `${n} storms`),
+  colStorm: 'Storm',
+  colHail: 'Hail',
+  colCustomers: 'Customers hit',
+  colHomes: 'Homes hit',
+  colPlan: 'Plan',
+  colActions: 'Actions',
+  hailUnit: 'in',
+  radarNote: 'Hail sizes are estimated from radar.',
+  noPlanWaiting: 'No storm plan is waiting for you',
+  noPlanWaitingHelp: 'When hail crosses your area, Storm Scout drafts a plan here for your OK.',
+  /** The name of the card with the swaths while the Storm page is open. */
+  mapPanelLabel: 'Hail in your area',
+
   /** Storm detail. */
   detailHeading: 'Storm details',
+  crumbStorm: 'Storm',
+  hailSizeLabel: 'Hail size',
+  /** The word under the size in the strip: how big that is in a hand, then where the number comes from. */
+  hailSizeMeta: (name: string) => `${name} · from radar`,
+  /** Under the customers and homes hit: where they are. */
+  insideSwath: 'Inside the swath',
+  planPanelTitle: 'The plan',
+  planPanelNone: 'No plan has been made for this storm yet.',
+  planPanelWaiting: 'Storm Scout drafted a plan. It sends nothing until you say yes.',
+  planPanelRunning: 'The plan is running. The numbers below update every minute.',
+  planPanelDone: 'The plan has run.',
+  planPanelOver: 'The last plan is over. You can draft a new one.',
   notFound: 'We could not find that storm.',
   mapLabel: 'Map of where hail fell (radar-estimated)',
   planHeadingDetail: 'The plan',
@@ -60,7 +87,9 @@ export const storm = {
   unsubscribes: 'Unsubscribes',
   doorsKnocked: 'Doors knocked',
   wantsCheck: 'Want a check',
-  adSpend: (spent: string, max: string) => `Ad spend ${spent} of ${max}`,
+  adSpendLabel: 'Ad spend',
+  /** Under the spend: the most the ads may cost. */
+  adSpendOf: (max: string) => `of ${max} budget`,
   adClicks: 'Ad clicks',
   landingRequests: 'Landing page requests',
   inspectionsBooked: 'Inspections booked',

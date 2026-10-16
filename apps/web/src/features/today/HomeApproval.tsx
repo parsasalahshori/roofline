@@ -22,6 +22,12 @@ export type HomeApprovalProps = {
   task: TaskView;
   /** How many more are waiting after it: a line under the card points at them. */
   more: number;
+  /** Where Review and Edit go: the plan's review screen by default. The Storm page opens the storm's own review. */
+  href?: string;
+  /** The words on the main button when it opens the review (a longer plan). */
+  reviewLabel?: string;
+  /** Where the line under the card sends the rest. */
+  seeAllHref?: string;
 };
 
 /**
@@ -30,7 +36,7 @@ export type HomeApprovalProps = {
  * its review screen, where its steps can be read, changed and switched. Not now asks for an optional reason in the same
  * sheet the review screen uses.
  */
-export function HomeApproval({ task, more }: HomeApprovalProps) {
+export function HomeApproval({ task, more, href: reviewHref, reviewLabel = home.review, seeAllHref = '/approvals' }: HomeApprovalProps) {
   const toast = useToast();
   const approve = useApprove(task.id);
   const decline = useDecline(task.id);
@@ -40,7 +46,7 @@ export function HomeApproval({ task, more }: HomeApprovalProps) {
   // Set at once on a click, so a fast second tap does nothing
   const approving = useRef(false);
 
-  const href = '/approvals/' + encodeURIComponent(task.id);
+  const href = reviewHref ?? '/approvals/' + encodeURIComponent(task.id);
   const agent = AGENT_LABEL[task.agent];
   const quick = canQuickApprove(task);
 
@@ -86,7 +92,7 @@ export function HomeApproval({ task, more }: HomeApprovalProps) {
         tag={home.approvalTag}
         title={task.title}
         facts={approvalFacts(task)}
-        approve={quick ? { label: home.approve, onClick: onApprove, busy: approve.isPending } : { label: home.review, href }}
+        approve={quick ? { label: home.approve, onClick: onApprove, busy: approve.isPending } : { label: reviewLabel, href }}
         // A longer plan has one place to read and change it, and that is what Review opens: no second button for it
         {...(quick && { edit: { label: home.edit, href } })}
         later={{ label: home.notNow, onClick: () => setNotNowOpen(true) }}
@@ -96,7 +102,7 @@ export function HomeApproval({ task, more }: HomeApprovalProps) {
       {more > 0 ? (
         <p className={styles.more}>
           <span>{home.moreWaiting(more)}</span>
-          <Button size="sm" variant="ghost" href="/approvals">
+          <Button size="sm" variant="ghost" href={seeAllHref}>
             {home.seeAll}
           </Button>
         </p>

@@ -1,66 +1,171 @@
-/* The storm plan card under the coming-soon line: a column of its heading, its summary and its button. */
-.plan {
+/* The Storm page: the map and the plan side by side, the storms underneath. The page scrolls. */
+.top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 404px;
+  gap: 14px;
+  min-width: 0;
+}
+
+.map {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 16px;
+  min-width: 0;
+  height: 380px;
 }
 
-.plan h2 {
-  margin: 0;
-  font-size: 1.125rem;
-}
-
-.plan p {
-  margin: 0;
-}
-
-/* The storms list: a column of cards that never needs a sideways scroll. */
-.list {
+.side {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  margin-top: 16px;
   min-width: 0;
 }
 
-.row {
+.plan {
+  min-width: 0;
+}
+
+.help {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: var(--font-size-body);
+}
+
+.noPlan {
+  align-self: stretch;
+}
+
+/* Where the storm was, and when */
+.place {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
 }
 
-.row p {
-  margin: 0;
-}
-
-.place {
-  margin: 0;
-  font-size: 1.125rem;
+.place b {
+  font: 650 15px/1.25 var(--f-ui);
   overflow-wrap: anywhere;
 }
 
 .day {
   color: var(--ink-3);
+  font: 500 var(--font-size-min)/1.2 var(--f-mono);
+}
+
+/* How big: a swatch in the key's colour, the number in mono, what it is in a hand */
+.hail {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.swatch {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px var(--line-2);
 }
 
 .size {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.size b {
+  font-size: 15px;
   font-weight: 600;
+}
+
+.unit {
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
+}
+
+.name {
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
 }
 
 .actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
-  margin-top: 8px;
 }
 
-/* The My routes link sits above everything else in the window. */
-.routes {
+.note {
+  margin: 0;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
+}
+
+/* A phone: one block per storm */
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.item:last-child {
+  border-bottom: 0;
+}
+
+.itemHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  align-self: stretch;
+}
+
+.facts {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--font-size-body);
+}
+
+.item .actions {
   justify-content: flex-start;
-  margin-bottom: 8px;
+}
+
+@media (max-width: 1180px) {
+  .top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .map {
+    height: 360px;
+  }
+}
+
+/* The plan comes first on a phone: it is the thing to decide. The map under it is a short strip. */
+@media (max-width: 767.98px) {
+  .top {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .side {
+    order: 1;
+  }
+
+  .map {
+    order: 2;
+    height: 340px;
+  }
 }

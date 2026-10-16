@@ -1,7 +1,7 @@
-/* The routes list: one column that narrows to the phone without a horizontal scroll */
+/* The routes list: cards in as many columns as fit, one column on a phone, never a sideways scroll */
 .list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
   gap: 12px;
   width: 100%;
   min-width: 0;
@@ -24,19 +24,23 @@
 .card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
   min-height: 56px;
-  padding: 12px;
-  border: 1px solid var(--line);
+  padding: 14px 16px;
   border-radius: var(--r-3);
   background: var(--surface);
+  box-shadow: var(--e-1);
   color: var(--ink);
   font-family: var(--f-ui);
   font-size: var(--font-size-body);
   text-decoration: none;
+}
+
+.card:hover {
+  background: var(--surface-2);
 }
 
 .card:focus-visible {
@@ -55,39 +59,13 @@
 
 .name {
   min-width: 0;
+  font: 700 15px/1.25 var(--f-display);
+  font-stretch: 110%;
   overflow-wrap: anywhere;
-  font-weight: 600;
-}
-
-/* A status label; a span rather than a Pill, which would be a button inside this link */
-.status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 24px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface-2);
-  color: var(--ink);
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.status::before {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--brand);
-}
-
-.status[data-status="done"]::before {
-  background: var(--ok);
 }
 
 .progress {
   color: var(--ink-3);
-  font-size: var(--font-size-body);
+  font: 500 13px/1.2 var(--f-mono);
   overflow-wrap: anywhere;
 }

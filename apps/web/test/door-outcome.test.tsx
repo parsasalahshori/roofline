@@ -71,6 +71,15 @@ describe('simple outcomes', () => {
 });
 
 describe('the five outcome buttons', () => {
+  it('draws a lead in the company colour and the other four plain', () => {
+    api = stubApi({});
+    renderAt(<DoorOutcome routeId="r1" stop={FIRST} />);
+
+    const variant = (outcome: DoorOutcomeKey) => screen.getByRole('button', { name: doors.outcomes[outcome] }).getAttribute('data-variant');
+    expect(variant('wants_check')).toBe('primary');
+    for (const outcome of ['not_home', 'not_interested', 'has_roofer', 'do_not_knock'] as const) expect(variant(outcome)).toBe('default');
+  });
+
   it('shows five 48px buttons in the order of the outcomes', () => {
     api = stubApi({});
     renderAt(<DoorOutcome routeId="r1" stop={FIRST} />);

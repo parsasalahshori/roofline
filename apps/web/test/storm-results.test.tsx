@@ -30,12 +30,26 @@ describe('StormResults', () => {
       [storm.adClicks, '90'], [storm.landingRequests, '5'], [storm.inspectionsBooked, '2'],
     ];
     for (const [label, value] of expected) expect(valueOf(label)).toBe(value);
-    expect(screen.getByText(storm.adSpend('$120.00', '$270.00'))).toBeTruthy();
+    // Counts read with their thousands separator
+    cleanup();
+    render(<StormResults results={{ ...FULL, textsSent: 1280 }} running={false} />);
+    expect(valueOf(storm.textsSent)).toBe('1,280');
+    cleanup();
+    render(<StormResults results={FULL} running={false} />);
+    // The spend is a tile of its own: what has gone out, and the most the ads may cost
+    expect(valueOf(storm.adSpendLabel)).toBe('$120.00');
+    expect(screen.getByText(storm.adSpendOf('$270.00'))).toBeTruthy();
     expect(region.getAttribute('aria-live')).toBeNull();
   });
 
   it('shows the empty line when nothing happened and nothing runs', () => {
     render(<StormResults results={ZERO} running={false} />);
+    expect(screen.getByText(storm.resultsEmpty)).toBeTruthy();
+    expect(screen.queryByTestId('storm-results-grid')).toBeNull();
+  });
+
+  it('has no results yet when only the ad budget is set: a budget is a ceiling, not a result', () => {
+    render(<StormResults results={{ ...ZERO, adMaxCents: 27000 }} running={false} />);
     expect(screen.getByText(storm.resultsEmpty)).toBeTruthy();
     expect(screen.queryByTestId('storm-results-grid')).toBeNull();
   });

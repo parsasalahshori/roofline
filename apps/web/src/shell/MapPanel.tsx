@@ -10,8 +10,9 @@ const MapView = lazy(() => import('./map/MapView.tsx').then((m) => ({ default: m
 /**
  * The map, framed as a panel. Home and Storm hold it; no other page has a map behind it. It fills whatever box its
  * parent gives it (a height or a flex share). Overlays (the storm callout) are its children and sit over the map.
+ * `pins` says whether the Jobs layer starts on: Home shows everything, Storm starts on the hail alone.
  */
-export function MapPanel({ children }: { children?: ReactNode }) {
+export function MapPanel({ children, pins }: { children?: ReactNode; pins?: boolean }) {
   const me = useMe();
   const navigate = useNavigate();
   const companyId = me.data?.company.id ?? 'none';
@@ -24,6 +25,7 @@ export function MapPanel({ children }: { children?: ReactNode }) {
       <MapErrorBoundary key={companyId}>
         <Suspense fallback={<div className={styles.loading} aria-hidden="true" />}>
           <MapView
+            {...(pins !== undefined && { pins })}
             onOpen={(target) => void navigate((target.kind === 'customer' ? '/customers/' : '/jobs/') + encodeURIComponent(target.id))}
             onEstimate={
               canEstimateRoof
