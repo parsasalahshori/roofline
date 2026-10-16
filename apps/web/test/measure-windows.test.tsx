@@ -15,7 +15,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { liftMeasure } from '../src/copy/liftMeasure.ts';
-import { measureWindows as copy } from '../src/copy/measureWindows.ts';
+import { measureWindows as copy, windowPhotos as windowPhotosCopy } from '../src/copy/measureWindows.ts';
 import { wholeDollars } from '../src/features/measure/lift/proposalLines.ts';
 import { forgetRevealed } from '../src/features/measure/lift/scan.ts';
 import {
@@ -80,6 +80,8 @@ function view(over: Partial<WindowMeasurementView> = {}): WindowMeasurementView 
     needsReview: { reasons: ['estimated-from-size'] },
     adjustments: { excludedWindowIds: [], manualCounts: {}, marked: [] },
     tookMs: 3900,
+    // Most tests here drive the Street View tools; the server's default is off (see 'Street View tools off').
+    photoTools: true,
     ...over,
   };
 }
@@ -303,7 +305,11 @@ describe('Measure windows: the card', () => {
     expect(within(c).getByText(copy.fromWalls)).toBeTruthy();
     expect(within(c).getByText(copy.about)).toBeTruthy();
     expect(c.querySelector('[data-stat="windows"]')?.textContent).toBe('15');
-    expect(within(c).getByText(new RegExp(copy.wallsBasis(196, 9.2, 1, 1803)))).toBeTruthy();
+    // Each fact once (it used to repeat itself: the walls, then the server's own sentence about the same walls).
+    const basis = c.querySelector('[data-fact="basis"] dd')!.textContent!;
+    expect(basis).toBe('196 ft of wall, 1 floor (from the height map), eaves 9 ft up. About 15 windows');
+    expect(basis.match(/196 ft/g)).toHaveLength(1);
+    expect(c.querySelector('[data-fact="floors"] dd')?.textContent).toBe('1 floor (from the height map)');
     expect(within(c).getByRole('columnheader', { name: copy.estimatedAll })).toBeTruthy();
     const row = (cls: string) => c.querySelector(`[data-size-class="${cls}"]`)!;
     expect([...row('standard').querySelectorAll('td')].map((td) => td.textContent)).toEqual(['0', '9', '9']);
@@ -359,6 +365,70 @@ describe('Measure windows: the card', () => {
   it('no stand-in banner for the default (no detector)', async () => {
     await open();
     expect(document.querySelector('[data-stand-in]')).toBeNull();
+  });
+});
+
+describe('Measure windows: Street View tools off (the default)', () => {
+  // As the server answers with WINDOWS_STREET_VIEW_TOOLS off: no wall drawn on the photo, photoTools false.
+  const off = (over: Partial<WindowMeasurementView> = {}) => open({ photoTools: false, photos: [photo({ wallOverlay: undefined })], ...over });
+
+  it('keeps the photo as an "is this the right house?" picture with its date; no wall, no marking, no ruler', async () => {
+    await off();
+    expect(screen.getByText(copy.rightHouse)).toBeTruthy();
+    expect(screen.getByText(copy.imageryCaptured('Jun 2025'))).toBeTruthy();
+    expect(screen.queryByRole('img', { name: copy.wallOutlineLabel })).toBeNull();
+    expect(document.querySelector('[data-fit="good"], [data-fit="off"], [data-fit="unknown"]')).toBeNull();
+    // The review note points at on-site photos, not at marking the street photo.
+    expect(within(card()).getByText(copy.estimatedFromSizeNoTools)).toBeTruthy();
+    expect(within(card()).queryByText(copy.foundBy.none)).toBeNull();
+    adjust();
+    expect(document.querySelector('[data-wall-corner]')).toBeNull();
+    expect(screen.queryByRole('heading', { name: copy.wallTitle })).toBeNull();
+    expect(screen.queryByRole('heading', { name: copy.markTitle })).toBeNull();
+    expect(screen.queryByRole('button', { name: copy.markStart })).toBeNull();
+    expect(document.querySelector('[data-ruler-panel]')).toBeNull();
+    // On-site photos stay.
+    expect(screen.getAllByRole('button', { name: windowPhotosCopy.add }).length).toBeGreaterThan(0);
+  });
+
+  it('even a stale wall on the photo and a "walls" review are not shown', async () => {
+    await open({ photoTools: false, needsReview: { reasons: ['estimated-from-size'] } });
+    expect(screen.queryByRole('img', { name: copy.wallOutlineLabel })).toBeNull();
+    expect(document.querySelector('[data-fit="good"], [data-fit="off"], [data-fit="unknown"]')).toBeNull();
+  });
+});
+
+describe('Measure windows: floors and ranges', () => {
+  it('shows an unsure count as a range, most likely in between, and says where the floors came from', async () => {
+    await open({
+      stories: 2,
+      walls: { perimeterFt: 220, wallHeightFt: 19.4, wallAreaSqFt: 4268, frontWallFt: 58, windowWallSqFt: 3240, lowWingFt: 40, floorsFrom: 'height-map', outlineFrom: 'footprint' },
+      estimated: { covers: 'all-sides', bySizeClass: { small: 5, standard: 17, large: 3, picture: 1 }, range: { low: 26, high: 29 }, basis: 'x' },
+    });
+    const c = card();
+    expect(c.querySelector('[data-stat="windows"]')?.textContent).toBe(copy.range(26, 29));
+    expect(within(c).getByText(copy.mostLikely(26))).toBeTruthy();
+    expect(c.querySelector('[data-fact="floors"] dd')?.textContent).toBe('2 floors (from the height map)');
+    const basis = c.querySelector('[data-fact="basis"] dd')!.textContent!;
+    expect(basis).toBe(
+      '220 ft of wall, 2 floors (from the height map), eaves 19 ft up. 40 ft of a low one-storey wing (likely a garage or porch) left out. About 26 to 29 windows, most likely 26',
+    );
+  });
+
+  it('no height data: "1 floor (assumed)", and no eave height', async () => {
+    await open({ stories: null, walls: { perimeterFt: 196, wallHeightFt: 9, wallAreaSqFt: 1764, frontWallFt: 58, floorsFrom: 'assumed' } });
+    expect(card().querySelector('[data-fact="floors"] dd')?.textContent).toBe('1 floor (assumed: no height data)');
+    expect(card().querySelector('[data-fact="basis"] dd')?.textContent).toBe('196 ft of wall, 1 floor (assumed: no height data). About 15 windows');
+  });
+
+  it('a storey and a half reads 1.5 floors', async () => {
+    await open({ stories: 1.5 });
+    expect(card().querySelector('[data-fact="floors"] dd')?.textContent).toBe('1.5 floors (from the height map)');
+  });
+
+  it('an outline from Google’s roof says so', async () => {
+    await open({ walls: { perimeterFt: 196, wallHeightFt: 9.2, wallAreaSqFt: 1803, frontWallFt: 58, outlineFrom: 'google-roof', floorsFrom: 'height-map' } });
+    expect(card().querySelector('[data-fact="basis"] dd')?.textContent).toContain('Outline from Google’s roof');
   });
 });
 

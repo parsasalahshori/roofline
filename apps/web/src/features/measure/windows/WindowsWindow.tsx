@@ -294,6 +294,9 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
     });
   };
 
+  // The Street View tools (WINDOWS_STREET_VIEW_TOOLS, off by default): the wall drawn on the photo, its corners, marking
+  // windows on it and the door ruler. Off, the photo is a read-only "is this the right house?" picture.
+  const tools = v.photoTools === true;
   const photos = v.photos;
   const photo = photos[Math.min(photoIndex, photos.length - 1)] ?? null;
   const shown = useMemo(() => shownWindows(v, adj.marked), [v, adj.marked]);
@@ -307,7 +310,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
   const excluded = useMemo(() => new Set(adj.excludedWindowIds), [adj.excludedWindowIds]);
   const numbers = useMemo(() => new Map(shown.map((w, i) => [w.id, i + 1])), [shown]);
   const corners: Corners | null =
-    photo === null ? null : adj.wallCorners?.photoId === photo.id ? adj.wallCorners.corners : (photo.wallOverlay?.corners ?? null);
+    photo === null || !tools ? null : adj.wallCorners?.photoId === photo.id ? adj.wallCorners.corners : (photo.wallOverlay?.corners ?? null);
 
   const version = JSON.stringify([v.adjustments, v.windows.map((w) => `${w.id}:${w.sizeClass}`), v.estimated?.bySizeClass ?? null]);
   const preview = useWindowPreview(v.id, version);
@@ -414,7 +417,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
           .filter((r) => r !== 'stand-in-detector')
           .map((r) => (
             <span key={r} className={cardStyles.reason} data-reason={r}>
-              {copy.reviewReason[r]}
+              {!tools && r === 'estimated-from-size' ? copy.estimatedFromSizeNoTools : copy.reviewReason[r]}
             </span>
           ))}
       </div>
@@ -427,7 +430,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
           {windowPhotos.add}
         </Button>
       </section>
-      {corners !== null && photo !== null ? (
+      {tools && corners !== null && photo !== null ? (
         <section className={frame.panel} aria-labelledby={`wall-${v.id}`}>
           <h3 id={`wall-${v.id}`} className={frame.title}>
             {copy.wallTitle}
@@ -440,7 +443,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
           ) : null}
         </section>
       ) : null}
-      {photo !== null ? (
+      {tools && photo !== null ? (
         <section className={frame.panel} aria-labelledby={`mark-${v.id}`}>
           <h3 id={`mark-${v.id}`} className={frame.title}>
             {copy.markTitle}
@@ -464,7 +467,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
           <p className={frame.hint}>{copy.zoomHint}</p>
         </section>
       ) : null}
-      {photo !== null ? (
+      {tools && photo !== null ? (
         <RulerPanel
           id={v.id}
           ruler={adj.ruler}
@@ -530,7 +533,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
   );
 
   const fitChip =
-    overlay !== undefined && done ? (
+    tools && overlay !== undefined && done ? (
       <div className={styles.fitChip} data-fit={overlay.fit} role="status">
         {overlay.fit === 'good' ? (
           <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
@@ -557,8 +560,13 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
               <span className={styles.chip} data-tone={scan.phase === 'scanning' || patch.isPending ? 'measuring' : undefined}>
                 {scan.phase === 'scanning' ? copy.measuringChip : captured !== null ? copy.imageryCaptured(captured) : copy.imageryPlain}
               </span>
+              {!tools && photo !== null && done ? (
+                <span className={styles.chip} data-right-house="">
+                  {copy.rightHouse}
+                </span>
+              ) : null}
               {fitChip}
-              {v.ruler != null && done ? (
+              {tools && v.ruler != null && done ? (
                 <span className={styles.chip} data-ruler-chip="" role="status">
                   {copy.rulerUsed(rulerWords(v.ruler).kind, rulerWords(v.ruler).size)}
                 </span>
@@ -612,8 +620,8 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
               corners={corners}
               scan={scan}
               edit={edit}
-              ruler={adj.ruler !== null && adj.ruler.photoId === photo.id ? adj.ruler : null}
-              rulerLabel={adj.ruler !== null ? copy.rulerBoxLabel(rulerWords(adj.ruler).kind, rulerWords(adj.ruler).size) : null}
+              ruler={tools && adj.ruler !== null && adj.ruler.photoId === photo.id ? adj.ruler : null}
+              rulerLabel={tools && adj.ruler !== null ? copy.rulerBoxLabel(rulerWords(adj.ruler).kind, rulerWords(adj.ruler).size) : null}
             />
           ) : (
             <div className={styles.photoArea}>
@@ -645,6 +653,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
               panels={panels}
               notes={notes}
               captured={captured}
+              tools={tools}
               fromPhotos={adj.photosCoverAllWindows}
               onAddPhotos={() => setFlowAt({ step: 'capture' })}
               photos={
