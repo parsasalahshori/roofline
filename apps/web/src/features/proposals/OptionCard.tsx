@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { ADD_ON_UNITS, materialNames, priceTier, toSurfaceArea } from '@roofline/shared';
-import type { AddOn, MeasuredQuantities, MeasurementKind, Pricebook, ProposalOptionView, Scope, Tier } from '@roofline/shared';
+import type { AddOn, MeasuredQuantities, MeasurementKind, Pricebook, ProposalOptionView, Scope } from '@roofline/shared';
 import { Button, Field, Icon, IconButton, Listbox, Table, Tag, Td, Th, Toggle, Tr } from '@roofline/ui';
 import { proposals } from '../../copy/proposals.ts';
 import type { OptionPatch } from './api.ts';
+import { RECOMMENDED_TIER } from './tiers.ts';
 import styles from './OptionCard.module.css';
 
 export type OptionCardProps = {
@@ -71,9 +72,6 @@ const signatureOf = (option: ProposalOptionView): string =>
 
 const unitOptions = ADD_ON_UNITS.map((unit) => ({ value: unit, label: proposals.addOnUnitLabel[unit] }));
 const materialOptions = (Object.keys(materialNames) as Scope['material'][]).map((key) => ({ value: key, label: materialNames[key] }));
-
-/** The option the pages call out: the one most people choose. The job page and the measure screen follow the same rule. */
-const RECOMMENDED_TIER: Tier = 'better';
 
 function RemoveIcon() {
   return (

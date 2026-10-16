@@ -22,12 +22,10 @@ import { formatDay } from './format.ts';
 import { OptionCard } from './OptionCard.tsx';
 import { ProposalEvents, proposalEventLines } from './ProposalEvents.tsx';
 import { StatusTag } from './StatusTag.tsx';
+import { RECOMMENDED_TIER } from './tiers.ts';
 import styles from './ProposalWindow.module.css';
 
 const JOBS_CRUMB = { label: WINDOW_COPY.jobs.title, href: '/jobs' } as const;
-
-/** The option the pages call out: the one most people choose. */
-const RECOMMENDED_TIER = 'better';
 
 /** The text message; edits stay local and save when the field loses focus with a changed value. */
 function MessageBox({ body, editable, onCommit }: { body: string; editable: boolean; onCommit: (body: string) => void }) {
