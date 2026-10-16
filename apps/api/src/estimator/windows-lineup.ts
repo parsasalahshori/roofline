@@ -38,7 +38,9 @@ const MIN_SAMPLES_PER_LINE = 6;
  * the old three-line score (0.68, 0.63) said 'good' on a wall drawn over the garage door and the driveway.
  * - FIT_GOOD_SCORE: the mean support 'good' needs at least.
  * - FIT_OFF_SCORE: below this mean support (four lines, less the interior penalty) the wall plainly does not line up.
- * - CORNER_MIN / EAVE_MIN / GROUND_MIN: each line's own support; a wall is only confirmed on all four.
+ * - CORNER_MIN / EAVE_MIN / GROUND_MIN: each line's own support; a wall is only confirmed on all four. A house corner
+ *   is a long unbroken vertical edge: the real corners on the live photos scored 0.67 and 0.96 (811 Allyson Ave,
+ *   Bryant, AR and 214 Shane Dr), the chance verticals 5437 Summer Pl's old line-up sat on 0.52 and 0.54.
  * - INTERIOR_*: a horizontal line inside the wall standing INTERIOR_FREE or more above the wall's texture (see
  *   interiorPeak) is penalised in the search, and fails the check when within EAVE_MARGIN of the eave's own support above the texture
  *   (EAVE_MARGIN_AGREED when Google's heights put the eave where it is).
@@ -54,7 +56,7 @@ const MIN_SAMPLES_PER_LINE = 6;
  */
 export const FIT_GOOD_SCORE = 0.5;
 export const FIT_OFF_SCORE = 0.32;
-const CORNER_MIN = 0.45;
+const CORNER_MIN = 0.6;
 const EAVE_MIN = 0.5;
 const GROUND_MIN = 0.4;
 const INTERIOR_FROM = 0.12;
