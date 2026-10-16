@@ -1,5 +1,6 @@
 import exifr from 'exifr';
 import {
+  cardProblem,
   DEFAULT_FOCAL_35MM,
   SHEET_FOCAL_UNKNOWN_SIGMA,
   focalPxFrom35mm,
@@ -15,6 +16,7 @@ import {
   SHEET_MIN_POINTS,
   STEEP_CHECK_DEG,
   sizeFromArPoints,
+  sizeFromCard,
   sizeFromKnownSide,
   sizeFromReference,
   WINDOW_PHOTO_REFERENCES,
@@ -187,7 +189,7 @@ export function sizePhotoWindow(input: PhotoWindowInput, photo: { widthPx: numbe
   const focalPx = focalPxFrom35mm(photo.focal35mm ?? DEFAULT_FOCAL_35MM, photo.widthPx, photo.heightPx);
   const angle = viewingAngleDeg(corners, photo.widthPx, photo.heightPx, focalPx);
   let good = quadIsGood(corners) && angle !== null && angle <= STEEP_VIEW_DEG;
-  let extra: Pick<PhotoWindow, 'uncertaintyIn' | 'distanceIn' | 'viewAngleDeg'> = {};
+  let extra: Pick<PhotoWindow, 'uncertaintyIn' | 'distanceIn' | 'viewAngleDeg' | 'reasons'> = {};
   // The sheet method is exact to a few hundredths of an inch: kept to 0.01 in (the others to 0.1 in).
   let step = 10;
   if (s.kind === 'reference') {
@@ -215,8 +217,22 @@ export function sizePhotoWindow(input: PhotoWindowInput, photo: { widthPx: numbe
     extra = { uncertaintyIn: { width: r2(m.uncertaintyIn.width), height: r2(m.uncertaintyIn.height) }, distanceIn: null, viewAngleDeg: null };
     step = 100;
   } else if (s.kind === 'card') {
-    // The card method is wired in with the card module (window-photo-card.ts).
-    return null;
+    // A credit card on the glass: the card's four corners give the plane, the window's corners are read on it. Quote-grade
+    // only: the ± grows with the window next to the card, and a window above CARD_CHECK_UNCERTAINTY_IN is 'check'.
+    if (cardProblem({ widthPx: photo.widthPx, heightPx: photo.heightPx, cardCorners: s.cardCorners, windowCorners: corners, card: s.card }) !== null) return null;
+    // No focal length in the photo: 26 mm is assumed, so the ± is widened for it.
+    const focalSigmaFrac = photo.focal35mm === null ? SHEET_FOCAL_UNKNOWN_SIGMA : undefined;
+    const m = sizeFromCard({ widthPx: photo.widthPx, heightPx: photo.heightPx, focalPx, ...(focalSigmaFrac !== undefined && { focalSigmaFrac }), cardCorners: s.cardCorners, windowCorners: corners });
+    if (m === null) return null;
+    size = { widthIn: m.widthIn, heightIn: m.heightIn };
+    good = m.quality === 'good';
+    const r2 = (v: number) => Math.round(v * 100) / 100;
+    extra = {
+      uncertaintyIn: { width: r2(m.uncertaintyIn.width), height: r2(m.uncertaintyIn.height) },
+      distanceIn: Math.round(m.distanceIn),
+      viewAngleDeg: Math.round(m.viewAngleDeg * 10) / 10,
+      ...(m.reasons.length > 0 && { reasons: m.reasons }),
+    };
   } else {
     size = sizeFromKnownSide(corners, photo.widthPx, photo.heightPx, s.side, s.inches, focalPx);
   }

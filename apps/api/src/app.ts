@@ -88,6 +88,7 @@ import { doorRoutes } from './routes/door-routes.ts';
 import { stormSettingsRoutes } from './routes/storm-settings.ts';
 import { adsRoutes } from './routes/ads.ts';
 import { stormRequestRoutes } from './public/storm-requests.ts';
+import { publicHomeownerRoutes } from './public/homeowner.ts';
 import { publicQuoteRoutes } from './public/quote.ts';
 import { quotePage } from './public/quote-page.ts';
 import { instantQuoteSettingsRoutes } from './routes/instant-quote-settings.ts';
@@ -306,6 +307,10 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   // site that embeds it, so like the storm form it is mounted ahead of blockCrossSiteMutations and the session gate,
   // with its own limits, body parser (8 KB), Origin check and CORS for the company's allowed embed origins.
   app.use('/api/public/quote', publicQuoteRoutes(deps));
+  // The homeowner phone app's API (public/homeowner.ts): a native app (no Origin header, no cookies), signed out, with a
+  // bearer token per request. Mounted here for the same reasons as the instant quote page, with its own limits, body
+  // parser, Origin check and CORS.
+  app.use('/api/public/homeowner', publicHomeownerRoutes(deps));
 
   app.get('/health', (_req, res) => {
     res.json({ ok: true });

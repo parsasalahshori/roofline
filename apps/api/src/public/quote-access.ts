@@ -35,7 +35,7 @@ export type Page = { ctx: TenantContext; settings: InstantQuoteSettings };
 export async function pageFor(deps: AppDeps, slugParam: unknown, options: { allowOff?: boolean } = {}): Promise<Page> {
   const slug = (typeof slugParam === 'string' ? slugParam : '').toLowerCase();
   if (!QUOTE_SLUG_RE.test(slug)) throw new AppError(404, MESSAGES.notFound);
-  const company = await companyForQuoteSlug(deps.pools.system, slug);
+  const company = await companyForQuoteSlug(deps.pools.system, slug, { includeOff: options.allowOff === true });
   if (company === null) throw new AppError(404, MESSAGES.notFound);
   const ctx = systemCtx(company.companyId);
   const settings = await withTenant(deps.pools, ctx, (tx) => getQuoteSettings(tx, ctx));

@@ -9,6 +9,7 @@ import {
   windowOrders,
 } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
+import { addActivity } from './activities.ts';
 import { audit } from './audit.ts';
 import { memberNames } from './appointments.ts';
 import { getProperty } from './properties.ts';
@@ -122,6 +123,21 @@ export async function ensureHomeownerMeasurement(tx: Tx, ctx: TenantContext, req
   return made;
 }
 
+/** The adjustments (the homeowner's windows) and uploads (their photos) of the request's measurement, or null before it has one. */
+export async function getHomeownerMeasurement(
+  tx: Tx,
+  ctx: TenantContext,
+  request: Pick<HomeownerRequestRow, 'windowMeasurementId'>,
+): Promise<Pick<WindowMeasurementRow, 'id' | 'adjustments' | 'uploads' | 'propertyId'> | null> {
+  if (request.windowMeasurementId === null) return null;
+  const [row] = await tx
+    .select({ id: windowMeasurements.id, adjustments: windowMeasurements.adjustments, uploads: windowMeasurements.uploads, propertyId: windowMeasurements.propertyId })
+    .from(windowMeasurements)
+    .where(and(eq(windowMeasurements.id, request.windowMeasurementId), eq(windowMeasurements.companyId, ctx.companyId)))
+    .limit(1);
+  return row ?? null;
+}
+
 /** The contact form filed the request with the company: remember the quote request (consent evidence, customer, job). */
 export async function linkHomeownerLead(tx: Tx, ctx: TenantContext, id: string, quoteRequestId: string, now: Date): Promise<void> {
   await tx
@@ -138,14 +154,38 @@ export async function markHomeownerCallMe(tx: Tx, ctx: TenantContext, id: string
     .where(and(eq(homeownerRequests.id, id), eq(homeownerRequests.companyId, ctx.companyId)));
 }
 
-/** The filed request's quote_requests row (the contact and the consent as stored), or null before it is filed. */
-export async function getFiledQuoteRequest(tx: Tx, ctx: TenantContext, quoteRequestId: string) {
+/** The lead a filed request made: the customer, job, address and visit, and the phone it was filed under. */
+export type FiledLead = {
+  requestId: string;
+  customerId: string;
+  jobId: string;
+  propertyId: string;
+  appointmentId: string | null;
+  phoneE164: string;
+};
+
+/** The lead the contact form made for a request, or null before it is filed (or when it is gone). */
+export async function getFiledLead(tx: Tx, ctx: TenantContext, quoteRequestId: string): Promise<FiledLead | null> {
   const [row] = await tx
-    .select()
+    .select({
+      requestId: quoteRequests.id,
+      customerId: quoteRequests.customerId,
+      jobId: quoteRequests.jobId,
+      appointmentId: quoteRequests.appointmentId,
+      phoneE164: quoteRequests.phoneE164,
+      propertyId: jobs.propertyId,
+    })
     .from(quoteRequests)
+    .innerJoin(jobs, and(eq(jobs.id, quoteRequests.jobId), eq(jobs.companyId, quoteRequests.companyId)))
     .where(and(eq(quoteRequests.id, quoteRequestId), eq(quoteRequests.companyId, ctx.companyId)))
     .limit(1);
-  return row ?? null;
+  if (!row || row.customerId === null || row.jobId === null) return null;
+  return { requestId: row.requestId, customerId: row.customerId, jobId: row.jobId, propertyId: row.propertyId, appointmentId: row.appointmentId, phoneE164: row.phoneE164 };
+}
+
+/** A line on the lead job's timeline about what the homeowner did in the app (windows measured, a visit asked for). */
+export async function addHomeownerNote(tx: Tx, ctx: TenantContext, jobId: string, entry: { kind: string; summary: string; data?: Record<string, unknown> }, now: Date): Promise<void> {
+  await addActivity(tx, ctx, { subjectType: 'job', subjectId: jobId, kind: entry.kind, summary: entry.summary, ...(entry.data !== undefined && { data: entry.data }), at: now });
 }
 
 /** What has happened to the filed request since, for GET /status. */

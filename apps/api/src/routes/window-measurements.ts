@@ -4,7 +4,7 @@ import { Router } from 'express';
 import busboy from 'busboy';
 import { z } from 'zod';
 import { appendWindowUpload, getLatestWindowMeasurementForProperty, getWindowMeasurement, type StoredFacadePhoto, type StoredWindowUpload, updateWindowMeasurement, type WindowMeasurementChange, withTenant } from '@roofline/db';
-import { AR_DEVICES, type DoorRuler, type PhotoWindowInput, priceWindows, ROOMPLAN_CONFIDENCES, RULER_KINDS, RULER_MAX_IN, RULER_MIN_IN, SHEET_MAX_OFFSET_IN, SHEET_MAX_POINTS, SHEET_PAPER_IN, WINDOW_PHOTO_REFERENCES, WINDOW_SIZE_CLASSES, type WindowAdjustments, type WindowQuote, windowCounts } from '@roofline/shared';
+import { AR_DEVICES, cardProblem, type DoorRuler, HOMEOWNER_APP_SOURCE, type PhotoWindowInput, priceWindows, ROOMPLAN_CONFIDENCES, RULER_KINDS, RULER_MAX_IN, RULER_MIN_IN, SHEET_MAX_OFFSET_IN, SHEET_MAX_POINTS, SHEET_PAPER_IN, WINDOW_PHOTO_REFERENCES, WINDOW_SIZE_CLASSES, WINDOW_STYLES, type WindowAdjustments, type WindowQuote, windowCounts } from '@roofline/shared';
 import { arProblem, readImageInfo, roomPlanProblem, sheetProblem, sizePhotoWindow } from '../estimator/window-uploads.ts';
 import type { AppDeps } from '../app.ts';
 import { measureWindows } from '../estimator/measure-windows.ts';
@@ -129,6 +129,14 @@ const ScaleSchema = z.discriminatedUnion('kind', [
       confidence: z.enum(ROOMPLAN_CONFIDENCES),
     })
     .strict(),
+  // A credit card on the glass (the homeowner app): its four tapped corners and its ID-1 size. Quote-grade only.
+  z
+    .object({
+      kind: z.literal('card'),
+      cardCorners: QuadSchema,
+      card: z.object({ widthMm: finite, heightMm: finite }).strict(),
+    })
+    .strict(),
 ]);
 const PhotoWindowSchema = z
   .object({
@@ -140,6 +148,10 @@ const PhotoWindowSchema = z
     windowKey: z.string().max(80).refine(noNul).optional(),
     corners: QuadSchema.optional(),
     scale: ScaleSchema,
+    // Set by the homeowner app's API; kept only for a window already stored with it, unchanged (checkPhotoWindow).
+    source: z.literal(HOMEOWNER_APP_SOURCE).optional(),
+    room: z.string().min(1).max(40).refine(noNul).optional(),
+    style: z.enum(WINDOW_STYLES).optional(),
   })
   .strict()
   // Every kind but RoomPlan is sized on its photo: uploadId and corners are required. Corners need their photo.
@@ -153,7 +165,7 @@ const PhotoWindowsSchema = z
  * The photo in an upload request: multipart/form-data with the file in the field "photo" (other fields ignored), or
  * the raw image bytes as the body. At most MAX_UPLOAD_BYTES; a larger one is a 413 before more is read.
  */
-function readUpload(req: Request): Promise<Uint8Array> {
+export function readUpload(req: Request): Promise<Uint8Array> {
   const type = (req.headers['content-type'] ?? '').toLowerCase();
   const tooBig = () => new AppError(413, UPLOAD_TOO_BIG_MESSAGE, 'photo');
   if (type.startsWith('multipart/form-data')) {
@@ -239,14 +251,25 @@ function personFitFor(row: { geometry: Parameters<typeof planOf>[0] | null }, ph
  * math (the same checks for PATCH's whole list and POST /:id/photo-windows' one window): its photo must be one of this
  * measurement's uploads and its corners inside it (400); a window the math cannot size is a 422 naming it.
  */
-function checkPhotoWindow(w: z.infer<typeof PhotoWindowSchema>, uploads: readonly StoredWindowUpload[], field: string): PhotoWindowInput {
+function checkPhotoWindow(w: z.infer<typeof PhotoWindowSchema>, uploads: readonly StoredWindowUpload[], field: string, stored: readonly PhotoWindowInput[]): PhotoWindowInput {
   const input: PhotoWindowInput = { ...w, ...(w.uploadId !== undefined ? { uploadId: w.uploadId.toLowerCase() } : {}) } as PhotoWindowInput;
+  // `source` says the homeowner measured this window in the app: only the app's API sets it. A staff request keeps it for
+  // a window already stored with it whose measurement (photo, corners, scale) is unchanged, and drops it otherwise, so
+  // a staff measurement is never passed off as the homeowner's and an edited homeowner window becomes the staff's own.
+  if (input.source !== undefined) {
+    const before = stored.find((x) => x.id === input.id);
+    const same = before !== undefined && before.source === HOMEOWNER_APP_SOURCE && canonicalJson([before.uploadId, before.corners, before.scale]) === canonicalJson([input.uploadId, input.corners, input.scale]);
+    if (!same) delete input.source;
+  }
   const upload = input.uploadId === undefined ? null : uploads.find((u) => u.id === input.uploadId);
   if (upload === undefined) throw new AppError(400, PHOTO_WINDOWS_MESSAGE, field);
   if (upload !== null) {
     // Corners are in the photo's displayed pixels (EXIF orientation applied), inside the photo.
     const s = input.scale;
-    const quads: [number, number][][] = [...(input.corners !== undefined ? [input.corners] : []), ...(s.kind === 'reference' ? [s.corners] : s.kind === 'sheet' ? [s.imagePoints] : [])];
+    const quads: [number, number][][] = [
+      ...(input.corners !== undefined ? [input.corners] : []),
+      ...(s.kind === 'reference' ? [s.corners] : s.kind === 'sheet' ? [s.imagePoints] : s.kind === 'card' ? [s.cardCorners] : []),
+    ];
     const inside = quads.every((q) => q.every(([x, y]) => x >= 0 && y >= 0 && x <= upload.widthPx && y <= upload.heightPx));
     if (!inside) throw new AppError(400, PHOTO_WINDOWS_MESSAGE, field);
   }
@@ -257,6 +280,10 @@ function checkPhotoWindow(w: z.infer<typeof PhotoWindowSchema>, uploads: readonl
   if (ar !== null) throw new AppError(422, `Window "${name}" could not be sized: ${ar}. Tap its four frame corners in AR again.`, field);
   const room = roomPlanProblem(input);
   if (room !== null) throw new AppError(422, `Window "${name}" could not be sized: ${room}. Scan the room again or measure the window in AR.`, field);
+  if (input.scale.kind === 'card' && upload !== null && input.corners !== undefined) {
+    const card = cardProblem({ widthPx: upload.widthPx, heightPx: upload.heightPx, cardCorners: input.scale.cardCorners, windowCorners: input.corners, card: input.scale.card });
+    if (card !== null) throw new AppError(422, `Window "${name}" could not be sized: ${card}`, field);
+  }
   if (sizePhotoWindow(input, upload) === null) {
     throw new AppError(422, `Window "${name}" could not be sized from its corners. Mark its four corners (and the paper's) again.`, field);
   }
@@ -330,7 +357,7 @@ export function windowMeasurementRoutes(deps: AppDeps): Router {
         if (marked.some((m) => !photoIds.has(m.photoId.toLowerCase()))) throw new AppError(400, MARKED_MESSAGE, 'marked');
         next.marked = marked.map((m) => ({ id: m.id, photoId: m.photoId.toLowerCase(), box: m.box }));
       }
-      if (photoWindows !== undefined) next.photoWindows = photoWindows.map((w) => checkPhotoWindow(w, found.uploads, 'photoWindows'));
+      if (photoWindows !== undefined) next.photoWindows = photoWindows.map((w) => checkPhotoWindow(w, found.uploads, 'photoWindows', found.adjustments.photoWindows ?? []));
       if (coverAll !== undefined) next.photosCoverAllWindows = coverAll;
       if (excluded !== undefined) {
         const known = new Set([...found.windows.map((w) => w.id), ...(next.marked ?? []).map((m) => m.id), ...(next.photoWindows ?? []).map((w) => w.id)]);
@@ -387,8 +414,8 @@ export function windowMeasurementRoutes(deps: AppDeps): Router {
     const result = await withTenant(pools, ctx, async (tx) => {
       const found = await getWindowMeasurement(tx, ctx, id, { lock: true });
       if (found === null) return null;
-      const input = checkPhotoWindow(w, found.uploads, 'photoWindows');
       const list = found.adjustments.photoWindows ?? [];
+      const input = checkPhotoWindow(w, found.uploads, 'photoWindows', list);
       const same = list.find((x) => x.id === input.id);
       if (same !== undefined) {
         if (canonicalJson(same) !== canonicalJson(input)) throw new AppError(409, PHOTO_WINDOW_TAKEN_MESSAGE, 'id');
@@ -513,7 +540,7 @@ export function windowMeasurementRoutes(deps: AppDeps): Router {
 }
 
 /** JSON with every object's keys sorted (Postgres jsonb does not keep key order), to compare two stored values. */
-function canonicalJson(v: unknown): string {
+export function canonicalJson(v: unknown): string {
   return JSON.stringify(v, (_k, x: unknown) => (x !== null && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x));
 }
 

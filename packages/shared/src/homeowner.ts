@@ -2,7 +2,7 @@ import type { QuoteProduct } from './instant-quote.ts';
 import type { LngLat } from './roof.ts';
 import type { WindowStyle } from './window-order.ts';
 import type { ArDevice, ArQuad, Quad } from './window-photo-math.ts';
-import type { RoomPlanConfidence, WindowSizeClass } from './windows.ts';
+import { DEFAULT_WINDOW_TIERS, type RoomPlanConfidence, WINDOW_SIZE_CLASSES, type WindowSizeClass, type WindowTier } from './windows.ts';
 
 /*
  * The homeowner API: what the homeowner's phone app (WinChoice, on iPhone) says to the server and gets back, under
@@ -253,3 +253,88 @@ export type HomeownerRequestView = {
   /** Present once the request was filed (POST .../contact). */
   status?: HomeownerStatus;
 };
+
+/* ------------------------------------------------------------------------------------------------------------------ */
+/* The quote                                                                                                           */
+/* ------------------------------------------------------------------------------------------------------------------ */
+
+export type WindowMixCounts = Record<WindowSizeClass, number>;
+
+/**
+ * `mix` scaled to `count` windows in all, keeping its shares (largest remainders, so the parts add up); all 'standard'
+ * when there is no mix.
+ */
+export function scaleWindowMix(mix: Partial<WindowMixCounts> | null, count: number): WindowMixCounts {
+  const base = Object.fromEntries(WINDOW_SIZE_CLASSES.map((c) => [c, Math.max(0, Math.round(mix?.[c] ?? 0))])) as WindowMixCounts;
+  const total = WINDOW_SIZE_CLASSES.reduce((n, c) => n + base[c], 0);
+  if (total === 0) return { small: 0, standard: count, large: 0, picture: 0 };
+  const exact = WINDOW_SIZE_CLASSES.map((c) => ({ c, v: (base[c] * count) / total }));
+  const out = Object.fromEntries(exact.map(({ c, v }) => [c, Math.floor(v)])) as WindowMixCounts;
+  let left = count - WINDOW_SIZE_CLASSES.reduce((n, c) => n + out[c], 0);
+  for (const { c } of [...exact].sort((a, b) => b.v - Math.floor(b.v) - (a.v - Math.floor(a.v)))) {
+    if (left <= 0) break;
+    out[c] += 1;
+    left -= 1;
+  }
+  return out;
+}
+
+const TIER_LABELS: Readonly<Record<HomeownerTierKey, string>> = { good: 'Good', better: 'Better', best: 'Best' };
+
+/** The price of one window of a size class on a tier, whole US dollars. */
+const dollarsFor = (tier: WindowTier, sizeClass: WindowSizeClass): number => Math.round(tier.priceCents[sizeClass] / 100);
+
+export type HomeownerQuoteInput = {
+  /** The windows the homeowner measured (each priced at its own size class). */
+  measured: readonly { id: string; sizeClass: WindowSizeClass }[];
+  /** The address estimate's window count, or null when there is none. */
+  expected: { low: number; high: number; likely: number } | null;
+  /** The number of windows the homeowner says the house has (measured ones included), or null. */
+  override: number | null;
+  /** The address estimate's mix of sizes (counts or shares), used to price the windows not measured yet. */
+  mix: Partial<WindowMixCounts> | null;
+  /** The company's window tiers; the defaults when absent. */
+  tiers?: readonly WindowTier[];
+};
+
+/**
+ * Good, Better and Best for a homeowner's request: every measured window at its own size's installed price, and the
+ * windows not measured yet (the expected total less the measured ones, never below zero) at the address estimate's mix
+ * of sizes. Whole US dollars; `total = sum(perWindow) + estimatedTotal` on every tier. The expected total is the
+ * homeowner's own count when they gave one, else the address estimate's `likely`, else just what was measured.
+ */
+export function buildHomeownerQuote(input: HomeownerQuoteInput): HomeownerQuote {
+  const measuredCount = input.measured.length;
+  const expectedTotal = input.override ?? input.expected?.likely ?? measuredCount;
+  const estimatedCount = Math.max(0, expectedTotal - measuredCount);
+  const estimatedMix = scaleWindowMix(input.mix, estimatedCount);
+  const tiers = (input.tiers ?? DEFAULT_WINDOW_TIERS).filter((t) => t.enabled);
+  const out: HomeownerQuoteTier[] = tiers.map((t) => {
+    const perWindow = input.measured.map((w) => ({ windowId: w.id, price: dollarsFor(t, w.sizeClass) }));
+    const estimatedTotal = WINDOW_SIZE_CLASSES.reduce((n, c) => n + estimatedMix[c] * dollarsFor(t, c), 0);
+    return {
+      key: t.tier,
+      label: TIER_LABELS[t.tier],
+      name: t.name,
+      description: t.description,
+      total: perWindow.reduce((n, w) => n + w.price, 0) + estimatedTotal,
+      perWindow,
+      estimatedCount,
+      estimatedTotal,
+    };
+  });
+  const quote: HomeownerQuote = { tiers: out, measuredCount, estimatedCount };
+  // "Did we miss any?": fewer measured than the address estimate's low end, when the homeowner has not said their own count.
+  if (input.override === null && input.expected !== null && measuredCount > 0 && measuredCount < input.expected.low) {
+    const { low, high, likely } = input.expected;
+    const about = low === high ? `about ${likely}` : `about ${low} to ${high}`;
+    quote.missingHint = {
+      measured: measuredCount,
+      expectedLow: low,
+      expectedHigh: high,
+      expectedLikely: likely,
+      text: `We think your home has ${about} windows and you have measured ${measuredCount}. Did we miss any?`,
+    };
+  }
+  return quote;
+}
