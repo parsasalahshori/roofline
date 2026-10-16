@@ -40,8 +40,8 @@ test('exact report: owner approves the spend', async ({ page, loginAs, markToday
 
   // The owner sees the most it can cost and approves it.
   await expect(page).toHaveURL(/\/approvals\//);
-  await expect(page.getByText(/^Up to \$[\d,]+$/)).toBeVisible();
-  await page.getByRole('button', { name: /^Approve 1 step · up to \$[\d,]+$/ }).click();
+  await expect(page.getByText(/^Up to \$[\d,]+(\.\d{2})?$/)).toBeVisible();
+  await page.getByRole('button', { name: /^Approve 1 step · up to \$[\d,]+(\.\d{2})?$/ }).click();
 
   // The order is placed and parks while the report is made. The step reads "Working on it".
   await expect(page.getByRole('main').getByRole('list').getByText('Working on it', { exact: true })).toHaveCount(1, {
