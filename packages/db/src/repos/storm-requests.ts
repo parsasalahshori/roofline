@@ -1,11 +1,12 @@
-import { and, asc, count, desc, eq, gte, inArray, sql } from 'drizzle-orm';
-import { isTimeZone, localDate, normalizeAddressKey } from '@roofline/shared';
-import { companies, companyStorms, customers, optOuts, properties, stormPages, stormRequests } from '../schema/index.ts';
+import { and, asc, count, desc, eq, gte, inArray } from 'drizzle-orm';
+import { localDate, normalizeAddressKey } from '@roofline/shared';
+import { companyStorms, customers, optOuts, stormPages, stormRequests } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { addActivity } from './activities.ts';
 import { audit } from './audit.ts';
 import { CONSENT_LABELS } from './customers.ts';
 import { createJob } from './jobs.ts';
+import { addressCustomerFor, addressRowFor, lockWebLead, phoneCustomerFor, webLeadZone } from './web-lead.ts';
 
 export type StormRequestInput = {
   stormPageId: string;
@@ -30,7 +31,6 @@ export type StormRequestResult =
 /** The follow-up put on the new job, so it shows on Today the day the request came in. */
 const NEXT_STEP = 'Call the homeowner about the storm inspection request';
 
-type CustomerRow = typeof customers.$inferSelect;
 
 /**
  * Takes a storm request from a landing page, in one transaction (the caller's `withTenant`):
@@ -85,11 +85,11 @@ export async function createStormRequest(tx: Tx, ctx: TenantContext, input: Stor
   const phoneCustomer = await phoneCustomerFor(tx, ctx, input, now);
 
   const addressKey = normalizeAddressKey(input.property.addressLine, input.property.zip);
-  await lock(tx, ctx.companyId, `address:${addressKey}`);
+  await lockWebLead(tx, ctx.companyId, `address:${addressKey}`);
   const jobCustomer = await addressCustomerFor(tx, ctx, addressKey, phoneCustomer);
   const property = await addressRowFor(tx, ctx, input, addressKey, jobCustomer, now);
 
-  const zone = await companyZone(tx, ctx);
+  const zone = await webLeadZone(tx, ctx);
   // The normal job path: its audit row, "Job created", next-step and customer timeline lines. The context is
   // the system's (no signed-in user), so the actor on those rows is null / 'system', as the direct insert had it.
   const createdJob = await createJob(
@@ -260,11 +260,6 @@ export async function confirmFormConsentByYes(
 // ---------------------------------------------------------------------------------------------
 // Helpers
 
-/** Takes a transaction-scoped advisory lock with the same key shape customers.ts uses for phones. */
-async function lock(tx: Tx, companyId: string, key: string): Promise<void> {
-  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${companyId}::text || ':' || ${key}::text, 0))`);
-}
-
 /** The page and its storm id (company_storms.storm_id), or null when the page is not this company's. */
 async function stormPageOf(tx: Tx, ctx: TenantContext, stormPageId: string): Promise<{ stormId: string } | null> {
   const [row] = await tx
@@ -274,63 +269,6 @@ async function stormPageOf(tx: Tx, ctx: TenantContext, stormPageId: string): Pro
     .where(and(eq(stormPages.id, stormPageId), eq(stormPages.companyId, ctx.companyId)))
     .limit(1);
   return row ?? null;
-}
-
-/** The company's time zone, or UTC when it is missing or not a zone the platform knows. */
-async function companyZone(tx: Tx, ctx: TenantContext): Promise<string> {
-  const [row] = await tx.select({ timezone: companies.timezone }).from(companies).where(eq(companies.id, ctx.companyId)).limit(1);
-  return row && isTimeZone(row.timezone) ? row.timezone : 'UTC';
-}
-
-/**
- * The customer for this phone: an active one of the company that has the number, reused with its
- * consent untouched; or a new 'web' customer at consent 'none'.
- */
-async function phoneCustomerFor(tx: Tx, ctx: TenantContext, input: StormRequestInput, now: Date): Promise<CustomerRow> {
-  await lock(tx, ctx.companyId, input.phoneE164);
-  const [found] = await tx
-    .select()
-    .from(customers)
-    .where(
-      and(
-        eq(customers.companyId, ctx.companyId),
-        sql`${customers.archivedAt} is null`,
-        sql`${customers.phones} @> ${JSON.stringify([{ e164: input.phoneE164 }])}::jsonb`,
-      ),
-    )
-    .limit(1);
-  if (found) return found;
-
-  const [created] = await tx
-    .insert(customers)
-    .values({
-      companyId: ctx.companyId,
-      displayName: input.name,
-      firstName: null,
-      lastName: null,
-      phones: [{ e164: input.phoneE164, primary: true }],
-      emails: [],
-      tags: [],
-      doNotContact: false,
-      smsConsentStatus: 'none',
-      source: 'web',
-      createdByUserId: null,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning();
-  const row = created!;
-
-  await audit(tx, ctx, {
-    action: 'customer.create',
-    targetType: 'customer',
-    targetId: row.id,
-    after: { displayName: row.displayName, phones: row.phones, smsConsentStatus: row.smsConsentStatus },
-    ip: null,
-    at: now,
-  });
-  await addActivity(tx, ctx, { subjectType: 'customer', subjectId: row.id, kind: 'customer.created', summary: 'Customer added', at: now });
-  return row;
 }
 
 async function consentLine(
@@ -352,93 +290,3 @@ async function consentLine(
   });
 }
 
-/**
- * The customer the job goes to and the address row for it. See the note on `createStormRequest`
- * step 4: a reused address keeps its owner; an unowned one is taken by the phone customer.
- */
-async function addressCustomerFor(tx: Tx, ctx: TenantContext, addressKey: string, phoneCustomer: CustomerRow): Promise<CustomerRow> {
-  const existing = await addressRowByKey(tx, ctx, addressKey);
-  if (!existing || existing.customerId === null || existing.customerId === phoneCustomer.id) return phoneCustomer;
-
-  const [owner] = await tx.select().from(customers).where(eq(customers.id, existing.customerId)).limit(1);
-  return owner ?? phoneCustomer;
-}
-
-type AddressRow = typeof properties.$inferSelect;
-
-async function addressRowByKey(tx: Tx, ctx: TenantContext, addressKey: string): Promise<AddressRow | null> {
-  const [row] = await tx
-    .select()
-    .from(properties)
-    .where(and(eq(properties.companyId, ctx.companyId), eq(properties.addressKey, addressKey)))
-    .limit(1);
-  return row ?? null;
-}
-
-/** The address row for the job: the existing one (taking the customer when it had none) or a new one for the customer. */
-async function addressRowFor(
-  tx: Tx,
-  ctx: TenantContext,
-  input: StormRequestInput,
-  addressKey: string,
-  jobCustomer: CustomerRow,
-  now: Date,
-): Promise<AddressRow> {
-  const existing = await addressRowByKey(tx, ctx, addressKey);
-  if (existing) {
-    if (existing.customerId !== null) return existing;
-    const [claimed] = await tx
-      .update(properties)
-      .set({ customerId: jobCustomer.id, updatedAt: now })
-      .where(eq(properties.id, existing.id))
-      .returning();
-    await audit(tx, ctx, {
-      action: 'property.update',
-      targetType: 'property',
-      targetId: existing.id,
-      before: { customerId: null },
-      after: { customerId: jobCustomer.id },
-      ip: null,
-      at: now,
-    });
-    await addActivity(tx, ctx, {
-      subjectType: 'property',
-      subjectId: existing.id,
-      kind: 'property.updated',
-      summary: `Address linked to ${jobCustomer.displayName}`,
-      data: { fields: ['customerId'], customerId: jobCustomer.id },
-      at: now,
-    });
-    return claimed!;
-  }
-
-  const [row] = await tx
-    .insert(properties)
-    .values({
-      companyId: ctx.companyId,
-      customerId: jobCustomer.id,
-      addressLine: input.property.addressLine,
-      city: input.property.city,
-      state: input.property.state,
-      zip: input.property.zip,
-      addressKey,
-      ...(input.property.location !== null && { geom: input.property.location }),
-      timezone: input.property.timezone !== null && isTimeZone(input.property.timezone) ? input.property.timezone : null,
-      yearBuilt: null,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning();
-  const created = row!;
-
-  await audit(tx, ctx, {
-    action: 'property.create',
-    targetType: 'property',
-    targetId: created.id,
-    after: { customerId: created.customerId, addressLine: created.addressLine, city: created.city, state: created.state, zip: created.zip },
-    ip: null,
-    at: now,
-  });
-  await addActivity(tx, ctx, { subjectType: 'property', subjectId: created.id, kind: 'property.created', summary: 'Address added', at: now });
-  return created;
-}

@@ -232,6 +232,20 @@
       "when": 1792104590524,
       "tag": "0032_window_measurement_uploads",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792111367947,
+      "tag": "0033_instant_quote_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792111372396,
+      "tag": "0034_instant_quote_grants_rls",
+      "breakpoints": true
     }
   ]
 }

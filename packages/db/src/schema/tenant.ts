@@ -168,6 +168,8 @@ export const TENANT_TABLES = [
   'email_opt_outs',
   'storm_photos',
   'window_measurements',
+  'quote_estimates',
+  'quote_requests',
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];
@@ -251,9 +253,31 @@ export const companySettings = pgTable(
     stormSmsTemplate: text('storm_sms_template'),
     stormEmailSubject: text('storm_email_subject'),
     stormEmailTemplate: text('storm_email_template'),
+    /** Instant quote page (public /q/:slug): off until the owner turns it on. */
+    quoteEnabled: boolean('quote_enabled').notNull().default(false),
+    /** The page's public slug, unique across companies; null until set. */
+    quoteSlug: text('quote_slug').unique('company_settings_quote_slug_uniq'),
+    /** Products the page offers, a subset of QUOTE_PRODUCTS. */
+    quoteProducts: text('quote_products').array().notNull().default(sql`'{windows,roof}'::text[]`),
+    /** Range width each side of the middle price, percent. */
+    quoteRangePct: integer('quote_range_pct').notNull().default(12),
+    /** Fresh (uncached) measurements a day; past it the page offers a call back and still takes the request. */
+    quoteDailyCap: integer('quote_daily_cap').notNull().default(50),
+    /** Sites allowed to embed the page (frame-ancestors) and call its API from the browser (CORS). */
+    quoteEmbedOrigins: text('quote_embed_origins').array().notNull().default(sql`'{}'::text[]`),
+    /** Whether the page offers in-home visit times. */
+    quoteBooking: boolean('quote_booking').notNull().default(false),
+    /** The page's accent colour (#rgb or #rrggbb); null for the default. */
+    quoteAccentColor: text('quote_accent_color'),
     ...timestamps(),
   },
   (t) => [
+    check('company_settings_quote_slug_check', sql`${t.quoteSlug} ~ '^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$'`),
+    check('company_settings_quote_products_check', sql`${t.quoteProducts} <@ array['windows','roof','gutters']::text[]`),
+    check('company_settings_quote_range_pct_check', sql`${t.quoteRangePct} between 5 and 40`),
+    check('company_settings_quote_daily_cap_check', sql`${t.quoteDailyCap} between 0 and 1000`),
+    check('company_settings_quote_embed_origins_check', sql`cardinality(${t.quoteEmbedOrigins}) <= 10`),
+    check('company_settings_quote_accent_color_check', sql`${t.quoteAccentColor} ~ '^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$'`),
     check('company_settings_storm_ad_budget_cents_check', sql`${t.stormAdBudgetCents} between 0 and 1000000`),
     check('company_settings_storm_ad_days_check', sql`${t.stormAdDays} between 1 and 30`),
     check('company_settings_storm_ad_google_share_pct_check', sql`${t.stormAdGoogleSharePct} between 0 and 100`),
@@ -2134,5 +2158,101 @@ export const windowMeasurements = pgTable(
     index('window_measurements_photos_delete_by_idx').on(t.photosDeleteBy),
     enumCheck('window_measurements', 'detector', t.detector, WINDOW_DETECTORS),
     enumCheck('window_measurements', 'missing_reason', t.missingReason, WINDOWS_MISS_REASONS),
+  ],
+);
+
+/**
+ * An instant-quote estimate for one typed address (public /q/:slug). `result` is exactly the ranges the page was
+ * shown (PublicQuoteEstimate minus the id); a fresh one is reused for the same address for 30 days so a repeat
+ * visitor costs no paid map calls. 'fallback' rows were not measured (the daily limit, or no roof found).
+ */
+export const quoteEstimates = pgTable(
+  'quote_estimates',
+  {
+    id: pk(),
+    companyId: companyId(),
+    /** The typed address, lowercased with spaces collapsed: the cache key before any lookup. */
+    inputKey: text('input_key').notNull(),
+    /** normalizeAddressKey of the found address; null when it was not looked up. */
+    addressKey: text('address_key'),
+    address: text('address').notNull(),
+    status: text('status', { enum: ['ready', 'fallback'] }).notNull(),
+    /** True when this row spent paid calls (counts toward the daily cap). */
+    measured: boolean('measured').notNull().default(false),
+    propertyId: uuid('property_id'),
+    measurementId: uuid('measurement_id'),
+    result: jsonb('result').$type<Record<string, unknown>>().notNull(),
+    ipHash: text('ip_hash'),
+    expiresAt: tstz('expires_at').notNull(),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('quote_estimates_company_id_id_uniq').on(t.companyId, t.id),
+    foreignKey({
+      name: 'quote_estimates_company_property_fk',
+      columns: [t.companyId, t.propertyId],
+      foreignColumns: [properties.companyId, properties.id],
+    }),
+    foreignKey({
+      name: 'quote_estimates_company_measurement_fk',
+      columns: [t.companyId, t.measurementId],
+      foreignColumns: [measurements.companyId, measurements.id],
+    }),
+    index('quote_estimates_company_input_idx').on(t.companyId, t.inputKey),
+    index('quote_estimates_company_address_idx').on(t.companyId, t.addressKey),
+    index('quote_estimates_company_created_idx').on(t.companyId, t.createdAt),
+    enumCheck('quote_estimates', 'status', t.status, ['ready', 'fallback']),
+  ],
+);
+
+/**
+ * A homeowner's request from the instant-quote page: who asked, for what, the consent they ticked (the exact text and
+ * its version, when, and a hash of their address; never the address itself), and the customer, job and visit made.
+ */
+export const quoteRequests = pgTable(
+  'quote_requests',
+  {
+    id: pk(),
+    companyId: companyId(),
+    quoteEstimateId: uuid('quote_estimate_id'),
+    firstName: text('first_name').notNull(),
+    lastName: text('last_name').notNull(),
+    email: text('email').notNull(),
+    phoneE164: text('phone_e164').notNull(),
+    postalCode: text('postal_code').notNull(),
+    products: text('products').array().notNull(),
+    consentText: text('consent_text').notNull(),
+    consentVersion: text('consent_version').notNull(),
+    consentAt: tstz('consent_at').notNull(),
+    ipHash: text('ip_hash'),
+    customerId: uuid('customer_id'),
+    jobId: uuid('job_id'),
+    appointmentId: uuid('appointment_id'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('quote_requests_company_id_id_uniq').on(t.companyId, t.id),
+    foreignKey({
+      name: 'quote_requests_company_estimate_fk',
+      columns: [t.companyId, t.quoteEstimateId],
+      foreignColumns: [quoteEstimates.companyId, quoteEstimates.id],
+    }),
+    foreignKey({
+      name: 'quote_requests_company_customer_fk',
+      columns: [t.companyId, t.customerId],
+      foreignColumns: [customers.companyId, customers.id],
+    }),
+    foreignKey({
+      name: 'quote_requests_company_job_fk',
+      columns: [t.companyId, t.jobId],
+      foreignColumns: [jobs.companyId, jobs.id],
+    }),
+    foreignKey({
+      name: 'quote_requests_company_appointment_fk',
+      columns: [t.companyId, t.appointmentId],
+      foreignColumns: [appointments.companyId, appointments.id],
+    }),
+    index('quote_requests_company_created_idx').on(t.companyId, t.createdAt),
+    check('quote_requests_products_check', sql`${t.products} <@ array['windows','roof','gutters']::text[]`),
   ],
 );
