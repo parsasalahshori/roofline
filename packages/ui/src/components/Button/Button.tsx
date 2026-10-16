@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, Ref } from 'react';
+import type { ButtonHTMLAttributes, HTMLAttributeAnchorTarget, Ref } from 'react';
 import { cx } from '../../cx.ts';
 import { Pressable } from '../../pressable.tsx';
 import styles from './Button.module.css';
@@ -19,6 +19,10 @@ export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   busy?: boolean;
   /** Draws a link styled as a button. Use the button attributes (type, form...) only without it. */
   href?: string;
+  /** For a link: where it opens ("_blank" is another tab). */
+  target?: HTMLAttributeAnchorTarget;
+  /** For a link: what the page it opens may know about this one ("noopener noreferrer" for another site). */
+  rel?: string;
   /** The rendered button, or the anchor when there is an href. */
   ref?: Ref<HTMLButtonElement | HTMLAnchorElement>;
 };

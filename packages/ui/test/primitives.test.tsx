@@ -124,6 +124,17 @@ describe('Button', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
+  it('passes target and rel to a link, for one that opens another site in a new tab', () => {
+    render(
+      <Button href="https://maps.example/dir" target="_blank" rel="noopener noreferrer">
+        Directions
+      </Button>,
+    );
+    const link = screen.getByRole('link', { name: 'Directions' });
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
   it('keeps a busy link from navigating', () => {
     const onClick = vi.fn();
     render(
