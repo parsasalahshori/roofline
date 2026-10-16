@@ -10,7 +10,8 @@
 .methods {
   display: grid;
   flex: none;
-  grid-template-columns: 1fr 1fr;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
   gap: 4px;
   padding: 4px;
   border-radius: 12px;
@@ -40,6 +41,17 @@
   font-weight: 600;
 }
 
+/* Four tabs (AR shown) on a phone: tighter, and "Recommended" never breaks mid-word */
+.methods:has(> :nth-child(4)) .method {
+  padding: 4px 2px;
+  font-size: 13px;
+}
+
+.methods:has(> :nth-child(4)) .recommended {
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
 .hint {
   flex: none;
   margin: 0;
@@ -58,6 +70,28 @@
   border-radius: 12px;
   background: #1d2329;
   container-type: size;
+}
+
+.area[hidden] {
+  display: none;
+}
+
+/* AR (Android): the intro / the session, and the measurement kept (its photo with the corners drawn in). */
+.arPanel {
+  display: grid;
+  flex: none;
+  gap: 10px;
+}
+
+.arKept {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.arThumb {
+  position: relative;
+  width: min(100%, 240px);
 }
 
 .frame {
@@ -233,9 +267,340 @@
   color: var(--ds-danger-ink, #a3201f);
 }
 
+/* The measuring sheet: the page scrolls (more to read and choose), the photo keeps a phone-sized area */
+.measure[data-method="sheet"] {
+  height: auto;
+}
+
+.measure[data-method="sheet"] .area {
+  flex: none;
+  height: min(58vh, 560px);
+}
+
+.method {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.15;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.status {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--ds-surface-2, #eceff1);
+  font-size: 14px;
+}
+
+.found {
+  color: var(--ds-success-ink, #1d6b3a);
+  font-weight: 700;
+}
+
+.warnings {
+  flex-basis: 100%;
+  margin: 2px 0 0;
+  padding-left: 18px;
+  color: var(--ds-warning-ink, #8a5a00);
+  font-weight: 600;
+}
+
+.missing,
+.retake {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--ds-danger, #d93a35);
+  border-radius: 10px;
+  background: var(--ds-danger-tint, #fdecea);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.fixes {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.inline {
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 0 12px;
+  font-weight: 600;
+}
+
+.sheet {
+  fill: rgba(31, 168, 90, 0.16);
+  stroke: var(--ds-success, #1fa85a);
+  stroke-width: 2.5;
+}
+
+.window[data-snapping="true"] {
+  stroke-dasharray: 8 6;
+}
+
+/* The fitted edges: sure ones in the accent, an edge to check in red, dashed */
+.edge {
+  stroke: var(--ds-accent, #ffc21a);
+  stroke-width: 3;
+}
+
+.edge[data-low="true"] {
+  stroke: var(--ds-danger, #d93a35);
+  stroke-dasharray: 10 6;
+  stroke-width: 4;
+}
+
+.edgeFlag {
+  position: absolute;
+  z-index: 1;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--ds-danger, #d93a35);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.snapRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  min-height: 44px;
+}
+
+.snapState {
+  color: var(--ds-text-label, #505b64);
+  font-size: 13px;
+}
+
+.targets {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.targetsLegend {
+  margin-bottom: 4px;
+  padding: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.target {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 6px 12px;
+  border: 1px solid var(--line, #dde2e6);
+  border-radius: 10px;
+  background: var(--ds-surface, #fff);
+  cursor: pointer;
+}
+
+.target[data-checked="true"] {
+  border-color: var(--ds-accent-ink, #8a5a00);
+  box-shadow: inset 0 0 0 1px var(--ds-accent-ink, #8a5a00);
+}
+
+.target input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--ds-accent-ink, #8a5a00);
+}
+
+.target:focus-within {
+  outline: 2px solid var(--ds-focus, #2f6fde);
+  outline-offset: 2px;
+}
+
+.targetText {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.targetHint {
+  color: var(--ds-text-label, #505b64);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.targetOffset {
+  color: var(--ds-text-label, #505b64);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.practice {
+  margin: 2px 0 0;
+  color: var(--ds-text-2, #3a444d);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.advanced summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--ds-text-2, #3a444d);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.plusMinus {
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.size[data-retake="true"] {
+  background: var(--ds-danger-tint, #fdecea);
+}
+
+.combined {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(21, 28, 34, 0.12);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .method,
-  .handle {
+  .handle,
+  .target {
     transition: none;
   }
+}
+
+/* "Which outline are you measuring?": the other ranked outlines dashed in their colours, lettered on the photo */
+.candidate {
+  fill: none;
+  stroke-dasharray: 9 6;
+  stroke-width: 2.5;
+}
+
+.candidateTag {
+  position: absolute;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  color: #151c22;
+  font-size: 12px;
+  font-weight: 800;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+/* Clear of the 44px corner handle: diagonally out from the outline's corner */
+.candidateTag[data-corner="0"] {
+  transform: translate(calc(-50% - 26px), calc(-50% - 26px));
+}
+
+.candidateTag[data-corner="1"] {
+  transform: translate(calc(-50% + 26px), calc(-50% - 26px));
+}
+
+.candidateTag[data-corner="2"] {
+  transform: translate(calc(-50% + 26px), calc(-50% + 26px));
+}
+
+.candidateTag[data-picked="true"] {
+  box-shadow: 0 0 0 2px #151c22;
+}
+
+.pick {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 2px solid var(--ds-accent-ink, #8a5a00);
+  border-radius: 12px;
+  background: var(--ds-surface, #fff);
+}
+
+.pickOption {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 72px;
+  padding: 4px 8px;
+  border: 1px solid var(--line, #dde2e6);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.pickOption[data-checked="true"] {
+  border-color: var(--ds-accent-ink, #8a5a00);
+  box-shadow: inset 0 0 0 1px var(--ds-accent-ink, #8a5a00);
+}
+
+.pickOption:focus-within {
+  outline: 2px solid var(--ds-focus, #2f6fde);
+  outline-offset: 2px;
+}
+
+.pickOption input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--ds-accent-ink, #8a5a00);
+}
+
+.pickLetter {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: #151c22;
+  font-weight: 800;
+}
+
+.pickZoom {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  border: 3px solid;
+  border-radius: 50%;
+  background-color: #000;
+  background-repeat: no-repeat;
+}
+
+.sizeNote {
+  flex-basis: 100%;
+  color: var(--ds-text-label, #505b64);
+  font-size: 12px;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { focalPxFrom35mm, type Quad, sizeFromKnownSide, sizeFromReference } from '@roofline/shared';
-import { quadIsGood, readImageInfo, sizePhotoWindow, sniff, viewingAngleDeg } from '../../src/estimator/window-uploads.ts';
+import { arProblem, quadIsGood, readImageInfo, sizePhotoWindow, sniff, viewingAngleDeg } from '../../src/estimator/window-uploads.ts';
 import { exifSegment, windowPhoto, WINDOW_IN, withExif } from '../window-photo-fixture.ts';
 
 /* On-site window photos: reading the photo (type by its bytes, displayed size, EXIF) and sizing a window from it. */
@@ -78,5 +78,38 @@ describe('sizing a photographed window', () => {
     expect(quadIsGood([[0, 0], [100, 100], [100, 0], [0, 100]])).toBe(false);
     const line: Quad = [[0, 0], [10, 10], [20, 20], [30, 30]];
     expect(sizePhotoWindow({ id: 'w', uploadId: 'u', corners: photo.window, scale: { kind: 'reference', reference: 'letter', corners: line } }, upload)).toBeNull();
+  });
+});
+
+describe('a window measured in AR (Android WebXR)', () => {
+  const m = 0.0254;
+  const pts = (w: number, h: number): [number, number, number][] => [[-w / 2 * m, h / 2 * m, -2], [w / 2 * m, h / 2 * m, -2], [w / 2 * m, -h / 2 * m, -2], [-w / 2 * m, -h / 2 * m, -2]];
+  const input = (w: number, h: number, lost = 0) => ({
+    id: 'a1',
+    uploadId: 'u',
+    corners: [[150, 200], [750, 200], [750, 1000], [150, 1000]] as Quad,
+    scale: { kind: 'ar' as const, pointsM: pts(w, h) as [[number, number, number], [number, number, number], [number, number, number], [number, number, number]], trackingLostCount: lost },
+  });
+  const photo = { widthPx: 900, heightPx: 1200, focal35mm: null };
+
+  it('is sized from the 3D points (the photo does not matter), to 0.01 in, with the AR ±', () => {
+    const w = sizePhotoWindow(input(30.25, 48.5), photo)!;
+    expect(w.widthIn).toBe(30.25);
+    expect(w.heightIn).toBe(48.5);
+    expect(w.quality).toBe('good');
+    expect(w.uncertaintyIn).toEqual({ width: 0.12, height: 0.12 });
+    expect(w.sizeClass).toBe('standard');
+  });
+
+  it('AR losing the wall more than 3 times makes it check', () => {
+    expect(sizePhotoWindow(input(30, 48, 3), photo)!.quality).toBe('good');
+    expect(sizePhotoWindow(input(30, 48, 4), photo)!.quality).toBe('check');
+  });
+
+  it('sizes outside 6..200 in are refused with a reason', () => {
+    expect(arProblem(input(30, 48))).toBeNull();
+    expect(arProblem(input(5, 48))).toMatch(/outside 6 to 200 in/);
+    expect(arProblem(input(30, 201))).toMatch(/outside 6 to 200 in/);
+    expect(sizePhotoWindow(input(5, 48), photo)).toBeNull();
   });
 });

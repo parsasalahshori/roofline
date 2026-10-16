@@ -244,3 +244,56 @@
   color: var(--ds-danger-ink, #a3201f);
 }
 
+
+/* The measuring sheet's how-to on the photos screen */
+.howTo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line, #dde2e6);
+  border-radius: 12px;
+  background: var(--ds-surface, #fff);
+}
+
+.howToTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 22px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.printButton,
+.another {
+  min-height: 48px;
+  border: 1px solid var(--line, #dde2e6);
+  font-weight: 600;
+}
+
+.rowDetail {
+  color: var(--ds-text-label, #505b64);
+  font-size: 12px;
+}
+
+.bigWindow {
+  margin: 0;
+  color: var(--ds-text-2, #3a444d);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.arNote {
+  margin: 8px 0 0;
+  color: var(--ds-text-2, #3a444d);
+  font-size: 13px;
+  line-height: 1.4;
+}

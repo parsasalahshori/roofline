@@ -4,8 +4,8 @@ import { Router } from 'express';
 import busboy from 'busboy';
 import { z } from 'zod';
 import { appendWindowUpload, getWindowMeasurement, type StoredFacadePhoto, type StoredWindowUpload, updateWindowMeasurement, type WindowMeasurementChange, withTenant } from '@roofline/db';
-import { type PhotoWindowInput, priceWindows, WINDOW_PHOTO_REFERENCES, WINDOW_SIZE_CLASSES, type WindowAdjustments, type WindowQuote, windowCounts } from '@roofline/shared';
-import { readImageInfo, sizePhotoWindow } from '../estimator/window-uploads.ts';
+import { type PhotoWindowInput, priceWindows, SHEET_MAX_OFFSET_IN, SHEET_MAX_POINTS, SHEET_PAPER_IN, WINDOW_PHOTO_REFERENCES, WINDOW_SIZE_CLASSES, type WindowAdjustments, type WindowQuote, windowCounts } from '@roofline/shared';
+import { arProblem, readImageInfo, sheetProblem, sizePhotoWindow } from '../estimator/window-uploads.ts';
 import type { AppDeps } from '../app.ts';
 import { measureWindows } from '../estimator/measure-windows.ts';
 import { fitCorners, mainWall, type Quad } from '../estimator/windows-lineup.ts';
@@ -38,6 +38,8 @@ export const MAX_UPLOADS = 40;
 export const MAX_PHOTO_WINDOWS = 60;
 export const MAX_MARKED = 60;
 const MAX_COUNT = 200;
+/** AR points further than this from AR's origin (metres, any axis) are not a window the person is standing at. */
+const AR_MAX_COORD_M = 50;
 /** Window ids: the server's UUIDs, or the ids the web app gives the boxes a person marks. */
 const WINDOW_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -70,10 +72,35 @@ const CornersSchema = z
   .nullable();
 
 const finite = z.number().finite();
+const arCoord = z.number().finite().gt(-AR_MAX_COORD_M).lt(AR_MAX_COORD_M);
+const arPoint = z.tuple([arCoord, arCoord, arCoord]);
 const QuadSchema = z.tuple([z.tuple([finite, finite]), z.tuple([finite, finite]), z.tuple([finite, finite]), z.tuple([finite, finite])]);
 const ScaleSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('reference'), reference: z.enum(Object.keys(WINDOW_PHOTO_REFERENCES) as [keyof typeof WINDOW_PHOTO_REFERENCES]), corners: QuadSchema }).strict(),
   z.object({ kind: z.literal('known-side'), side: z.enum(['width', 'height']), inches: z.number().finite().min(6).max(200) }).strict(),
+  // The measuring sheet: matched points (photo pixels <-> inches on the sheet, inside the paper), the frame's offset.
+  z
+    .object({
+      kind: z.literal('sheet'),
+      paper: z.enum(['letter', 'a4']),
+      imagePoints: z.array(z.tuple([finite, finite])).max(SHEET_MAX_POINTS),
+      sheetPointsIn: z.array(z.tuple([finite, finite])).max(SHEET_MAX_POINTS),
+      planeOffsetIn: z.number().finite().min(-SHEET_MAX_OFFSET_IN).max(SHEET_MAX_OFFSET_IN),
+      sheetIndex: z.array(z.union([z.literal(0), z.literal(1)])).max(SHEET_MAX_POINTS).optional(),
+      printScale: z.number().finite().min(0.9).max(1.1).optional(),
+    })
+    .strict()
+    .refine((v) => v.imagePoints.length === v.sheetPointsIn.length)
+    .refine((v) => v.sheetIndex === undefined || v.sheetIndex.length === v.sheetPointsIn.length)
+    .refine((v) => v.sheetPointsIn.every(([x, y]) => x >= 0 && y >= 0 && x <= SHEET_PAPER_IN[v.paper].widthIn && y <= SHEET_PAPER_IN[v.paper].heightIn)),
+  // AR (Android WebXR): the frame's four corners in AR world space, metres (a window is never 50 m from AR's origin).
+  z
+    .object({
+      kind: z.literal('ar'),
+      pointsM: z.tuple([arPoint, arPoint, arPoint, arPoint]),
+      trackingLostCount: z.number().int().min(0).max(1000),
+    })
+    .strict(),
 ]);
 const PhotoWindowsSchema = z
   .array(
@@ -82,6 +109,8 @@ const PhotoWindowsSchema = z
         id: z.string().regex(WINDOW_ID),
         uploadId: z.string().regex(UUID),
         label: z.string().max(80).refine(noNul).optional(),
+        // Several photos of one window share a key (the screen combines them).
+        windowKey: z.string().max(80).refine(noNul).optional(),
         corners: QuadSchema,
         scale: ScaleSchema,
       })
@@ -232,9 +261,15 @@ export function windowMeasurementRoutes(deps: AppDeps): Router {
           const upload = found.uploads.find((u) => u.id === input.uploadId);
           if (upload === undefined) throw new AppError(400, PHOTO_WINDOWS_MESSAGE, 'photoWindows');
           // Corners are in the photo's displayed pixels (EXIF orientation applied), inside the photo.
-          const quads = input.scale.kind === 'reference' ? [input.corners, input.scale.corners] : [input.corners];
+          const quads: [number, number][][] = input.scale.kind === 'reference' ? [input.corners, input.scale.corners] : input.scale.kind === 'sheet' ? [input.corners, input.scale.imagePoints] : [input.corners];
           const inside = quads.every((q) => q.every(([x, y]) => x >= 0 && y >= 0 && x <= upload.widthPx && y <= upload.heightPx));
           if (!inside) throw new AppError(400, PHOTO_WINDOWS_MESSAGE, 'photoWindows');
+          const sheet = sheetProblem(input, upload);
+          if (sheet !== null) {
+            throw new AppError(422, `Window "${input.label ?? input.id}" could not be sized: ${sheet}. Take its photo again with the whole sheet flat on the glass and in view.`, 'photoWindows');
+          }
+          const ar = arProblem(input);
+          if (ar !== null) throw new AppError(422, `Window "${input.label ?? input.id}" could not be sized: ${ar}. Tap its four frame corners in AR again.`, 'photoWindows');
           if (sizePhotoWindow(input, upload) === null) {
             throw new AppError(422, `Window "${input.label ?? input.id}" could not be sized from its corners. Mark its four corners (and the paper's) again.`, 'photoWindows');
           }

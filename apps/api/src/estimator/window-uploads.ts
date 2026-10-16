@@ -2,10 +2,15 @@ import exifr from 'exifr';
 import {
   DEFAULT_FOCAL_35MM,
   focalPxFrom35mm,
+  measureWithSheet,
   type PhotoWindow,
   type PhotoWindowInput,
   type Pt,
   type Quad,
+  SHEET_MAX_RMS_PX,
+  SHEET_MIN_POINTS,
+  STEEP_CHECK_DEG,
+  sizeFromArPoints,
   sizeFromKnownSide,
   sizeFromReference,
   WINDOW_PHOTO_REFERENCES,
@@ -174,16 +179,74 @@ export function sizePhotoWindow(input: PhotoWindowInput, photo: { widthPx: numbe
   const focalPx = focalPxFrom35mm(photo.focal35mm ?? DEFAULT_FOCAL_35MM, photo.widthPx, photo.heightPx);
   const angle = viewingAngleDeg(input.corners, photo.widthPx, photo.heightPx, focalPx);
   let good = quadIsGood(input.corners) && angle !== null && angle <= STEEP_VIEW_DEG;
+  let extra: Pick<PhotoWindow, 'uncertaintyIn' | 'distanceIn' | 'viewAngleDeg'> = {};
+  // The sheet method is exact to a few hundredths of an inch: kept to 0.01 in (the others to 0.1 in).
+  let step = 10;
   if (s.kind === 'reference') {
     const ref = referenceSize(s.reference, s.corners);
     size = sizeFromReference(input.corners, s.corners, ref.w, ref.h);
     good = good && quadIsGood(s.corners);
+  } else if (s.kind === 'sheet') {
+    if (sheetProblem(input, photo) !== null) return null;
+    const m = measureWithSheet({ widthPx: photo.widthPx, heightPx: photo.heightPx, focalPx, imagePoints: s.imagePoints, sheetPointsIn: s.sheetPointsIn, sheetIndex: s.sheetIndex, printScale: s.printScale, windowQuad: input.corners, planeOffsetIn: s.planeOffsetIn })!;
+    size = { widthIn: m.widthIn, heightIn: m.heightIn };
+    // The sheet's pose gives the true viewing angle (the quad-based estimate above is only a fallback).
+    good = quadIsGood(input.corners) && m.viewAngleDeg <= STEEP_CHECK_DEG;
+    const r2 = (v: number) => Math.round(v * 100) / 100;
+    extra = { uncertaintyIn: { width: r2(m.uncertaintyIn.width), height: r2(m.uncertaintyIn.height) }, distanceIn: Math.round(m.distanceIn), viewAngleDeg: Math.round(m.viewAngleDeg * 10) / 10 };
+    step = 100;
+  } else if (s.kind === 'ar') {
+    // AR: the size is the distance between the tapped points (metres in AR space); the photo only carries the thumbnail.
+    if (arProblem(input) !== null) return null;
+    const m = sizeFromArPoints(s.pointsM)!;
+    size = { widthIn: m.widthIn, heightIn: m.heightIn };
+    good = m.quality === 'good' && s.trackingLostCount <= AR_MAX_TRACKING_LOST;
+    const r2 = (v: number) => Math.round(v * 100) / 100;
+    extra = { uncertaintyIn: { width: r2(m.uncertaintyIn.width), height: r2(m.uncertaintyIn.height) }, distanceIn: null, viewAngleDeg: null };
+    step = 100;
   } else {
     size = sizeFromKnownSide(input.corners, photo.widthPx, photo.heightPx, s.side, s.inches, focalPx);
   }
   if (size === null || !Number.isFinite(size.widthIn) || !Number.isFinite(size.heightIn)) return null;
   if (size.widthIn < 3 || size.heightIn < 3 || size.widthIn > 400 || size.heightIn > 400) return null;
-  const widthIn = Math.round(size.widthIn * 10) / 10;
-  const heightIn = Math.round(size.heightIn * 10) / 10;
-  return { ...input, widthIn, heightIn, sizeClass: windowSizeClass(widthIn, heightIn), quality: good ? 'good' : 'check' };
+  const widthIn = Math.round(size.widthIn * step) / step;
+  const heightIn = Math.round(size.heightIn * step) / step;
+  return { ...input, widthIn, heightIn, sizeClass: windowSizeClass(widthIn, heightIn), ...extra, quality: good ? 'good' : 'check' };
+}
+
+/**
+ * Why a window scaled by the measuring sheet cannot be sized, in words for the person; null when it can. The browser
+ * found the points; the server refits them: fewer than SHEET_MIN_POINTS matched points, or a homography whose RMS
+ * reprojection error is above SHEET_MAX_RMS_PX (2.5 px: a flat, sharp sheet fits to well under 1 px; more means a
+ * curled sheet, a blurred photo or points that are not the sheet's), is refused rather than sized wrong.
+ */
+export function sheetProblem(input: PhotoWindowInput, photo: { widthPx: number; heightPx: number; focal35mm: number | null }): string | null {
+  const s = input.scale;
+  if (s.kind !== 'sheet') return null;
+  if (s.imagePoints.length < SHEET_MIN_POINTS || s.imagePoints.length !== s.sheetPointsIn.length) return 'too few points of the measuring sheet were found';
+  const focalPx = focalPxFrom35mm(photo.focal35mm ?? DEFAULT_FOCAL_35MM, photo.widthPx, photo.heightPx);
+  const m = measureWithSheet({ widthPx: photo.widthPx, heightPx: photo.heightPx, focalPx, imagePoints: s.imagePoints, sheetPointsIn: s.sheetPointsIn, sheetIndex: s.sheetIndex, printScale: s.printScale, windowQuad: input.corners, planeOffsetIn: s.planeOffsetIn });
+  if (m === null) return 'the measuring sheet\'s points do not fit a flat sheet';
+  if (m.rmsPx > SHEET_MAX_RMS_PX) return `the measuring sheet is not flat or the photo is blurred (fit error ${m.rmsPx.toFixed(1)} px)`;
+  return null;
+}
+
+/** AR sizes outside this (inches, either side) are not a window: refused with a 422 naming the window. */
+export const AR_MIN_IN = 6;
+export const AR_MAX_IN = 200;
+/** AR losing the wall more often than this while the corners were tapped: the window is 'check' (the points may have drifted). */
+export const AR_MAX_TRACKING_LOST = 3;
+
+/**
+ * Why a window measured in AR cannot be sized, in words for the person; null when it can (or it was not measured in
+ * AR): degenerate points, or a size outside 6..200 in.
+ */
+export function arProblem(input: PhotoWindowInput): string | null {
+  const s = input.scale;
+  if (s.kind !== 'ar') return null;
+  const m = sizeFromArPoints(s.pointsM);
+  if (m === null) return 'its AR corners are on top of each other or in a line';
+  const out = (v: number) => !(v >= AR_MIN_IN && v <= AR_MAX_IN);
+  if (out(m.widthIn) || out(m.heightIn)) return `its AR size ${m.widthIn.toFixed(1)} x ${m.heightIn.toFixed(1)} in is outside ${AR_MIN_IN} to ${AR_MAX_IN} in`;
+  return null;
 }

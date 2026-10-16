@@ -5,7 +5,7 @@
 // optional detector can find the front windows instead (source 'detector'); it is off by default.
 // Estimated windows are never shown or priced as measured.
 import type { Tier } from './proposals.ts';
-import type { Quad } from './window-photo-math.ts';
+import type { ArQuad, Quad } from './window-photo-math.ts';
 
 type LngLat = [number, number];
 
@@ -128,17 +128,81 @@ export type WindowPhotoUpload = { id: string; widthPx: number; heightPx: number;
 /** How a window photo is scaled: a reference of known size on the glass, or one side measured by hand. */
 export type WindowPhotoScale =
   | { kind: 'reference'; reference: WindowPhotoReference; corners: Quad }
-  | { kind: 'known-side'; side: 'width' | 'height'; inches: number };
+  | { kind: 'known-side'; side: 'width' | 'height'; inches: number }
+  | {
+      /**
+       * The printable measuring sheet (window-photo-cv.ts calibrationSheetSvg), found automatically in the photo: many
+       * matched points (photo pixels <-> inches on the sheet) give a least-squares homography instead of four clicks.
+       */
+      kind: 'sheet';
+      paper: 'letter' | 'a4';
+      imagePoints: [number, number][];
+      sheetPointsIn: [number, number][];
+      /**
+       * How far the measured frame sits in front of (+) or behind (-) the sheet's plane, inches (the sheet is on the
+       * glass; the frame being measured is usually 0.5-2 in proud of it). Corrected using the camera distance.
+       */
+      planeOffsetIn: number;
+      /** Two sheets (big windows): which sheet each point is on, 0 = A, 1 = B. Absent: one sheet. */
+      sheetIndex?: number[];
+      /** The printed scale read off the sheet's ruler (1 = 100%). Absent: 1. */
+      printScale?: number;
+    }
+  | {
+      /**
+       * AR on an Android phone (WebXR hit-test): the person tapped the window FRAME's four corners. No scale prop: the
+       * size is the distance between the points (window-photo-math sizeFromArPoints). The PhotoWindowInput's corners are
+       * the same four points drawn into the one photo kept with it (or that photo inset 15% when they could not be).
+       */
+      kind: 'ar';
+      /** TL, TR, BR, BL frame corners, metres, AR world space. */
+      pointsM: ArQuad;
+      /** How many times AR lost the wall while the corners were being tapped. */
+      trackingLostCount: number;
+    };
 
-/** What the person enters for one photographed window: corners in photo pixels (TL, TR, BR, BL). */
-export type PhotoWindowInput = { id: string; uploadId: string; label?: string; corners: Quad; scale: WindowPhotoScale };
+/**
+ * What the person enters for one photographed window: corners in photo pixels (TL, TR, BR, BL). Several photos of the
+ * same window share a `windowKey` (one PhotoWindowInput per photo); absent means the photo is its own window.
+ */
+export type PhotoWindowInput = { id: string; uploadId: string; label?: string; windowKey?: string; corners: Quad; scale: WindowPhotoScale };
+
+/** The window a photographed window belongs to: its shared key, else its own id (one photo, one window). */
+export function photoWindowKey(w: Pick<PhotoWindowInput, 'id' | 'windowKey'>): string {
+  return w.windowKey !== undefined && w.windowKey !== '' ? w.windowKey : w.id;
+}
+
+const median = (vs: number[]): number => {
+  const s = [...vs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 === 1 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
+};
+
+/**
+ * Photographed windows grouped into windows: each group's photos (in order) and its size class from the median width
+ * and height of its photos. Excluded photos are left out; a group with every photo excluded is gone.
+ */
+export function photoWindowGroups<T extends Pick<PhotoWindow, 'id' | 'windowKey' | 'widthIn' | 'heightIn'>>(ws: readonly T[], excluded: ReadonlySet<string> = new Set()): { key: string; photos: T[]; sizeClass: WindowSizeClass }[] {
+  const groups = new Map<string, T[]>();
+  for (const w of ws) {
+    if (excluded.has(w.id)) continue;
+    const k = photoWindowKey(w);
+    groups.set(k, [...(groups.get(k) ?? []), w]);
+  }
+  return [...groups].map(([key, photos]) => ({ key, photos, sizeClass: windowSizeClass(median(photos.map((p) => p.widthIn)), median(photos.map((p) => p.heightIn))) }));
+}
 
 /** A photographed window sized by window-photo-math (server recomputes; the browser may preview with the same code). */
 export type PhotoWindow = PhotoWindowInput & {
   widthIn: number;
   heightIn: number;
   sizeClass: WindowSizeClass;
-  /** 'check' when the corners are nearly degenerate or the photo was steeply angled (> 50 deg). */
+  /** Expected error of widthIn / heightIn (inches, about 1 sigma), when the method can tell (sheet and AR methods). */
+  uncertaintyIn?: { width: number; height: number } | null;
+  /** Camera to the sheet's plane, inches, and the viewing angle off straight-on, degrees (sheet method). */
+  distanceIn?: number | null;
+  viewAngleDeg?: number | null;
+  /** 'check' when the corners are nearly degenerate or the photo was steeply angled (> 50 deg); AR: not a flat rectangle. */
   quality: 'good' | 'check';
 };
 
@@ -226,7 +290,8 @@ export function windowCounts(view: Pick<WindowMeasurementView, 'windows' | 'esti
   const out = Object.fromEntries(WINDOW_SIZE_CLASSES.map((c) => [c, { measured: 0, estimated: 0 }])) as WindowCounts;
   const excluded = new Set(view.adjustments.excludedWindowIds);
   for (const w of view.windows) if (!excluded.has(w.id)) out[w.sizeClass].measured += 1;
-  for (const w of view.photoWindows ?? []) if (!excluded.has(w.id)) out[w.sizeClass].measured += 1;
+  // Several photos of one window (a shared windowKey) count as one window
+  for (const g of photoWindowGroups(view.photoWindows ?? [], excluded)) out[g.sizeClass].measured += 1;
   const allPhotographed = view.adjustments.photosCoverAllWindows === true;
   for (const c of WINDOW_SIZE_CLASSES) {
     const manual = view.adjustments.manualCounts[c];

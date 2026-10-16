@@ -26,7 +26,7 @@ import panelStyles from '../lift/ProposalPanel.module.css';
 import { photoSrc, useCreateWindowMeasurement, usePatchWindowMeasurement, useWindowMeasurement, useWindowPreview } from './api.ts';
 import { liveCounts, newMarkId, readAdjustments, shownWindows, tiersFromQuotes, totalOf, type Box, type Corners } from './model.ts';
 import { PhotoStage, wallDrawn, type StageEdit } from './PhotoStage.tsx';
-import { livePhotoWindows } from './photoModel.ts';
+import { livePhotoWindows, type LocalSheetSize } from './photoModel.ts';
 import { PhotoWindowsFlow, PhotoWindowsList, useWindowUploads, type FlowAt } from './PhotoWindows.tsx';
 import { WallsPlan, WindowsCard } from './WindowsCard.tsx';
 import { MeasureSwitch } from './MeasureSwitch.tsx';
@@ -151,7 +151,9 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
   const uploads = useWindowUploads(v.id, v.uploads);
   const [flowAt, setFlowAt] = useState<FlowAt | null>(null);
   const uploadList = uploads.uploads;
-  const photoLive = useMemo(() => livePhotoWindows(adj.photoWindows, v.photoWindows, uploadList), [adj.photoWindows, v.photoWindows, uploadList]);
+  // Sheet-measured windows sized on this device, until the server's size for the same corners arrives
+  const [localSizes, setLocalSizes] = useState<ReadonlyMap<string, LocalSheetSize>>(new Map());
+  const photoLive = useMemo(() => livePhotoWindows(adj.photoWindows, v.photoWindows, uploadList, localSizes), [adj.photoWindows, v.photoWindows, uploadList, localSizes]);
   const counts = useMemo(() => liveCounts(v, shown, adj, photoLive), [v, shown, adj, photoLive]);
   const excluded = useMemo(() => new Set(adj.excludedWindowIds), [adj.excludedWindowIds]);
   const numbers = useMemo(() => new Map(shown.map((w, i) => [w.id, i + 1])), [shown]);
@@ -175,16 +177,25 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
     setAdj((a) => ({ ...a, manualCounts: next }));
     save({ manualCounts: next });
   };
+  /** Leave windows out of the quote (all of them if any is in), or put them all back. */
+  const toggleMany = (ids: string[]) => {
+    const anyIn = ids.some((id) => !excluded.has(id));
+    const next = anyIn ? [...adj.excludedWindowIds.filter((x) => !ids.includes(x)), ...ids] : adj.excludedWindowIds.filter((x) => !ids.includes(x));
+    setAdj((a) => ({ ...a, excludedWindowIds: next }));
+    save({ excludedWindowIds: next });
+  };
   /** A photographed window saved (new or edited): shown at once, saved after the pause; the server's size follows. */
-  const savePhoto = (input: PhotoWindowInput) => {
+  const savePhoto = (input: PhotoWindowInput, local?: LocalSheetSize) => {
+    if (local !== undefined) setLocalSizes((m) => new Map(m).set(input.id, local));
     const next = adj.photoWindows.some((w) => w.id === input.id) ? adj.photoWindows.map((w) => (w.id === input.id ? input : w)) : [...adj.photoWindows, input];
     setAdj((a) => ({ ...a, photoWindows: next }));
     save({ photoWindows: next });
   };
-  const deletePhoto = (id: string) => {
-    const next = adj.photoWindows.filter((w) => w.id !== id);
+  const deletePhoto = (which: string | string[]) => {
+    const ids = typeof which === 'string' ? [which] : which;
+    const next = adj.photoWindows.filter((w) => !ids.includes(w.id));
     const body: WindowMeasurementPatch = { photoWindows: next };
-    if (excluded.has(id)) body.excludedWindowIds = adj.excludedWindowIds.filter((x) => x !== id);
+    if (ids.some((id) => excluded.has(id))) body.excludedWindowIds = adj.excludedWindowIds.filter((x) => !ids.includes(x));
     setAdj((a) => ({ ...a, photoWindows: next, excludedWindowIds: body.excludedWindowIds ?? a.excludedWindowIds }));
     save(body);
   };
@@ -447,7 +458,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
                   coverAll={adj.photosCoverAllWindows}
                   srcFor={uploads.srcFor}
                   onOpen={(w) => setFlowAt({ step: 'measure', uploadId: w.uploadId, windowId: w.id })}
-                  onToggle={toggle}
+                  onToggle={toggleMany}
                   onDelete={deletePhoto}
                   onCoverAll={coverAll}
                 />
@@ -463,6 +474,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
           uploads={uploads}
           inputs={adj.photoWindows}
           saved={v.photoWindows ?? []}
+          live={photoLive}
           onSave={savePhoto}
           onDelete={deletePhoto}
           onClose={() => setFlowAt(null)}
