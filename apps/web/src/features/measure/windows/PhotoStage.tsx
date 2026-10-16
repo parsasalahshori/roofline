@@ -445,6 +445,7 @@ export function PhotoStage({
                 data-out={out ? 'true' : undefined}
                 data-selected={selected ? 'true' : undefined}
                 data-fresh={fresh ? 'true' : undefined}
+                data-row={i % 2}
               >
                 <Button
                   variant="ghost"
@@ -466,7 +467,8 @@ export function PhotoStage({
                 ) : null}
                 {w.source === 'detector' && (!scanning || p >= sizeShownAt(i, n)) ? (
                   <span className={styles.autoChip} aria-hidden="true">
-                    {copy.autoFound}
+                    <span className={styles.autoLong}>{copy.autoFound}</span>
+                    <span className={styles.autoShort}>{copy.autoFoundShort}</span>
                   </span>
                 ) : null}
                 {selected

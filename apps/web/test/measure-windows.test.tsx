@@ -387,6 +387,9 @@ describe('Measure windows: the table and what it was worked out from', () => {
     // The detector's window carries the auto-found chip; the marked one does not
     expect(document.querySelector('[data-window="d1"]')?.textContent).toContain(copy.autoFound);
     expect(document.querySelector('[data-window="m1"]')?.textContent).not.toContain(copy.autoFound);
+    // On a narrow photo the chip is the short word, and the boxes take turns for the rows of their size labels (the css picks)
+    expect(document.querySelector('[data-window="d1"]')?.textContent).toContain(copy.autoFoundShort);
+    expect(Array.from(document.querySelectorAll('[data-window]')).map((box) => box.getAttribute('data-row'))).toEqual(['0', '1']);
     expect(screen.getByRole('button', { name: copy.windowLabel(1, copy.size(36, 60), true) })).toBeTruthy();
   });
 

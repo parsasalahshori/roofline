@@ -74,10 +74,11 @@ export function MeasurePage({ section, address = null, title, subtitle, actions,
           const href = links[next];
           if (next !== section && href) void navigate(href);
         }}
+        // On a phone the three words fit beside the way back only without their icons (p-measure.png has none)
         options={(['roof', 'windows', ...(links.gutters ? ['gutters' as const] : [])] as MeasureSection[]).map((value) => ({
           value,
           label: SECTION_LABEL[value],
-          icon: <Icon name={SECTION_ICON[value]} size={16} />,
+          ...(phone ? {} : { icon: <Icon name={SECTION_ICON[value]} size={16} /> }),
         }))}
       />
     ) : null;

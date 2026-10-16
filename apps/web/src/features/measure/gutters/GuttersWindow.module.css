@@ -210,6 +210,21 @@
   max-height: 72%;
 }
 
+/* Four phrases (downspouts, corners, size, eave height), not eight numbers: two by two, so none of them breaks inside a unit */
+.card .cells {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.card .cells dd {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+/* Under the numbers, with air between */
+.card [data-length-source] {
+  margin-top: 8px;
+}
+
 .facts {
   display: flex;
   flex-direction: column;

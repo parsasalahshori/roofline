@@ -141,7 +141,7 @@ function Readings({ measured }: { measured: readonly MeasuredSize[] }) {
             const takesH = counts && m.heightIn === minH;
             const label = m.quoteOnly === true ? copy.readings.roomScan : copy.readings.photo(++photo);
             return (
-              <Tr key={i} {...(takesW || takesH ? { tone: 'tape' as const } : {})} data-reading={i}>
+              <Tr key={i} {...(takesW || takesH ? { tone: 'tape' as const } : {})} className={styles.reading} data-reading={i}>
                 <Td>{label}</Td>
                 <Td>
                   <span className={styles.readingSize}>

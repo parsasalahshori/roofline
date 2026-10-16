@@ -266,6 +266,16 @@
   overflow: hidden;
 }
 
+/* The kit's panel header does not wrap: where the card is narrow, "Bring in new photo windows" takes a line of its own, not the title's room */
+.sheet > div:first-child {
+  flex-wrap: wrap;
+}
+
+.sheet > div:first-child > :last-child:not(:first-child) {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+
 /* "Bring in new photo windows" wraps onto two lines where the header is narrow */
 .refresh[data-variant] {
   min-width: 0;
@@ -340,6 +350,11 @@
 /* What the photos read is the quiet number; the size to order is the one that counts */
 .cMeasured [data-scale] {
   color: var(--ink-3);
+}
+
+/* On a selected row's tint the quiet ink steps up one, so its text keeps 4.5:1 in both themes (the kit's size parts read --ink-3 too) */
+.row[data-selected="true"] {
+  --ink-3: var(--ink-2);
 }
 
 .cOrder [data-scale] > [aria-hidden="true"] {
@@ -555,6 +570,11 @@
   gap: 2px;
 }
 
+/* On the tape tint the quiet ink steps up one, so its text keeps 4.5:1 in both themes (the kit's size parts read --ink-3 too) */
+.reading[data-tone="tape"] {
+  --ink-3: var(--ink-2);
+}
+
 /* On a tape-tinted row, so tape ink: the order takes this side of this photo */
 .smallest {
   color: var(--tape-ink);
@@ -765,6 +785,7 @@
 
   .table .row > td {
     display: block;
+    width: auto;
     padding: 6px 8px;
     border-bottom: 0;
   }

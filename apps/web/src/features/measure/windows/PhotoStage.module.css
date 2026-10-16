@@ -18,6 +18,7 @@
   overflow: hidden;
   border-radius: var(--r-2);
   background: var(--over-backdrop);
+  container: photoStage / inline-size;
 }
 
 /* Adjust shows the whole photo (contained), so every part of it can be reached */
@@ -194,6 +195,25 @@
   font-weight: 600;
   white-space: nowrap;
   pointer-events: none;
+}
+
+.autoShort {
+  display: none;
+}
+
+/* A phone's photo is about 300px wide and the windows stand close together: shorter chips, and the sizes take turns, one row under the next */
+@container photoStage (max-width: 559.98px) {
+  .autoLong {
+    display: none;
+  }
+
+  .autoShort {
+    display: inline;
+  }
+
+  .box[data-row="1"] .boxLabel {
+    top: calc(100% + 26px);
+  }
 }
 
 .box:hover,

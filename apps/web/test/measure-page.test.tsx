@@ -1,4 +1,4 @@
-import { Page } from '@roofline/ui';
+import { Page, PageSlotsContext } from '@roofline/ui';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider, useLocation } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -61,6 +61,21 @@ describe('MeasurePage: the head every Measure screen shares', () => {
     expect(again.queryByRole('radio', { name: measureGutters.switchGutters })).toBeNull();
     fireEvent.click(again.getByRole('radio', { name: measureWindows.switchRoof }));
     expect(second.state.location.pathname).toBe('/estimator');
+  });
+
+  it('on a phone the switch has just the three words, so it fits beside the way back; on a desktop each has its icon', () => {
+    const phoneSlots = { crumbs: null, actions: null, phone: true, trailing: null };
+    renderPage(
+      <PageSlotsContext.Provider value={phoneSlots}>
+        <MeasurePage section="roof" address="12 Elm St, Omaha" links={LINKS}>{'body'}</MeasurePage>
+      </PageSlotsContext.Provider>,
+    );
+    const onPhone = screen.getByRole('radiogroup', { name: measureWindows.switchLabel });
+    expect(within(onPhone).getAllByRole('radio').map((radio) => radio.textContent)).toEqual([measureWindows.switchRoof, measureWindows.switchWindows, measureGutters.switchGutters]);
+    expect(onPhone.querySelector('svg')).toBeNull();
+    cleanup();
+    renderPage(<MeasurePage section="roof" address="12 Elm St, Omaha" links={LINKS}>{'body'}</MeasurePage>);
+    expect(screen.getByRole('radiogroup', { name: measureWindows.switchLabel }).querySelectorAll('svg')).toHaveLength(3);
   });
 
   it('the page and its host render the steps as a tab list that picks one column', () => {

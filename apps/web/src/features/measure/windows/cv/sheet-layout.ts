@@ -134,6 +134,7 @@ export function calibrationSheetSvg(paper: SheetPaper, index: SheetIndex = 0): C
     `<text x="${fmt(MARGIN_IN)}" y="${fmt(textY + 0.24)}" font-size="0.13">${r.label}</text>`,
     `<text x="${fmt(MARGIN_IN)}" y="${fmt(textY + 0.44)}" font-size="0.13">Tape it flat on the glass with every square in view. Photograph the whole window with the 1x camera.</text>`,
   ];
+  // The measuring sheet is printed on white paper: black on white whatever the theme
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${fmt(layout.widthIn)}in" height="${fmt(layout.heightIn)}in" viewBox="0 0 ${fmt(layout.widthIn)} ${fmt(layout.heightIn)}">` +
     `<rect width="100%" height="100%" fill="#fff"/><g fill="#000" font-family="Helvetica, Arial, sans-serif">${parts.join('')}${ruler.join('')}${numbers.join('')}${words.join('')}</g></svg>`;

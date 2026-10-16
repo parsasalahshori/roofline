@@ -218,6 +218,22 @@ test('the proposal view fits the phone', async ({ page, loginAs, markTodaySeen, 
   await markTodaySeen('owner@a.test');
   const sent = await makeAndSendProposal(page, click);
 
+  // The measure view of the same roof: one step at a time, the switch beside the way back, nothing scrolls sideways
+  const proposal = await page.request.get('/api/proposals/' + sent.proposalId);
+  const { measurementId } = (await proposal.json()) as { measurementId: string };
+  await page.goto('/estimator/measure/' + measurementId);
+  const steps = page.getByRole('tablist', { name: 'Measure steps' });
+  await expect(steps.getByRole('tab', { name: 'Roof' })).toHaveAttribute('aria-selected', 'true', { timeout: 20_000 });
+  await noSideScroll(page);
+  const switcher = await page.getByRole('radiogroup', { name: 'What to measure' }).boundingBox();
+  expect(switcher).not.toBeNull();
+  expect(switcher!.x + switcher!.width).toBeLessThanOrEqual(375);
+  for (const name of ['Requests', 'Proposal']) {
+    await steps.getByRole('tab', { name }).click();
+    await expect(steps.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'true');
+    await noSideScroll(page);
+  }
+
   await page.goto('/estimator/proposals/' + sent.proposalId);
   await expect(page.getByRole('button', { name: 'Copy link' })).toBeVisible();
   await noSideScroll(page);

@@ -33,6 +33,11 @@
   background: var(--tape-tint);
 }
 
+/* On the tint the quiet ink steps up one, so its text keeps 4.5:1 in both themes (the kit's size parts read --ink-3 too) */
+.row[data-selected="true"] {
+  --ink-3: var(--ink-2);
+}
+
 .tagCell {
   padding-right: 0;
 }

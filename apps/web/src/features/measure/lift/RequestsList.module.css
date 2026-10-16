@@ -76,6 +76,11 @@
   padding-left: 32px;
 }
 
+/* The browser's clear button keeps its room even when the field is empty, and the placeholder is a whole phrase; Esc still clears */
+.search input::-webkit-search-cancel-button {
+  display: none;
+}
+
 /* The field is 36px tall (the hidden label takes no room): the icon sits at its middle */
 .glass {
   position: absolute;
