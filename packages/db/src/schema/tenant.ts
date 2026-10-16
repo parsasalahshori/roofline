@@ -53,6 +53,7 @@ import {
   type MeasuredWindow,
   type WindowAdjustments,
   type WindowPhotoUpload,
+  type GutterAdjustments,
 } from '@roofline/shared';
 import { bytea, citext, enumCheck, multiPolygon, pk, point4326, timestamps, tstz } from './columns.ts';
 import {
@@ -1062,6 +1063,8 @@ export const measurements = pgTable(
      * its real outline and the roof drawn is its faces and lines.
      */
     roof3d: jsonb('roof_3d').$type<Roof3dSnapshot>(),
+    /** Measure gutters: runs left out, downspouts typed in per run, and a size chosen by hand (see GutterAdjustments). */
+    gutterAdjustments: jsonb('gutter_adjustments').$type<GutterAdjustments>().notNull().default({ excludedRunIds: [], downspouts: {}, size: null }),
     createdByUserId: userRef('created_by_user_id'),
     ...timestamps(),
   },

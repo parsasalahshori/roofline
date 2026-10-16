@@ -177,6 +177,19 @@ describe('schema', () => {
     expect(cols.map((c) => c.column_name)).toEqual(expect.arrayContaining(['photos', 'adjustments', 'uploads', 'photos_delete_by']));
   });
 
+  test('measurements keep gutter adjustments (0033) with an empty default, under the table\'s forced RLS', async () => {
+    const [col] = await ownerQuery<{ data_type: string; is_nullable: string; column_default: string }>(
+      `select data_type, is_nullable, column_default from information_schema.columns
+        where table_schema = 'public' and table_name = 'measurements' and column_name = 'gutter_adjustments'`,
+    );
+    expect(col).toMatchObject({ data_type: 'jsonb', is_nullable: 'NO' });
+    expect(col!.column_default).toContain('"excludedRunIds":[]');
+    const [cls] = await ownerQuery<{ relrowsecurity: boolean; relforcerowsecurity: boolean }>(
+      `select relrowsecurity, relforcerowsecurity from pg_class where oid = 'public.measurements'::regclass`,
+    );
+    expect(cls).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
+  });
+
   test('D1 tables are tenant tables with RLS forced', async () => {
     const d1Tables = ['conversations', 'calls', 'conversation_turns', 'claim_intakes', 'blocked_numbers'] as const;
     expect([...TENANT_TABLES]).toEqual(expect.arrayContaining([...d1Tables]));

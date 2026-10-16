@@ -1,0 +1,1 @@
+ALTER TABLE "measurements" ADD COLUMN "gutter_adjustments" jsonb DEFAULT '{"excludedRunIds":[],"downspouts":{},"size":null}'::jsonb NOT NULL;
