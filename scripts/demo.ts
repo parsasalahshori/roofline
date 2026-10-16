@@ -237,6 +237,9 @@ const env: NodeJS.ProcessEnv = {
   DEMO_FILES_DIR: FILES_DIR,
   WEB_DIST_DIR: 'apps/web/dist',
   API_RATE_LIMIT_PER_MIN: '100000',
+  // The instant quote page (/q/summit-ridge) offers "Measure with the WinChoice app" (a button and a QR code) when this is set;
+  // the demo uses a placeholder App Store link unless the shell has one. The phone app talks to /api/public/homeowner/summit-ridge.
+  HOMEOWNER_APP_URL: process.env.HOMEOWNER_APP_URL?.trim() || 'https://apps.apple.com/us/app/winchoice/id0000000000',
 };
 // Never let a real key from the shell reach a demo process.
 for (const name of Object.keys(env)) {
@@ -298,6 +301,9 @@ log(`  Email:    ${DEMO_LOGIN.email}`);
 log(`  Password: ${DEMO_LOGIN.password}`);
 log('  Click the Demo badge (top bar) to simulate a text, a call,');
 log('  a hail storm or a signature. Ctrl+C stops the demo.');
+log(`  Instant quote page:  ${BASE_URL}/q/summit-ridge`);
+log(`  Homeowner app API:   ${BASE_URL}/api/public/homeowner/summit-ridge`);
+log('                       (the phone app\'s server; docs/windows/homeowner-api.md)');
 log('==============================================================');
 if (process.env.DEMO_OPEN === '1') {
   const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
