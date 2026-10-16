@@ -1,4 +1,4 @@
-/* The filter bar: chips on the left, the search at the right; on a phone the search is on top and the chips scroll */
+/* The filter bar: chips on the left, the search at the right; on a phone the search is on top and the chips wrap under it */
 .bar {
   display: flex;
   flex-wrap: wrap;
@@ -29,15 +29,7 @@
   }
 
   .chips {
-    margin: 0 -16px;
-    padding: 0 16px 2px;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    scrollbar-width: none;
-  }
-
-  .chips::-webkit-scrollbar {
-    display: none;
+    flex-wrap: wrap;
   }
 
   .search {

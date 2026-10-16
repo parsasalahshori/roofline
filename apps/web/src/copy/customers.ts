@@ -25,7 +25,7 @@ export const customers = {
     textingNot: 'Not OK to text',
     showArchived: 'Show archived customers',
     /** The chip that shows archived customers too. */
-    archivedFilter: 'Archived',
+    archivedFilter: 'Show archived',
     count: (n: number) => (n === 1 ? '1 customer' : `${n} customers`),
     matches: (n: number) => (n === 1 ? '1 customer matches' : `${n} customers match`),
     tableLabel: 'Customers',
