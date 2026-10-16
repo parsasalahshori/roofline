@@ -4,7 +4,7 @@ import { Banner, Button, Field, Select, Sheet, Skeleton, useToast, type SelectOp
 import { ApiError } from '../../api/client.ts';
 import { claims } from '../../copy/claims.ts';
 import { claimPacketUrl, useBuildClaimPacket, useJobClaim, useSaveClaim, type ClaimEdit } from '../claims/api.ts';
-import { formatDollars } from '../jobs/JobCardView.tsx';
+import { formatDollars } from '../jobs/format.ts';
 import { useCompany } from '../settings/api.ts';
 import styles from './ClaimSection.module.css';
 

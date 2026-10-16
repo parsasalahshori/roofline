@@ -9,7 +9,7 @@ import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { job } from '../src/copy/job.ts';
 import { jobs } from '../src/copy/jobs.ts';
-import { formatDollars } from '../src/features/jobs/JobCardView.tsx';
+import { formatDollars } from '../src/features/jobs/format.ts';
 import { ACCOUNT, type Routes, SHELL_ROUTES, stubApi } from './helpers.tsx';
 
 // Phone and desktop differ only in the layout; these tests stay on desktop.

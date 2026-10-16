@@ -39,6 +39,22 @@ function boardQuery(filter: BoardFilterParams, extra: Record<string, string> = {
   return text === '' ? '/api/jobs/board' : `/api/jobs/board?${text}`;
 }
 
+/**
+ * How many proposals are out with a customer who has not signed yet: the sent ones and the ones the customer has opened.
+ * Undefined until both counts are in, and when either could not be read. Asked for only while `enabled`.
+ */
+export function useProposalsWaiting(enabled: boolean): number | undefined {
+  const waitingCount = (status: 'sent' | 'viewed') => ({
+    queryKey: ['jobs-proposals-waiting', status] as const,
+    queryFn: ({ signal }: { signal: AbortSignal }) => apiFetch<{ total: number }>(`/api/proposals?status=${status}`, { signal }),
+    enabled,
+  });
+  const sent = useQuery(waitingCount('sent'));
+  const viewed = useQuery(waitingCount('viewed'));
+  if (!enabled || sent.data === undefined || viewed.data === undefined) return undefined;
+  return sent.data.total + viewed.data.total;
+}
+
 export function useBoard(filter: BoardFilterParams) {
   return useQuery<BoardView>({
     queryKey: jobsKeys.board(filter),

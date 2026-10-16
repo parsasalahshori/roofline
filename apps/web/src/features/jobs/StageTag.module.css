@@ -1,0 +1,27 @@
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-3);
+}
+
+.dot[data-stage='lead'] {
+  background: var(--st-lead);
+}
+
+.dot[data-stage='inspection'] {
+  background: var(--st-insp);
+}
+
+.dot[data-stage='proposal'] {
+  background: var(--st-prop);
+}
+
+.dot[data-stage='won'] {
+  background: var(--st-won);
+}
+
+.dot[data-stage='installed'] {
+  background: var(--st-inst);
+}

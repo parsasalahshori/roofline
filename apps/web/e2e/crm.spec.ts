@@ -36,7 +36,7 @@ test('the board shows the showcase pipeline', async ({ page, loginAs, markTodayS
   for (const heading of ['Lead (8)', 'Inspection (7)', 'Proposal (6)', 'Won (4)', 'Installed (2)']) {
     await expect(jobsWindow.getByRole('heading', { name: heading, exact: true })).toBeVisible();
   }
-  // Lost is a drawer under the columns, not a column
+  // Lost is a collapsed tab at the right of the lanes, not a lane of cards
   await expect(jobsWindow.getByRole('button', { name: 'Lost (1)', exact: true })).toBeVisible();
 });
 
@@ -211,14 +211,13 @@ test('a rep sees only their jobs', async ({ page, loginAs, markTodaySeen, scenar
   const board = page.getByRole('region', { name: 'Pipeline board' });
   await expect(board).toBeVisible();
 
-  // The headings add up to exactly the rep's jobs (the Lost drawer holds the lost ones)
+  // The lane counts add up to exactly the rep's jobs (the Lost tab holds the lost ones)
   const expected = visible.rows.length;
   await expect
     .poll(
       async () => {
-        const headings = await board.getByRole('heading').allTextContents();
-        const counts = headings.map((h) => Number(/\((\d+)\)$/.exec(h)?.[1] ?? 0));
-        const lost = /\((\d+)\)$/.exec((await board.getByRole('button', { name: /^Lost \(/ }).textContent()) ?? '')?.[1];
+        const counts = (await board.locator('h2 [data-part="count"]').allTextContents()).map((n) => Number(n));
+        const lost = /\((\d+)\)$/.exec((await board.getByRole('button', { name: /^Lost \(/ }).getAttribute('aria-label')) ?? '')?.[1];
         return counts.reduce((a, b) => a + b, 0) + Number(lost ?? 0);
       },
       { timeout: 15_000 },
@@ -230,5 +229,5 @@ test('a rep sees only their jobs', async ({ page, loginAs, markTodaySeen, scenar
     await expect(board.locator(`a[href="/jobs/${row.id}"]`)).toHaveCount(1);
   }
   await expect(board.locator(`a[href="/jobs/${hidden.rows[0]!.id}"]`)).toHaveCount(0);
-  await expect(board.getByText(/\$[\d,]+ total/)).toHaveCount(0);
+  await expect(board.locator('[data-part="lane-total"]')).toHaveCount(0);
 });

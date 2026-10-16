@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
 import { RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { BOARD_STAGES, type BoardColumn, type BoardStage, type BoardView, type JobCard, type JobStage } from '@roofline/shared';
+import { BOARD_STAGES, localDate, type BoardColumn, type BoardStage, type BoardView, type JobCard, type JobStage } from '@roofline/shared';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { jobs } from '../src/copy/jobs.ts';
@@ -27,6 +27,8 @@ vi.mock('../src/shell/map/MapView.tsx', async () => {
 let api: ReturnType<typeof stubApi>;
 /** What `GET /api/jobs/board` answers right now. A PATCH may replace it. */
 let current: BoardView;
+/** How many proposals the server says are sent, and how many of those the customer has opened. */
+let waiting = { sent: 0, viewed: 0 };
 /** While set, every PATCH waits for it before it reaches the stub. */
 let heldPatch: Promise<void> | null = null;
 /** The bodies of every PATCH, recorded the moment it is sent (held or not). */
@@ -37,6 +39,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   heldPatch = null;
   patchBodies = [];
+  waiting = { sent: 0, viewed: 0 };
   phoneMode.phone = false;
   expect(api?.unexpected ?? []).toEqual([]);
 });
@@ -81,6 +84,9 @@ function signedIn(board: BoardView, overrides: Routes = {}) {
     'GET /api/auth/me': () => ({ body: ACCOUNT }),
     'GET /api/team': () => ({ body: { members: [] } }),
     'GET /api/jobs/board': () => ({ body: current }),
+    // The Jobs head counts proposals waiting on a signature: the sent ones and the opened ones
+    'GET /api/proposals?status=sent': () => ({ body: { proposals: [], total: waiting.sent } }),
+    'GET /api/proposals?status=viewed': () => ({ body: { proposals: [], total: waiting.viewed } }),
     ...overrides,
   });
   return api;
@@ -178,9 +184,19 @@ describe('pipeline board', () => {
     renderApp('/jobs');
 
     const lead = await stageRegion('lead');
-    expect(within(lead).getByText(jobs.total('$12,500'))).toBeInTheDocument();
+    // The page shows the money; the word "total" is there for a screen reader
+    expect(lead.querySelector('[data-part="lane-total"]')).toHaveTextContent(jobs.total('$12,500'));
     const inspection = await stageRegion('inspection');
-    expect(within(inspection).queryByText(/total/)).not.toBeInTheDocument();
+    expect(inspection.querySelector('[data-part="lane-total"]')).toBeNull();
+  });
+
+  it('a lane with jobs but no value says "No value yet", not $0', async () => {
+    signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead' })], 0)]));
+    renderApp('/jobs');
+
+    const lead = await stageRegion('lead');
+    expect(lead.querySelector('[data-part="lane-total"]')).toHaveTextContent(jobs.noValueYet);
+    expect(lead).not.toHaveTextContent('$0');
   });
 
   it('drag a card from Lead to Inspection moves it before the response', async () => {
@@ -456,10 +472,13 @@ describe('pipeline board', () => {
     await waitFor(() => expect(api.count('GET /api/jobs/board?q=roof')).toBe(1), { timeout: 2000 });
     expect(where(router)).toContain('q=roof');
 
-    await user.selectOptions(screen.getByLabelText(jobs.filterAssignee), 'me');
+    // The Assigned filter is a chip: it opens a list of choices and writes the one picked to the URL
+    await user.click(screen.getByRole('button', { name: `${jobs.filterAssignee}: ${jobs.filterAll}` }));
+    await user.click(await screen.findByRole('option', { name: jobs.filterMine }));
     await waitFor(() => expect(api.count('GET /api/jobs/board?assigned=me&q=roof')).toBe(1));
     expect(where(router)).toContain('assigned=me');
     expect(where(router)).toContain('q=roof');
+    expect(screen.getByRole('button', { name: `${jobs.filterAssignee}: ${jobs.filterMine}` })).toBeInTheDocument();
   });
 
   it('a card from Show N more can be dragged to another stage', async () => {
@@ -531,5 +550,383 @@ describe('pipeline board', () => {
     const list = await screen.findByRole('list', { name: jobs.listLabel });
     expect(within(list).getAllByRole('listitem')).toHaveLength(2);
     expect(screen.queryByRole('region', { name: jobs.boardLabel })).not.toBeInTheDocument();
+  });
+});
+
+describe('jobs page head', () => {
+  it('counts only what is real: open jobs, the money in play and the proposals waiting', async () => {
+    waiting = { sent: 2, viewed: 1 };
+    signedIn(
+      boardOf([
+        column('lead', [job({ id: 'j1', stage: 'lead' }), job({ id: 'j2', stage: 'lead', customerName: 'Sam Two' })], 0),
+        column('proposal', [job({ id: 'j3', stage: 'proposal', customerName: 'Lee Three', valueCents: 1250000 })], 1250000),
+      ]),
+    );
+    renderApp('/jobs');
+
+    const main = await screen.findByRole('main', { name: 'Jobs' });
+    expect(
+      await within(main).findByText(
+        [jobs.subtitle.open(3), jobs.subtitle.inPlay('$12,500'), jobs.subtitle.waiting(3)].join(jobs.subtitle.join),
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('leaves out the money when the server sends none, and the proposals when there are none', async () => {
+    signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead' })], null)]));
+    renderApp('/jobs');
+
+    const main = await screen.findByRole('main', { name: 'Jobs' });
+    expect(await within(main).findByText(jobs.subtitle.open(1))).toBeInTheDocument();
+  });
+
+  it('does not count proposals for a filtered board: they are not the board\'s', async () => {
+    waiting = { sent: 4, viewed: 0 };
+    signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead' })])]));
+    api.routes['GET /api/jobs/board?assigned=me'] = () => ({ body: current });
+    renderApp('/jobs?assigned=me');
+
+    const main = await screen.findByRole('main', { name: 'Jobs' });
+    expect(await within(main).findByText(jobs.subtitle.open(1))).toBeInTheDocument();
+    expect(api.count('GET /api/proposals?status=sent')).toBe(0);
+  });
+
+  it('the archived view says how many archived jobs there are', async () => {
+    signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead' })])]));
+    api.routes['GET /api/jobs/board?archived=true'] = () => ({ body: current });
+    renderApp('/jobs?archived=true');
+
+    const main = await screen.findByRole('main', { name: 'Jobs' });
+    expect(await within(main).findByText(jobs.subtitle.archived(1))).toBeInTheDocument();
+  });
+
+  it('offers Export to the owner and New job to everyone', async () => {
+    signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead' })])]));
+    renderApp('/jobs');
+
+    const main = await screen.findByRole('main', { name: 'Jobs' });
+    expect(within(main).getByRole('link', { name: jobs.export })).toHaveAttribute('href', '/api/export/jobs.csv');
+    expect(within(main).getByRole('link', { name: jobs.newJob })).toHaveAttribute('href', '/jobs/new');
+  });
+
+  it('shows a rep no Export', async () => {
+    signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead' })])]), {
+      'GET /api/auth/me': () => ({ body: { ...ACCOUNT, role: 'rep' } }),
+    });
+    renderApp('/jobs');
+
+    const main = await screen.findByRole('main', { name: 'Jobs' });
+    await within(main).findByRole('link', { name: jobs.newJob });
+    expect(within(main).queryByRole('link', { name: jobs.export })).not.toBeInTheDocument();
+  });
+
+  it('has the Pipeline, Customers and Archived tabs, with the current one marked', async () => {
+    signedIn(boardOf());
+    renderApp('/jobs');
+
+    const tabs = await screen.findByRole('navigation', { name: jobs.tabsLabel });
+    expect(within(tabs).getByRole('link', { name: jobs.tabs.pipeline })).toHaveAttribute('aria-current', 'page');
+    expect(within(tabs).getByRole('link', { name: jobs.tabs.customers })).toHaveAttribute('href', '/customers');
+    expect(within(tabs).getByRole('link', { name: jobs.tabs.archived })).toHaveAttribute('href', '/jobs?archived=true');
+    expect(within(tabs).getByRole('link', { name: jobs.tabs.archived })).not.toHaveAttribute('aria-current');
+  });
+
+  it('marks Archived as the current tab on the archived view', async () => {
+    signedIn(boardOf());
+    api.routes['GET /api/jobs/board?archived=true'] = () => ({ body: current });
+    renderApp('/jobs?archived=true');
+
+    const tabs = await screen.findByRole('navigation', { name: jobs.tabsLabel });
+    expect(within(tabs).getByRole('link', { name: jobs.tabs.archived })).toHaveAttribute('aria-current', 'page');
+    expect(within(tabs).getByRole('link', { name: jobs.tabs.pipeline })).not.toHaveAttribute('aria-current');
+  });
+
+  it('switches between Board and List and keeps the choice in the URL', async () => {
+    signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead' })])]));
+    const { router, user } = renderApp('/jobs');
+
+    await board();
+    const views = screen.getByRole('radiogroup', { name: jobs.viewLabel });
+    expect(within(views).getByRole('radio', { name: jobs.views.board })).toBeChecked();
+
+    await user.click(within(views).getByRole('radio', { name: jobs.views.list }));
+    expect(await screen.findByRole('table', { name: jobs.listLabel })).toBeInTheDocument();
+    expect(where(router)).toContain('view=list');
+    expect(screen.queryByRole('region', { name: jobs.boardLabel })).not.toBeInTheDocument();
+
+    await user.click(within(screen.getByRole('radiogroup', { name: jobs.viewLabel })).getByRole('radio', { name: jobs.views.board }));
+    await board();
+    expect(where(router)).not.toContain('view=');
+  });
+
+  it('has no view switch on a phone: the list is the view, and the filters are one row of chips', async () => {
+    phoneMode.phone = true;
+    signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead' })])]));
+    renderApp('/jobs');
+
+    await screen.findByRole('list', { name: jobs.listLabel });
+    expect(screen.queryByRole('radiogroup', { name: jobs.viewLabel })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `${jobs.filterAssignee}: ${jobs.filterAll}` })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `${jobs.filterSource}: ${jobs.filterSourceAll}` })).toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+  });
+
+  it('the slash key jumps to the search, but is just a character once you are typing', async () => {
+    signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead' })])]));
+    const { user } = renderApp('/jobs');
+
+    await board();
+    const search = screen.getByLabelText(jobs.filterSearch);
+    expect(search).not.toHaveFocus();
+    await user.keyboard('/');
+    expect(search).toHaveFocus();
+    expect(search).toHaveValue('');
+
+    await user.keyboard('a/b');
+    expect(search).toHaveValue('a/b');
+    await user.keyboard('{Escape}');
+    expect(search).not.toHaveFocus();
+  });
+
+  it('does not take the slash key while a dialog is open', async () => {
+    signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead' })])]));
+    const { user } = renderApp('/jobs');
+
+    await screen.findByRole('link', { name: /Pat Homeowner/ });
+    await moveTo(user, 'Pat Homeowner', jobs.stage.lost);
+    await screen.findByRole('dialog', { name: jobs.sheetLost });
+    await user.keyboard('/');
+    expect(screen.getByLabelText(jobs.filterSearch)).not.toHaveFocus();
+  });
+});
+
+describe('board cards and lanes', () => {
+  const today = localDate(new Date(), 'America/Chicago');
+
+  it('a card shows the name, the address, the next step, the value, the rep and the days', async () => {
+    signedIn(
+      boardOf([
+        column(
+          'proposal',
+          [
+            job({
+              id: 'j1',
+              stage: 'proposal',
+              customerName: 'Ashley Thomas',
+              addressLine: '193 Ames Ave',
+              valueCents: 1100000,
+              assigned: { userId: 'u2', name: 'Casey Moreno' },
+              daysInStage: 4,
+              nextStep: 'Call about financing',
+              nextStepOn: today,
+            }),
+          ],
+          1100000,
+        ),
+      ]),
+    );
+    renderApp('/jobs');
+
+    const link = await screen.findByRole('link', { name: /Ashley Thomas/ });
+    expect(link).toHaveTextContent('193 Ames Ave');
+    expect(link).toHaveTextContent('Call about financing · today');
+    expect(link).toHaveTextContent('$11,000');
+    expect(link).toHaveTextContent('Casey Moreno');
+    // The aging reads in words for a screen reader and as "4d" on the card
+    expect(link).toHaveTextContent(jobs.daysInStage(4));
+    expect(link).toHaveTextContent(jobs.daysShort(4));
+    // Due today earns the card its one tag
+    expect(within(link).getByText(jobs.tagToday)).toBeInTheDocument();
+  });
+
+  it('a card with no data to show carries no tag, no next step and no value', async () => {
+    signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead', valueCents: null, nextStep: null, nextStepOn: null })])]));
+    renderApp('/jobs');
+
+    const link = await screen.findByRole('link', { name: /Pat Homeowner/ });
+    expect(within(link).queryByText(jobs.tagToday)).not.toBeInTheDocument();
+    expect(within(link).queryByText(jobs.tagOverdue)).not.toBeInTheDocument();
+    expect(link).not.toHaveTextContent('$');
+    expect(link).toHaveTextContent(jobs.unassigned);
+  });
+
+  it('a next step that is past due is tagged Overdue, and a stuck job says so', async () => {
+    signedIn(
+      boardOf([
+        column('lead', [job({ id: 'j1', stage: 'lead', nextStep: 'Call back', nextStepOn: '2020-01-02', stuck: true, daysInStage: 9 })]),
+      ]),
+    );
+    renderApp('/jobs');
+
+    const link = await screen.findByRole('link', { name: /Pat Homeowner/ });
+    expect(within(link).getByText(jobs.tagOverdue)).toBeInTheDocument();
+    expect(link).toHaveTextContent(jobs.stuck(9));
+    expect(cardFor('Pat Homeowner')).toHaveAttribute('data-stuck', 'true');
+  });
+
+  it('the split button moves the job to the next stage in one click', async () => {
+    signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead' })])]), {
+      'PATCH /api/jobs/j1': () => ({ body: {} }),
+    });
+    const { user } = renderApp('/jobs');
+
+    await screen.findByRole('link', { name: /Pat Homeowner/ });
+    await user.click(within(cardFor('Pat Homeowner')).getByRole('button', { name: jobs.moveToStage(jobs.stage.inspection) }));
+    await waitFor(() => expect(api.sent('PATCH /api/jobs/j1')).toEqual([{ stage: 'inspection' }]));
+    expect(await within(screen.getByRole('status')).findByText(jobs.movedTo('Pat Homeowner', jobs.stage.inspection))).toBeInTheDocument();
+  });
+
+  it('the split button into Won still asks for a value when the job has none', async () => {
+    signedIn(boardOf([column('proposal', [job({ id: 'j1', stage: 'proposal', valueCents: null })])]));
+    const { user } = renderApp('/jobs');
+
+    await screen.findByRole('link', { name: /Pat Homeowner/ });
+    await user.click(within(cardFor('Pat Homeowner')).getByRole('button', { name: jobs.moveToStage(jobs.stage.won) }));
+    expect(await screen.findByRole('dialog', { name: jobs.sheetWon })).toBeInTheDocument();
+    expect(api.count('PATCH /api/jobs/j1')).toBe(0);
+  });
+
+  it('an Installed card has only the menu: nothing follows Installed', async () => {
+    signedIn(boardOf([column('installed', [job({ id: 'j1', stage: 'installed' })])]));
+    renderApp('/jobs');
+
+    await screen.findByRole('link', { name: /Pat Homeowner/ });
+    const card = cardFor('Pat Homeowner');
+    expect(within(card).getByRole('button', { name: jobs.moveTo })).toBeInTheDocument();
+    expect(within(card).queryByRole('button', { name: /^Move to [A-Z]/ })).not.toBeInTheDocument();
+  });
+
+  it('a lane\'s plus adds a job in that stage, for the stages a job can start in', async () => {
+    signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead' })])]));
+    renderApp('/jobs');
+
+    const lead = await stageRegion('lead');
+    expect(within(lead).getByRole('link', { name: jobs.addToStage(jobs.stage.lead) })).toHaveAttribute('href', '/jobs/new?stage=lead');
+    const proposal = await stageRegion('proposal');
+    expect(within(proposal).getByRole('link', { name: jobs.addToStage(jobs.stage.proposal) })).toHaveAttribute('href', '/jobs/new?stage=proposal');
+    // Won needs a value and Installed only follows Won: no plus there
+    expect(within(await stageRegion('won')).queryByRole('link', { name: /^Add a job/ })).not.toBeInTheDocument();
+    expect(within(await stageRegion('installed')).queryByRole('link', { name: /^Add a job/ })).not.toBeInTheDocument();
+  });
+
+  it('every lane carries its share of the money in play', async () => {
+    signedIn(
+      boardOf([
+        column('proposal', [job({ id: 'j1', stage: 'proposal', valueCents: 3000000 })], 3000000),
+        column('won', [job({ id: 'j2', stage: 'won', customerName: 'Won Customer', valueCents: 1000000 })], 1000000),
+      ]),
+    );
+    renderApp('/jobs');
+
+    const proposal = await stageRegion('proposal');
+    const fill = proposal.querySelector<HTMLElement>('[class*="meterFill"]');
+    expect(fill).toHaveStyle({ width: '75%' });
+    expect((await stageRegion('won')).querySelector<HTMLElement>('[class*="meterFill"]')).toHaveStyle({ width: '25%' });
+  });
+
+  it('Lost is a tab with its count that opens a drawer, and a card dropped on it asks why', async () => {
+    signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead' })])], 3));
+    const { user } = renderApp('/jobs');
+
+    const tab = await screen.findByRole('button', { name: jobs.lostDrawer(3) });
+    expect(tab).toHaveAttribute('aria-expanded', 'false');
+    await user.click(tab);
+    expect(tab).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText(jobs.lostDropHint)).toBeInTheDocument();
+    await user.click(tab);
+    expect(tab).toHaveAttribute('aria-expanded', 'false');
+
+    // Collapsed or open, the lane takes a dropped card
+    const dataTransfer = { getData: () => 'j1', setData: () => {}, effectAllowed: 'none' };
+    fireEvent.dragStart(screen.getByRole('link', { name: /Pat Homeowner/ }), { dataTransfer });
+    fireEvent.dragOver(tab.parentElement as HTMLElement, { dataTransfer });
+    fireEvent.drop(tab.parentElement as HTMLElement, { dataTransfer });
+    expect(await screen.findByRole('dialog', { name: jobs.sheetLost })).toBeInTheDocument();
+  });
+
+  it('an empty pipeline shows what the board is for and a New job button, never a bare sentence', async () => {
+    signedIn(boardOf());
+    renderApp('/jobs');
+
+    expect(await screen.findByText(jobs.emptyBoard)).toBeInTheDocument();
+    const pipeline = await board();
+    expect(within(pipeline).getByText(jobs.emptyBoardBody)).toBeInTheDocument();
+    expect(within(pipeline).getByRole('link', { name: jobs.newJob })).toHaveAttribute('href', '/jobs/new');
+  });
+
+  it('a search that finds nothing says so and offers to clear the filters', async () => {
+    signedIn(boardOf());
+    api.routes['GET /api/jobs/board?q=zzz'] = () => ({ body: current });
+    const { router, user } = renderApp('/jobs?q=zzz');
+
+    expect(await screen.findByText(jobs.emptyFiltered)).toBeInTheDocument();
+    const pipeline = await board();
+    await user.click(within(pipeline).getByRole('button', { name: jobs.clearFilters }));
+    await waitFor(() => expect(where(router)).not.toContain('q='));
+  });
+
+  it('a failed load shows the error in place with Try again', async () => {
+    signedIn(boardOf(), { 'GET /api/jobs/board': () => ({ status: 500, body: { error: 'down' } }) });
+    const { user } = renderApp('/jobs');
+
+    // The toast region is a live region too; the error is the alert that holds the sentence
+    const alert = (await screen.findByText(jobs.loadFailed)).closest<HTMLElement>('[role="alert"]')!;
+    expect(within(alert).getByText(jobs.errorTag)).toBeInTheDocument();
+    current = boardOf([column('lead', [job({ id: 'j1', stage: 'lead' })])]);
+    api.routes['GET /api/jobs/board'] = () => ({ body: current });
+    await user.click(within(alert).getByRole('button', { name: jobs.retry }));
+    expect(await screen.findByRole('link', { name: /Pat Homeowner/ })).toBeInTheDocument();
+  });
+});
+
+describe('jobs list', () => {
+  it('has mono heads, the stage as a tag, the value, the rep, the age and a Move to menu on every row', async () => {
+    signedIn(
+      boardOf([
+        column('proposal', [
+          job({ id: 'j1', stage: 'proposal', customerName: 'Ashley Thomas', valueCents: 1100000, assigned: { userId: 'u2', name: 'Casey Moreno' }, daysInStage: 4 }),
+        ]),
+      ]),
+    );
+    renderApp('/jobs?view=list');
+
+    const table = await screen.findByRole('table', { name: jobs.listLabel });
+    for (const heading of [jobs.listColumns.job, jobs.listColumns.stage, jobs.listColumns.value, jobs.listColumns.rep, jobs.listColumns.age, jobs.listColumns.updated]) {
+      expect(within(table).getByRole('columnheader', { name: heading })).toBeInTheDocument();
+    }
+    const row = within(table).getByRole('row', { name: /Ashley Thomas/ });
+    expect(within(row).getByText(jobs.stage.proposal)).toBeInTheDocument();
+    expect(within(row).getByText('$11,000')).toBeInTheDocument();
+    expect(within(row).getByText('Casey Moreno')).toBeInTheDocument();
+    expect(within(row).getByText(jobs.daysShort(4))).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: jobs.moveTo })).toBeInTheDocument();
+  });
+
+  it('an empty list says what is missing and offers a New job button', async () => {
+    signedIn(boardOf());
+    renderApp('/jobs?view=list');
+
+    expect(await screen.findByText(jobs.emptyBoard)).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: jobs.newJob }).length).toBeGreaterThan(0);
+  });
+
+  it('a phone card has the name and stage, the address, and the value, rep and age, with the stage menu', async () => {
+    phoneMode.phone = true;
+    signedIn(
+      boardOf([
+        column('inspection', [
+          job({ id: 'j1', stage: 'inspection', customerName: 'Nancy White', addressLine: '7555 Elm St', valueCents: 1450000, assigned: { userId: 'u2', name: 'Casey Moreno' } }),
+        ]),
+      ]),
+    );
+    renderApp('/jobs');
+
+    const list = await screen.findByRole('list', { name: jobs.listLabel });
+    const card = within(list).getByRole('listitem');
+    expect(card).toHaveTextContent('Nancy White');
+    expect(card).toHaveTextContent(jobs.stage.inspection);
+    expect(card).toHaveTextContent('7555 Elm St');
+    expect(card).toHaveTextContent('$14,500');
+    expect(within(card).getByRole('button', { name: jobs.moveTo })).toBeInTheDocument();
   });
 });

@@ -1,45 +1,51 @@
-/* The filter bar: the controls wrap onto as many rows as the window needs, never past its width. */
+/* The filter bar: the view switch and the chips on the left, the search at the right. */
 .bar {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.control {
-  flex: 1 1 180px;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
   align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.chips {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.views {
+  margin-right: 4px;
+}
+
+.search {
+  flex: none;
   margin-left: auto;
 }
 
-/* The CSV download: a plain link drawn like a ghost button, with the same 40px target */
-.download {
-  display: inline-flex;
-  align-items: center;
-  min-height: 40px;
-  padding: 0 16px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  color: var(--ink);
-  background: transparent;
-  font-size: 0.875rem;
-  text-decoration: none;
-}
+/* A phone: the search takes the full width, and the chips are one row that scrolls sideways under it */
+@media (max-width: 767.98px) {
+  .bar {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
 
-.download:hover {
-  background: var(--surface-2);
-}
+  .chips {
+    margin: 0 -16px;
+    padding: 0 16px 2px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
 
-.download:focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
+  .chips::-webkit-scrollbar {
+    display: none;
+  }
+
+  .search {
+    margin-left: 0;
+  }
 }

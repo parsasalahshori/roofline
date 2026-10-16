@@ -6,7 +6,7 @@ import { ApiError } from '../../api/client.ts';
 import { job } from '../../copy/job.ts';
 import { jobs } from '../../copy/jobs.ts';
 import { useRecordRecent } from '../../shell/recents.ts';
-import { formatDollars } from '../jobs/JobCardView.tsx';
+import { formatDollars } from '../jobs/format.ts';
 import { useJobView } from './api.ts';
 import { EditJobSheet } from './EditJobSheet.tsx';
 import { JobHeader } from './JobHeader.tsx';

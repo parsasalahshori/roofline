@@ -1,5 +1,5 @@
 import { JOB_SOURCES } from '@roofline/shared';
-import { Button, Field, Select, Toggle, type SelectOption } from '@roofline/ui';
+import { Listbox, Segmented, type ListboxOption } from '@roofline/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
@@ -8,34 +8,32 @@ import { apiFetch } from '../../api/client.ts';
 import { keys } from '../../api/keys.ts';
 import type { TeamBody } from '../../api/types.ts';
 import { jobs } from '../../copy/jobs.ts';
-import type { BoardFilterParams } from './api.ts';
+import { useIsPhone } from '../../shell/useIsPhone.ts';
+import { useJobsView } from './filter.ts';
+import { SearchBox } from './SearchBox.tsx';
 import styles from './BoardFilters.module.css';
 
 /** How long the search waits after the last key before it writes to the URL. */
 const SEARCH_DEBOUNCE_MS = 300;
 
-const sourceOptions: SelectOption[] = [
+const sourceOptions: ListboxOption[] = [
   { value: '', label: jobs.filterSourceAll },
   ...JOB_SOURCES.map((source) => ({ value: source, label: jobs.source[source] })),
 ];
 
-/** The filter the URL asks for. Keys that are not set are left out; archived is set only for 'true'. */
-export function useBoardFilter(): BoardFilterParams {
-  const [params] = useSearchParams();
-  const filter: BoardFilterParams = {};
-  const assigned = params.get('assigned');
-  if (assigned !== null && assigned !== '') filter.assigned = assigned;
-  const source = params.get('source');
-  if (source !== null && source !== '') filter.source = source;
-  const q = params.get('q');
-  if (q !== null && q !== '') filter.q = q;
-  if (params.get('archived') === 'true') filter.archived = true;
-  return filter;
-}
+const viewOptions = [
+  { value: 'board', label: jobs.views.board },
+  { value: 'list', label: jobs.views.list },
+] as const;
 
-/** The filter bar above the board and the list: assignee, source, search, archived, and the two buttons. */
+/**
+ * The bar above the board and the list: Board / List, the Assigned and Source chips, and the search. Everything is in the
+ * URL. On a phone the list is the only view, so the switch goes and the chips share one row that scrolls sideways.
+ */
 export function BoardFilters() {
   const [params, setParams] = useSearchParams();
+  const phone = useIsPhone();
+  const view = useJobsView();
   const me = useMe();
   const role = me.data?.role;
   const canSeeMoney = role === 'owner' || role === 'office';
@@ -48,7 +46,6 @@ export function BoardFilters() {
 
   const assignedValue = params.get('assigned') ?? '';
   const sourceValue = params.get('source') ?? '';
-  const archived = params.get('archived') === 'true';
 
   const [searchText, setSearchText] = useState(params.get('q') ?? '');
   const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -75,7 +72,7 @@ export function BoardFilters() {
     searchTimer.current = setTimeout(() => update({ q: value }), SEARCH_DEBOUNCE_MS);
   };
 
-  const assigneeOptions: SelectOption[] = [
+  const assigneeOptions: ListboxOption[] = [
     { value: '', label: jobs.filterAll },
     { value: 'me', label: jobs.filterMine },
     { value: 'unassigned', label: jobs.filterUnassigned },
@@ -88,39 +85,40 @@ export function BoardFilters() {
 
   return (
     <div role="group" aria-label={jobs.filtersLabel} className={styles.bar}>
-      <Select
-        label={jobs.filterAssignee}
-        value={assignedValue}
-        options={assigneeOptions}
-        onChange={(value) => update({ assigned: value })}
-        className={styles.control}
-      />
-      <Select
-        label={jobs.filterSource}
-        value={sourceValue}
-        options={sourceOptions}
-        onChange={(value) => update({ source: value })}
-        className={styles.control}
-      />
-      <Field
-        label={jobs.filterSearch}
-        help={jobs.filterSearchHelp}
-        type="search"
-        value={searchText}
-        onChange={(event) => onSearch(event.currentTarget.value)}
-        className={styles.control}
-      />
-      <Toggle checked={archived} onChange={(next) => update({ archived: next ? 'true' : null })} label={jobs.showArchived} />
-      <div className={styles.actions}>
-        <Button href="/jobs/new" variant="primary">
-          {jobs.newJob}
-        </Button>
-        {canSeeMoney ? (
-          <a href="/api/export/jobs.csv" download className={styles.download}>
-            {jobs.downloadJobs}
-          </a>
-        ) : null}
+      <div className={styles.chips}>
+        {phone ? null : (
+          <Segmented
+            label={jobs.viewLabel}
+            value={view}
+            options={viewOptions}
+            onChange={(next) => update({ view: next === 'list' ? 'list' : null })}
+            size="sm"
+            className={styles.views}
+          />
+        )}
+        <Listbox
+          variant="chip"
+          label={jobs.filterAssignee}
+          value={assignedValue}
+          options={assigneeOptions}
+          onChange={(value) => update({ assigned: value })}
+        />
+        <Listbox
+          variant="chip"
+          label={jobs.filterSource}
+          value={sourceValue}
+          options={sourceOptions}
+          onChange={(value) => update({ source: value })}
+        />
       </div>
+      <SearchBox
+        label={jobs.filterSearch}
+        placeholder={jobs.filterSearchPlaceholder}
+        value={searchText}
+        onChange={onSearch}
+        slashFocus={!phone}
+        className={styles.search}
+      />
     </div>
   );
 }

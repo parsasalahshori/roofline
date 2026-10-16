@@ -93,6 +93,9 @@ export const SHELL_ROUTES: Record<string, () => Reply> = {
   'GET /api/conversations?filter=needs_attention': () => ({ body: { items: [], nextCursor: null } }),
   // The Demo badge's probe (features/demo): a 404 means the API is not in demo mode, so no badge
   'GET /api/demo': () => ({ body: { demo: false } }),
+  // The Jobs page head counts proposals waiting on a signature: the sent ones and the ones the customer has opened
+  'GET /api/proposals?status=sent': () => ({ body: { proposals: [], total: 0 } }),
+  'GET /api/proposals?status=viewed': () => ({ body: { proposals: [], total: 0 } }),
 };
 
 /** Today's "Signed today" read, answered with nothing: spread it into a test that renders the Today window. */

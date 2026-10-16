@@ -1,0 +1,88 @@
+/*
+ * The Lost lane, collapsed to a 46px vertical tab at the right of the board (REDESIGN.md 6: the final lane collapses).
+ * Open, it becomes a lane-width drawer whose dashed box takes a dropped card.
+ */
+.lane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-radius: var(--r-3);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  transition: background var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+}
+
+.lane[data-over='true'] {
+  background: var(--sunken);
+  box-shadow: inset 0 0 0 2px var(--ink-2);
+}
+
+/* The tab is the whole collapsed lane: the chevron at the top, the name reading down */
+button.tab[data-variant] {
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-height: 120px;
+  padding: 12px 0;
+  border-radius: var(--r-3);
+  background: transparent;
+  color: var(--ink-2);
+}
+
+button.tab[data-variant]:hover {
+  background: var(--sunken);
+}
+
+.lane[data-open='true'] button.tab[data-variant] {
+  flex: none;
+  flex-direction: row;
+  justify-content: flex-start;
+  min-height: 44px;
+  padding: 0 12px;
+}
+
+.name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: 650 14px/1 var(--f-ui);
+  writing-mode: vertical-rl;
+}
+
+.lane[data-open='true'] .name {
+  writing-mode: horizontal-tb;
+}
+
+.count {
+  color: var(--ink-3);
+  font: 500 13px/1 var(--f-mono);
+}
+
+.drawer {
+  display: flex;
+  flex: 1 1 auto;
+  margin: 0 8px 8px;
+}
+
+.hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 96px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1.5px dashed var(--line-2);
+  border-radius: var(--r-2);
+  color: var(--ink-3);
+  font-size: 13px;
+  text-align: center;
+}
+
+.lane[data-over='true'] .hint {
+  border-color: var(--ink-2);
+  color: var(--ink);
+}

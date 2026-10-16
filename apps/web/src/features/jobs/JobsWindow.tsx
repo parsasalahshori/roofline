@@ -1,21 +1,19 @@
-import { useSearchParams } from 'react-router';
+import { useIsPhone } from '../../shell/useIsPhone.ts';
 import { Board } from './Board.tsx';
 import { BoardFilters } from './BoardFilters.tsx';
+import { useJobsView } from './filter.ts';
 import { JobsList } from './JobsList.tsx';
-import { JobsTabs } from './JobsTabs.tsx';
-import { useIsPhone } from '../../shell/useIsPhone.ts';
 
-/** The Jobs window: the tab row, the filters, then the pipeline board or the list (always the list on a phone). */
-export function JobsWindow() {
-  const [params] = useSearchParams();
+/** The body of the Jobs page: the filter bar, then the pipeline board or the list (always the list on a phone). */
+export function JobsWindow({ narrowed }: { narrowed: boolean }) {
   const phone = useIsPhone();
-  const listView = phone || params.get('view') === 'list';
+  const view = useJobsView();
+  const listView = phone || view === 'list';
 
   return (
     <>
-      <JobsTabs />
       <BoardFilters />
-      {listView ? <JobsList /> : <Board />}
+      {listView ? <JobsList narrowed={narrowed} /> : <Board narrowed={narrowed} />}
     </>
   );
 }

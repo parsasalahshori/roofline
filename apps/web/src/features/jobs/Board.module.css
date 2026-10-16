@@ -1,16 +1,17 @@
-/* The board takes the height the page gives it: the columns scroll sideways inside this box and each lane scrolls up and down, so the page itself never scrolls. */
+/*
+ * The board takes the height the page gives it: the lanes scroll sideways inside this box when the window is narrow and
+ * each lane scrolls up and down, so the page itself never scrolls.
+ */
 .board {
   position: relative;
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 16px;
   min-width: 0;
   min-height: 0;
   max-width: 100%;
 }
 
-/* The scroll box for the columns: a horizontal rail on a desktop, one column wide on a phone */
 .scroller {
   flex: 1 1 auto;
   min-height: 0;
@@ -20,57 +21,31 @@
   padding-bottom: 8px;
 }
 
+/* Five lanes share the width (about 210px each at 1440); the Lost lane is a 46px tab, wider when it is open */
 .columns {
-  display: flex;
-  align-items: stretch;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(200px, 1fr)) 46px;
+  gap: 10px;
   height: 100%;
   min-width: min-content;
 }
 
-/* On a phone the stages stack, one under the other, instead of a rail */
-@media (max-width: 767.98px) {
-  .scroller {
-    flex: none;
-  }
-
-  .columns {
-    flex-direction: column;
-    height: auto;
-    min-width: 0;
-  }
+.columns:has([data-open='true']) {
+  grid-template-columns: repeat(5, minmax(200px, 1fr)) 210px;
 }
 
-.lost {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-/* The drop zone of the Lost drawer: a dashed box a card can be dropped on */
-.lostDrop {
-  display: flex;
-  flex-direction: column;
-  align-self: stretch;
-  gap: 8px;
-  min-height: 80px;
+.skeletonLane {
+  display: grid;
+  align-content: start;
+  gap: 10px;
   padding: 12px;
-  border: 2px dashed var(--line);
   border-radius: var(--r-3);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 
-.hint {
-  margin: 0;
-  font-size: 0.875rem;
-  color: var(--ink-3);
-}
-
-.visuallyHidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
+.skeletonLost {
+  border-radius: var(--r-3);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
 }

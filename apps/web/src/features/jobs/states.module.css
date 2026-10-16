@@ -1,0 +1,105 @@
+/* An empty page or list: the ghost of its content above the message and the one next step. */
+.empty {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  padding: 20px 16px 32px;
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+}
+
+.ghost {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  max-width: 520px;
+  padding-bottom: 20px;
+  mask-image: linear-gradient(to bottom, var(--ink) 30%, transparent);
+}
+
+.ghostRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-2);
+}
+
+.ghostDot {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--line);
+}
+
+.ghostBar,
+.ghostBarShort {
+  display: block;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--line);
+}
+
+.ghostBar {
+  flex: 1 1 auto;
+  max-width: 220px;
+}
+
+.ghostBarShort {
+  flex: none;
+  width: 56px;
+  margin-left: auto;
+}
+
+.message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: 44ch;
+  text-align: center;
+}
+
+.title {
+  margin: 0;
+  color: var(--ink);
+  font: 700 17px/1.3 var(--f-display);
+}
+
+.body {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: var(--font-size-body);
+}
+
+.action {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* A load that failed: sits where the content would be */
+.error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  padding: 14px 16px;
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+}
+
+.errorText {
+  flex: 1 1 240px;
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--font-size-body);
+}

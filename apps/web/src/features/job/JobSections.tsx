@@ -10,7 +10,7 @@ import { TASK_STATUS_LABEL } from '../../copy/status.ts';
 import { useMe } from '../../api/hooks.ts';
 import { useCompany } from '../settings/api.ts';
 import { useCopyLink } from '../proposals/api.ts';
-import { formatDollars } from '../jobs/JobCardView.tsx';
+import { formatDollars } from '../jobs/format.ts';
 import { Timeline } from '../timeline/Timeline.tsx';
 import { useMeasure } from '../estimator/api.ts';
 import { useCreateQuote, useJobProposals } from './api.ts';
