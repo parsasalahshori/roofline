@@ -1,0 +1,69 @@
+.chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-family: var(--f-ui);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+
+.chip:hover {
+  border-color: var(--line-ctl);
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.chip[data-on="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--ink-inv);
+}
+
+.chip[data-on="true"]:hover {
+  background: var(--ink-2);
+}
+
+.chip:disabled,
+.chip[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.icon {
+  display: inline-flex;
+  margin-left: -2px;
+}
+
+.label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.count {
+  font-family: var(--f-mono);
+  font-size: var(--font-size-min);
+  font-weight: 500;
+  opacity: 0.75;
+}
+
+/* A thumb: 40px tall on a phone */
+@media (max-width: 767.98px) {
+  .chip {
+    min-height: 40px;
+    padding: 0 14px;
+  }
+}

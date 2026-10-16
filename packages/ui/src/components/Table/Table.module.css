@@ -1,0 +1,70 @@
+.wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.th {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line-2);
+  background: var(--surface-2);
+  color: var(--ink-3);
+  font: 600 var(--font-size-min)/1.2 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  vertical-align: middle;
+}
+
+.th[data-numeric="true"],
+.td[data-numeric="true"] {
+  text-align: right;
+}
+
+.td[data-numeric="true"] {
+  font-family: var(--f-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+/* Every fifth row ends on a stronger rule: the eye can count down a long list */
+.table tbody > .tr:nth-child(5n) > .td {
+  border-bottom-color: var(--line-2);
+}
+
+.table tbody > .tr:last-child > .td {
+  border-bottom: 0;
+}
+
+.table tbody > .tr:hover > .td {
+  background: var(--surface-2);
+}
+
+.tr[data-selected="true"] > .td {
+  background: var(--brand-tint);
+}
+
+.tr[data-tone="tape"] > .td {
+  background: var(--tape-tint);
+}
+
+.tr[data-tone="bad"] > .td {
+  background: var(--bad-tint);
+}
+
+.tr[data-tone="brand"] > .td {
+  background: var(--brand-tint);
+}

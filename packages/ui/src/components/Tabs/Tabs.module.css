@@ -1,0 +1,59 @@
+.tabs {
+  min-width: 0;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+}
+
+.list {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 12px;
+  color: var(--ink-3);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.tab:hover {
+  color: var(--ink);
+}
+
+.tab[aria-current="page"] {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* The current tab's rule sits on the bar's own rule */
+.tab[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  right: 8px;
+  bottom: -1px;
+  left: 8px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--brand);
+}
+
+.count {
+  color: var(--ink-3);
+  font: 500 var(--font-size-min)/1 var(--f-mono);
+}
+
+@media (max-width: 767.98px) {
+  .tab {
+    min-height: 44px;
+  }
+}

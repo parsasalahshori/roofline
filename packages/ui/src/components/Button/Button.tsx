@@ -3,8 +3,14 @@ import { cx } from '../../cx.ts';
 import { Pressable } from '../../pressable.tsx';
 import styles from './Button.module.css';
 
-export type ButtonVariant = 'primary' | 'ghost' | 'danger';
-export type ButtonSize = 'md' | 'lg';
+/**
+ * primary: the company's colour, one per view. ink: graphite, for the strongest action on a busy screen.
+ * default: a hairline button, the usual second choice. quiet: a filled-in-gray button for a tool. ghost: text only,
+ * the quietest. danger: holds, deletes and anything that cannot be undone.
+ */
+export type ButtonVariant = 'primary' | 'ink' | 'default' | 'quiet' | 'ghost' | 'danger';
+/** sm 30px, md 36px, lg 44px on a desktop; on a phone each is one step taller for a thumb (40, 44, 52). */
+export type ButtonSize = 'sm' | 'md' | 'lg';
 
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;

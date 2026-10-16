@@ -1,27 +1,37 @@
 .field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  min-width: 0;
 }
 
 .label {
   color: var(--ink);
-  font-size: var(--font-size-body);
+  font-size: 13px;
   font-weight: 600;
 }
 
-/* The border is --text-muted, not --line: a control's edge needs 3:1 against the surface. */
+/* The edge is --line-ctl: a control's edge needs 3:1 against the surface. */
 .control {
   width: 100%;
-  min-height: 40px;
-  padding: 8px 12px;
-  border: 1px solid var(--ink-3);
-  border-radius: var(--r-3);
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 1px solid var(--line-ctl);
+  border-radius: var(--r-2);
   background: var(--surface);
   color: var(--ink);
   font-family: var(--f-ui);
   font-size: var(--font-size-body);
   line-height: 1.45;
+  transition: border-color var(--t-fast) var(--ease);
+}
+
+.control:hover {
+  border-color: var(--ink-3);
+}
+
+.control:focus-visible {
+  border-color: var(--ring);
 }
 
 textarea.control {
@@ -49,7 +59,7 @@ textarea.control {
   font-size: var(--font-size-min);
 }
 
-/* The error is --text on a --danger bar: --danger itself is under 4.5:1 as small text. */
+/* The error is ink on a --bad bar: --bad itself is under 4.5:1 as small text. */
 .error {
   margin: 0;
   padding-left: 8px;
@@ -57,4 +67,12 @@ textarea.control {
   color: var(--ink);
   font-size: var(--font-size-min);
   font-weight: 600;
+}
+
+/* A thumb: 44px tall, and 16px type so the phone does not zoom in on focus */
+@media (max-width: 767.98px) {
+  .control {
+    min-height: 44px;
+    font-size: 1rem;
+  }
 }

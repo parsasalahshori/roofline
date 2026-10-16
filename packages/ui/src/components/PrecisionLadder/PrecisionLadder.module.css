@@ -1,0 +1,85 @@
+.ladder {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rung {
+  --rung: var(--ink-3);
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  grid-template-areas:
+    "dot text count"
+    ". track track";
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.rung[data-rung="quote"] {
+  --rung: var(--info);
+}
+
+.rung[data-rung="order"] {
+  --rung: var(--ok);
+}
+
+.dot {
+  grid-area: dot;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--rung);
+  border-radius: 50%;
+}
+
+.rung[data-filled="true"] .dot {
+  background: var(--rung);
+}
+
+.text {
+  display: flex;
+  grid-area: text;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
+  min-width: 0;
+}
+
+.name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.note {
+  color: var(--ink-3);
+  font: 500 var(--font-size-min)/1.3 var(--f-mono);
+}
+
+.count {
+  grid-area: count;
+  font: 600 14px/1 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.of {
+  margin-left: 4px;
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
+  font-weight: 400;
+}
+
+.track {
+  grid-area: track;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--sunken);
+}
+
+.bar {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--rung);
+}

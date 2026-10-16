@@ -1,18 +1,23 @@
 /*
- * Top center, under the top bar: the corners hold the close button of a window and the menus of the
- * top bar, and a toast must not cover those. The strip itself lets clicks through to the page behind it.
+ * Bottom left of the page, clear of the rail, on an ink surface; on a phone along the top, under the status bar,
+ * where the tab bar and the thumbs are not. The strip itself lets clicks through to the page behind it.
  */
 .viewport {
   position: fixed;
-  top: 64px;
-  left: 50%;
+  bottom: 24px;
+  left: 260px;
   z-index: 50;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  width: min(380px, calc(100vw - 32px));
-  transform: translateX(-50%);
+  width: min(420px, calc(100vw - 32px));
   pointer-events: none;
+}
+
+@media (min-width: 768px) and (max-width: 1099.98px) {
+  .viewport {
+    left: 88px;
+  }
 }
 
 .region {
@@ -24,46 +29,98 @@
 .toast {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 4px 4px 4px 16px;
-  border: 1px solid var(--line);
-  border-left-width: 4px;
+  gap: 10px;
+  min-height: 44px;
+  padding: 4px 4px 4px 14px;
   border-radius: var(--r-3);
-  background: var(--surface);
-  color: var(--ink);
-  box-shadow: var(--e-2);
+  background: var(--toast);
+  color: var(--toast-ink);
+  box-shadow: var(--e-3);
+  font-size: 13px;
   pointer-events: auto;
+  animation: rise var(--t-mid) var(--ease);
 }
 
-/* The tone shows in the bar on the left, not in the text colour: --success must not be a text colour */
-.toast[data-tone="info"] {
-  border-left-color: var(--brand);
+/* The tone is a dot before the words: it is never the only signal, the words say it too */
+.mark {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tape);
 }
 
-.toast[data-tone="success"] {
-  border-left-color: var(--ok);
+.toast[data-tone="success"] .mark {
+  background: var(--ok);
 }
 
-.toast[data-tone="error"] {
-  border-left-color: var(--bad);
+.toast[data-tone="error"] .mark {
+  background: var(--bad);
 }
 
 .message {
+  flex: 1 1 auto;
   min-width: 0;
   margin: 0;
   padding: 8px 0;
   overflow-wrap: anywhere;
 }
 
-/* Phone: full width at the bottom, above the tab bar, where a thumb reaches it */
+/* The one action ("Undo"): quiet text in the tape colour on the ink surface */
+.action {
+  flex: none;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-2);
+  background: transparent;
+  color: var(--tape);
+  font: 700 13px/1 var(--f-ui);
+  cursor: pointer;
+}
+
+.action:hover {
+  background: color-mix(in srgb, var(--toast-ink) 14%, transparent);
+}
+
+.close {
+  color: var(--toast-ink);
+}
+
+.close:hover {
+  background: color-mix(in srgb, var(--toast-ink) 14%, transparent);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
 @media (max-width: 767.98px) {
   .viewport {
-    top: auto;
+    top: 8px;
     right: 16px;
-    bottom: 72px;
+    bottom: auto;
     left: 16px;
     width: auto;
-    transform: none;
+  }
+
+  .toast {
+    animation-name: drop;
+  }
+}
+
+@keyframes drop {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
   }
 }

@@ -1,28 +1,38 @@
+/*
+ * Buttons. Heights: sm 30, md 36, lg 44 on a desktop; 40, 44 and 52 on a phone. Fonts never go under 13px.
+ * The company's colour is only ever the primary button's fill, and its text is the computed --brand-ink.
+ */
 .button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 40px;
-  padding: 0 16px;
+  min-height: 36px;
+  padding: 0 14px;
   border: 1px solid transparent;
-  border-radius: var(--r-3);
+  border-radius: var(--r-2);
   background: transparent;
   color: var(--ink);
   font-family: var(--f-ui);
-  font-size: var(--font-size-body);
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.2;
   text-align: center;
   text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
+  transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+
+.button[data-size="sm"] {
+  min-height: 30px;
+  padding: 0 10px;
 }
 
 .button[data-size="lg"] {
-  min-height: 48px;
-  padding: 0 24px;
-  font-size: 1rem;
+  min-height: 44px;
+  padding: 0 20px;
+  font-size: var(--font-size-body);
 }
 
 .button[data-variant="primary"] {
@@ -30,45 +40,85 @@
   color: var(--brand-ink);
 }
 
+.button[data-variant="primary"]:hover {
+  background: var(--brand-hover);
+}
+
+.button[data-variant="ink"] {
+  background: var(--ink);
+  color: var(--ink-inv);
+}
+
+.button[data-variant="ink"]:hover {
+  background: var(--ink-2);
+}
+
+.button[data-variant="default"] {
+  border-color: var(--line-2);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.button[data-variant="default"]:hover {
+  border-color: var(--line-ctl);
+  background: var(--surface-2);
+}
+
+.button[data-variant="quiet"] {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.button[data-variant="quiet"]:hover {
+  background: var(--sunken);
+}
+
 .button[data-variant="ghost"] {
   background: transparent;
   color: var(--ink);
 }
 
-/* White on --danger is 4.5:1 only at full white and bold, so this is the one place for it. */
+.button[data-variant="ghost"]:hover {
+  background: var(--surface-2);
+}
+
+/* White on --bad is 4.5:1 only at full white and bold, so this is the one place for it. */
 .button[data-variant="danger"] {
   background: var(--bad);
   color: var(--bad-ink);
   font-weight: 700;
 }
 
-.button[data-variant="ghost"]:hover {
-  background: var(--line);
-}
-
-/* Danger changes only its fill on hover: a filter would dim the white text below 4.5:1 as well. */
+/* Danger changes only its fill on hover: a filter would dim the text below 4.5:1 as well. */
 .button[data-variant="danger"]:hover {
   background: var(--bad);
 }
 
-.button[data-variant="primary"]:hover {
-  filter: brightness(0.94);
-}
-
 .button:disabled,
 .button[aria-disabled="true"] {
-  opacity: 0.6;
+  opacity: 0.55;
   cursor: not-allowed;
 }
 
 .button[data-variant="primary"]:disabled:hover,
 .button[data-variant="primary"][aria-disabled="true"]:hover {
-  filter: none;
+  background: var(--brand);
 }
 
-.button[data-variant="danger"]:disabled:hover,
-.button[data-variant="danger"][aria-disabled="true"]:hover {
-  background: var(--bad);
+.button[data-variant="ink"]:disabled:hover,
+.button[data-variant="ink"][aria-disabled="true"]:hover {
+  background: var(--ink);
+}
+
+.button[data-variant="default"]:disabled:hover,
+.button[data-variant="default"][aria-disabled="true"]:hover {
+  border-color: var(--line-2);
+  background: var(--surface);
+}
+
+.button[data-variant="quiet"]:disabled:hover,
+.button[data-variant="quiet"][aria-disabled="true"]:hover {
+  background: var(--surface-2);
 }
 
 .button[data-variant="ghost"]:disabled:hover,
@@ -78,4 +128,21 @@
 
 .button[aria-busy="true"] {
   cursor: progress;
+}
+
+/* A thumb needs more: one step taller on a phone */
+@media (max-width: 767.98px) {
+  .button {
+    min-height: 44px;
+    font-size: var(--font-size-body);
+  }
+
+  .button[data-size="sm"] {
+    min-height: 40px;
+  }
+
+  .button[data-size="lg"] {
+    min-height: 52px;
+    font-size: 1rem;
+  }
 }

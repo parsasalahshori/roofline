@@ -14,9 +14,15 @@ import styles from './Toast.module.css';
 
 export type ToastTone = 'info' | 'success' | 'error';
 
+/** One button on a toast ("Undo"). Pressing it runs `onClick` and closes the toast. */
+export type ToastAction = { label: string; onClick: () => void };
+
 export type ToastApi = {
-  /** Shows a message for six seconds. The same message showing already is not added again: its time restarts. */
-  show: (message: string, tone?: ToastTone) => void;
+  /**
+   * Shows a message for six seconds. The same message showing already is not added again: its time restarts.
+   * An action adds one button to the toast, for a change that can be taken back.
+   */
+  show: (message: string, tone?: ToastTone, options?: { action?: ToastAction }) => void;
 };
 
 export type ToastProviderProps = {
@@ -25,7 +31,7 @@ export type ToastProviderProps = {
   closeLabel: string;
 };
 
-type ToastItem = { id: number; message: string; tone: ToastTone };
+type ToastItem = { id: number; message: string; tone: ToastTone; action?: ToastAction };
 
 /** How long a toast stays, in milliseconds. */
 const DISMISS_AFTER = 6000;
@@ -51,7 +57,7 @@ export function ToastProvider({ children, closeLabel }: ToastProviderProps) {
   }, []);
 
   const show = useCallback(
-    (message: string, tone: ToastTone = 'info') => {
+    (message: string, tone: ToastTone = 'info', options?: { action?: ToastAction }) => {
       const running = timers.current.get(message);
       if (running !== undefined) clearTimeout(running);
       timers.current.set(
@@ -60,10 +66,11 @@ export function ToastProvider({ children, closeLabel }: ToastProviderProps) {
       );
       // Taken out here, not in the updater, which React may call twice
       const id = nextId.current++;
+      const action = options?.action;
       setToasts((current) =>
         current.some((toast) => toast.message === message)
-          ? current.map((toast) => (toast.message === message ? { ...toast, tone } : toast))
-          : [...current, { id, message, tone }],
+          ? current.map((toast) => (toast.message === message ? { ...toast, tone, action } : toast))
+          : [...current, { id, message, tone, action }],
       );
     },
     [dismiss],
@@ -82,8 +89,21 @@ export function ToastProvider({ children, closeLabel }: ToastProviderProps) {
   function renderToast(toast: ToastItem) {
     return (
       <div key={toast.id} className={styles.toast} data-tone={toast.tone}>
+        <span className={styles.mark} aria-hidden="true" />
         <p className={styles.message}>{toast.message}</p>
-        <IconButton label={closeLabel} icon={<CloseIcon />} onClick={() => dismiss(toast.message)} />
+        {toast.action ? (
+          <button
+            type="button"
+            className={styles.action}
+            onClick={() => {
+              toast.action?.onClick();
+              dismiss(toast.message);
+            }}
+          >
+            {toast.action.label}
+          </button>
+        ) : null}
+        <IconButton label={closeLabel} icon={<CloseIcon />} className={styles.close} onClick={() => dismiss(toast.message)} />
       </div>
     );
   }

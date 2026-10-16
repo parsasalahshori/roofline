@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
-import { Card } from '../Card/Card.tsx';
-import styles from './StatCard.module.css';
+import { KpiTile } from '../KpiTile/KpiTile.tsx';
 
 export type StatCardProps = {
   label: string;
@@ -8,19 +7,7 @@ export type StatCardProps = {
   hint?: string;
 };
 
-/** One number with its name: a description list of one pair, so a screen reader hears them together. */
+/** One number with its name. The older name for a KPI tile without bars: it draws one. */
 export function StatCard({ label, value, hint }: StatCardProps) {
-  return (
-    <Card>
-      <dl className={styles.stat}>
-        <dt className={styles.label}>{label}</dt>
-        <dd className={styles.value}>{value}</dd>
-        {hint ? (
-          <dd className={styles.hint} data-part="hint">
-            {hint}
-          </dd>
-        ) : null}
-      </dl>
-    </Card>
-  );
+  return <KpiTile label={label} value={value} meta={hint} />;
 }
