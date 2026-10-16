@@ -46,6 +46,8 @@ describe('the printable measuring sheet', () => {
     expect(letter.svg).toContain('exactly 6 in');
     const a4 = calibrationSheetSvg('a4');
     expect(a4.svg).toContain('exactly 15 cm');
+    expect(letter.rulerIn).toBe(6);
+    expect(a4.rulerIn).toBeCloseTo(5.906, 3);
     expect(a4.widthIn).toBeCloseTo(8.2677, 3);
     const ids = (p: 'letter' | 'a4') => sheetLayout(p).markers.map((m) => m.id);
     expect(ids('letter')).toHaveLength(12);
@@ -150,5 +152,76 @@ describe('the engine', () => {
     expect(m.uncertaintyIn.width).toBeGreaterThan(0);
     expect(m.viewAngleDeg).toBeGreaterThan(10);
     expect(cv.combine([m, { ...m, widthIn: m.widthIn + 0.1 }, { ...m, widthIn: m.widthIn - 0.05 }])!.widthIn).toBeCloseTo(m.widthIn, 9);
+  });
+});
+
+describe('two sheets and ranked outlines', () => {
+  it('finds sheet A and sheet B on one big window and measures from both as one plane', async () => {
+    const big = scene({
+      widthPx: 1200,
+      heightPx: 1600,
+      distanceIn: 80,
+      yawDeg: 15,
+      window: { widthIn: 48, heightIn: 64, offsetIn: 1, trimIn: 3.5, frameIn: 1.5, sashIn: 1.25, grille: false },
+      sheet: { paper: 'letter', xIn: 36, yIn: 49, rotDeg: 2, curlIn: 0 },
+      sheet2: { paper: 'letter', xIn: 3.5, yIn: 3.5, rotDeg: -3, curlIn: 0 },
+    });
+    const p = renderScene(big);
+    const det = detectSheetSync(img(p))!;
+    expect(det.sheets).toBe(2);
+    expect(det.sheetIndex!.filter((i) => i === 1).length).toBeGreaterThanOrEqual(40);
+    const cv = await loadWindowPhotoCv();
+    const m = cv.measure({ widthPx: p.width, heightPx: p.height, focalPx: p.focalPx, sheet: det, windowQuad: p.windowQuad, planeOffsetIn: 1 })!;
+    expect(Math.abs(m.widthIn - 48)).toBeLessThan(0.08);
+    expect(Math.abs(m.heightIn - 64)).toBeLessThan(0.08);
+    // Sheet B prints with its own markers and says so.
+    expect(cv.calibrationSheet('letter', 'B').svg).toContain('sheet B');
+  });
+
+  it('returns ranked whole-rectangle outlines, the right one first for close clicks', async () => {
+    const p = renderScene(scene({ yawDeg: 20 }));
+    const det = detectSheetSync(img(p))!;
+    const rough = p.windowQuad.map(([x, y], k) => [x + (k % 2 ? 3 : -3), y + 2]) as Quad;
+    const s = snapQuadSync(img(p), rough, { sheet: det });
+    expect(s.candidates!.length).toBeGreaterThanOrEqual(2);
+    s.candidates![0]!.quad.forEach((q, k) => expect(Math.hypot(q[0] - p.windowQuad[k]![0], q[1] - p.windowQuad[k]![1])).toBeLessThan(1));
+  });
+});
+
+describe('regression: the screen engineer\'s photo (1512 x 2016, frame 35 7/8 x 59 3/4 in, 1 in proud, 6.8 ft, 14 deg)', () => {
+  it('never reports a wrong edge as confident: rivals on every side, low confidence, the right outline among the top 3', async () => {
+    const { readFileSync } = await import('node:fs');
+    const jpeg = (await import('jpeg-js')).default;
+    const d = jpeg.decode(readFileSync(new URL('./fixtures/window-screen-regression.jpg', import.meta.url)), { useTArray: true });
+    const photo: RgbaImage = { width: d.width, height: d.height, data: new Uint8ClampedArray(d.data.buffer, d.data.byteOffset, d.data.byteLength) };
+    const truth: Quad = [
+      [440.80700712878075, 495.7119237846491],
+      [1071.7584473077704, 444.6587748602477],
+      [1074.201836639525, 1538.9874195750406],
+      [472.6194032437369, 1496.0667769073686],
+    ];
+    // The screen engineer's drag: each corner dropped about 20 px inside the frame.
+    const offs = [
+      [18, 14],
+      [-16, 18],
+      [-20, -14],
+      [16, -18],
+    ];
+    const rough = truth.map((p, i) => [p[0] + offs[i]![0]!, p[1] + offs[i]![1]!]) as Quad;
+    const det = detectSheetSync(photo)!;
+    const s = snapQuadSync(photo, rough, { sheet: det });
+    const right = (q: Quad) => q.every((p, k) => Math.hypot(p[0] - truth[k]![0], p[1] - truth[k]![1]) < 1.5);
+    if (!right(s.quad)) {
+      // A wrong pick must look doubtful on every side it is unsure of, and the right outline must be offered.
+      expect(s.rivals!.every((r) => r > 0)).toBe(true);
+      expect(Math.max(...s.sideConfidence)).toBeLessThan(0.5);
+    }
+    const rank = s.candidates!.findIndex((c) => right(c.quad));
+    expect(rank).toBeGreaterThanOrEqual(0);
+    expect(rank).toBeLessThan(3);
+    const cv = await loadWindowPhotoCv();
+    const m = cv.measure({ widthPx: photo.width, heightPx: photo.height, focalPx: (26 / 36) * 2016, sheet: det, windowQuad: s.candidates![rank]!.quad, planeOffsetIn: 1 })!;
+    expect(Math.abs(m.widthIn - 35.875)).toBeLessThan(0.25);
+    expect(Math.abs(m.heightIn - 59.75)).toBeLessThan(0.25);
   });
 });
