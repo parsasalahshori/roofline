@@ -342,6 +342,11 @@
   color: var(--ink-3);
 }
 
+/* On a selected row's tint the quiet ink steps up one, so its text keeps 4.5:1 in both themes (the kit's size parts read --ink-3 too) */
+.row[data-selected="true"] {
+  --ink-3: var(--ink-2);
+}
+
 .cOrder [data-scale] > [aria-hidden="true"] {
   font-weight: 700;
 }
@@ -553,6 +558,11 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* On the tape tint the quiet ink steps up one, so its text keeps 4.5:1 in both themes (the kit's size parts read --ink-3 too) */
+.reading[data-tone="tape"] {
+  --ink-3: var(--ink-2);
 }
 
 /* On a tape-tinted row, so tape ink: the order takes this side of this photo */
