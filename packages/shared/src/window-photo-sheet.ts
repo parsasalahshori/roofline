@@ -19,6 +19,12 @@ export const SHEET_MAX_RMS_PX = 2.5;
 export const SHEET_MAX_POINTS = 2000;
 /** Plane offsets accepted, inches (frame in front of + / behind - the glass). */
 export const SHEET_MAX_OFFSET_IN = 6;
+/**
+ * The propagated one-sigma error is multiplied by this so that it covers about 68% of real errors: fitted on the
+ * synthetic benchmark's seed 1 (target zone, 1% clicks, the person picking the outline when asked: 1.10), checked on
+ * seed 2 (76% inside 1 sigma, 98% inside 2 sigma: slightly conservative).
+ */
+export const SHEET_SIGMA_SCALE = 1.1;
 /** The papers the sheet prints on, inches (portrait). */
 export const SHEET_PAPER_IN = { letter: { widthIn: 8.5, heightIn: 11 }, a4: { widthIn: 210 / 25.4, heightIn: 297 / 25.4 } } as const;
 /** Phone ultra-wide lenses are under this 35 mm-equivalent focal length; their residual distortion is not modelled. */
@@ -796,7 +802,7 @@ export function measureWithSheet(input: SheetMeasureInput): SheetMeasurement | n
   }
   // (e) a floor for what the model leaves out (print scale after the ruler check, residual lens distortion): 0.1%.
   addVar(0.001 * size.w, 0.001 * size.h);
-  const uncertaintyIn = { width: Math.sqrt(varW.reduce((a, b) => a + b, 0)), height: Math.sqrt(varH.reduce((a, b) => a + b, 0)) };
+  const uncertaintyIn = { width: SHEET_SIGMA_SCALE * Math.sqrt(varW.reduce((a, b) => a + b, 0)), height: SHEET_SIGMA_SCALE * Math.sqrt(varH.reduce((a, b) => a + b, 0)) };
 
   const warnings: string[] = [];
   if (focal35mm < ULTRA_WIDE_FOCAL_35MM) warnings.push(SHEET_WARNINGS.ultraWide);
