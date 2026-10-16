@@ -2,11 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { buildRoofModel, type RoofModel } from '../src/roof-model.ts';
 import {
   classifyEdge,
+  cleanGutterAdjustments,
   compassSide,
+  drainageGroups,
+  gutterAdjustmentsChanged,
   gutterCheck,
   DEFAULT_GUTTER_TIERS,
   downspoutCapacitySqFt,
   eaveHeight,
+  EMPTY_GUTTER_ADJUSTMENTS,
+  MAX_ADDED_GUTTER_RUNS,
+  neededDownspouts,
+  nextAddedRunId,
   GUTTER_DESIGN,
   gutterCapacitySqFt,
   gutterRuns,
@@ -149,36 +156,47 @@ describe('gutterRuns', () => {
 });
 
 describe('downspouts', () => {
-  it('one at the end of a run up to 40 ft, then one at each end and enough between to stay within 40 ft', () => {
+  it('come from the total length: a hip roof is one group of four runs, one downspout at each corner', () => {
     const g = measureGutters(roofOf(HIP), ASSUMED);
+    // 144 ft round the house: about one per 35 ft is 4.
+    expect(g.totals.gutterFt).toBeCloseTo(144, -1);
+    expect(g.totals.downspouts).toBe(4);
     for (const r of g.runs) {
-      expect(r.lengthFt).toBeLessThanOrEqual(40);
       expect(r.downspouts).toHaveLength(1);
       expect(r.downspouts[0]!.atFt).toBe(r.lengthFt);
     }
-    // Every corner of a hip roof gets exactly one downspout.
     const at = new Set(g.runs.map((r) => r.downspouts[0]!.at.map((v) => v.toFixed(6)).join(',')));
     expect(at.size).toBe(4);
+  });
 
+  it('give every separate side at least one, then about one per 35 ft in all', () => {
+    // A gable: two separate eaves (66 ft each), 131 ft in all: 4, two on each side at its ends.
     const gable = measureGutters(roofOf(GABLE), ASSUMED);
+    expect(gable.runs).toHaveLength(2);
+    expect(gable.totals.downspouts).toBe(Math.round(gable.totals.gutterFt / GUTTER_DESIGN.downspoutEveryFt));
     for (const r of gable.runs) {
-      expect(r.lengthFt).toBeGreaterThan(40);
-      const ats = r.downspouts.map((d) => d.atFt);
-      expect(ats[0]).toBe(0);
-      expect(ats[ats.length - 1]).toBe(r.lengthFt);
-      for (let i = 1; i < ats.length; i++) expect(ats[i]! - ats[i - 1]!).toBeLessThanOrEqual(40);
+      expect(r.downspouts.map((d) => d.atFt)).toEqual([0, r.lengthFt]);
     }
   });
 
+  it('neededDownspouts: one per group, capacity as a floor, then the total at one per 35 ft', () => {
+    expect(neededDownspouts([{ lengthFt: 100, designSqFt: 500 }], '5in')).toEqual([3]);
+    expect(neededDownspouts([{ lengthFt: 10, designSqFt: 50 }, { lengthFt: 10, designSqFt: 50 }], '5in')).toEqual([1, 1]);
+    expect(neededDownspouts([{ lengthFt: 350, designSqFt: 2000 }], '5in')).toEqual([10]);
+    // The rainfall needs more than the length alone: 5,000 sq ft over a 2x3 leader's 905.
+    expect(neededDownspouts([{ lengthFt: 50, designSqFt: 5000 }], '5in')).toEqual([6]);
+    // Extra ones go to the group with the longest stretch per downspout.
+    expect(neededDownspouts([{ lengthFt: 120, designSqFt: 100 }, { lengthFt: 20, designSqFt: 100 }], '5in')).toEqual([3, 1]);
+    expect(neededDownspouts([], '5in')).toEqual([]);
+    expect(neededDownspouts([{ lengthFt: 0, designSqFt: 0 }], '5in')).toEqual([0]);
+  });
+
   it('adds downspouts so none drains more than its capacity', () => {
-    // A very large 12/12 hip (40 x 40 m): each 131 ft run drains a 20 m deep slope, more than spacing alone covers.
+    // A very large 12/12 hip (40 x 40 m): the 525 ft round it drains far more than one per 35 ft covers.
     const g = measureGutters(roofOf([[0, 0], [40, 0], [40, 40], [0, 40]], 12), ASSUMED, { size: '5in' });
     const cap = downspoutCapacitySqFt('2x3');
-    for (const r of g.runs) {
-      const spacing = Math.ceil(r.lengthFt / 40) + 1;
-      expect(r.downspouts.length).toBe(Math.ceil(r.designSqFt / cap));
-      expect(r.downspouts.length).toBeGreaterThan(spacing);
-    }
+    expect(g.totals.downspouts).toBe(Math.ceil(g.totals.designSqFt / cap));
+    expect(g.totals.downspouts).toBeGreaterThan(Math.round(g.totals.gutterFt / GUTTER_DESIGN.downspoutEveryFt));
   });
 
   it('downspout length is the eave height: Google, else floors x 10 ft, else one floor assumed', () => {
@@ -190,14 +208,37 @@ describe('downspouts', () => {
     // A porch's downspout is one floor long even on a two-floor house.
     const p = measureGutters(porchRoof(), eaveHeight({ floors: 2 }));
     const porch = p.runs.find((r) => r.kind === 'low-attachment')!;
+    expect(porch.downspouts.length).toBeGreaterThan(0);
     expect(porch.downspouts.every((d) => d.lengthFt === 10)).toBe(true);
   });
 
-  it('a short run turning into a longer one drains into it', () => {
+  it('a short run turning into a longer one shares its downspouts (none of its own)', () => {
     // An L whose short wing end is 2 m: its eave is under 8 ft.
     const g = measureGutters(roofOf([[0, 0], [14, 0], [14, 10], [2, 10], [2, 12], [0, 12]]), ASSUMED);
-    const short = g.runs.filter((r) => r.lengthFt < GUTTER_DESIGN.shortRunFt && g.corners.some((c) => c.runIds.includes(r.id)));
+    const short = g.runs.filter((r) => r.lengthFt < 8 && g.corners.some((c) => c.runIds.includes(r.id)));
+    expect(short.length).toBeGreaterThan(0);
     for (const r of short) expect(r.downspouts).toHaveLength(0);
+  });
+
+  it('fragmented pieces of one eave, touching or a step apart, are one drainage group', () => {
+    const piece = (id: string, x0: number, x1: number, y = 0) => ({ id, kind: 'main' as const, coords: [pt(x0, y), pt(x1, y)] as [[number, number], [number, number]] });
+    // Five 4 m pieces with 0.5 m gaps (a roof engine's split eave), and one 6 m away on its own.
+    const runs = [piece('a', 0, 4), piece('b', 4.5, 8.5), piece('c', 9, 13), piece('d', 13.5, 17.5), piece('e', 18, 22), piece('f', 28, 32)];
+    expect(drainageGroups(runs).map((g) => g.map((r) => r.id))).toEqual([['a', 'b', 'c', 'd', 'e'], ['f']]);
+    // A porch piece touching a house piece is a separate drain.
+    expect(drainageGroups([piece('a', 0, 4), { ...piece('p', 4, 8), kind: 'low-attachment' as const }])).toHaveLength(2);
+    // A scrap (under 15 ft) 2 m from a long eave drains with it; a long eave 2 m away is its own drain.
+    expect(drainageGroups([piece('long', 0, 12), piece('scrap', 14, 17)])).toHaveLength(1);
+    expect(drainageGroups([piece('long', 0, 12), piece('other', 14, 26)])).toHaveLength(2);
+  });
+
+  it('about one downspout per 30-40 ft of gutter on every test roof', () => {
+    for (const shape of [HIP, GABLE, L_SHAPE]) {
+      const g = measureGutters(roofOf(shape), ASSUMED);
+      const perFt = g.totals.gutterFt / g.totals.downspouts;
+      expect(perFt).toBeGreaterThanOrEqual(25);
+      expect(perFt).toBeLessThanOrEqual(45);
+    }
   });
 });
 
@@ -245,8 +286,104 @@ describe('adjustments and totals', () => {
 
   it('hangers every 2 ft, 3 elbows a downspout', () => {
     const g = measureGutters(roofOf(GABLE), ASSUMED);
-    expect(g.totals.hangers).toBe(g.runs.reduce((s, r) => s + Math.ceil(r.lengthFt / 2), 0));
+    expect(g.totals.hangers).toBe(Math.ceil(g.totals.gutterFt / 2));
     expect(g.totals.elbows).toBe(3 * g.totals.downspouts);
+  });
+
+  it('a measured total is an estimate with its source', () => {
+    const g = measureGutters(roofOf(HIP), ASSUMED);
+    expect(g.confidence).toBe('estimate');
+    expect(g.totals).toMatchObject({ lengthSource: 'measured', addedFt: 0, unplacedDownspouts: 0 });
+    expect(g.totals.measuredFt).toBe(g.totals.gutterFt);
+    expect(g.addedRuns).toEqual([]);
+  });
+
+  it('runs added by hand join the total with their own downspouts and end caps', () => {
+    const base = measureGutters(roofOf(HIP), ASSUMED);
+    const g = measureGutters(roofOf(HIP), ASSUMED, { addedRuns: [{ id: 'A1', label: 'Upper floor, back', lengthFt: 40 }] });
+    expect(g.totals.gutterFt).toBeCloseTo(base.totals.gutterFt + 40, 1);
+    expect(g.totals).toMatchObject({ runs: 5, addedFt: 40, lengthSource: 'measured', endCaps: 2 });
+    expect(g.addedRuns).toEqual([{ id: 'A1', label: 'Upper floor, back', lengthFt: 40, downspouts: 1, downspoutsSet: false, eaveHeightFt: 10 }]);
+    expect(g.totals.downspouts).toBe(5);
+    expect(g.totals.downspoutFt).toBe(50);
+    expect(g.confidence).toBe('adjusted');
+    // A typed count on an added run wins.
+    const set = measureGutters(roofOf(HIP), ASSUMED, { addedRuns: [{ id: 'A1', label: '', lengthFt: 40 }], downspouts: { A1: 2 } });
+    expect(set.addedRuns[0]).toMatchObject({ downspouts: 2, downspoutsSet: true });
+  });
+
+  it('a total typed in replaces the measured one; footage beyond the map gets unplaced downspouts', () => {
+    const g = measureGutters(roofOf(HIP), ASSUMED, { totalFt: 300 });
+    expect(g.totals).toMatchObject({ gutterFt: 300, lengthSource: 'override' });
+    expect(g.totals.downspouts).toBe(Math.round(300 / GUTTER_DESIGN.downspoutEveryFt));
+    expect(g.totals.unplacedDownspouts).toBeGreaterThan(0);
+    expect(g.totals.downspoutFt).toBe(g.totals.downspouts * 10);
+    expect(g.confidence).toBe('adjusted');
+    expect(g.check.reasons).toEqual([]);
+    // Shorter than the runs drawn: fewer downspouts, down to what the roof's rainfall needs.
+    const short = measureGutters(roofOf(HIP), ASSUMED, { totalFt: 20 });
+    expect(short.totals).toMatchObject({ gutterFt: 20, unplacedDownspouts: 0 });
+    expect(short.totals.downspouts).toBe(Math.ceil(short.totals.designSqFt / downspoutCapacitySqFt('2x3')));
+    expect(short.totals.downspouts).toBeLessThan(4);
+  });
+
+  it("an exact report's eave length is the total for an EagleView measurement", () => {
+    const g = measureGutters(roofOf(GABLE), ASSUMED, null, { reportEaveFt: 210.4 });
+    expect(g.totals).toMatchObject({ gutterFt: 210.4, lengthSource: 'eagleview' });
+    expect(g.totals.downspouts).toBe(Math.round(210.4 / GUTTER_DESIGN.downspoutEveryFt));
+    expect(g.confidence).toBe('exact');
+    expect(g.check.reasons).toEqual([]);
+    // A typed total still wins over it; added runs go on top of it.
+    expect(measureGutters(roofOf(GABLE), ASSUMED, { totalFt: 150 }, { reportEaveFt: 210.4 }).totals.lengthSource).toBe('override');
+    const added = measureGutters(roofOf(GABLE), ASSUMED, { addedRuns: [{ id: 'A1', label: 'Shed', lengthFt: 12 }] }, { reportEaveFt: 210.4 });
+    expect(added.totals.gutterFt).toBeCloseTo(222.4, 1);
+    expect(measureGutters(roofOf(GABLE), ASSUMED, null, { reportEaveFt: null }).totals.lengthSource).toBe('measured');
+    expect(measureGutters(roofOf(GABLE), ASSUMED, null, { reportEaveFt: 0 }).totals.lengthSource).toBe('measured');
+  });
+});
+
+describe('cleanGutterAdjustments', () => {
+  const runs = [{ id: 'G1' }, { id: 'G2' }];
+  it('keeps sane added runs, drops bad ones, and cleans labels', () => {
+    const c = cleanGutterAdjustments(runs, {
+      addedRuns: [
+        { id: 'A1', label: '  Back\u0000porch  ', lengthFt: 22.345 },
+        { id: 'A1', label: 'dup', lengthFt: 10 },
+        { id: 'G1', label: 'not an added id', lengthFt: 10 },
+        { id: 'A2', label: 'too long', lengthFt: 600 },
+        { id: 'A3', label: 'too short', lengthFt: 0.5 },
+        { id: 'A4', label: 'x'.repeat(80), lengthFt: 30 },
+        null as never,
+      ],
+      downspouts: { A1: 2, A9: 1, G2: 1 },
+    });
+    expect(c.addedRuns).toEqual([
+      { id: 'A1', label: 'Back porch', lengthFt: 22.3 },
+      { id: 'A4', label: 'x'.repeat(40), lengthFt: 30 },
+    ]);
+    expect(c.downspouts).toEqual({ A1: 2, G2: 1 });
+  });
+  it('caps the added runs, bounds the total, and keeps a well-formed adjustedBy', () => {
+    const many = Array.from({ length: 30 }, (_, i) => ({ id: `A${i + 1}`, label: '', lengthFt: 10 }));
+    expect(cleanGutterAdjustments(runs, { addedRuns: many }).addedRuns).toHaveLength(MAX_ADDED_GUTTER_RUNS);
+    expect(cleanGutterAdjustments(runs, { totalFt: 0 }).totalFt).toBeNull();
+    expect(cleanGutterAdjustments(runs, { totalFt: 6000 }).totalFt).toBeNull();
+    expect(cleanGutterAdjustments(runs, { totalFt: Number.NaN }).totalFt).toBeNull();
+    expect(cleanGutterAdjustments(runs, { totalFt: 212.26 }).totalFt).toBe(212.3);
+    expect(cleanGutterAdjustments(runs, { adjustedBy: { name: 'Dana Cole', at: '2026-10-16T12:00:00.000Z' } }).adjustedBy).toEqual({
+      name: 'Dana Cole',
+      at: '2026-10-16T12:00:00.000Z',
+    });
+    expect(cleanGutterAdjustments(runs, { adjustedBy: { name: 3 } as never }).adjustedBy).toBeNull();
+    expect(cleanGutterAdjustments(runs, null)).toEqual(EMPTY_GUTTER_ADJUSTMENTS);
+  });
+  it('says whether anything was changed, and numbers the next added run', () => {
+    expect(gutterAdjustmentsChanged(EMPTY_GUTTER_ADJUSTMENTS)).toBe(false);
+    expect(gutterAdjustmentsChanged({ ...EMPTY_GUTTER_ADJUSTMENTS, adjustedBy: { name: 'x', at: 'y' } })).toBe(false);
+    expect(gutterAdjustmentsChanged({ ...EMPTY_GUTTER_ADJUSTMENTS, totalFt: 100 })).toBe(true);
+    expect(gutterAdjustmentsChanged({ ...EMPTY_GUTTER_ADJUSTMENTS, excludedRunIds: ['G1'] })).toBe(true);
+    expect(nextAddedRunId([])).toBe('A1');
+    expect(nextAddedRunId([{ id: 'A1' }, { id: 'A7' }])).toBe('A8');
   });
 });
 
@@ -278,6 +415,15 @@ describe('priceGutters', () => {
     expect(all[1]!.belowRecommended).toBe(false);
   });
 
+  it('prices the total, whatever it came from', () => {
+    const typed = measureGutters(roofOf(HIP), ASSUMED, { totalFt: 300 });
+    const [good] = priceGutters(typed, null);
+    expect(good!.lines.find((l) => l.kind === 'gutter')!.quantity).toBe(300);
+    expect(good!.lines.find((l) => l.kind === 'downspout')!.quantity).toBe(typed.totals.downspoutFt);
+    const added = measureGutters(roofOf(HIP), ASSUMED, { addedRuns: [{ id: 'A1', label: '', lengthFt: 40 }] });
+    expect(priceGutters(added, null)[0]!.totalCents).toBeGreaterThan(priceGutters(measureGutters(roofOf(HIP), ASSUMED), null)[0]!.totalCents);
+  });
+
   it('skips disabled tiers', () => {
     const g = measureGutters(roofOf(HIP), ASSUMED);
     expect(priceGutters(g, null, DEFAULT_GUTTER_TIERS.map((t) => ({ ...t, enabled: t.tier !== 'best' }))).map((q) => q.tier)).toEqual(['good', 'better']);
@@ -288,8 +434,10 @@ describe('gutterView', () => {
   it('carries rakes for the drawing, clean adjustments and null quotes without tiers', () => {
     const v = gutterView('m1', roofOf(GABLE), ASSUMED, { excludedRunIds: ['G2', 'G9'] }, null);
     expect(v.rakes.length).toBeGreaterThan(0);
-    expect(v.adjustments).toEqual({ excludedRunIds: ['G2'], downspouts: {}, size: null });
+    expect(v.adjustments).toEqual({ ...EMPTY_GUTTER_ADJUSTMENTS, excludedRunIds: ['G2'] });
     expect(v.quotes).toBeNull();
+    expect(v.reportEaveFt).toBeNull();
+    expect(gutterView('m1', roofOf(GABLE), ASSUMED, null, null, { reportEaveFt: 180 })).toMatchObject({ reportEaveFt: 180, confidence: 'exact' });
     expect(gutterView('m1', null, ASSUMED, null).runs).toEqual([]);
   });
 });
@@ -426,7 +574,7 @@ describe('runs from the planes on whole roofs', () => {
 });
 
 describe('gutterCheck', () => {
-  it('flags gutters under 45% of the perimeter, or under 40 ft on a house over 800 sq ft', () => {
+  it('flags gutters under the share the hip/gable mix should give, or under 40 ft on a house over 800 sq ft', () => {
     const roof = roofOf(GABLE);
     const c = gutterCheck(roof, gutterRuns(roof).runs);
     expect(c.perimeterFt).toBeCloseTo(2 * (20 + 10) * FT, 0); // the footprint's outline
@@ -434,11 +582,29 @@ describe('gutterCheck', () => {
     expect(c.expectedShare).toBeCloseTo(0.55, 2);
     expect(gutterCheck(roof, [{ lengthFt: 40 }]).reasons).toEqual(['gutters-check']);
     expect(gutterCheck(roofOf(HIP), []).expectedShare).toBeGreaterThan(0.9);
-    // A small house (under 800 sq ft) at half its perimeter is fine; the 40 ft floor applies to bigger ones only.
-    const small = roofOf([[0, 0], [6, 0], [6, 5], [0, 5]]);
-    expect(gutterCheck(small, [{ lengthFt: gutterCheck(small, []).perimeterFt * 0.5 }]).reasons).toEqual([]);
+    // A gable at half its perimeter is under the 55% a gable should give.
+    const half = gutterCheck(roof, [{ lengthFt: c.perimeterFt * 0.5 }]);
+    expect(half.ratio).toBeCloseTo(0.91, 2);
+    expect(half.reasons).toEqual(['gutters-check']);
+    // The old 45% rule let this through: a hip roof at 70% of its outline is short.
+    const hip = gutterCheck(roofOf(HIP), [{ lengthFt: gutterCheck(roofOf(HIP), []).perimeterFt * 0.7 }]);
+    expect(hip.reasons).toEqual(['gutters-check']);
+    // A small house (under 800 sq ft) at its expected share and under 40 ft is fine; the 40 ft floor is for bigger ones.
+    const small = roofOf([[0, 0], [6, 0], [6, 3], [0, 3]]);
+    expect(gutterCheck(small, [{ lengthFt: 39 }]).reasons).toEqual([]);
+    // An exact report's or typed total is not second-guessed.
+    expect(gutterCheck(roof, [{ lengthFt: 40 }], { trusted: true }).reasons).toEqual([]);
   });
-  it('is part of the measurement', () => {
+  it('is part of the measurement, and added runs count toward it', () => {
     expect(measureGutters(roofOf(HIP), ASSUMED).check.reasons).toEqual([]);
+    // Two of a hip roof's four runs left in the drawing look short; adding the missing two by hand clears it.
+    const roof = roofOf(HIP);
+    const lines = roof.lines.filter((l) => l.kind !== 'eave' || l.coords[0][1] === roof.lines.find((k) => k.kind === 'eave')!.coords[0][1]);
+    const cut = { ...roof, lines };
+    const short = measureGutters(cut, ASSUMED);
+    expect(short.check.reasons).toEqual(['gutters-check']);
+    const missing = 144 - short.totals.measuredFt;
+    const fixed = measureGutters(cut, ASSUMED, { addedRuns: [{ id: 'A1', label: 'Missed eaves', lengthFt: missing }] });
+    expect(fixed.check.reasons).toEqual([]);
   });
 });

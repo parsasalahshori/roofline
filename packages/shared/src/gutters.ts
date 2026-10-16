@@ -14,9 +14,13 @@
 //    inside one. A corner counts (a miter) only while both its runs are on the quote.
 // 3. Each facet's plan area is shared among its runs by length; sized with a roof pitch factor (wind-driven rain on
 //    a sloped roof) and a design rainfall intensity (GUTTER_DESIGN).
-// 4. Downspouts: one at the run's end, or one at each end and more between once the run is longer than the spacing,
-//    and more again until each drains no more than its capacity. The size is 6 in when any run sends more water to
-//    one downspout than a 5 in gutter carries.
+// 4. Downspouts come from the TOTAL gutter length (about one per 35 ft, GUTTER_DESIGN.downspoutEveryFt), at least one per
+//    drainage group (runs that touch or turn a corner into each other: a roof engine splits one eave into many short
+//    pieces, and each piece is not its own drain) and never fewer than the rainfall capacity needs. Each group's count
+//    goes to its longest runs first. The size is 6 in when any group sends more water to one downspout than 5 in carries.
+// 5. The total is honest about where it came from: the measured runs (a draft: roof engines miss eaves, so it is checked
+//    against what the roof's hip/gable mix should give), an exact report's eave length, or a total a person typed in.
+//    People can also add runs the map missed (a label and a length).
 import type { LngLat } from './roof.ts';
 import type { RoofFacet, RoofLine, RoofModel } from './roof-model.ts';
 import type { Tier } from './proposals.ts';
@@ -44,7 +48,8 @@ export type DownspoutSize = (typeof DOWNSPOUT_SIZES)[number];
  * - Downspout (leader) capacity: SMACNA's leader sizing, 1 sq in of leader per 1,200 / I sq ft of plan area (nominal
  *   2x3 = 6 sq in, 3x4 = 12 sq in), so at 7.96 in/hr a 2x3 drains about 900 sq ft and a 3x4 about 1,800.
  *   (Constant from the manual's leader table as commonly quoted; verify against the current edition.)
- * - Spacing: a downspout every 40 ft at most (installer practice is 30-40 ft; SMACNA's limit is 50 ft).
+ * - Count: about one downspout per 35 ft of total gutter (installer practice is one per 30-40 ft; SMACNA's spacing limit
+ *   is 50 ft), at least one per drainage group, and never fewer than the leader capacity above needs.
  */
 export const GUTTER_DESIGN = {
   rainfallInPerHr: 7.96,
@@ -53,9 +58,16 @@ export const GUTTER_DESIGN = {
   downspoutFor: { '5in': '2x3', '6in': '3x4' } as Readonly<Record<GutterSize, DownspoutSize>>,
   downspoutSqIn: { '2x3': 6, '3x4': 12 } as Readonly<Record<DownspoutSize, number>>,
   leaderSqFtPerSqInAt1InHr: 1200,
-  maxDownspoutSpacingFt: 40,
-  /** A run this short that turns a corner into another run drains into it (no downspout of its own). */
-  shortRunFt: 8,
+  /** About one downspout per this many feet of total gutter. */
+  downspoutEveryFt: 35,
+  /** Run ends this close (ft) belong to one drainage group (corners, and the small gaps a roof engine leaves). */
+  groupJoinFt: 3,
+  /** A group shorter than this (ft), a scrap of eave a roof engine split off, drains with the nearest group... */
+  smallGroupFt: 15,
+  /** ...when an end of it is within this (ft) of that group's; farther, it is its own drain. */
+  smallGroupReachFt: 12,
+  /** Drained area per foot of gutter when nothing measured says (a typed-in run with no roof drawn): plan x pitch. */
+  fallbackSqFtPerFt: 11,
   /** Eave pieces shorter than this are noise in the drawing: no gutter. */
   minRunFt: 2,
   /** A run this short with no corner into another run (a jog over a bay) gets no gutter of its own. */
@@ -66,8 +78,11 @@ export const GUTTER_DESIGN = {
   eaveMaxDeg: 45,
   /** ...and this far or more off it is a rake; between, the edge's own climb decides. */
   rakeMinDeg: 60,
-  /** The review check: gutters under this share of the outline's perimeter... */
-  checkMinShare: 0.45,
+  /**
+   * The review check: the share of the outline the gutters cover, over the share the roof's hip/gable mix should give,
+   * under this looks short. Against 34 EagleView reports, 1.0 caught 21 of the 25 houses more than 15% short.
+   */
+  checkMinRatio: 1,
   /** ...or under this many feet on a house of more than `checkMinPlanSqFt`, look low. */
   checkMinFt: 40,
   checkMinPlanSqFt: 800,
@@ -134,18 +149,35 @@ export type GutterRunGeometry = {
 export type GutterCornerKind = 'inside' | 'outside';
 export type GutterCorner = { at: LngLat; kind: GutterCornerKind; runIds: [string, string] };
 
+/** A run a person typed in (an eave the roof measurement missed): ids 'A1', 'A2', ... */
+export type AddedGutterRun = { id: string; label: string; lengthFt: number };
+/** Who last changed a measurement's gutters (written by the server on save, never by the client). */
+export type GutterAdjustedBy = { name: string; at: string };
+
 export type GutterAdjustments = {
   /** Runs left off the quote. */
   excludedRunIds: string[];
-  /** Downspouts typed in per run (replaces the worked-out count). */
+  /** Downspouts typed in per run, measured ('G1') or added ('A1') (replaces the worked-out count). */
   downspouts: Record<string, number>;
   /** The size chosen by hand; null: the recommended one. */
   size: GutterSize | null;
+  /** Runs typed in by hand, added to the measured ones. */
+  addedRuns: AddedGutterRun[];
+  /** The total gutter length typed in by hand, ft; null: the measured runs' (or the exact report's) total. */
+  totalFt: number | null;
+  /** Who last saved a change; null when nothing is changed. */
+  adjustedBy: GutterAdjustedBy | null;
 };
 
-export const EMPTY_GUTTER_ADJUSTMENTS: GutterAdjustments = { excludedRunIds: [], downspouts: {}, size: null };
+export const EMPTY_GUTTER_ADJUSTMENTS: GutterAdjustments = { excludedRunIds: [], downspouts: {}, size: null, addedRuns: [], totalFt: null, adjustedBy: null };
 export const MAX_DOWNSPOUTS_PER_RUN = 12;
 export const MAX_GUTTER_RUNS = 200;
+export const MAX_ADDED_GUTTER_RUNS = 20;
+export const MAX_ADDED_RUN_FT = 500;
+export const MAX_GUTTER_TOTAL_FT = 5000;
+export const MAX_RUN_LABEL = 40;
+/** Added run ids. */
+export const ADDED_RUN_ID = /^A\d{1,3}$/;
 
 export type Downspout = { atFt: number; at: LngLat; lengthFt: number };
 
@@ -162,9 +194,26 @@ export type GutterRun = GutterRunGeometry & {
   eaveHeightFt: number;
 };
 
+/** Where the total gutter length came from. */
+export type GutterLengthSource = 'measured' | 'eagleview' | 'override';
+/**
+ * How far the gutter numbers can be trusted: 'estimate' (worked out from the roof measurement alone, a draft to check),
+ * 'exact' (an exact report's eave length), 'adjusted' (a person added runs or typed the total).
+ */
+export type GutterConfidence = 'estimate' | 'exact' | 'adjusted';
+
 export type GutterTotals = {
+  /** Quoted runs: measured and added. */
   runs: number;
+  /** The total to quote: typed in, else the exact report's eave length plus added runs, else measured plus added. */
   gutterFt: number;
+  /** The quoted measured runs' length (what the map shows). */
+  measuredFt: number;
+  /** The added runs' length. */
+  addedFt: number;
+  lengthSource: GutterLengthSource;
+  /** Downspouts for footage the map does not show (an exact or typed total longer than the runs drawn). */
+  unplacedDownspouts: number;
   downspouts: number;
   downspoutFt: number;
   insideCorners: number;
@@ -193,12 +242,22 @@ export type GutterCheck = {
   share: number;
   /** About what to expect from the roof's mix: 1 for all hips, about 0.55 for all gables. */
   expectedShare: number;
-  /** 'gutters-check': the gutter length looks low for this house (GUTTER_DESIGN.checkMinShare / checkMinFt). */
+  /** share / expectedShare: under GUTTER_DESIGN.checkMinRatio the gutters look short for this roof. */
+  ratio: number;
+  /**
+   * 'gutters-check': the measured gutter length looks short for this house (ratio, or GUTTER_DESIGN.checkMinFt). Only
+   * for a measured total: an exact report's or a typed total is not second-guessed.
+   */
   reasons: 'gutters-check'[];
 };
 
+/** An added run as measured: its downspouts are counted, not placed on the map. */
+export type AddedGutterRunView = AddedGutterRun & { downspouts: number; downspoutsSet: boolean; eaveHeightFt: number };
+
 export type GutterMeasure = {
   runs: GutterRun[];
+  addedRuns: AddedGutterRunView[];
+  confidence: GutterConfidence;
   check: GutterCheck;
   corners: GutterCorner[];
   size: GutterSizing;
@@ -508,30 +567,175 @@ function flowArea(designSqFt: number, n: number): number {
   return designSqFt / (2 * (n - 1));
 }
 
-/** Downspouts a run needs for spacing and capacity at this size. */
-function neededDownspouts(run: GutterRunGeometry, designSqFt: number, size: GutterSize): number {
-  const spacing = run.lengthFt <= GUTTER_DESIGN.maxDownspoutSpacingFt ? 1 : Math.ceil(run.lengthFt / GUTTER_DESIGN.maxDownspoutSpacingFt) + 1;
-  const capacity = Math.ceil(designSqFt / downspoutCapacitySqFt(GUTTER_DESIGN.downspoutFor[size]));
-  let n = Math.max(1, spacing, capacity);
-  // More downspouts until the gutter itself carries what reaches each one (6 in only: 5 in would be sized up instead).
-  while (size === '6in' && n < MAX_DOWNSPOUTS_PER_RUN && flowArea(designSqFt, n) > gutterCapacitySqFt('6in')) n += 1;
-  return Math.min(n, MAX_DOWNSPOUTS_PER_RUN);
+/** No group gets more than this many downspouts (a bad drawing must not make a hundred). */
+const MAX_GROUP_DOWNSPOUTS = 60;
+
+/** The fewest downspouts that drain this (design) area at this size: leader capacity, and for 6 in the gutter's own. */
+function capacityDownspouts(designSqFt: number, size: GutterSize): number {
+  let n = Math.max(1, Math.ceil(designSqFt / downspoutCapacitySqFt(GUTTER_DESIGN.downspoutFor[size])));
+  // More until the gutter itself carries what reaches each one (6 in only: 5 in would be sized up instead).
+  while (size === '6in' && n < MAX_GROUP_DOWNSPOUTS && flowArea(designSqFt, n) > gutterCapacitySqFt('6in')) n += 1;
+  return Math.min(n, MAX_GROUP_DOWNSPOUTS);
 }
 
-/** Adjustments with only this roof's runs, sane counts and a known size. */
+/** One drainage group for the downspout count: its gutter length and the (design) area that drains into it. */
+export type DownspoutGroup = { lengthFt: number; designSqFt: number };
+
+/**
+ * Downspouts per drainage group, from the TOTAL length: every group with gutter gets at least one and what the rainfall
+ * needs (capacityDownspouts); then more, one at a time to the group with the longest stretch per downspout, until the
+ * total is about one per GUTTER_DESIGN.downspoutEveryFt of the groups' combined length.
+ */
+export function neededDownspouts(groups: readonly DownspoutGroup[], size: GutterSize): number[] {
+  const counts = groups.map((g) => (g.lengthFt > 0 ? capacityDownspouts(Math.max(0, g.designSqFt), size) : 0));
+  const totalFt = groups.reduce((s, g) => s + Math.max(0, g.lengthFt), 0);
+  const want = Math.round(totalFt / GUTTER_DESIGN.downspoutEveryFt);
+  let have = counts.reduce((s, n) => s + n, 0);
+  while (have < want) {
+    let best = -1;
+    let spacing = 0;
+    groups.forEach((g, i) => {
+      const n = counts[i]!;
+      if (n >= MAX_GROUP_DOWNSPOUTS) return;
+      const per = g.lengthFt / Math.max(1, n);
+      if (per > spacing) {
+        spacing = per;
+        best = i;
+      }
+    });
+    if (best < 0) break;
+    counts[best] = counts[best]! + 1;
+    have += 1;
+  }
+  return counts;
+}
+
+/** A group's downspouts shared among its runs: each to the run with the longest stretch per downspout (longest first). */
+function shareAmongRuns(runs: readonly GutterRunGeometry[], n: number): Map<string, number> {
+  const out = new Map(runs.map((r) => [r.id, 0]));
+  for (let k = 0; k < n; k++) {
+    let best: GutterRunGeometry | null = null;
+    let per = -1;
+    for (const r of runs) {
+      const c = out.get(r.id)!;
+      if (c >= MAX_DOWNSPOUTS_PER_RUN) continue;
+      const s = r.lengthFt / (c + 1);
+      if (s > per) {
+        per = s;
+        best = r;
+      }
+    }
+    if (best === null) break;
+    out.set(best.id, out.get(best.id)! + 1);
+  }
+  return out;
+}
+
+/**
+ * Runs that drain together: same kind (house or porch) and an end within GUTTER_DESIGN.groupJoinFt of another's (a
+ * corner, or the small gap between two pieces of one eave a roof engine split); then a scrap group (under
+ * GUTTER_DESIGN.smallGroupFt) joins the nearest group with an end within GUTTER_DESIGN.smallGroupReachFt. Groups keep
+ * the runs' order.
+ */
+export function drainageGroups<R extends Pick<GutterRunGeometry, 'coords' | 'kind'>>(runs: readonly R[]): R[][] {
+  if (runs.length === 0) return [];
+  const frame = frameFor(runs.flatMap((r) => r.coords));
+  const ends = runs.map((r) => [frame.toLocal(r.coords[0]), frame.toLocal(r.coords[1])] as const);
+  const parent = runs.map((_, i) => i);
+  const find = (i: number): number => {
+    let k = i;
+    while (parent[k] !== k) k = parent[k]!;
+    return k;
+  };
+  const tol = GUTTER_DESIGN.groupJoinFt / FT_PER_M;
+  for (let i = 0; i < runs.length; i++) {
+    for (let j = i + 1; j < runs.length; j++) {
+      if (runs[i]!.kind !== runs[j]!.kind) continue;
+      const touch = ends[i]!.some((p) => ends[j]!.some((q) => near(p, q, tol)));
+      if (touch) parent[find(j)] = find(i);
+    }
+  }
+  // Scraps: shortest first, each into the group with the nearest end in reach (same kind).
+  const lengthOf = (root: number) => runs.reduce((s, r, i) => s + (find(i) === root ? len(sub(ends[i]![1], ends[i]![0])) * FT_PER_M : 0), 0);
+  const reach = GUTTER_DESIGN.smallGroupReachFt / FT_PER_M;
+  const roots = () => [...new Set(runs.map((_, i) => find(i)))];
+  for (const root of roots().sort((a, b) => lengthOf(a) - lengthOf(b))) {
+    const r0 = find(root);
+    if (lengthOf(r0) >= GUTTER_DESIGN.smallGroupFt) continue;
+    let best = -1;
+    let bestM = reach;
+    for (let i = 0; i < runs.length; i++) {
+      if (find(i) !== r0) continue;
+      for (let j = 0; j < runs.length; j++) {
+        if (find(j) === r0 || runs[j]!.kind !== runs[i]!.kind) continue;
+        for (const p of ends[i]!) {
+          for (const q of ends[j]!) {
+            const d = len(sub(p, q));
+            if (d <= bestM) {
+              bestM = d;
+              best = j;
+            }
+          }
+        }
+      }
+    }
+    if (best >= 0) parent[r0] = find(best);
+  }
+  const groups = new Map<number, R[]>();
+  runs.forEach((r, i) => {
+    const root = find(i);
+    groups.set(root, [...(groups.get(root) ?? []), r]);
+  });
+  return [...groups.values()];
+}
+
+/** Adjustments with only this roof's runs, sane counts, lengths and labels, and a known size. */
 export function cleanGutterAdjustments(runs: readonly { id: string }[], adj: Partial<GutterAdjustments> | null | undefined): GutterAdjustments {
   const ids = new Set(runs.map((r) => r.id));
   const excluded = [...new Set((adj?.excludedRunIds ?? []).filter((id) => ids.has(id)))];
+  const addedRuns: AddedGutterRun[] = [];
+  for (const raw of Array.isArray(adj?.addedRuns) ? adj.addedRuns : []) {
+    if (addedRuns.length >= MAX_ADDED_GUTTER_RUNS) break;
+    if (raw === null || typeof raw !== 'object') continue;
+    const a = raw as Partial<AddedGutterRun>;
+    const id = typeof a.id === 'string' && ADDED_RUN_ID.test(a.id) ? a.id : null;
+    const lengthFt = typeof a.lengthFt === 'number' && Number.isFinite(a.lengthFt) ? round1(a.lengthFt) : Number.NaN;
+    if (id === null || addedRuns.some((x) => x.id === id) || !(lengthFt >= 1 && lengthFt <= MAX_ADDED_RUN_FT)) continue;
+    // eslint-disable-next-line no-control-regex
+    const label = typeof a.label === 'string' ? a.label.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, MAX_RUN_LABEL) : '';
+    addedRuns.push({ id, label, lengthFt });
+  }
+  const addedIds = new Set(addedRuns.map((a) => a.id));
   const downspouts: Record<string, number> = {};
   for (const [id, n] of Object.entries(adj?.downspouts ?? {})) {
-    if (ids.has(id) && Number.isFinite(n)) downspouts[id] = Math.max(0, Math.min(MAX_DOWNSPOUTS_PER_RUN, Math.round(n)));
+    if ((ids.has(id) || addedIds.has(id)) && Number.isFinite(n)) downspouts[id] = Math.max(0, Math.min(MAX_DOWNSPOUTS_PER_RUN, Math.round(n)));
   }
   const size = adj?.size === '5in' || adj?.size === '6in' ? adj.size : null;
-  return { excludedRunIds: excluded, downspouts, size };
+  const t = adj?.totalFt;
+  const totalFt = typeof t === 'number' && Number.isFinite(t) && t >= 1 && t <= MAX_GUTTER_TOTAL_FT ? round1(t) : null;
+  const by = adj?.adjustedBy;
+  const adjustedBy =
+    by !== null && typeof by === 'object' && typeof by.name === 'string' && typeof by.at === 'string' ? { name: by.name.slice(0, 120), at: by.at } : null;
+  return { excludedRunIds: excluded, downspouts, size, addedRuns, totalFt, adjustedBy };
 }
 
-/** The outline's perimeter and the share of it the runs cover; flagged when low (see GutterCheck). */
-export function gutterCheck(roof: RoofModel | null, runs: readonly { lengthFt: number }[]): GutterCheck {
+/** Whether a person changed anything (who did is not a change). */
+export function gutterAdjustmentsChanged(adj: GutterAdjustments): boolean {
+  return adj.excludedRunIds.length > 0 || Object.keys(adj.downspouts).length > 0 || adj.size !== null || adj.addedRuns.length > 0 || adj.totalFt !== null;
+}
+
+/** The id for the next added run: 'A1', then one past the highest. */
+export function nextAddedRunId(added: readonly { id: string }[]): string {
+  const top = added.reduce((m, a) => Math.max(m, ADDED_RUN_ID.test(a.id) ? Number(a.id.slice(1)) : 0), 0);
+  return `A${top + 1}`;
+}
+
+/**
+ * The outline's perimeter and the share of it the gutters cover, against the share the roof's hip/gable mix should
+ * give; flagged when it looks short (see GutterCheck). `trusted`: the total is an exact report's or typed in, so it is
+ * not flagged.
+ */
+export function gutterCheck(roof: RoofModel | null, runs: readonly { lengthFt: number }[], options: { trusted?: boolean } = {}): GutterCheck {
   const ring = roof?.outline ?? [];
   const frame = frameFor(ring);
   let perimeterM = 0;
@@ -549,11 +753,13 @@ export function gutterCheck(roof: RoofModel | null, runs: readonly { lengthFt: n
   const ridge = sum('ridge');
   const hipMix = hip + ridge > 0 ? Math.min(1, hip / (hip + ridge)) : 0;
   const expectedShare = Math.round((0.55 + 0.45 * hipMix) * 100) / 100;
+  const ratio = perimeterFt > 0 ? Math.round(((gutterFt / perimeterFt) / expectedShare) * 100) / 100 : 0;
   const planSqFt = (roof?.facets ?? []).reduce((t, f) => t + f.planSqFt, 0);
   const low =
+    options.trusted !== true &&
     perimeterFt > 0 &&
-    (share < GUTTER_DESIGN.checkMinShare || (planSqFt > GUTTER_DESIGN.checkMinPlanSqFt && gutterFt < GUTTER_DESIGN.checkMinFt));
-  return { perimeterFt, share, expectedShare, reasons: low ? ['gutters-check'] : [] };
+    (ratio < GUTTER_DESIGN.checkMinRatio || (planSqFt > GUTTER_DESIGN.checkMinPlanSqFt && gutterFt < GUTTER_DESIGN.checkMinFt));
+  return { perimeterFt, share, expectedShare, ratio, reasons: low ? ['gutters-check'] : [] };
 }
 
 /** "1,420" */
@@ -579,62 +785,97 @@ export function eaveHeight(input: { eaveHeightM?: number | null; floors?: number
   return { heightFt: GUTTER_DESIGN.floorHeightFt, floors: 1, source: 'assumed' };
 }
 
+export type GutterMeasureOptions = {
+  /** An exact report's eave length (ft): the measured total for an EagleView measurement. Null or absent: none. */
+  reportEaveFt?: number | null;
+};
+
+type Bucket = DownspoutGroup & { runs: GutterRunGeometry[] | null; addedId: string | null };
+
 /**
- * The gutters of a roof with the person's adjustments: runs (left out or not), downspouts, corners, the size and its
- * reason, and the totals of the quoted runs.
+ * The gutters of a roof with the person's adjustments: runs (left out or not) and added runs, downspouts, corners, the
+ * size and its reason, the totals and how far they can be trusted.
  */
-export function measureGutters(roof: RoofModel | null, eave: EaveHeight, adjustments?: Partial<GutterAdjustments> | null): GutterMeasure {
+export function measureGutters(
+  roof: RoofModel | null,
+  eave: EaveHeight,
+  adjustments?: Partial<GutterAdjustments> | null,
+  options: GutterMeasureOptions = {},
+): GutterMeasure {
   const { runs: geo, corners } = gutterRuns(roof);
   const adj = cleanGutterAdjustments(geo, adjustments);
   const excluded = new Set(adj.excludedRunIds);
   const quoted = (id: string) => !excluded.has(id);
+  const typed = (id: string) => adj.downspouts[id] !== undefined;
   const liveCorners = corners.filter((c) => quoted(c.runIds[0]) && quoted(c.runIds[1]));
+  const liveGeo = geo.filter((r) => quoted(r.id));
 
-  // A short run turning a corner into a quoted run drains into it (no downspout); its area goes with it.
-  const drainsInto = new Map<string, string>();
-  for (const r of geo) {
-    if (!quoted(r.id) || r.lengthFt >= GUTTER_DESIGN.shortRunFt || adj.downspouts[r.id] !== undefined) continue;
-    const c = liveCorners.find((k) => k.runIds.includes(r.id));
-    if (!c) continue;
-    const other = c.runIds[0] === r.id ? c.runIds[1] : c.runIds[0];
-    const o = geo.find((g) => g.id === other)!;
-    if (o.lengthFt >= GUTTER_DESIGN.shortRunFt) drainsInto.set(r.id, other);
-  }
-  const designWithShort = (r: GutterRunGeometry): number =>
-    r.designSqFt + geo.filter((g) => drainsInto.get(g.id) === r.id).reduce((s, g) => s + g.designSqFt, 0);
+  // The total and where it came from.
+  const measuredFt = round1(liveGeo.reduce((s, r) => s + r.lengthFt, 0));
+  const addedFt = round1(adj.addedRuns.reduce((s, a) => s + a.lengthFt, 0));
+  const report = options.reportEaveFt;
+  const hasReport = typeof report === 'number' && Number.isFinite(report) && report > 0;
+  const lengthSource: GutterLengthSource = adj.totalFt !== null ? 'override' : hasReport ? 'eagleview' : 'measured';
+  const gutterFt = round1(lengthSource === 'override' ? adj.totalFt! : lengthSource === 'eagleview' ? report! + addedFt : measuredFt + addedFt);
+  const placedFt = measuredFt + addedFt;
+  // A total shorter than the runs drawn shrinks every run's share of the count; a longer one is footage the map misses.
+  const scale = placedFt > 0 && gutterFt < placedFt ? gutterFt / placedFt : 1;
+  const extraFt = round1(Math.max(0, gutterFt - placedFt));
+  const liveDesign = liveGeo.reduce((s, r) => s + r.designSqFt, 0);
+  const perFt = measuredFt > 0 && liveDesign > 0 ? liveDesign / measuredFt : GUTTER_DESIGN.fallbackSqFtPerFt;
 
-  const eaveFor = (r: GutterRunGeometry) => (r.kind === 'low-attachment' ? Math.min(eave.heightFt, GUTTER_DESIGN.lowAttachmentEaveFt) : eave.heightFt);
-  const counts = (size: GutterSize) =>
-    new Map(
-      geo.map((r) => {
-        if (!quoted(r.id)) return [r.id, 0];
-        const set = adj.downspouts[r.id];
-        if (set !== undefined) return [r.id, set];
-        if (drainsInto.has(r.id)) return [r.id, 0];
-        return [r.id, neededDownspouts(r, designWithShort(r), size)];
-      }),
-    );
-  const worst = (size: GutterSize) => {
-    const n = counts(size);
-    let best: { run: GutterRunGeometry; flow: number } | null = null;
-    for (const r of geo) {
-      if (!quoted(r.id) || drainsInto.has(r.id)) continue;
-      const flow = flowArea(designWithShort(r), n.get(r.id) ?? 1);
-      if (best === null || flow > best.flow) best = { run: r, flow };
+  // Drainage buckets: groups of touching runs, each added run, and the footage not drawn (runs with a typed count stand alone).
+  const buckets: Bucket[] = [
+    ...drainageGroups(liveGeo.filter((r) => !typed(r.id))).map((g) => ({
+      lengthFt: g.reduce((s, r) => s + r.lengthFt, 0) * scale,
+      designSqFt: g.reduce((s, r) => s + r.designSqFt, 0),
+      runs: g,
+      addedId: null,
+    })),
+    ...adj.addedRuns.filter((a) => !typed(a.id)).map((a) => ({ lengthFt: a.lengthFt * scale, designSqFt: a.lengthFt * perFt, runs: null, addedId: a.id })),
+    ...(extraFt >= 1 ? [{ lengthFt: extraFt, designSqFt: extraFt * perFt, runs: null, addedId: null }] : []),
+  ];
+
+  const countsFor = (size: GutterSize) => {
+    const n = neededDownspouts(buckets, size);
+    const perRun = new Map<string, number>();
+    const flow = new Map<string, number>();
+    let unplaced = 0;
+    let worst: { run: GutterRunGeometry; flow: number } | null = null;
+    buckets.forEach((b, i) => {
+      const count = n[i]!;
+      if (b.runs !== null) {
+        for (const [id, c] of shareAmongRuns(b.runs, count)) perRun.set(id, c);
+        const f = flowArea(b.designSqFt, count);
+        for (const r of b.runs) flow.set(r.id, f);
+        const longest = b.runs.reduce((x, r) => (r.lengthFt > x.lengthFt ? r : x));
+        if (worst === null || f > worst.flow) worst = { run: longest, flow: f };
+      } else if (b.addedId !== null) perRun.set(b.addedId, count);
+      else unplaced = count;
+    });
+    for (const r of liveGeo) {
+      if (!typed(r.id)) continue;
+      const count = adj.downspouts[r.id]!;
+      perRun.set(r.id, count);
+      if (count === 0) continue;
+      const f = flowArea(r.designSqFt, count);
+      flow.set(r.id, f);
+      if (worst === null || f > worst.flow) worst = { run: r, flow: f };
     }
-    return best;
+    for (const a of adj.addedRuns) if (typed(a.id)) perRun.set(a.id, adj.downspouts[a.id]!);
+    return { perRun, flow, unplaced, worst: worst as { run: GutterRunGeometry; flow: number } | null };
   };
 
-  // Recommended: 5 in unless a run sends more to one downspout than 5 in carries.
+  // Recommended: 5 in unless a group sends more to one downspout than 5 in carries.
   const cap5 = gutterCapacitySqFt('5in');
   const cap6 = gutterCapacitySqFt('6in');
-  const w5 = worst('5in');
+  const w5 = countsFor('5in').worst;
   const recommended: GutterSize = w5 !== null && w5.flow > cap5 ? '6in' : '5in';
   const chosen = adj.size ?? recommended;
-  const n = counts(chosen);
-  const w = worst(chosen);
+  const counted = countsFor(chosen);
+  const w = counted.worst;
   let reason: string;
-  if (w === null) reason = `${sizeText(chosen)}: no gutter runs on the quote`;
+  if (w === null) reason = `${sizeText(chosen)}: no measured gutter runs to size from`;
   else if (recommended === '6in' && w5 !== null)
     reason = `6 in: the ${sideText(w5.run)} sends ${num(w5.flow)} sq ft to one downspout, more than a 5 in gutter carries in an Arkansas downpour (${num(cap5)})`;
   else reason = `5 in: the most any run sends to one downspout is ${num(w.flow)} sq ft (${sideText(w.run)}), within a 5 in gutter's ${num(cap5)}`;
@@ -647,9 +888,10 @@ export function measureGutters(roof: RoofModel | null, eave: EaveHeight, adjustm
     reason += `; add downspouts: the ${sideText(w.run)} still sends ${num(w.flow)} sq ft to one`;
   }
 
+  const eaveFor = (r: GutterRunGeometry) => (r.kind === 'low-attachment' ? Math.min(eave.heightFt, GUTTER_DESIGN.lowAttachmentEaveFt) : eave.heightFt);
   const runs: GutterRun[] = geo.map((r) => {
     const isOut = !quoted(r.id);
-    const count = n.get(r.id) ?? 0;
+    const count = isOut ? 0 : (counted.perRun.get(r.id) ?? 0);
     const myCorners = liveCorners.filter((c) => c.runIds.includes(r.id));
     const joinedStart = liveCorners.some((c) => c.runIds[1] === r.id);
     const joinedEnd = liveCorners.some((c) => c.runIds[0] === r.id);
@@ -657,33 +899,51 @@ export function measureGutters(roof: RoofModel | null, eave: EaveHeight, adjustm
     return {
       ...r,
       excluded: isOut,
-      downspouts: isOut ? [] : downspoutsFor(r, count, ef),
-      downspoutsSet: adj.downspouts[r.id] !== undefined,
+      downspouts: downspoutsFor(r, count, ef),
+      downspoutsSet: typed(r.id),
       endCaps: isOut ? 0 : (joinedStart ? 0 : 1) + (joinedEnd ? 0 : 1),
       corners: { inside: myCorners.filter((c) => c.kind === 'inside').length, outside: myCorners.filter((c) => c.kind === 'outside').length },
-      flowSqFt: isOut || drainsInto.has(r.id) ? 0 : Math.round(flowArea(designWithShort(r), count)),
+      flowSqFt: isOut || count === 0 ? 0 : Math.round(counted.flow.get(r.id) ?? 0),
       eaveHeightFt: ef,
     };
   });
+  const addedRuns: AddedGutterRunView[] = adj.addedRuns.map((a) => ({
+    ...a,
+    downspouts: counted.perRun.get(a.id) ?? 0,
+    downspoutsSet: typed(a.id),
+    eaveHeightFt: eave.heightFt,
+  }));
 
   const live = runs.filter((r) => !r.excluded);
-  const downspouts = live.reduce((s, r) => s + r.downspouts.length, 0);
+  const addedSpouts = addedRuns.reduce((s, a) => s + a.downspouts, 0);
+  const downspouts = live.reduce((s, r) => s + r.downspouts.length, 0) + addedSpouts + counted.unplaced;
   const totals: GutterTotals = {
-    runs: live.length,
-    gutterFt: round1(live.reduce((s, r) => s + r.lengthFt, 0)),
+    runs: live.length + addedRuns.length,
+    gutterFt,
+    measuredFt,
+    addedFt,
+    lengthSource,
+    unplacedDownspouts: counted.unplaced,
     downspouts,
-    downspoutFt: round1(live.reduce((s, r) => s + r.downspouts.reduce((t, d) => t + d.lengthFt, 0), 0)),
+    downspoutFt: round1(live.reduce((s, r) => s + r.downspouts.reduce((t, d) => t + d.lengthFt, 0), 0) + (addedSpouts + counted.unplaced) * eave.heightFt),
     insideCorners: liveCorners.filter((c) => c.kind === 'inside').length,
     outsideCorners: liveCorners.filter((c) => c.kind === 'outside').length,
-    endCaps: live.reduce((s, r) => s + r.endCaps, 0),
-    hangers: live.reduce((s, r) => s + Math.ceil(r.lengthFt / GUTTER_DESIGN.hangerSpacingFt), 0),
+    endCaps: live.reduce((s, r) => s + r.endCaps, 0) + 2 * addedRuns.length,
+    hangers: Math.ceil(gutterFt / GUTTER_DESIGN.hangerSpacingFt),
     outlets: downspouts,
     elbows: downspouts * GUTTER_DESIGN.elbowsPerDownspout,
-    designSqFt: live.reduce((s, r) => s + r.designSqFt, 0),
+    designSqFt: liveDesign,
   };
+  const confidence: GutterConfidence =
+    adj.addedRuns.length > 0 || adj.totalFt !== null ? 'adjusted' : lengthSource === 'eagleview' ? 'exact' : 'estimate';
   return {
     runs,
-    check: gutterCheck(roof, geo),
+    addedRuns,
+    confidence,
+    check:
+      lengthSource === 'measured'
+        ? gutterCheck(roof, [...geo, ...adj.addedRuns])
+        : gutterCheck(roof, [{ lengthFt: gutterFt }], { trusted: true }),
     corners,
     size: { recommended, chosen, downspout: GUTTER_DESIGN.downspoutFor[chosen], reason, overridden: adj.size !== null },
     eave,
@@ -773,19 +1033,29 @@ export type GutterQuote = {
 };
 
 /**
- * One quote per enabled tier from the quoted runs (runs on adjustments.excludedRunIds are left out): gutter feet,
- * downspout feet, corners (miters between two quoted runs) and, with guards, guard feet. The downspout layout is the
- * measured one for every tier.
+ * One quote per enabled tier from the measured totals (the quoted runs, added runs, or the exact or typed total):
+ * gutter feet, downspout feet, corners (miters between two quoted runs) and, with guards, guard feet. Runs on
+ * adjustments.excludedRunIds the measure still quoted are taken off. The downspout layout is the measured one for every
+ * tier. Without totals (an older caller), the quoted runs alone.
  */
 export function priceGutters(
-  measured: Pick<GutterMeasure, 'runs' | 'corners' | 'size'>,
+  measured: Pick<GutterMeasure, 'runs' | 'corners' | 'size'> & Partial<Pick<GutterMeasure, 'totals'>>,
   adjustments?: Partial<GutterAdjustments> | null,
   tiers: readonly GutterTier[] = DEFAULT_GUTTER_TIERS,
 ): GutterQuote[] {
   const excluded = new Set([...(adjustments?.excludedRunIds ?? []), ...measured.runs.filter((r) => r.excluded).map((r) => r.id)]);
   const live = measured.runs.filter((r) => !excluded.has(r.id));
-  const ft = round1(live.reduce((s, r) => s + r.lengthFt, 0));
-  const dsFt = round1(live.reduce((s, r) => s + r.downspouts.reduce((t, d) => t + d.lengthFt, 0), 0));
+  const spoutFt = (r: GutterRun) => r.downspouts.reduce((t, d) => t + d.lengthFt, 0);
+  const t0 = measured.totals;
+  // Runs the measure quoted that these adjustments leave out come off its totals (a measured total only: an exact or
+  // typed total is the whole house).
+  const dropped = measured.runs.filter((r) => !r.excluded && excluded.has(r.id));
+  const ft =
+    t0 === undefined
+      ? round1(live.reduce((s, r) => s + r.lengthFt, 0))
+      : round1(Math.max(0, t0.gutterFt - (t0.lengthSource === 'measured' ? dropped.reduce((s, r) => s + r.lengthFt, 0) : 0)));
+  const dsFt =
+    t0 === undefined ? round1(live.reduce((s, r) => s + spoutFt(r), 0)) : round1(Math.max(0, t0.downspoutFt - dropped.reduce((s, r) => s + spoutFt(r), 0)));
   const corners = measured.corners.filter((c) => !excluded.has(c.runIds[0]) && !excluded.has(c.runIds[1])).length;
   return tiers
     .filter((t) => t.enabled)
@@ -826,10 +1096,12 @@ export type GutterMeasurementView = GutterMeasure & {
   /** Rakes, drawn greyed beside the gutters. */
   rakes: [LngLat, LngLat][];
   quotes: GutterQuote[] | null;
+  /** An exact report's eave length (ft) when the measurement is one; null otherwise. */
+  reportEaveFt: number | null;
 };
 
-/** PATCH body. */
-export type GutterAdjustmentsPatch = Partial<GutterAdjustments>;
+/** PATCH body: who changed it is the server's to write. */
+export type GutterAdjustmentsPatch = Partial<Omit<GutterAdjustments, 'adjustedBy'>>;
 
 /** The whole view from a roof (the API's answer, and the screen's live preview between saves). */
 export function gutterView(
@@ -838,13 +1110,16 @@ export function gutterView(
   eave: EaveHeight,
   adjustments: Partial<GutterAdjustments> | null | undefined,
   tiers: readonly GutterTier[] | null = DEFAULT_GUTTER_TIERS,
+  options: GutterMeasureOptions = {},
 ): GutterMeasurementView {
-  const m = measureGutters(roof, eave, adjustments);
+  const m = measureGutters(roof, eave, adjustments, options);
   const adj = cleanGutterAdjustments(m.runs, adjustments);
+  const report = options.reportEaveFt;
   return {
     ...m,
     measurementId,
     adjustments: adj,
+    reportEaveFt: typeof report === 'number' && Number.isFinite(report) && report > 0 ? report : null,
     rakes: (roof?.lines ?? []).filter((l) => l.kind === 'rake').map((l) => [l.coords[0], l.coords[1]] as [LngLat, LngLat]),
     quotes: tiers === null ? null : priceGutters(m, adj, tiers),
   };
