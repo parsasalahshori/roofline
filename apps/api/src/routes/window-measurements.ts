@@ -199,6 +199,11 @@ export function readUpload(req: Request): Promise<Uint8Array> {
         else if (found === null || found.length === 0) reject(new AppError(400, UPLOAD_MISSING_MESSAGE, 'photo'));
         else resolve(found);
       });
+      // A phone that goes away with the photo half sent never ends the parser: without these the read would wait for ever.
+      req.on('error', () => reject(new AppError(400, UPLOAD_MISSING_MESSAGE, 'photo')));
+      req.on('close', () => {
+        if (!req.complete) reject(new AppError(400, UPLOAD_MISSING_MESSAGE, 'photo'));
+      });
       req.pipe(parser);
     });
   }

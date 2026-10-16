@@ -286,8 +286,9 @@ export function publicQuoteRoutes(deps: AppDeps): Router {
       let slotTaken = false;
       if (filed.appointmentId !== null) booked = await bookedTimes(deps, ctx, filed.appointmentId);
       if (booked === null && settings.booking && body.slotId !== undefined) {
-        booked = await bookVisit(deps, ctx, filed, new Date(body.slotId));
-        slotTaken = booked === null;
+        const made = await bookVisit(deps, ctx, filed, new Date(body.slotId));
+        booked = made === null ? null : { start: made.start, end: made.end };
+        slotTaken = made === null;
       }
       if (filed.created) {
         await officeAlert(deps, ctx, filed.jobId, { products, booked: booked !== null, priced: estimate.status === 'ready' });

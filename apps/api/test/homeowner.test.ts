@@ -1,6 +1,9 @@
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import pg from 'pg';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, inject, test, vi } from 'vitest';
+import { lockedQuoteVisit, withTenant } from '@roofline/db';
 import { insertFootprints } from '@roofline/db/system';
 import {
   DEFAULT_WINDOW_TIERS,
@@ -15,6 +18,8 @@ import {
   windowSizeClass,
 } from '@roofline/shared';
 import { HOMEOWNER_LIMITS, HOMEOWNER_UNKNOWN_REQUEST } from '../src/public/homeowner-auth.ts';
+import { UPLOAD_GUARD } from '../src/public/homeowner-upload.ts';
+import { systemCtx } from '../src/public/quote-access.ts';
 import { seedFootprintFixture } from '../src/scripts/footprint-fixture.ts';
 import { arCorners, boxCorners, cardScene, greyJpeg, sha256 } from './homeowner-fixture.ts';
 import { loginAs, makeTestApp, type TestApp } from './helpers.ts';
@@ -322,7 +327,8 @@ describe('POST /requests', () => {
     const over = await send('post', '/requests', { address: ADDRESS, services: ['gutters'] }, { ip });
     expect(over.status).toBe(429);
     expect(over.body.code).toBe('rate_limited');
-    expect(Number(over.headers['retry-after'])).toBeGreaterThan(0);
+    expect(over.headers['retry-after']).toBe('3600');
+    expect(over.headers['cache-control']).toBe('no-store');
     // Another address is not held back
     expect((await send('post', '/requests', { address: ADDRESS, services: ['gutters'] }, { ip: '203.0.113.10' })).status).toBe(201);
   });
@@ -382,8 +388,14 @@ describe('the token', () => {
     const blocked = await get(`/requests/${s.id}`, { token: s.token, ip });
     expect(blocked.status).toBe(429);
     expect(blocked.body.code).toBe('rate_limited');
-    // Another address with the right token is fine; and the window passes with the hour.
+    expect(blocked.headers['retry-after']).toBe('3600');
+    // Another address with the right token is fine ...
     expect((await get(`/requests/${s.id}`, { token: s.token, ip: '203.0.113.51' })).status).toBe(200);
+    // ... and the lock ends with the hour (the limiter's counts run on the machine's own clock, not the app's).
+    const real = Date.now();
+    vi.spyOn(Date, 'now').mockReturnValue(real + 61 * 60 * 1000);
+    expect((await get(`/requests/${s.id}`, { token: s.token, ip })).status).toBe(200);
+    vi.restoreAllMocks();
   });
 
   test('120 calls a minute per request, then a 429; the next minute is clear', async () => {
@@ -395,7 +407,7 @@ describe('the token', () => {
     const over = await get(`/requests/${s.id}/status`, { token: s.token });
     expect(over.status).toBe(429);
     expect(over.body.code).toBe('rate_limited');
-    expect(Number(over.headers['retry-after'])).toBeGreaterThan(0);
+    expect(over.headers['retry-after']).toBe('60');
   }, 120_000);
 
   test('a browser from another site is refused on a change; a native app (no Origin) and the app origin pass', async () => {
@@ -403,11 +415,45 @@ describe('the token', () => {
     const evil = await send('post', '/requests', { address: ADDRESS, services: ['gutters'] }, { origin: 'https://evil.example' });
     expect(evil.status).toBe(403);
     expect(evil.body.code).toBe('cross_site');
+    expect(evil.headers['cache-control']).toBe('no-store');
+    expect(evil.headers['x-robots-tag']).toBe('noindex');
     const ok = await get(`/requests/${s.id}`, { token: s.token, origin: 'https://evil.example' });
     expect(ok.headers['access-control-allow-origin']).toBeUndefined();
     const preflight = await request(t.app).options(`${base()}/requests/${s.id}/windows`).set('Origin', t.deps.config.APP_ORIGIN).set('Access-Control-Request-Method', 'POST');
     expect(preflight.status).toBe(204);
     expect(preflight.headers['access-control-allow-headers']).toContain('Authorization');
+  });
+
+  test('the per-IP limit comes before the Origin check, which looks the company up: over the limit, a cross-site call is a 429, not a 403', async () => {
+    const ip = '203.0.113.95';
+    for (let batch = 0; batch < HOMEOWNER_LIMITS.ipPerMinute / 40; batch++) {
+      const answers = await Promise.all(Array.from({ length: 40 }, () => get('/company', { ip })));
+      for (const a of answers) expect(a.status).toBe(200);
+    }
+    const over = await send('post', '/requests', { address: ADDRESS, services: ['gutters'] }, { ip, origin: 'https://evil.example' });
+    expect(over.status).toBe(429);
+    expect(over.body.code).toBe('rate_limited');
+    expect(over.headers['retry-after']).toBe('60');
+    expect(over.headers['cache-control']).toBe('no-store');
+    expect(over.headers['x-robots-tag']).toBe('noindex');
+  }, 120_000);
+});
+
+describe('paths and methods that are not part of the API', () => {
+  test('are a 404 with a code and the same headers, not the app\'s sign-in refusal', async () => {
+    const calls = {
+      'GET /nothing': request(t.app).get(`${base()}/nothing`),
+      'PUT /company': request(t.app).put(`${base()}/company`).send({}),
+      'DELETE /company': request(t.app).delete(`${base()}/company`),
+      'GET (no slug)': request(t.app).get('/api/public/homeowner'),
+    };
+    for (const [label, call] of Object.entries(calls)) {
+      const res = await call.set('X-Forwarded-For', nextIp());
+      expect(res.status, label).toBe(404);
+      expect(res.body).toEqual({ error: "We couldn't find that.", code: 'not_found' });
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(res.headers['x-robots-tag']).toBe('noindex');
+    }
   });
 });
 
@@ -430,11 +476,19 @@ describe('photos', () => {
 
   test('a JSON body sent to the upload route is refused as not a photo, not left waiting', async () => {
     const s = await start();
-    const res = await request(t.app).post(`${base()}/requests/${s.id}/uploads`).set('X-Forwarded-For', nextIp()).set('Authorization', `Bearer ${s.token}`).set('Content-Type', 'application/json').send({ photo: 'x' });
+    // The request is timed, not the test: a slow database must not look like the hang this guards against (a JSON parser
+    // that has read the body leaves the upload waiting for ever).
+    const res = await request(t.app)
+      .post(`${base()}/requests/${s.id}/uploads`)
+      .set('X-Forwarded-For', nextIp())
+      .set('Authorization', `Bearer ${s.token}`)
+      .set('Content-Type', 'application/json')
+      .send({ photo: 'x' })
+      .timeout({ response: 5_000, deadline: 15_000 });
     expect(res.status).toBe(415);
     expect(res.body.code).toBe('unsupported_media');
     expect(await count('window_measurements', t.seed.a.companyId)).toBe(0);
-  }, 20_000);
+  });
 
   test('multipart works too; garbage, a HEIC and an oversized photo are refused with their codes and nothing is stored', async () => {
     const s = await start();
@@ -454,6 +508,108 @@ describe('photos', () => {
     expect(m!.n).toBe(1);
     // The request, with the photo it holds, is gone from nobody else's view
     expect(await count('window_measurements', t.seed.b.companyId)).toBe(0);
+  });
+
+  test('a photo that claims too many pixels is refused however small the file, a big real one is not', async () => {
+    const s = await start();
+    // A PNG header and nothing else: 33 bytes that say how big the picture is
+    const png = (w: number, h: number) => {
+      const b = Buffer.alloc(33);
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b);
+      b.writeUInt32BE(13, 8);
+      b.write('IHDR', 12, 'ascii');
+      b.writeUInt32BE(w, 16);
+      b.writeUInt32BE(h, 20);
+      return b;
+    };
+    const post = (bytes: Buffer) => request(t.app).post(`${base()}/requests/${s.id}/uploads`).set(auth(s)).set('Content-Type', 'image/png').send(bytes);
+    const huge = await post(png(16_000, 16_000));
+    expect(huge.status).toBe(415);
+    expect(huge.body.code).toBe('unsupported_media');
+    expect(await count('window_measurements', t.seed.a.companyId)).toBe(0);
+    // 48 MP is the biggest a phone takes; it stays welcome
+    const big = await post(png(8_000, 6_000));
+    expect(big.status, JSON.stringify(big.body)).toBe(201);
+    expect(big.body).toMatchObject({ widthPx: 8_000, heightPx: 6_000 });
+  });
+
+  describe('photos being received', () => {
+    let server: http.Server;
+    let port: number;
+    beforeEach(async () => {
+      server = http.createServer(t.app);
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      port = (server.address() as AddressInfo).port;
+    });
+    afterEach(async () => {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    });
+
+    const ip = '203.0.113.120';
+    /** A photo half sent: the headers promise a megabyte, a hundred bytes follow, then nothing. */
+    const stalled = (s: Started, type: string): http.ClientRequest => {
+      const req = http.request({
+        host: '127.0.0.1',
+        port,
+        agent: false,
+        method: 'POST',
+        path: `${base()}/requests/${s.id}/uploads`,
+        headers: { Authorization: `Bearer ${s.token}`, 'X-Forwarded-For': ip, 'Content-Type': type, 'Content-Length': '1000000' },
+      });
+      req.on('error', () => undefined);
+      req.write(Buffer.alloc(100, 1));
+      return req;
+    };
+    /** Three bytes sent whole: refused as not a photo (415) when it is taken in, or a 429 when the request is already receiving its three. */
+    const tiny = (s: Started) =>
+      new Promise<{ status: number; body: { code?: string }; retryAfter: string | undefined }>((resolve, reject) => {
+        const req = http.request(
+          {
+            host: '127.0.0.1',
+            port,
+            agent: false,
+            method: 'POST',
+            path: `${base()}/requests/${s.id}/uploads`,
+            headers: { Authorization: `Bearer ${s.token}`, 'X-Forwarded-For': ip, 'Content-Type': 'image/jpeg', 'Content-Length': '3' },
+          },
+          (res) => {
+            const chunks: Buffer[] = [];
+            res.on('data', (c: Buffer) => chunks.push(c));
+            res.on('end', () => resolve({ status: res.statusCode ?? 0, body: JSON.parse(Buffer.concat(chunks).toString('utf8')) as { code?: string }, retryAfter: res.headers['retry-after'] as string | undefined }));
+          },
+        );
+        req.on('error', reject);
+        req.end(Buffer.from([1, 2, 3]));
+      });
+    /** Asks until the answer is the wanted status (the server takes a moment to notice a stalled photo or a hung-up phone). */
+    async function until(s: Started, status: number): Promise<{ status: number; body: { code?: string }; retryAfter: string | undefined }> {
+      const deadline = Date.now() + 8_000;
+      for (;;) {
+        const answer = await tiny(s);
+        if (answer.status === status || Date.now() > deadline) return answer;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    }
+
+    for (const type of ['image/jpeg', 'multipart/form-data; boundary=xyz']) {
+      test(`only ${UPLOAD_GUARD.perRequest} are received at once per request (${type.split(';')[0]}), a fourth is a 429 that reads nothing; a hung-up phone frees its place`, async () => {
+        const s = await start();
+        const open = Array.from({ length: UPLOAD_GUARD.perRequest }, () => stalled(s, type));
+        const full = await until(s, 429);
+        expect(full.status).toBe(429);
+        expect(full.body.code).toBe('rate_limited');
+        expect(full.retryAfter).toBe(String(UPLOAD_GUARD.retryAfterSeconds));
+        // Another request is not held back by this one's three
+        const other = await start();
+        expect((await tiny(other)).status).toBe(415);
+        // The phones go away mid-photo: the places come back
+        for (const req of open) req.destroy();
+        const freed = await until(s, 415);
+        expect(freed.status).toBe(415);
+        expect(await count('window_measurements', t.seed.a.companyId)).toBe(0);
+      }, 60_000);
+    }
   });
 
   test('a request holds 90 photos and 250 MB: past either, a 409 and the bytes are removed', async () => {
@@ -856,6 +1012,7 @@ describe('contact: the lead and the consent', () => {
     const over = await contact(s);
     expect(over.status).toBe(429);
     expect(over.body.code).toBe('rate_limited');
+    expect(over.headers['retry-after']).toBe('3600');
   });
 
   test('the office is told, and the follow-up is on the owner\'s Today; the homeowner\'s details are not in any log', async () => {
@@ -931,6 +1088,7 @@ describe('visits: slots and booking', () => {
     const perToken = await get(`/requests/${three[0]!.id}/slots`, { token: three[0]!.token, ip: '203.0.113.78' });
     expect(perToken.status).toBe(429);
     expect(perToken.body.code).toBe('rate_limited');
+    expect(perToken.headers['retry-after']).toBe('3600');
     // ... and the address's sixty are used up by the other two requests together, whatever their tokens.
     for (let i = 0; i < HOMEOWNER_LIMITS.slotsPerIpPerHour - HOMEOWNER_LIMITS.slotsPerTokenPerHour; i++) {
       const s = three[1 + (i % 2)]!;
@@ -966,6 +1124,56 @@ describe('visits: slots and booking', () => {
     expect((again.body as HomeownerRequestView).booking!.visit!.start).toBe(pick.start);
     expect(await count('appointments', t.seed.a.companyId)).toBe(1);
     expect(await q(`select id from activities where company_id = $1 and kind = 'job.app_windows'`, [t.seed.a.companyId])).toHaveLength(1);
+  });
+
+  test('two bookings of one request at the same moment make one visit: the second answers with the first\'s and is not noted twice', async () => {
+    const s = await filed();
+    await bookingOn();
+    const slots = (await slotsOf(s)).slots;
+    const [first, last] = [slots[0]!, slots.at(-1)!];
+    const book = (start: string) => send('post', `/requests/${s.id}/book`, { slotStart: start }, { token: s.token });
+
+    // The same time twice: both are answered with the visit
+    const twice = await Promise.all([book(first.start), book(first.start)]);
+    expect(twice.map((r) => r.status), JSON.stringify(twice.map((r) => r.body))).toEqual([200, 200]);
+    for (const r of twice) expect((r.body as HomeownerRequestView).booking!.visit!.start).toBe(first.start);
+    expect(await count('appointments', t.seed.a.companyId)).toBe(1);
+    expect(await q(`select id from activities where company_id = $1 and kind = 'job.app_windows'`, [t.seed.a.companyId])).toHaveLength(1);
+
+    // Two different times at once, for another request: one visit, and both answers name it
+    const s2 = await filed(1);
+    const two = await Promise.all([send('post', `/requests/${s2.id}/book`, { slotStart: slots[1]!.start }, { token: s2.token }), send('post', `/requests/${s2.id}/book`, { slotStart: last.start }, { token: s2.token })]);
+    expect(two.map((r) => r.status), JSON.stringify(two.map((r) => r.body))).toEqual([200, 200]);
+    expect(new Set(two.map((r) => (r.body as HomeownerRequestView).booking!.visit!.start)).size).toBe(1);
+    expect(await count('appointments', t.seed.a.companyId)).toBe(2);
+  });
+
+  test('booking locks the request: a second booking waits for the first to finish, then finds its visit', async () => {
+    const s = await filed();
+    const [{ id: requestId }] = (await q(`select id from quote_requests where company_id = $1`, [t.seed.a.companyId])) as { id: string }[];
+    const ctx = systemCtx(t.seed.a.companyId);
+    let release!: () => void;
+    const holding = new Promise<void>((resolve) => (release = resolve));
+    let tookLock!: () => void;
+    const took = new Promise<void>((resolve) => (tookLock = resolve));
+    const first = withTenant(t.deps.pools, ctx, async (tx) => {
+      await lockedQuoteVisit(tx, ctx, requestId!);
+      tookLock();
+      await holding;
+    });
+    await took;
+    let secondDone = false;
+    const second = withTenant(t.deps.pools, ctx, (tx) => lockedQuoteVisit(tx, ctx, requestId!)).then((visit) => {
+      secondDone = true;
+      return visit;
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(secondDone).toBe(false);
+    release();
+    await first;
+    expect(await second).toBeNull(); // nothing booked
+    expect(secondDone).toBe(true);
+    expect(s.id).toBeDefined();
   });
 
   test('"call me" keeps the call-back step on the job and says so on the status; asking twice adds one line', async () => {
@@ -1031,13 +1239,54 @@ describe('status', () => {
     expect((await get(`/requests/${s.id}/status`, { token: s.token })).body).toMatchObject({ stage: 'measured', dates: { measuredAt: measuredAt.toISOString() } });
 
     const [m] = await q(`select id from window_measurements where company_id = $1 and address = 'x'`, [t.seed.a.companyId]);
-    await q(`insert into window_orders (company_id, window_measurement_id, status, lines, settings, ready_at) values ($1, $2, 'ready', '[]'::jsonb, '{}'::jsonb, $3)`, [t.seed.a.companyId, m!.id, measuredAt.toISOString()]);
+    await q(`insert into window_orders (company_id, window_measurement_id, status, lines, settings, ready_at, created_at, updated_at) values ($1, $2, 'ready', '[]'::jsonb, '{}'::jsonb, $3, $3, $3)`, [t.seed.a.companyId, m!.id, measuredAt.toISOString()]);
     expect((await get(`/requests/${s.id}/status`, { token: s.token })).body).toMatchObject({ stage: 'ordered', dates: { orderedAt: measuredAt.toISOString() } });
 
     await q(`update jobs set stage = 'installed' where id = $1`, [job!.id]);
     const done = await get(`/requests/${s.id}/status`, { token: s.token });
     expect(done.body.stage).toBe('installed');
     expect(done.body.dates.installedAt).not.toBeNull();
+  });
+});
+
+describe('status: only what the company did since the request was sent', () => {
+  test('a measurement and a factory order made at the address earlier are not this request\'s progress, and a homeowner\'s own measurements are not the company\'s work', async () => {
+    const s = await start();
+    const propertyId = String((await q(`select property_id from homeowner_requests where id = $1`, [s.id]))[0]!.property_id);
+    // Work the company did at the address before this request: a measurement with a window of its own, and an order for it
+    const earlier = new Date(NOW.getTime() - 3 * 24 * 3600 * 1000);
+    await q(
+      `insert into window_measurements (company_id, property_id, address, center, took_ms, adjustments, created_at, updated_at)
+       values ($1, $2, 'earlier', '[0,0]'::jsonb, 0, $3::jsonb, $4, $4)`,
+      [t.seed.a.companyId, propertyId, JSON.stringify({ excludedWindowIds: [], manualCounts: {}, photoWindows: [{ id: 'rep0', scale: { kind: 'known-side', side: 'width', inches: 30 } }] }), earlier.toISOString()],
+    );
+    const [old] = await q(`select id from window_measurements where company_id = $1 and address = 'earlier'`, [t.seed.a.companyId]);
+    await q(`insert into window_orders (company_id, window_measurement_id, status, lines, settings, ready_at, sent_at, created_at, updated_at) values ($1, $2, 'sent', '[]'::jsonb, '{}'::jsonb, $3, $3, $3, $3)`, [t.seed.a.companyId, old!.id, earlier.toISOString()]);
+    await addAr(s, 'w-ar', 36, 48);
+    expect((await send('post', `/requests/${s.id}/contact`, contactBody(), { token: s.token })).status).toBe(201);
+    const status = (await get(`/requests/${s.id}/status`, { token: s.token })).body;
+    expect(status).toMatchObject({ stage: 'requested', dates: { measuredAt: null, orderedAt: null } });
+
+    // The company touches that measurement after the request: now it is progress
+    const later = new Date(NOW.getTime() + 24 * 3600 * 1000);
+    await q(`update window_measurements set updated_at = $2 where id = $1`, [old!.id, later.toISOString()]);
+    expect((await get(`/requests/${s.id}/status`, { token: s.token })).body).toMatchObject({ stage: 'measured', dates: { measuredAt: later.toISOString(), orderedAt: null } });
+    // ... and an order made after the request is too (the earlier one never is)
+    const ordered = new Date(NOW.getTime() + 2 * 24 * 3600 * 1000);
+    await q(`update window_orders set status = 'draft' where window_measurement_id = $1`, [old!.id]);
+    expect((await get(`/requests/${s.id}/status`, { token: s.token })).body).toMatchObject({ stage: 'measured', dates: { orderedAt: null } });
+    await q(`insert into window_measurements (company_id, property_id, address, center, took_ms, created_at, updated_at) values ($1, $2, 'newer', '[0,0]'::jsonb, 0, $3, $3)`, [t.seed.a.companyId, propertyId, ordered.toISOString()]);
+    const [newer] = await q(`select id from window_measurements where company_id = $1 and address = 'newer'`, [t.seed.a.companyId]);
+    await q(`insert into window_orders (company_id, window_measurement_id, status, lines, settings, ready_at, created_at, updated_at) values ($1, $2, 'ready', '[]'::jsonb, '{}'::jsonb, $3, $3, $3)`, [t.seed.a.companyId, newer!.id, ordered.toISOString()]);
+    expect((await get(`/requests/${s.id}/status`, { token: s.token })).body).toMatchObject({ stage: 'ordered', dates: { orderedAt: ordered.toISOString() } });
+
+    // Another homeowner's measurement at the address is never the company's work: not even an order on it counts
+    const other = await start();
+    await addAr(other, 'w-other', 30, 40);
+    const [theirs] = await q(`select window_measurement_id from homeowner_requests where id = $1`, [other.id]);
+    const sent = new Date(NOW.getTime() + 5 * 24 * 3600 * 1000);
+    await q(`insert into window_orders (company_id, window_measurement_id, status, lines, settings, ready_at, sent_at, created_at, updated_at) values ($1, $2, 'sent', '[]'::jsonb, '{}'::jsonb, $3, $3, $3, $3)`, [t.seed.a.companyId, theirs!.window_measurement_id, sent.toISOString()]);
+    expect((await get(`/requests/${s.id}/status`, { token: s.token })).body).toMatchObject({ stage: 'ordered', dates: { orderedAt: ordered.toISOString() } });
   });
 });
 

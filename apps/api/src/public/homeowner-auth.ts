@@ -44,10 +44,19 @@ export const HOMEOWNER_TOO_MANY = "You're going a little fast. Please wait a mom
 export const HOMEOWNER_UNKNOWN_REQUEST = "We couldn't find your request. Please start a new estimate.";
 export const HOMEOWNER_TOO_MANY_HOURLY = "That's a lot of tries from this connection. Please try again in an hour, or give us a call.";
 
-export const rateLimited = (hourly: boolean, retryAfterSeconds: number, res?: { setHeader(name: string, value: string): unknown }): AppError => {
-  res?.setHeader('Retry-After', String(retryAfterSeconds));
-  return new AppError(429, hourly ? HOMEOWNER_TOO_MANY_HOURLY : HOMEOWNER_TOO_MANY).coded('rate_limited');
-};
+/** A 429 of this API: `retryAfterSeconds` goes out as the `Retry-After` header (the router's error handler sets it), whichever limit it was. */
+export class RateLimitedError extends AppError {
+  constructor(
+    readonly retryAfterSeconds: number,
+    hourly: boolean,
+  ) {
+    super(429, hourly ? HOMEOWNER_TOO_MANY_HOURLY : HOMEOWNER_TOO_MANY);
+    this.coded('rate_limited');
+  }
+}
+
+/** `retryAfterSeconds` is how long the caller may be made to wait at most (the whole window, not what is left of it). */
+export const rateLimited = (hourly: boolean, retryAfterSeconds: number): RateLimitedError => new RateLimitedError(retryAfterSeconds, hourly);
 
 /** A new token: 32 random bytes in base64url. */
 export function newHomeownerToken(): string {
@@ -90,7 +99,9 @@ class Tally {
     this.store.init({ windowMs } as Options);
   }
   async blocked(key: string): Promise<boolean> {
-    return ((await this.store.get(key))?.totalHits ?? 0) >= this.limit;
+    const hit = await this.store.get(key);
+    // The store keeps a count until the key's next hit or its own sweep, so the end of the window is checked here.
+    return hit !== undefined && hit.totalHits >= this.limit && (hit.resetTime === undefined || hit.resetTime.getTime() > Date.now());
   }
   async add(key: string): Promise<void> {
     await this.store.increment(key);
@@ -124,7 +135,7 @@ export function authenticate(deps: AppDeps): { middleware: RequestHandler; budge
   const middleware: RequestHandler = (req, res, next) => {
     void (async () => {
       const ipKey = `ho-failed:${ipKeyGenerator(req.ip ?? 'unknown')}`;
-      if (await failed.blocked(ipKey)) throw rateLimited(true, 3600, res);
+      if (await failed.blocked(ipKey)) throw rateLimited(true, 3600);
       // An unknown slug is a 404 like everywhere else on this API; a page turned off still serves requests already made.
       const { ctx, settings } = await pageFor(deps, req.params.slug, { allowOff: true });
       const token = bearerToken(req);
@@ -136,7 +147,7 @@ export function authenticate(deps: AppDeps): { middleware: RequestHandler; budge
         throw unauthorized();
       }
       if (row.expiresAt.getTime() <= deps.clock.now().getTime()) throw new AppError(401, 'This request has expired. Please start a new one.').coded('token_expired');
-      if (!(await perMinute(row.id))) throw rateLimited(false, 60, res);
+      if (!(await perMinute(row.id))) throw rateLimited(false, 60);
       res.locals.homeowner = { ctx, settings, request: row } satisfies Authed;
       next();
     })().catch(next);

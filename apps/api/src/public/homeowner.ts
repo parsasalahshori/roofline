@@ -57,7 +57,8 @@ import { quoteIpHash } from '../quote/guards.ts';
 import { estimateForHomeowner } from '../quote/homeowner-estimate.ts';
 import { canonicalJson, HEIC_MESSAGE, readUpload } from '../routes/window-measurements.ts';
 import { assertKnownFields, emailField, noNul, parse } from '../validate.ts';
-import { authed, authenticate, HOMEOWNER_LIMITS, HOMEOWNER_UNKNOWN_REQUEST, newHomeownerToken, hashHomeownerToken, rateLimited } from './homeowner-auth.ts';
+import { authed, authenticate, HOMEOWNER_LIMITS, HOMEOWNER_UNKNOWN_REQUEST, newHomeownerToken, hashHomeownerToken, RateLimitedError, rateLimited } from './homeowner-auth.ts';
+import { guardUpload, UPLOAD_GUARD, UploadGate } from './homeowner-upload.ts';
 import { buildRequestView, buildStatus, leadSummary, storedInput } from './homeowner-view.ts';
 import { policyUrls } from './policy-urls.ts';
 import { originGuard, pageFor, route } from './quote-access.ts';
@@ -247,14 +248,18 @@ const DEFAULT_CODES: Record<number, string> = {
   503: 'unavailable',
 };
 
-/** Gives every error this API answers a machine code (`code` in the body), and turns body-parser failures into ours. */
-const withCodes: ErrorRequestHandler = (err: unknown, _req, _res, next) => {
+/**
+ * Gives every error this API answers a machine code (`code` in the body), sends `Retry-After` with every 429, and turns
+ * body-parser failures into ours. (An unexpected failure is left to the app's own handler: a 500 with no code.)
+ */
+const withCodes: ErrorRequestHandler = (err: unknown, _req, res, next) => {
   if (err instanceof ZodError) {
     next(new AppError(400, MESSAGES.checkField, fieldOf(err)).coded('invalid_request'));
     return;
   }
   if (err instanceof AppError) {
     if (err.code === undefined) err.coded(DEFAULT_CODES[err.status] ?? 'error');
+    if (err instanceof RateLimitedError && !res.headersSent) res.setHeader('Retry-After', String(err.retryAfterSeconds));
     next(err);
     return;
   }
@@ -275,8 +280,8 @@ function perIpLimit(scope: string, limit: number, windowMs: number): RequestHand
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     keyGenerator: (req) => `ho-${scope}:${ipKeyGenerator(req.ip ?? 'unknown')}`,
-    handler: (_req, res, next) => {
-      next(rateLimited(hourly, Math.ceil(windowMs / 1000), res));
+    handler: (_req, _res, next) => {
+      next(rateLimited(hourly, Math.ceil(windowMs / 1000)));
     },
   });
 }
@@ -329,15 +334,17 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
   const { pools, clock } = deps;
   const router = Router();
   const auth = authenticate(deps);
+  const receiving = new UploadGate();
 
-  router.use(originGuard(deps, { methods: 'GET, POST, PATCH, DELETE', headers: 'Content-Type, Accept, Authorization', coded: true }));
-  router.use(perIpLimit('all', HOMEOWNER_LIMITS.ipPerMinute, MINUTE_MS));
-  // Every answer is per request and personal to the homeowner's address: never cached, never indexed.
+  // Every answer is per request and personal to the homeowner's address: never cached, never indexed (a refusal included).
   router.use((_req, res, next) => {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Robots-Tag', 'noindex');
     next();
   });
+  // The per-IP limit comes before the Origin check: that check looks the company up, which a caller must not get for free.
+  router.use(perIpLimit('all', HOMEOWNER_LIMITS.ipPerMinute, MINUTE_MS));
+  router.use(originGuard(deps, { methods: 'GET, POST, PATCH, DELETE', headers: 'Content-Type, Accept, Authorization', coded: true }));
   // JSON bodies only; a photo is raw bytes (image/jpeg) or multipart and is read by the upload route itself (so the JSON
   // parser must not touch that route: a stream it has read cannot be read again, and the upload would wait for ever).
   const json = express.json({ limit: BODY_LIMIT });
@@ -459,51 +466,68 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
     '/:slug/requests/:id/uploads',
     route(async (req, res) => {
       const { ctx, request } = authed(res);
-      await auth.budget(request.id, 'uploads');
-      requireWindows(request);
-      const bytes = await readUpload(req);
-      const info = await readImageInfo(bytes);
-      if (info === 'heic') throw new AppError(415, HEIC_MESSAGE, 'photo');
-      if (info === null) throw new AppError(415, UPLOAD_TYPE_MESSAGE, 'photo');
-      if (!deps.objectStore.configured) throw new AppError(503, STORAGE_DOWN_MESSAGE).coded('storage_unavailable');
-      const uploadId = randomUUID();
-      const key = `${ctx.companyId}/window-uploads/${uploadId}.${info.kind === 'jpeg' ? 'jpg' : 'png'}`;
-      const now = clock.now();
-      const upload: StoredWindowUpload = {
-        id: uploadId,
-        widthPx: info.widthPx,
-        heightPx: info.heightPx,
-        focal35mm: info.focal35mm,
-        takenAt: info.takenAt,
-        key,
-        kind: info.kind,
-        orientation: info.orientation,
-        bytes: bytes.length,
-        uploadedAt: now.toISOString(),
-      };
-      // The bytes are stored before the row that points at them; a refused upload removes them again.
-      await deps.objectStore.put(key, bytes, `image/${info.kind}`);
-      const full = () => new AppError(409, 'This request has all the photos it can hold.', 'photo').coded('uploads_full');
-      let refused: AppError | null;
+      // A photo is held in memory until it is stored, so only a few are taken at once (per request, per address, in all).
+      // A refused one costs nothing: no byte is read, nothing is stored, and the hour's count of uploads is not used.
+      const place = receiving.enter(request.id, ipKeyGenerator(req.ip ?? 'unknown'));
+      if (place === null) throw rateLimited(false, UPLOAD_GUARD.retryAfterSeconds);
+      // The place is given back when the answer is done, or when the phone goes away with the photo half sent.
+      res.once('close', place.leave);
       try {
-        refused = await withTenant(pools, ctx, async (tx): Promise<AppError | null> => {
-          const locked = await getHomeownerRequest(tx, ctx, request.id, { lock: true });
-          const made = locked === null ? null : await ensureHomeownerMeasurement(tx, ctx, locked, now);
-          if (made === null) return new AppError(409, "We can't take photos for this request.").coded('callback_only');
-          const held = made.uploads ?? [];
-          if (held.length >= HOMEOWNER_MAX_UPLOADS || held.reduce((n, u) => n + u.bytes, 0) + bytes.length > HOMEOWNER_MAX_UPLOAD_BYTES_TOTAL) return full();
-          const result = await appendWindowUpload(tx, ctx, made.id, upload, HOMEOWNER_MAX_UPLOADS, now);
-          return result === null || result === 'full' ? full() : null;
-        });
-      } catch (err) {
-        await deps.objectStore.delete(key).catch((e: unknown) => deps.logError?.(e, 'homeowner-upload-delete'));
-        throw err;
+        await auth.budget(request.id, 'uploads');
+        requireWindows(request);
+        // A photo that stops arriving, or takes minutes, is cut off (the read then fails).
+        const stopGuard = guardUpload(req);
+        let bytes: Uint8Array;
+        try {
+          bytes = await readUpload(req);
+        } finally {
+          stopGuard();
+        }
+        const info = await readImageInfo(bytes);
+        if (info === 'heic') throw new AppError(415, HEIC_MESSAGE, 'photo');
+        if (info === null) throw new AppError(415, UPLOAD_TYPE_MESSAGE, 'photo');
+        if (!deps.objectStore.configured) throw new AppError(503, STORAGE_DOWN_MESSAGE).coded('storage_unavailable');
+        const uploadId = randomUUID();
+        const key = `${ctx.companyId}/window-uploads/${uploadId}.${info.kind === 'jpeg' ? 'jpg' : 'png'}`;
+        const now = clock.now();
+        const upload: StoredWindowUpload = {
+          id: uploadId,
+          widthPx: info.widthPx,
+          heightPx: info.heightPx,
+          focal35mm: info.focal35mm,
+          takenAt: info.takenAt,
+          key,
+          kind: info.kind,
+          orientation: info.orientation,
+          bytes: bytes.length,
+          uploadedAt: now.toISOString(),
+        };
+        // The bytes are stored before the row that points at them; a refused upload removes them again.
+        await deps.objectStore.put(key, bytes, `image/${info.kind}`);
+        const full = () => new AppError(409, 'This request has all the photos it can hold.', 'photo').coded('uploads_full');
+        let refused: AppError | null;
+        try {
+          refused = await withTenant(pools, ctx, async (tx): Promise<AppError | null> => {
+            const locked = await getHomeownerRequest(tx, ctx, request.id, { lock: true });
+            const made = locked === null ? null : await ensureHomeownerMeasurement(tx, ctx, locked, now);
+            if (made === null) return new AppError(409, "We can't take photos for this request.").coded('callback_only');
+            const held = made.uploads ?? [];
+            if (held.length >= HOMEOWNER_MAX_UPLOADS || held.reduce((n, u) => n + u.bytes, 0) + bytes.length > HOMEOWNER_MAX_UPLOAD_BYTES_TOTAL) return full();
+            const result = await appendWindowUpload(tx, ctx, made.id, upload, HOMEOWNER_MAX_UPLOADS, now);
+            return result === null || result === 'full' ? full() : null;
+          });
+        } catch (err) {
+          await deps.objectStore.delete(key).catch((e: unknown) => deps.logError?.(e, 'homeowner-upload-delete'));
+          throw err;
+        }
+        if (refused !== null) {
+          await deps.objectStore.delete(key).catch((e: unknown) => deps.logError?.(e, 'homeowner-upload-delete'));
+          throw refused;
+        }
+        res.status(201).json({ id: uploadId, widthPx: info.widthPx, heightPx: info.heightPx });
+      } finally {
+        place.leave();
       }
-      if (refused !== null) {
-        await deps.objectStore.delete(key).catch((e: unknown) => deps.logError?.(e, 'homeowner-upload-delete'));
-        throw refused;
-      }
-      res.status(201).json({ id: uploadId, widthPx: info.widthPx, heightPx: info.heightPx });
     }),
   );
 
@@ -669,12 +693,11 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
       const lead = await withTenant(pools, ctx, (tx) => getFiledLead(tx, ctx, quoteRequestId));
       if (lead === null) throw new AppError(409, 'Please add your contact details first.').coded('contact_needed');
       const now = clock.now();
-      let visit: { start: string; end: string } | null = null;
       let changed = false;
 
       // A visit already booked is the answer, whatever is asked now.
-      if (lead.appointmentId !== null) visit = await bookedTimes(deps, ctx, lead.appointmentId);
-      if (visit === null) {
+      const booked = lead.appointmentId !== null && (await bookedTimes(deps, ctx, lead.appointmentId)) !== null;
+      if (!booked) {
         if ('callMe' in body) {
           if (!request.callMe) {
             await withTenant(pools, ctx, async (tx) => {
@@ -685,9 +708,16 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
           }
         } else {
           if (!settings.booking) throw new AppError(409, 'Online booking is off. Please ask us to call you.', 'slotStart').coded('booking_off');
-          visit = await bookVisit(deps, ctx, { requestId: lead.requestId, customerId: lead.customerId, jobId: lead.jobId, propertyId: lead.propertyId }, new Date(body.slotStart), 'app');
-          if (visit === null) throw new AppError(409, 'That time was just taken. Please pick another.', 'slotStart').coded('slot_taken');
-          changed = true;
+          const made = await bookVisit(deps, ctx, { requestId: lead.requestId, customerId: lead.customerId, jobId: lead.jobId, propertyId: lead.propertyId }, new Date(body.slotStart), 'app');
+          if (made !== null) {
+            // `already`: a booking made at the same moment (a double tap) got there first; its visit stands and is not noted twice.
+            changed = made.already !== true;
+          } else {
+            // The time is gone. When it went to this request's own booking, made between our look and our try, that visit is the answer.
+            const again = await withTenant(pools, ctx, (tx) => getFiledLead(tx, ctx, quoteRequestId));
+            const stands = again?.appointmentId != null && (await bookedTimes(deps, ctx, again.appointmentId)) !== null;
+            if (!stands) throw new AppError(409, 'That time was just taken. Please pick another.', 'slotStart').coded('slot_taken');
+          }
         }
       }
       // What changed, with the windows and quote the homeowner saw, on the job's timeline as they are now.
@@ -714,6 +744,10 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
     }),
   );
 
+  // Any other path under this API: a 404 like the rest (with its code and headers), not the app's sign-in refusal.
+  router.use((_req, _res, next) => {
+    next(new AppError(404, MESSAGES.notFound).coded('not_found'));
+  });
   router.use(withCodes);
   return router;
 }

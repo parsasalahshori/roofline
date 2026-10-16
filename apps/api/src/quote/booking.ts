@@ -3,6 +3,7 @@ import {
   createAppointment,
   g1AgentOn,
   JobLinkError,
+  lockedQuoteVisit,
   lockInspector,
   quoteVisitTimes,
   setQuoteRequestAppointment,
@@ -119,12 +120,17 @@ export async function officeAlert(
   }
 }
 
+/** A visit's start and end; `already` when the request had a visit when this booking got its turn (nothing new was booked). */
+export type BookedVisit = { start: string; end: string; already?: true };
+
 /**
  * Books the visit the homeowner picked, when it is still open and not before tomorrow: re-checked on fresh busy data
  * under the inspector's lock, then made through createAppointment (so the job moves to Inspection and the calendar
  * push runs, as for any booking); the job's rep becomes the inspector and the "Call the homeowner" next step goes.
  * Any free inspector of the company may get it (no routing by area: the settings page says so). A time taken
  * meanwhile, or any booking problem, leaves the request standing with no visit (null; the page says we will call).
+ * A request that already has a visit keeps it: two bookings at once (a double tap) make one visit, and the second
+ * answers with the first's (`already`).
  */
 export async function bookVisit(
   deps: AppDeps,
@@ -132,7 +138,7 @@ export async function bookVisit(
   filed: { requestId: string; customerId: string; jobId: string; propertyId: string },
   start: Date,
   channel: RequestChannel = 'web',
-): Promise<{ start: string; end: string } | null> {
+): Promise<BookedVisit | null> {
   const now = deps.clock.now();
   const earliest = await earliestVisit(deps, ctx, now);
   if (start.getTime() < earliest.getTime() || start.getTime() > now.getTime() + MAX_AVAILABILITY_DAYS * 24 * HOUR_MS) return null;
@@ -147,6 +153,9 @@ export async function bookVisit(
       const inspector = open?.userIds[0];
       if (inspector === undefined) return null;
       await lockInspector(tx, ctx, inspector);
+      // The request is locked too, so a second booking of it waits here and then finds the first one's visit.
+      const held = await lockedQuoteVisit(tx, ctx, filed.requestId);
+      if (held !== null) return { already: held };
       const fresh = await openInspectionSlots(tx, ctx, { from, to, propertyId: filed.propertyId, now });
       if (!fresh.slots.some((s) => s.start.getTime() === start.getTime() && s.userIds.includes(inspector))) return null;
       const appt = await createAppointment(
@@ -165,10 +174,11 @@ export async function bookVisit(
         now,
       );
       await setQuoteRequestAppointment(tx, ctx, { requestId: filed.requestId, appointmentId: appt.row.id, jobId: filed.jobId, inspectorId: inspector }, now);
-      return appt;
+      return { booked: appt };
     });
     if (made === null) return null;
-    if (made.pushDue) await queueCalendarPush(deps, ctx.companyId, made.row.id);
+    if (made.already !== undefined) return { start: made.already.startsAt.toISOString(), end: made.already.endsAt.toISOString(), already: true };
+    if (made.booked.pushDue) await queueCalendarPush(deps, ctx.companyId, made.booked.row.id);
     return { start: start.toISOString(), end: end.toISOString() };
   } catch (err) {
     if (err instanceof AppointmentLinkError || err instanceof JobLinkError) {

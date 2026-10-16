@@ -91,13 +91,19 @@ function exifDate(v: unknown): string | null {
 
 /** The largest photo side accepted, pixels (a 200 MP phone photo is about 16,000 px). */
 const MAX_SIDE_PX = 20_000;
+/**
+ * The most pixels in a photo accepted. A file this small can claim a huge picture (a PNG of a few hundred bytes can say
+ * 20,000 x 20,000), and whatever opens it later (a browser, a phone) would try to make room for all of it. Real phone
+ * photos are far under this (a 48 MP one is 8,000 x 6,000), and the upload limit of 12 MB keeps a real one smaller still.
+ */
+const MAX_PIXELS = 120_000_000;
 
 /** Size (displayed), orientation and the EXIF the sizing uses; 'heic' for a HEIC; null for anything unreadable. */
 export async function readImageInfo(bytes: Uint8Array): Promise<ImageInfo | 'heic' | null> {
   const kind = sniff(bytes);
   if (kind === 'heic' || kind === null) return kind;
   const size = kind === 'jpeg' ? jpegSize(bytes) : pngSize(bytes);
-  if (size === null || size.w > MAX_SIDE_PX || size.h > MAX_SIDE_PX) return null;
+  if (size === null || size.w > MAX_SIDE_PX || size.h > MAX_SIDE_PX || size.w * size.h > MAX_PIXELS) return null;
   let tags: Record<string, unknown> = {};
   try {
     tags = ((await exifr.parse(bytes, { pick: ['Orientation', 'FocalLengthIn35mmFormat', 'DateTimeOriginal'], translateValues: false, reviveValues: false })) ?? {}) as Record<string, unknown>;
