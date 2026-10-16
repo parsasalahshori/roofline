@@ -1,4 +1,4 @@
 {
   "extends": "../tsconfig.base.json",
-  "include": ["*.ts", "eval-agent-texts", "test"]
+  "include": ["*.ts", "eval-agent-texts", "window-photo-bench", "test"]
 }
