@@ -26,8 +26,8 @@ public struct OutboxItem: Codable, Equatable, Sendable, Identifiable {
     public var measurementId: String
     public var address: String?
     public var createdAt: Date
-    /// The JPEG next to the outbox file.
-    public var jpegFileName: String
+    /// The JPEG next to the outbox file; nil for a RoomPlan window saved without a photo.
+    public var jpegFileName: String?
     /// The JPEG's size: the window's corners are in these pixels.
     public var imageWidthPx: Int
     public var imageHeightPx: Int
@@ -41,7 +41,7 @@ public struct OutboxItem: Codable, Equatable, Sendable, Identifiable {
     /// A window save was attempted and its answer never came: check before sending again.
     public var windowSendUncertain: Bool
 
-    public init(window: PhotoWindowInput, measurementId: String, address: String?, jpegFileName: String, imageWidthPx: Int, imageHeightPx: Int, createdAt: Date = Date()) {
+    public init(window: PhotoWindowInput, measurementId: String, address: String?, jpegFileName: String?, imageWidthPx: Int, imageHeightPx: Int, createdAt: Date = Date()) {
         id = window.id
         self.measurementId = measurementId
         self.address = address
@@ -62,7 +62,7 @@ public struct OutboxItem: Codable, Equatable, Sendable, Identifiable {
     public var nextStage: OutboxStage? {
         switch state {
         case .done, .failed: return nil
-        case .waiting, .sending: return uploadId == nil ? .photo : .window
+        case .waiting, .sending: return uploadId == nil && jpegFileName != nil ? .photo : .window
         }
     }
 }
@@ -190,13 +190,17 @@ public actor Outbox {
         observer?(items)
     }
 
-    public func jpegURL(for item: OutboxItem) -> URL { directory.appendingPathComponent(item.jpegFileName) }
+    public func jpegURL(for item: OutboxItem) -> URL? { item.jpegFileName.map { directory.appendingPathComponent($0) } }
 
-    /// Saves a measured window and its photo on disk. Nothing is sent yet.
-    public func enqueue(window: PhotoWindowInput, measurementId: String, address: String?, jpeg: Data, imageWidthPx: Int, imageHeightPx: Int) throws -> OutboxItem {
+    /// Saves a measured window and its photo on disk. Nothing is sent yet. A RoomPlan window may come without a photo
+    /// (no frame saw all four corners): it skips the upload and is sent with no uploadId and no corners.
+    public func enqueue(window: PhotoWindowInput, measurementId: String, address: String?, jpeg: Data?, imageWidthPx: Int, imageHeightPx: Int) throws -> OutboxItem {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let name = "\(window.id).jpg"
-        try jpeg.write(to: directory.appendingPathComponent(name), options: [.atomic])
+        var name: String?
+        if let jpeg = jpeg {
+            name = "\(window.id).jpg"
+            try jpeg.write(to: directory.appendingPathComponent("\(window.id).jpg"), options: [.atomic])
+        }
         let item = OutboxItem(window: window, measurementId: measurementId, address: address, jpegFileName: name, imageWidthPx: imageWidthPx, imageHeightPx: imageHeightPx)
         items.removeAll { $0.id == item.id }
         items.append(item)
@@ -213,14 +217,14 @@ public actor Outbox {
     /// Removes an item and its photo (a sent one, or one the person gave up on).
     public func remove(id: String) throws {
         guard let k = items.firstIndex(where: { $0.id == id }) else { return }
-        try? FileManager.default.removeItem(at: jpegURL(for: items[k]))
+        if let u = jpegURL(for: items[k]) { try? FileManager.default.removeItem(at: u) }
         items.remove(at: k)
         try persist()
     }
 
     /// Drops the finished items (and their photos).
     public func clearDone() throws {
-        for i in items where i.state == .done { try? FileManager.default.removeItem(at: jpegURL(for: i)) }
+        for i in items where i.state == .done { if let u = jpegURL(for: i) { try? FileManager.default.removeItem(at: u) } }
         items.removeAll { $0.state == .done }
         try persist()
     }
@@ -249,7 +253,8 @@ public actor Outbox {
             do {
                 switch stage {
                 case .photo:
-                    let data = try Data(contentsOf: jpegURL(for: item))
+                    guard let url = jpegURL(for: item) else { throw CocoaError(.fileNoSuchFile) }
+                    let data = try Data(contentsOf: url)
                     let up = try await transport.uploadPhoto(measurementId: item.measurementId, jpeg: data)
                     update(OutboxMachine.photoUploaded(current(id) ?? item, up))
                 case .window:
@@ -267,7 +272,7 @@ public actor Outbox {
             } catch {
                 let e = TransportError(status: nil, message: (error as NSError).localizedDescription)
                 // The JPEG is gone from disk: nothing to retry with
-                let fileMissing = stage == .photo && !FileManager.default.fileExists(atPath: jpegURL(for: item).path)
+                let fileMissing = stage == .photo && !(jpegURL(for: item).map { FileManager.default.fileExists(atPath: $0.path) } ?? false)
                 update(OutboxMachine.failed(current(id) ?? item, stage, fileMissing ? TransportError(status: 410, message: "The photo is missing on this phone. Measure this window again.") : e))
                 return false
             }

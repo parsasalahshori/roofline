@@ -77,6 +77,22 @@ let outboxChecks: [Check] = [
         try await ob.clearDone()
         ctx.equal(await ob.items.count, 0)
     },
+    Check("Outbox: a RoomPlan window with no photo skips the upload and is sent with no upload id or corners") { ctx in
+        let t = FakeTransport()
+        let ob = Outbox(directory: tempDir(), transport: t)
+        try await ob.load()
+        let w = PhotoWindowInput(id: WindowIds.new(), uploadId: nil, label: "Bed 2", windowKey: "k2", corners: nil,
+                                 scale: .roomplan(RoomPlanScale(widthM: 0.9, heightM: 1.2, confidence: .high)))
+        let item = try await ob.enqueue(window: w, measurementId: "m", address: nil, jpeg: nil, imageWidthPx: 0, imageHeightPx: 0)
+        ctx.equal(item.nextStage, .window)
+        ctx.equal(await ob.syncAll(), 1)
+        ctx.equal(t.uploads, 0)
+        ctx.equal(t.appends, 1)
+        ctx.equal(t.saved[item.id]?.uploadId, nil)
+        ctx.equal(t.saved[item.id]?.corners, nil)
+        try await ob.clearDone()
+        ctx.equal(await ob.items.count, 0)
+    },
     Check("Outbox: a network failure waits and is sent on the next sync; a refusal waits for Retry") { ctx in
         let t = FakeTransport()
         t.uploadAnswers = [.failure(TransportError(status: nil, message: "offline"))]

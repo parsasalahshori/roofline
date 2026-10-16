@@ -313,17 +313,24 @@ final class RoomScanner {
         return img.preparingThumbnail(of: CGSize(width: 160, height: 160 * img.size.height / max(1, img.size.width)))
     }
 
-    /// The window to save for one found surface: its keyframe photo with the corners drawn in (or the photo inset 15%
-    /// when no keyframe saw all four corners).
-    func makeWindow(_ f: Found, context: MeasureContext) -> (window: PhotoWindowInput, jpeg: Data, widthPx: Int, heightPx: Int, pass: TestPass)? {
-        guard let ki = f.keyframe, ki < keyframes.count else { return nil }
-        let k = keyframes[ki]
-        let w = Double(k.widthPx), h = Double(k.heightPx)
-        let projected = f.corners.compactMap { ImageMapping.project($0, cameraTransform: k.cameraTransform, intrinsics: k.intrinsics) }
-            .map { ImageMapping.nativeToPortrait($0, nativeWidth: k.intrinsics.width, nativeHeight: k.intrinsics.height) }
-        let corners = projected.count == 4 && projected.allSatisfy({ ImageMapping.isInside($0, width: w, height: h) })
-            ? projected.map { ImageMapping.clamp($0, width: w, height: h) }
-            : ImageMapping.insetCorners(width: w, height: h)
+    /// The window to save for one found surface: its keyframe photo with the corners drawn in, or no photo and no
+    /// corners when no keyframe saw all four corners (the size comes from the scan either way; corners are never made up).
+    func makeWindow(_ f: Found, context: MeasureContext) -> (window: PhotoWindowInput, jpeg: Data?, widthPx: Int, heightPx: Int, pass: TestPass)? {
+        var jpeg: Data?
+        var corners: [Vec2]?
+        var widthPx = 0, heightPx = 0
+        if let ki = f.keyframe, ki < keyframes.count {
+            let k = keyframes[ki]
+            let w = Double(k.widthPx), h = Double(k.heightPx)
+            let projected = f.corners.compactMap { ImageMapping.project($0, cameraTransform: k.cameraTransform, intrinsics: k.intrinsics) }
+                .map { ImageMapping.nativeToPortrait($0, nativeWidth: k.intrinsics.width, nativeHeight: k.intrinsics.height) }
+            if projected.count == 4, projected.allSatisfy({ ImageMapping.isInside($0, width: w, height: h) }) {
+                corners = projected.map { ImageMapping.clamp($0, width: w, height: h) }
+                jpeg = k.jpeg
+                widthPx = k.widthPx
+                heightPx = k.heightPx
+            }
+        }
         let label = f.label.trimmingCharacters(in: .whitespaces).isEmpty ? (f.isDoor ? "Door" : "Scan window") : f.label
         let window = PhotoWindowInput(
             id: WindowIds.new(), uploadId: nil, label: label, windowKey: WindowIds.new(), corners: corners,
@@ -337,7 +344,7 @@ final class RoomScanner {
             uncertaintyWidthIn: RoomPlanLimits.uncertaintyIn(f.confidence), uncertaintyHeightIn: RoomPlanLimits.uncertaintyIn(f.confidence),
             quality: "check", reasons: ["room scan (RoomPlan confidence \(f.confidence.rawValue))"], durationS: Date().timeIntervalSince(startedAt)
         )
-        return (window, k.jpeg, k.widthPx, k.heightPx, pass)
+        return (window, jpeg, widthPx, heightPx, pass)
     }
 }
 

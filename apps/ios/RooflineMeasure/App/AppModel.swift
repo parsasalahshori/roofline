@@ -114,7 +114,7 @@ final class AppModel {
     }
 
     /// Saves a measured window: its JPEG and JSON on disk, a test-data row, then tries to send it now.
-    func save(window: PhotoWindowInput, measurementId: String, address: String?, jpeg: Data, widthPx: Int, heightPx: Int, pass: TestPass?) async throws {
+    func save(window: PhotoWindowInput, measurementId: String, address: String?, jpeg: Data?, widthPx: Int, heightPx: Int, pass: TestPass?) async throws {
         _ = try await outbox.enqueue(window: window, measurementId: measurementId, address: address, jpeg: jpeg, imageWidthPx: widthPx, imageHeightPx: heightPx)
         if let pass = pass { try? await passes.append(pass) }
         Task { await self.sync() }
