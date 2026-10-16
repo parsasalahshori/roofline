@@ -82,3 +82,39 @@
   font: 700 18px/1.25 var(--f-display);
   font-stretch: 110%;
 }
+
+/* Facts about a connection or an account: a small mono caption over its value, side by side on a desktop */
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 32px;
+  margin: 0;
+}
+
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.factLabel {
+  margin: 0;
+  color: var(--ink-3);
+  font: 600 var(--font-size-min)/1.2 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.factValue {
+  margin: 0;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* A number or a time in a fact: mono, digits that line up */
+.mono {
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}

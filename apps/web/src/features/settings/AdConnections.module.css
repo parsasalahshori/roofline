@@ -1,107 +1,43 @@
-/* The ad account cards under the Connections line: one card per platform, one under another */
-.cards {
-  display: flex;
-  flex-direction: column;
+/* The body of a platform's panel: the steps, the account, the controls, one under another */
+.body {
+  display: grid;
   gap: 16px;
-  margin-top: 16px;
-}
-
-.card {
-  border-radius: 12px;
   min-width: 0;
 }
 
-.heading {
+/* The steps as a numbered list: mono numerals in the margin, the words in the UI face */
+.steps p {
   margin: 0 0 8px;
-  font-size: var(--font-size-body);
-  font-weight: 600;
 }
 
-.stepsLabel {
-  margin: 0 0 4px;
-  font-size: var(--font-size-min);
-  color: var(--ink-3);
-}
-
-.steps {
-  margin: 0 0 12px;
-  padding-left: 20px;
+.steps ol {
+  margin: 0;
+  padding-left: 24px;
   font-size: var(--font-size-body);
   overflow-wrap: anywhere;
+}
+
+.steps li::marker {
+  color: var(--ink-3);
+  font-family: var(--f-mono);
+  font-weight: 600;
 }
 
 .steps li + li {
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
+/* The ID and the Connect button, one under the other, no wider than an ID needs */
 .form {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
   gap: 12px;
-  align-items: flex-end;
+  justify-items: start;
+  max-width: 420px;
 }
 
 .form > :first-child {
-  flex: 1 1 220px;
+  width: 100%;
   min-width: 0;
-}
-
-.account {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.accountId {
-  margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
-.statusRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-}
-
-.statusLabel {
-  font-size: var(--font-size-min);
-  color: var(--ink-3);
-}
-
-/* The status is a chip: green when connected, the accent while it waits, the danger colour when it needs attention */
-.status {
-  display: inline-block;
-  padding: 2px 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  font-size: var(--font-size-min);
-  font-weight: 600;
-  color: var(--ink);
-  background: var(--surface-2);
-}
-
-.status[data-status='active'] {
-  border-color: var(--ok);
-}
-
-.status[data-status='pending'] {
-  border-color: var(--brand);
-}
-
-.status[data-status='error'] {
-  border-color: var(--bad);
-  color: var(--bad-text);
-}
-
-.reason {
-  margin: 0;
-  font-size: var(--font-size-body);
-  color: var(--ink-3);
-  overflow-wrap: anywhere;
 }
 
 .actions {
@@ -110,12 +46,9 @@
   gap: 8px;
 }
 
-.note {
-  margin: 0;
-  font-size: var(--font-size-body);
-  color: var(--ink-3);
-}
-
-.loading {
-  margin-top: 16px;
+@media (max-width: 767.98px) {
+  .form {
+    justify-items: stretch;
+    max-width: none;
+  }
 }

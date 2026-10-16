@@ -11,13 +11,14 @@ export const connections = {
 
   /** The words both ad account cards share. */
   stepsLabel: 'How to connect',
+  /** The tag beside a card's title while nothing is linked; the linked words are `statuses`. */
+  notConnected: 'Not connected',
   adConnect: 'Connect',
   checkAgain: 'Check again',
   remove: 'Remove',
-  statusLabel: 'Status',
   ownerOnly: 'Only the owner can connect or remove ad accounts.',
-  /** `id` is the account's ID as the platform names it. */
-  accountId: (id: string) => `Account ID ${id}`,
+  /** The label over an account's ID, as the platform names it. */
+  accountIdLabel: 'Account ID',
   /** What a person reads beside an account's status, by its status. */
   statuses: {
     pending: 'Waiting for you to accept',
@@ -54,7 +55,7 @@ export const connections = {
   notConfigured: 'Calendar connections aren\'t set up yet.',
   account: 'Account',
   calendarLabel: 'Calendar',
-  lastSynced: (when: string) => `Last synced ${when}`,
+  lastSyncedLabel: 'Last synced',
   neverSynced: 'Not synced yet.',
   disconnect: 'Disconnect',
   disconnectConfirm: 'Your appointments stay in Roofline and on your calendar.',
