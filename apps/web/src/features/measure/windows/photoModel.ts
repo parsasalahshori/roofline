@@ -1,6 +1,7 @@
 import {
   DEFAULT_FOCAL_35MM,
   focalPxFrom35mm,
+  sizeFromArPoints,
   sizeFromKnownSide,
   sizeFromReference,
   WINDOW_PHOTO_REFERENCES,
@@ -58,6 +59,11 @@ export function sizePhotoWindow(input: Pick<PhotoWindowInput, 'corners' | 'scale
     if (!(s.inches > 0)) return null;
     const focalPx = focalPxFrom35mm(upload.focal35mm ?? DEFAULT_FOCAL_35MM, upload.widthPx, upload.heightPx);
     size = sizeFromKnownSide(input.corners, upload.widthPx, upload.heightPx, s.side, s.inches, focalPx);
+  } else if (s.kind === 'ar') {
+    // AR: the distance between the tapped 3D points (the photo only carries the thumbnail); 0.01 in like the server.
+    const m = sizeFromArPoints(s.pointsM);
+    if (m === null) return null;
+    return { widthIn: Math.round(m.widthIn * 100) / 100, heightIn: Math.round(m.heightIn * 100) / 100 };
   } else {
     // The measuring sheet needs the engine (many points, the frame's offset): sized on the measure screen
     // (LocalSheetSize) and re-checked by the server.

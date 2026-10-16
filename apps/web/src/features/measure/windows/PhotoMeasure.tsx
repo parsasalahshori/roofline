@@ -34,7 +34,7 @@ import {
 import { useSheetPhoto } from './useSheetPhoto.ts';
 import styles from './PhotoMeasure.module.css';
 
-type Method = 'sheet' | 'reference' | 'known-side';
+type Method = 'ar' | 'sheet' | 'reference' | 'known-side';
 type Which = 'window' | 'paper';
 type Drag = { which: Which; i: number; x: number; y: number; fw: number; fh: number };
 type SnapInfo = { sideConfidence: [number, number, number, number]; moved: boolean };

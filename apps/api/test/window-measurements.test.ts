@@ -429,6 +429,55 @@ describe('on-site window photos', () => {
     expect(Math.abs(scaled.body.photoWindows[0].widthIn - 36 * 0.98)).toBeLessThan(0.05);
   });
 
+  it('accepts a window measured in AR: sized server-side from the 3D corners, with quality and ±; bad AR input is a 400 or a 422 naming it', async () => {
+    const { owner, view } = await measuredHouse();
+    const photo = windowPhoto();
+    const id = (await upload(owner, view.id, photo.bytes)).body.id as string;
+    const url = `/api/window-measurements/${view.id}`;
+    const m = 0.0254;
+    // A 36 x 60 in frame 2 m in front of AR's origin, turned 20 degrees
+    const c = Math.cos(0.35);
+    const sn = Math.sin(0.35);
+    const at = (x: number, y: number): [number, number, number] => [x * m * c, 1.2 + y * m, -2 - x * m * sn];
+    const pointsM = [at(-18, 30), at(18, 30), at(18, -30), at(-18, -30)];
+    const scale = { kind: 'ar', pointsM, trackingLostCount: 1 };
+    const ok = { id: 'p1', uploadId: id, label: 'Den', windowKey: 'den', corners: photo.window, scale };
+    const patched = await owner.patch(url).send({ photoWindows: [ok] });
+    expect(patched.status, JSON.stringify(patched.body)).toBe(200);
+    const w = (patched.body as WindowMeasurementView).photoWindows![0]!;
+    expect(Math.abs(w.widthIn - 36)).toBeLessThan(0.01);
+    expect(Math.abs(w.heightIn - 60)).toBeLessThan(0.01);
+    expect(w.quality).toBe('good');
+    expect(w.uncertaintyIn!.width).toBeGreaterThan(0.1);
+    expect(w.uncertaintyIn!.width).toBeLessThan(0.2);
+    expect(w.scale).toEqual(scale);
+    expect((await owner.get(url)).body.adjustments.photoWindows[0].scale.kind).toBe('ar');
+
+    const send = (over: Record<string, unknown>) => owner.patch(url).send({ photoWindows: [{ ...ok, scale: { ...scale, ...over } }] });
+    expect((await send({ pointsM: pointsM.slice(0, 3) })).status).toBe(400);
+    expect((await send({ pointsM: [...pointsM, at(0, 0)] })).status).toBe(400);
+    expect((await send({ pointsM: [[0, 0, 51], ...pointsM.slice(1)] })).status).toBe(400);
+    expect((await send({ pointsM: [[0, 0], ...pointsM.slice(1)] })).status).toBe(400);
+    expect((await send({ pointsM: [[0, 'x', 0], ...pointsM.slice(1)] })).status).toBe(400);
+    expect((await send({ trackingLostCount: 1001 })).status).toBe(400);
+    expect((await send({ trackingLostCount: -1 })).status).toBe(400);
+    expect((await send({ trackingLostCount: 1.5 })).status).toBe(400);
+    expect((await send({ extra: true })).status).toBe(400);
+    // Too small (4 x 4 in) and too big (250 in wide): 422 naming the window
+    const tiny = await send({ pointsM: [at(-2, 2), at(2, 2), at(2, -2), at(-2, -2)] });
+    expect(tiny.status).toBe(422);
+    expect(tiny.body.error).toContain('"Den"');
+    expect(tiny.body.error).toContain('outside 6 to 200 in');
+    const huge = await send({ pointsM: [at(-125, 30), at(125, 30), at(125, -30), at(-125, -30)] });
+    expect(huge.status).toBe(422);
+    const flat = await send({ pointsM: [at(0, 0), at(0, 0), at(0, 0), at(0, 0)] });
+    expect(flat.status).toBe(422);
+    // Skewed corners are sized, but 'check'
+    const skew = await send({ pointsM: [at(-10, 30), at(26, 30), at(18, -30), at(-18, -30)] });
+    expect(skew.status).toBe(200);
+    expect(skew.body.photoWindows[0].quality).toBe('check');
+  });
+
   it('another company cannot see, fetch or add photos', async () => {
     const { owner, view } = await measuredHouse();
     const id = (await upload(owner, view.id, windowPhoto({ widthPx: 100, heightPx: 100 }).bytes)).body.id as string;

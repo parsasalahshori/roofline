@@ -5,7 +5,7 @@
 // optional detector can find the front windows instead (source 'detector'); it is off by default.
 // Estimated windows are never shown or priced as measured.
 import type { Tier } from './proposals.ts';
-import type { Quad } from './window-photo-math.ts';
+import type { ArQuad, Quad } from './window-photo-math.ts';
 
 type LngLat = [number, number];
 
@@ -147,6 +147,18 @@ export type WindowPhotoScale =
       sheetIndex?: number[];
       /** The printed scale read off the sheet's ruler (1 = 100%). Absent: 1. */
       printScale?: number;
+    }
+  | {
+      /**
+       * AR on an Android phone (WebXR hit-test): the person tapped the window FRAME's four corners. No scale prop: the
+       * size is the distance between the points (window-photo-math sizeFromArPoints). The PhotoWindowInput's corners are
+       * the same four points drawn into the one photo kept with it (or that photo inset 15% when they could not be).
+       */
+      kind: 'ar';
+      /** TL, TR, BR, BL frame corners, metres, AR world space. */
+      pointsM: ArQuad;
+      /** How many times AR lost the wall while the corners were being tapped. */
+      trackingLostCount: number;
     };
 
 /**
@@ -185,12 +197,12 @@ export type PhotoWindow = PhotoWindowInput & {
   widthIn: number;
   heightIn: number;
   sizeClass: WindowSizeClass;
-  /** Expected error of widthIn / heightIn (inches, about 1 sigma), when the method can tell (sheet method). */
+  /** Expected error of widthIn / heightIn (inches, about 1 sigma), when the method can tell (sheet and AR methods). */
   uncertaintyIn?: { width: number; height: number } | null;
   /** Camera to the sheet's plane, inches, and the viewing angle off straight-on, degrees (sheet method). */
   distanceIn?: number | null;
   viewAngleDeg?: number | null;
-  /** 'check' when the corners are nearly degenerate or the photo was steeply angled (> 50 deg). */
+  /** 'check' when the corners are nearly degenerate or the photo was steeply angled (> 50 deg); AR: not a flat rectangle. */
   quality: 'good' | 'check';
 };
 
