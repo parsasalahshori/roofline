@@ -483,3 +483,17 @@ describe('AR on the windows screen', () => {
     expect(xhrSent).toEqual(['/api/window-measurements/w1/uploads']);
   });
 });
+
+describe('AR math on the web side', () => {
+  it('projects a centred point to the middle of the picture; a point behind the camera cannot be drawn', () => {
+    expect(projectToImage([[0, 0, -2]], IDENTITY, PROJECTION, 640, 480)).toEqual([[320, 240]]);
+    expect(projectToImage([[0, 0, 2]], IDENTITY, PROJECTION, 640, 480)).toBeNull();
+    // Off the side of the picture: kept on it
+    expect(projectToImage([[50, 0, -2]], IDENTITY, PROJECTION, 640, 480)).toEqual([[640, 240]]);
+  });
+
+  it('the web preview sizes an AR window the way the server does (0.01 in)', () => {
+    const s = sizePhotoWindow({ corners: insetCorners(1200, 1600), scale: { kind: 'ar', pointsM: FRAME as [ArPoint, ArPoint, ArPoint, ArPoint], trackingLostCount: 0 } }, UPLOAD)!;
+    expect(s).toEqual({ widthIn: 36, heightIn: 60 });
+  });
+});
