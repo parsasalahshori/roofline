@@ -327,8 +327,8 @@ test('D1 Front Desk pages do not scroll sideways', async ({ page, loginAs, markT
   await markTodaySeen('owner@a.test');
 
   const pages: [string, () => Locator][] = [
-    ['/front-desk', () => page.getByRole('heading', { name: 'This week' })],
-    [`/front-desk/${ids.maria}`, () => page.getByRole('heading', { name: 'What was said' })],
+    ['/front-desk', () => page.getByRole('region', { name: "Today's numbers" })],
+    [`/front-desk/${ids.maria}`, () => page.getByRole('heading', { name: 'Transcript' })],
     [`/front-desk/${ids.tom}`, () => page.getByLabel('Your reply')],
     ['/settings/front-desk', () => page.getByRole('button', { name: 'Test it' })],
     ['/settings/profile', () => page.getByLabel('Your phone number')],

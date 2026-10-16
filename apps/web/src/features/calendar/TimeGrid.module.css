@@ -1,93 +1,153 @@
-/* The shared week and day grid. Rows are 24px (--row-h, set inline); the page never scrolls sideways, the grid does. */
+/*
+ * The week and day grid, on the panel's own surface. Rows are 32px (--row-h, set inline); an hour's line is the stronger one and the
+ * half hour's the fainter. The head and the hour labels stay in view while the grid scrolls; the page never scrolls sideways, the grid does.
+ */
 .scroll {
   position: relative;
-  max-height: 70vh;
-  overflow: auto;
+  flex: 1 1 auto;
   min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--r-3);
+  min-height: 0;
+  overflow: auto;
+  border-radius: inherit;
   background: var(--surface);
+  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
 
+.scroll:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
 .grid {
+  --head-h: 48px;
   display: grid;
   min-width: 100%;
   font-size: var(--font-size-min);
   color: var(--ink);
 }
 
+/* The head: the weekday in mono caps over the date in Archivo; today's date sits in the company's fill */
 .corner {
   position: sticky;
   top: 0;
-  z-index: 4;
-  background: var(--surface-2);
-  border-bottom: 1px solid var(--line);
+  left: 0;
+  z-index: 7;
+  border-bottom: 1px solid var(--line-2);
+  background: var(--surface);
 }
 
 .dayHead {
   position: sticky;
   top: 0;
-  z-index: 3;
-  padding: 6px 8px;
-  background: var(--surface-2);
-  border-bottom: 1px solid var(--line);
+  z-index: 5;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--head-h);
+  padding: 0 12px;
+  border-bottom: 1px solid var(--line-2);
   border-left: 1px solid var(--line);
-  font-size: var(--font-size-body);
-  font-weight: 600;
+  background: var(--surface);
   white-space: nowrap;
 }
 
+.weekday {
+  color: var(--ink-3);
+  font: 500 var(--font-size-min)/1 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dayNumber {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: var(--r-pill);
+  font: 650 17px/1 var(--f-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.dayHead[data-today="true"] .dayNumber {
+  background: var(--brand);
+  color: var(--brand-ink);
+}
+
+/* The all-day row: its label in the gutter, then a cell for each day */
 .gutterAllDay {
+  position: sticky;
+  top: var(--head-h);
+  left: 0;
+  z-index: 6;
   display: flex;
   align-items: center;
-  padding: 4px 6px;
-  border-bottom: 1px solid var(--line);
+  padding: 4px 8px 4px 4px;
+  border-bottom: 1px solid var(--line-2);
+  border-right: 1px solid var(--line);
+  background: var(--surface);
   color: var(--ink-3);
+  font: 500 var(--font-size-min)/1.2 var(--f-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .allDayCell {
+  position: sticky;
+  top: var(--head-h);
+  z-index: 4;
   display: flex;
   flex-direction: column;
   gap: 4px;
   min-width: 0;
-  min-height: 32px;
+  min-height: 36px;
   padding: 4px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--line-2);
   border-left: 1px solid var(--line);
+  background: var(--surface);
 }
 
 .allDayItem {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-height: 24px;
-  padding: 2px 6px;
-  border-left: 4px solid var(--person);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--person) 16%, var(--surface));
+  align-items: baseline;
+  gap: 6px;
+  min-height: 26px;
+  padding: 4px 8px;
+  border-left: 3px solid var(--person);
+  border-radius: 2px var(--r-2) var(--r-2) 2px;
+  background: color-mix(in srgb, var(--person) 14%, var(--surface));
   cursor: pointer;
   overflow: hidden;
 }
 
 .allDayBusy {
-  padding: 2px 6px;
-  border-radius: 6px;
+  padding: 4px 8px;
+  border-radius: var(--r-2);
   color: var(--ink-3);
-  background: repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 6px, var(--line) 6px, var(--line) 12px);
+  background: repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 6px, var(--line) 6px, var(--line) 7px);
 }
 
+/* The hour labels, in mono, stay at the left edge when the grid slides sideways */
 .gutter {
+  position: sticky;
+  left: 0;
+  z-index: 3;
   display: grid;
   grid-template-rows: repeat(30, var(--row-h));
+  border-right: 1px solid var(--line);
+  background: var(--surface);
   color: var(--ink-3);
 }
 
 .gutterCell {
   height: var(--row-h);
-  padding: 0 6px 0 0;
+  padding: 5px 10px 0 0;
+  font: 500 var(--font-size-min)/1 var(--f-mono);
+  font-variant-numeric: tabular-nums;
   text-align: right;
-  line-height: var(--row-h);
   white-space: nowrap;
 }
 
@@ -97,6 +157,15 @@
   border-left: 1px solid var(--line);
 }
 
+.column[data-today="true"] {
+  background: color-mix(in srgb, var(--brand) 4%, transparent);
+}
+
+/* The all-day row is opaque, so what scrolls under it does not show through */
+.allDayCell[data-today="true"] {
+  background: color-mix(in srgb, var(--brand) 4%, var(--surface));
+}
+
 .slots {
   display: grid;
   grid-template-rows: repeat(30, var(--row-h));
@@ -104,21 +173,30 @@
 
 .slot {
   height: var(--row-h);
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--line-2);
   cursor: pointer;
 }
 
 .slot[data-half="true"] {
-  border-top-style: dashed;
+  border-top-color: var(--line);
+}
+
+.slot:first-child {
+  border-top-color: transparent;
+}
+
+.slot:hover {
+  background: color-mix(in srgb, var(--brand) 7%, transparent);
 }
 
 .slot:focus-visible,
 .appt:focus-visible,
 .allDayItem:focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: -2px;
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
 }
 
+/* A visit: a tint of its person's colour, a 3px edge in the full colour, text in ink, the time in mono */
 .appt {
   position: absolute;
   z-index: 1;
@@ -126,30 +204,70 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
-  padding: 2px 6px;
-  border-left: 4px solid var(--person);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--person) 16%, var(--surface));
+  min-width: 0;
+  padding: 4px 8px;
+  border-left: 3px solid var(--person);
+  border-radius: 2px var(--r-2) var(--r-2) 2px;
+  background: color-mix(in srgb, var(--person) 14%, var(--surface));
+  color: var(--ink);
   cursor: pointer;
   overflow: hidden;
-  line-height: 1.25;
+  line-height: 1.2;
 }
 
-.appt[data-status="canceled"] {
-  text-decoration: line-through;
+.appt:hover,
+.allDayItem:hover {
+  background: color-mix(in srgb, var(--person) 24%, var(--surface));
+}
+
+/* A 30 minute visit is one line: its time, then its name */
+.appt[data-size="short"] {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  padding-block: 0;
+}
+
+.appt[data-status="canceled"],
+.allDayItem[data-status="canceled"] {
   opacity: 0.7;
 }
 
+.appt[data-status="canceled"] > span,
+.allDayItem[data-status="canceled"] > span {
+  text-decoration: line-through;
+}
+
 .itemTitle {
-  font-weight: 600;
+  min-width: 0;
   overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemSub {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: var(--font-size-min);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .itemTime {
-  color: var(--ink-3);
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-2);
+  font: 500 var(--font-size-min)/1.2 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.appt[data-size="short"] .itemTime {
+  flex: none;
 }
 
 .busy {
@@ -158,26 +276,66 @@
   right: 0;
   z-index: 0;
   box-sizing: border-box;
-  padding: 2px 6px;
-  border-radius: 6px;
+  padding: 3px 8px;
+  border-radius: var(--r-1);
   color: var(--ink-3);
-  background: repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 6px, var(--line) 6px, var(--line) 12px);
+  background: repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 6px, var(--line) 6px, var(--line) 7px);
+  font: 500 var(--font-size-min)/1.2 var(--f-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   overflow: hidden;
   pointer-events: none;
 }
 
+/* The time now: a line and a dot in the company's colour (never red, which is for holds and errors) */
 .now {
   position: absolute;
   left: 0;
   right: 0;
   z-index: 2;
   height: 2px;
-  background: var(--bad);
+  margin-top: -1px;
+  background: var(--brand);
   pointer-events: none;
 }
 
+.now::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--brand);
+}
+
 @media (max-width: 767.98px) {
+  /* On a phone the grid is as tall as the screen allows once the page is scrolled to it, and scrolls inside that */
   .scroll {
-    max-height: 62vh;
+    flex: none;
+    min-height: 320px;
+    max-height: calc(100dvh - 160px);
+  }
+
+  .dayHead {
+    padding: 0 10px;
+  }
+
+  /* One day has no sideways to scroll and is a column of the page: the page scrolls through it, not a box inside the page */
+  .scroll[data-single="true"] {
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
+  }
+
+  /* The strip above names the day, so the grid's own head is left out and the all-day row sits at the top */
+  .grid[data-single="true"] {
+    --head-h: 0px;
+  }
+
+  .grid[data-single="true"] .corner,
+  .grid[data-single="true"] .dayHead {
+    display: none;
   }
 }

@@ -1,24 +1,14 @@
-import { Button, IconButton, Toggle } from '@roofline/ui';
+import { Button, Icon, IconButton, Segmented, Toggle } from '@roofline/ui';
 import { calendar } from '../../copy/calendar.ts';
 import { PeoplePicker } from './PeoplePicker.tsx';
 import type { CalendarPerson, CalendarView } from './types.ts';
 import styles from './CalendarToolbar.module.css';
 
-const VIEWS: { view: CalendarView; label: string }[] = [
-  { view: 'week', label: calendar.viewWeek },
-  { view: 'day', label: calendar.viewDay },
-  { view: 'list', label: calendar.viewList },
+const VIEWS: { value: CalendarView; label: string }[] = [
+  { value: 'day', label: calendar.viewDay },
+  { value: 'week', label: calendar.viewWeek },
+  { value: 'list', label: calendar.viewList },
 ];
-
-/** A chevron drawn as a plain SVG, so no text sits inside the icon. */
-function Chevron({ direction }: { direction: 'left' | 'right' }) {
-  const d = direction === 'left' ? 'M15 6l-6 6 6 6' : 'M9 6l6 6-6 6';
-  return (
-    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
-      <path d={d} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
 
 type CalendarToolbarProps = {
   view: CalendarView;
@@ -27,7 +17,6 @@ type CalendarToolbarProps = {
   onToday: () => void;
   onPrev: () => void;
   onNext: () => void;
-  onNew: () => void;
   people: CalendarPerson[];
   selected: string[];
   onPeople: (ids: string[]) => void;
@@ -37,47 +26,34 @@ type CalendarToolbarProps = {
   zoneNote: string | null;
 };
 
-/** The calendar's controls: move through dates, switch the view, pick people, show canceled, and add an appointment. */
+/**
+ * The calendar's controls. First row: Today and the two arrows (ghost), the range in Archivo, and the Day / Week / List switch.
+ * Second row: whose appointments to show, as chips with a colour dot, and Show canceled. The New appointment button is the page's.
+ */
 export function CalendarToolbar(props: CalendarToolbarProps) {
-  const { view, label, onView, onToday, onPrev, onNext, onNew, people, selected, onPeople, showPeople } = props;
+  const { view, label, onView, onToday, onPrev, onNext, people, selected, onPeople, showPeople } = props;
   const { showCanceled, onShowCanceled, zoneNote } = props;
 
   return (
     <div className={styles.toolbar}>
       <div className={styles.row}>
         <div className={styles.nav}>
-          <Button variant="ghost" onClick={onToday}>
-            {calendar.today}
-          </Button>
-          <IconButton label={calendar.previous} icon={<Chevron direction="left" />} onClick={onPrev} />
-          <IconButton label={calendar.next} icon={<Chevron direction="right" />} onClick={onNext} />
-          <span className={styles.label}>{label}</span>
+          <div className={styles.steps}>
+            <Button variant="ghost" onClick={onToday}>
+              {calendar.today}
+            </Button>
+            <IconButton label={calendar.previous} icon={<Icon name="chevl" size={18} />} onClick={onPrev} />
+            <IconButton label={calendar.next} icon={<Icon name="chev" size={18} />} onClick={onNext} />
+          </div>
+          <p className={styles.label} aria-live="polite">
+            {label}
+          </p>
         </div>
-        <div className={styles.views}>
-          {VIEWS.map((option) => {
-            const selectedView = option.view === view;
-            return (
-              <Button
-                key={option.view}
-                variant={selectedView ? 'primary' : 'ghost'}
-                aria-pressed={selectedView}
-                data-selected={selectedView ? 'true' : 'false'}
-                onClick={() => onView(option.view)}
-              >
-                {option.label}
-              </Button>
-            );
-          })}
-        </div>
+        <Segmented<CalendarView> label={calendar.viewLabel} value={view} onChange={onView} options={VIEWS} className={styles.views} />
       </div>
       <div className={styles.row}>
-        {showPeople ? <PeoplePicker people={people} selected={selected} onChange={onPeople} /> : null}
-        <div className={styles.end}>
-          <Toggle checked={showCanceled} onChange={onShowCanceled} label={calendar.showCanceled} />
-          <Button variant="primary" onClick={onNew}>
-            {calendar.newAppointment}
-          </Button>
-        </div>
+        {showPeople ? <PeoplePicker people={people} selected={selected} onChange={onPeople} /> : <span />}
+        <Toggle checked={showCanceled} onChange={onShowCanceled} label={calendar.showCanceled} />
       </div>
       {zoneNote !== null ? (
         <p className={styles.zoneNote} data-testid="zone-note">

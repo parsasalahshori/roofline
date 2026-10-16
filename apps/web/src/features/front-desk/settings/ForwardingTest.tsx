@@ -1,4 +1,4 @@
-import { Banner, Button } from '@roofline/ui';
+import { Banner, Button, Icon } from '@roofline/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { ApiError } from '../../../api/client.ts';
@@ -56,7 +56,8 @@ export function ForwardingTest() {
 
   return (
     <div className={styles.wrap}>
-      <Button type="button" className={styles.button} busy={busy} onClick={startTest}>
+      <Button type="button" variant="default" className={styles.button} busy={busy} onClick={startTest}>
+        <Icon name="phone" size={16} />
         {retry ? copy.retry : copy.start}
       </Button>
       <div role="status" aria-live="polite" className={styles.status}>

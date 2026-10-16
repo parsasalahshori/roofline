@@ -103,6 +103,16 @@ describe('OnCallList', () => {
     }
   });
 
+  it('is a panel with the heading and the help line, and the people off the list under their own heading', () => {
+    render(<OnCallList members={members} order={['u-ana', 'u-ben', 'u-cy']} onChange={vi.fn()} />);
+    const panel = screen.getByRole('region', { name: copy.heading });
+    expect(within(panel).getByText(copy.help)).toBeInTheDocument();
+    expect(within(panel).getByRole('heading', { name: copy.notOnList })).toBeInTheDocument();
+    // The ordered list is the three on it; the one off it is not a list item
+    expect(within(panel).getAllByRole('listitem')).toHaveLength(3);
+    expect(within(panel).getByText('Dee')).toBeInTheDocument();
+  });
+
   it('shows the empty line when nobody is on the list', () => {
     render(<OnCallList members={members} order={[]} onChange={vi.fn()} />);
     expect(screen.getByText(copy.empty)).toBeInTheDocument();

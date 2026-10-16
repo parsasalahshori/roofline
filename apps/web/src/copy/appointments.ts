@@ -1,9 +1,12 @@
 import { connections } from './connections.ts';
 
-/** The appointment form and detail (Task 24). Package C owns this file; A and B only read it. */
+/** The appointment form and detail: the new and reschedule form, the suggested times and one appointment's page. */
 export const appointments = {
   newTitle: 'New appointment',
+  newHint: 'Pick the kind of visit and who goes. The suggested times are the ones that are open.',
   rescheduleTitle: 'Reschedule',
+  groupWho: 'Visit',
+  groupWhen: 'Date and time',
   kindLabel: 'Kind',
   kind: { inspection: 'Inspection', install: 'Install', adjuster: 'Adjuster visit', other: 'Other' },
   customerLabel: 'Customer or job',
@@ -17,19 +20,38 @@ export const appointments = {
   timeLabel: 'Time',
   startDateLabel: 'Start date',
   endDateLabel: 'End date',
+  durationLabel: 'Duration',
+  /** "45 minutes", "1 hour", "1 hour 30 minutes", "2 hours". */
+  duration: (minutes: number) => {
+    const hours = Math.floor(minutes / 60);
+    const rest = minutes % 60;
+    const hoursWord = hours === 1 ? '1 hour' : `${hours} hours`;
+    if (hours === 0) return `${rest} minutes`;
+    return rest === 0 ? hoursWord : `${hoursWord} ${rest} minutes`;
+  },
+  endsAt: (time: string) => `Ends at ${time}`,
   notesLabel: 'Notes',
   save: 'Save',
   saving: 'Saving',
+  leaveForm: 'Cancel',
   saveError: 'We could not save this appointment.',
   loadError: 'We could not open this appointment.',
+  tryAgain: 'Try again',
+  loading: 'Opening the appointment',
   suggestedTitle: 'Suggested times',
+  suggestedHint: 'Next 14 days',
   suggestedEmpty: 'No open times in the next 14 days.',
+  suggestedEmptyHint: 'Pick a date and time yourself, or look at another person.',
   suggestedError: 'We could not look up times.',
   suggestedLoading: 'Looking for times',
   suggestedChoice: (when: string, who: string) => `${when} · ${who}`,
+  /** Between a suggestion's time and the person it is for. */
+  suggestedSeparator: ' · ',
+  suggestedPicked: 'Picked',
   keepIt: 'Keep it',
   changeTime: 'Change time',
   jobMoved: 'Moved the job to Inspection.',
+  detailHeading: 'Details',
   detailTime: 'When',
   detailKind: 'Kind',
   detailPerson: 'Person',
@@ -40,6 +62,9 @@ export const appointments = {
   detailNotes: 'Notes',
   detailSource: 'Booked',
   bookedByFrontDesk: 'Booked by Front Desk',
+  confirmed: { call: 'Confirmed by call', text: 'Confirmed by text', manual: 'Confirmed' },
+  /** The last step of the trail on the appointment pages, before the appointment's own name has loaded. */
+  crumb: 'Appointment',
   unassigned: 'Nobody yet',
   allDay: 'All day',
   status: { scheduled: 'Scheduled', completed: 'Done', canceled: 'Canceled', no_show: 'No-show' },
@@ -49,6 +74,7 @@ export const appointments = {
     failed: "Couldn't update your calendar",
     retry: 'Try again',
   },
+  actionsLabel: 'Appointment actions',
   reschedule: 'Reschedule',
   markDone: 'Mark done',
   noShow: 'No-show',

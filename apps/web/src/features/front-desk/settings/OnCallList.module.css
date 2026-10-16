@@ -1,14 +1,12 @@
-/* The on-call list: one card row per member, drag handle, number, name and phone, then the move and remove buttons */
+/*
+ * The on-call list, in a panel: one row for each person, top down in the order they are rung. A row has its grip, its place in
+ * mono, the person and their transfer phone in mono, then the move and remove buttons. The buttons keep a 40px target.
+ */
 .root {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-
-.heading {
-  margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
+  gap: 16px;
+  min-width: 0;
 }
 
 .help {
@@ -38,8 +36,15 @@
   gap: 8px;
   min-height: 56px;
   padding: 8px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-2);
   border-radius: var(--r-3);
+  background: var(--surface);
+}
+
+.row[data-off="true"] {
+  padding-left: 12px;
+  border-style: dashed;
+  background: transparent;
 }
 
 .handle,
@@ -49,14 +54,17 @@
 }
 
 .handle {
+  color: var(--ink-3);
   cursor: grab;
 }
 
+/* The place in the order, in mono: the first to ring is 1 */
 .place {
-  min-width: 24px;
+  min-width: 20px;
   color: var(--ink-3);
-  text-align: center;
+  font: 600 13px/1 var(--f-mono);
   font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
 .who {
@@ -74,7 +82,8 @@
 
 .phone {
   color: var(--ink-3);
-  font-size: var(--font-size-body);
+  font: 500 13px/1.3 var(--f-mono);
+  font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 
@@ -83,8 +92,20 @@
   gap: 4px;
 }
 
+/* The up arrow is the down arrow turned over */
+.flip {
+  display: inline-flex;
+  transform: rotate(180deg);
+}
+
 .empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
+  padding: 16px;
+  border: 1px dashed var(--line-ctl);
+  border-radius: var(--r-3);
   color: var(--ink-3);
   font-size: var(--font-size-body);
 }
@@ -96,21 +117,9 @@
 }
 
 .subheading {
-  margin: 8px 0 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
-}
-
-/* Keeps the live region for screen readers and out of sight */
-.visuallyHidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
+  margin: 0;
+  color: var(--ink-3);
+  font: 500 var(--font-size-min)/1 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }

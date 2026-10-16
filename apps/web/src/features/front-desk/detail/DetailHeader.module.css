@@ -1,0 +1,142 @@
+/*
+ * The head of an open call, on the page's ground like a job's: the name big, tags under it, the number and the time in a line,
+ * the buttons at the right. On a phone the buttons become a row of thumb-sized tiles under the facts.
+ */
+.header {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  grid-template-areas:
+    "lead who actions"
+    ". meta actions"
+    ". banner banner";
+  column-gap: 14px;
+  row-gap: 10px;
+  min-width: 0;
+}
+
+.lead {
+  grid-area: lead;
+}
+
+.glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--sunken);
+  color: var(--ink-2);
+}
+
+.who {
+  display: flex;
+  grid-area: who;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  /* With no tags the name sits level with the middle of the avatar */
+  min-height: 40px;
+  min-width: 0;
+}
+
+.name {
+  margin: 0;
+  font: 750 22px/1.1 var(--f-display);
+  font-stretch: 112%;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+}
+
+.tags:empty {
+  display: none;
+}
+
+.actions {
+  display: flex;
+  grid-area: actions;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  align-content: flex-start;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* The number, when and how long: icon and words, 16px apart */
+.meta {
+  display: flex;
+  grid-area: meta;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.item > svg {
+  color: var(--ink-3);
+}
+
+.mono {
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.banner {
+  grid-area: banner;
+}
+
+/* A narrow pane (the call beside a list on a small laptop): the buttons drop under the facts */
+@container (max-width: 639.98px) {
+  .header {
+    grid-template-columns: 40px minmax(0, 1fr);
+    grid-template-areas:
+      "lead who"
+      ". meta"
+      ". actions"
+      ". banner";
+  }
+
+  .actions {
+    justify-content: flex-start;
+  }
+}
+
+/* A phone: the name is the page's title, and each button is a half-width tile */
+@media (max-width: 767.98px) {
+  .header {
+    grid-template-areas:
+      "lead who"
+      "meta meta"
+      "actions actions"
+      "banner banner";
+  }
+
+  .name {
+    font-size: 28px;
+  }
+
+  .actions > * {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  /* A quiet button in a row of tiles still gets its edge, so it reads as a thing to press */
+  .actions > [data-variant="ghost"] {
+    border-color: var(--line-2);
+  }
+}

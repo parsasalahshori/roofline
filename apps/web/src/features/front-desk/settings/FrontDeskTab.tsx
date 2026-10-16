@@ -1,6 +1,6 @@
 import type { FrontDeskSettings, FrontDeskSettingsInput, FrontDeskVoice, FrontDeskVoiceId } from '@roofline/shared';
 import { FRONT_DESK_LIMITS } from '@roofline/shared';
-import { Banner, Button, Card, EmptyState, Field, Select, Skeleton, Toggle, useToast } from '@roofline/ui';
+import { Banner, Button, Field, Icon, Listbox, Panel, Skeleton, Toggle, useToast } from '@roofline/ui';
 import { useState, type FormEvent } from 'react';
 import { ApiError } from '../../../api/client.ts';
 import { useMe } from '../../../api/hooks.ts';
@@ -184,170 +184,190 @@ function FrontDeskForm({ saved, isOwner, voices, saving, serverError, onSave }: 
     <form onSubmit={submit} noValidate className={styles.form}>
       {bannerMessage ? <Banner tone="danger">{bannerMessage}</Banner> : null}
 
-      <Card as="section" className={styles.section}>
-        <div className={styles.switches}>
-          <Toggle
-            label={frontDeskSettings.onOff.label}
-            checked={draft.enabled}
-            disabled={saving || (turnOnBlocked && !canOverride && !draft.enabled)}
-            onChange={onEnabledChange}
-          />
-          {blocked ? (
-            <p className={styles.blocked}>{frontDeskSettings.onOff.blocked[saved.blockedReason ?? 'no_number']}</p>
-          ) : null}
-          {confirmingOverride ? (
-            <section aria-label={frontDeskSettings.onOff.overrideYes} className={styles.confirm}>
-              <p className={styles.confirmText}>{frontDeskSettings.onOff.overrideConfirm}</p>
-              <div className={styles.confirmActions}>
-                <Button
-                  onClick={() => {
-                    setConfirmingOverride(false);
-                    setOverride(true);
-                    update('enabled', true);
-                  }}
-                >
-                  {frontDeskSettings.onOff.overrideYes}
-                </Button>
-                <Button variant="ghost" onClick={() => setConfirmingOverride(false)}>
-                  {frontDeskSettings.onOff.overrideNo}
-                </Button>
+      <div className={styles.columns}>
+        <div className={styles.column}>
+          <Panel as="section" title={frontDeskSettings.sections.answering}>
+            <div className={styles.stack}>
+              <Toggle
+                label={frontDeskSettings.onOff.label}
+                checked={draft.enabled}
+                disabled={saving || (turnOnBlocked && !canOverride && !draft.enabled)}
+                onChange={onEnabledChange}
+              />
+              {blocked ? (
+                <p className={styles.blocked}>
+                  <Icon name="alert" size={16} />
+                  {frontDeskSettings.onOff.blocked[saved.blockedReason ?? 'no_number']}
+                </p>
+              ) : null}
+              {confirmingOverride ? (
+                <section aria-label={frontDeskSettings.onOff.overrideYes} className={styles.confirm}>
+                  <Banner
+                    tone="warning"
+                    action={
+                      <div className={styles.confirmActions}>
+                        <Button
+                          variant="default"
+                          onClick={() => {
+                            setConfirmingOverride(false);
+                            setOverride(true);
+                            update('enabled', true);
+                          }}
+                        >
+                          {frontDeskSettings.onOff.overrideYes}
+                        </Button>
+                        <Button variant="ghost" onClick={() => setConfirmingOverride(false)}>
+                          {frontDeskSettings.onOff.overrideNo}
+                        </Button>
+                      </div>
+                    }
+                  >
+                    {frontDeskSettings.onOff.overrideConfirm}
+                  </Banner>
+                </section>
+              ) : null}
+              <Toggle
+                label={frontDeskSettings.texts.label}
+                checked={draft.texts}
+                disabled={saving}
+                onChange={(next) => update('texts', next)}
+              />
+            </div>
+          </Panel>
+
+          <Panel as="section" title={frontDeskSettings.sections.mayDo}>
+            <div className={styles.stack}>
+              <Toggle
+                label={frontDeskSettings.mayMove.label}
+                checked={draft.canMove}
+                disabled={saving}
+                onChange={(next) => update('canMove', next)}
+              />
+              <Toggle
+                label={frontDeskSettings.mayCancel.label}
+                checked={draft.canCancel}
+                disabled={saving}
+                onChange={(next) => update('canCancel', next)}
+              />
+              <Toggle
+                label={frontDeskSettings.textBack.label}
+                checked={draft.missedCallTextBack}
+                disabled={saving}
+                onChange={(next) => update('missedCallTextBack', next)}
+              />
+            </div>
+          </Panel>
+
+          <Panel as="section" title={frontDeskSettings.sections.timing}>
+            <div className={styles.numbers}>
+              <Field
+                label={frontDeskSettings.ringTeam.label}
+                help={frontDeskSettings.ringTeam.help}
+                name="ringTeamFirstSeconds"
+                type="number"
+                inputMode="numeric"
+                step={1}
+                min={LIMITS.ringTeamFirstSeconds.min}
+                max={LIMITS.ringTeamFirstSeconds.max}
+                value={draft.numbers.ringTeamFirstSeconds}
+                disabled={saving}
+                error={clientErrors.ringTeamFirstSeconds ?? serverFor('ringTeamFirstSeconds')}
+                onChange={(event) => setNumber('ringTeamFirstSeconds', event.target.value)}
+              />
+              <Field
+                label={frontDeskSettings.maxCalls.label}
+                name="maxConcurrentAiCalls"
+                type="number"
+                inputMode="numeric"
+                step={1}
+                min={LIMITS.maxConcurrentAiCalls.min}
+                max={LIMITS.maxConcurrentAiCalls.max}
+                value={draft.numbers.maxConcurrentAiCalls}
+                disabled={saving}
+                error={clientErrors.maxConcurrentAiCalls ?? serverFor('maxConcurrentAiCalls')}
+                onChange={(event) => setNumber('maxConcurrentAiCalls', event.target.value)}
+              />
+              <Field
+                label={frontDeskSettings.recordingDays.label}
+                help={frontDeskSettings.recordingDays.help}
+                name="recordingRetentionDays"
+                type="number"
+                inputMode="numeric"
+                step={1}
+                min={LIMITS.recordingRetentionDays.min}
+                max={LIMITS.recordingRetentionDays.max}
+                value={draft.numbers.recordingRetentionDays}
+                disabled={saving}
+                error={clientErrors.recordingRetentionDays ?? serverFor('recordingRetentionDays')}
+                onChange={(event) => setNumber('recordingRetentionDays', event.target.value)}
+              />
+              <Field
+                label={frontDeskSettings.transcriptDays.label}
+                help={frontDeskSettings.transcriptDays.help}
+                name="transcriptRetentionDays"
+                type="number"
+                inputMode="numeric"
+                step={1}
+                min={LIMITS.transcriptRetentionDays.min}
+                max={LIMITS.transcriptRetentionDays.max}
+                value={draft.numbers.transcriptRetentionDays}
+                disabled={saving}
+                error={clientErrors.transcriptRetentionDays ?? serverFor('transcriptRetentionDays')}
+                onChange={(event) => setNumber('transcriptRetentionDays', event.target.value)}
+              />
+            </div>
+          </Panel>
+        </div>
+
+        <div className={styles.column}>
+          <Panel as="section" title={frontDeskSettings.sections.voiceAndFacts}>
+            <div className={styles.stack}>
+              <Listbox
+                label={frontDeskSettings.voice.label}
+                value={draft.voice}
+                options={voiceOptions}
+                disabled={saving}
+                error={serverFor('voice')}
+                className={styles.voice}
+                onChange={(value) => {
+                  const picked = voices?.find((voice) => voice.id === value);
+                  if (picked) update('voice', picked.id);
+                }}
+              />
+              {selectedVoice?.previewUrl ? (
+                <audio
+                  controls
+                  preload="none"
+                  src={selectedVoice.previewUrl}
+                  aria-label={frontDeskSettings.voice.preview(selectedVoice.label)}
+                  className={styles.preview}
+                />
+              ) : null}
+
+              <div className={styles.facts}>
+                <Field
+                  label={frontDeskSettings.facts.label}
+                  help={frontDeskSettings.facts.help}
+                  name="facts"
+                  multiline
+                  rows={8}
+                  value={draft.facts}
+                  disabled={saving}
+                  error={clientErrors.facts ?? serverFor('facts')}
+                  onChange={(event) => update('facts', event.target.value)}
+                />
+                <p className={styles.counter} data-over={draft.facts.length > FACTS_MAX ? 'true' : undefined} aria-live="polite">
+                  {frontDeskSettings.facts.counter(draft.facts.length, FACTS_MAX)}
+                </p>
               </div>
-            </section>
-          ) : null}
-          <Toggle
-            label={frontDeskSettings.texts.label}
-            checked={draft.texts}
-            disabled={saving}
-            onChange={(next) => update('texts', next)}
-          />
+            </div>
+          </Panel>
+
+          <OnCallList members={saved.onCall} order={order} onChange={setOrder} disabled={saving} />
         </div>
-      </Card>
+      </div>
 
-      <Card as="section" className={styles.section}>
-        <Select
-          label={frontDeskSettings.voice.label}
-          value={draft.voice}
-          options={voiceOptions}
-          disabled={saving}
-          error={serverFor('voice')}
-          className={styles.voice}
-          onChange={(value) => {
-            const picked = voices?.find((voice) => voice.id === value);
-            if (picked) update('voice', picked.id);
-          }}
-        />
-        {selectedVoice?.previewUrl ? (
-          <audio
-            controls
-            preload="none"
-            src={selectedVoice.previewUrl}
-            aria-label={frontDeskSettings.voice.preview(selectedVoice.label)}
-            className={styles.preview}
-          />
-        ) : null}
-
-        <Field
-          label={frontDeskSettings.facts.label}
-          help={frontDeskSettings.facts.help}
-          name="facts"
-          multiline
-          rows={6}
-          value={draft.facts}
-          disabled={saving}
-          error={clientErrors.facts ?? serverFor('facts')}
-          onChange={(event) => update('facts', event.target.value)}
-        />
-        <p className={styles.counter} aria-live="polite">
-          {frontDeskSettings.facts.counter(draft.facts.length, FACTS_MAX)}
-        </p>
-      </Card>
-
-      <Card as="section" className={styles.section}>
-        <div className={styles.switches}>
-          <Toggle
-            label={frontDeskSettings.mayMove.label}
-            checked={draft.canMove}
-            disabled={saving}
-            onChange={(next) => update('canMove', next)}
-          />
-          <Toggle
-            label={frontDeskSettings.mayCancel.label}
-            checked={draft.canCancel}
-            disabled={saving}
-            onChange={(next) => update('canCancel', next)}
-          />
-          <Toggle
-            label={frontDeskSettings.textBack.label}
-            checked={draft.missedCallTextBack}
-            disabled={saving}
-            onChange={(next) => update('missedCallTextBack', next)}
-          />
-        </div>
-
-        <div className={styles.numbers}>
-          <Field
-            label={frontDeskSettings.ringTeam.label}
-            help={frontDeskSettings.ringTeam.help}
-            name="ringTeamFirstSeconds"
-            type="number"
-            inputMode="numeric"
-            step={1}
-            min={LIMITS.ringTeamFirstSeconds.min}
-            max={LIMITS.ringTeamFirstSeconds.max}
-            value={draft.numbers.ringTeamFirstSeconds}
-            disabled={saving}
-            error={clientErrors.ringTeamFirstSeconds ?? serverFor('ringTeamFirstSeconds')}
-            onChange={(event) => setNumber('ringTeamFirstSeconds', event.target.value)}
-          />
-          <Field
-            label={frontDeskSettings.recordingDays.label}
-            help={frontDeskSettings.recordingDays.help}
-            name="recordingRetentionDays"
-            type="number"
-            inputMode="numeric"
-            step={1}
-            min={LIMITS.recordingRetentionDays.min}
-            max={LIMITS.recordingRetentionDays.max}
-            value={draft.numbers.recordingRetentionDays}
-            disabled={saving}
-            error={clientErrors.recordingRetentionDays ?? serverFor('recordingRetentionDays')}
-            onChange={(event) => setNumber('recordingRetentionDays', event.target.value)}
-          />
-          <Field
-            label={frontDeskSettings.transcriptDays.label}
-            help={frontDeskSettings.transcriptDays.help}
-            name="transcriptRetentionDays"
-            type="number"
-            inputMode="numeric"
-            step={1}
-            min={LIMITS.transcriptRetentionDays.min}
-            max={LIMITS.transcriptRetentionDays.max}
-            value={draft.numbers.transcriptRetentionDays}
-            disabled={saving}
-            error={clientErrors.transcriptRetentionDays ?? serverFor('transcriptRetentionDays')}
-            onChange={(event) => setNumber('transcriptRetentionDays', event.target.value)}
-          />
-          <Field
-            label={frontDeskSettings.maxCalls.label}
-            name="maxConcurrentAiCalls"
-            type="number"
-            inputMode="numeric"
-            step={1}
-            min={LIMITS.maxConcurrentAiCalls.min}
-            max={LIMITS.maxConcurrentAiCalls.max}
-            value={draft.numbers.maxConcurrentAiCalls}
-            disabled={saving}
-            error={clientErrors.maxConcurrentAiCalls ?? serverFor('maxConcurrentAiCalls')}
-            onChange={(event) => setNumber('maxConcurrentAiCalls', event.target.value)}
-          />
-        </div>
-      </Card>
-
-      <Card as="section" className={styles.section}>
-        <OnCallList members={saved.onCall} order={order} onChange={setOrder} disabled={saving} />
-      </Card>
-
-      <div className={styles.actions}>
+      <div className={styles.saveRow}>
         <Button type="submit" variant="primary" busy={saving}>
           {saving ? frontDeskSettings.saving : frontDeskSettings.save}
         </Button>
@@ -369,19 +389,31 @@ export function FrontDeskTab() {
   if (!query.data) {
     if (query.error) {
       return (
-        <EmptyState
-          title={frontDeskSettings.loadFailed}
+        <Banner
+          tone="danger"
           action={
-            <Button variant="primary" onClick={() => void query.refetch()}>
+            <Button variant="default" size="sm" onClick={() => void query.refetch()}>
               {errors.tryAgain}
             </Button>
           }
-        />
+        >
+          {frontDeskSettings.loadFailed}
+        </Banner>
       );
     }
     return (
-      <div aria-busy="true">
-        <Skeleton lines={5} />
+      <div className={styles.page} aria-busy="true" role="status" aria-label={frontDeskSettings.loading}>
+        <div className={styles.columns}>
+          <div className={styles.column}>
+            <Skeleton height="132px" />
+            <Skeleton height="156px" />
+            <Skeleton height="260px" />
+          </div>
+          <div className={styles.column}>
+            <Skeleton height="360px" />
+            <Skeleton height="200px" />
+          </div>
+        </div>
       </div>
     );
   }

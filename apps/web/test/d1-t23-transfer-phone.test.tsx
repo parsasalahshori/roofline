@@ -1,7 +1,8 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
+import { errors } from '../src/copy/errors.ts';
 import { frontDeskSettings } from '../src/copy/front-desk-settings.ts';
 import { TransferPhone } from '../src/features/front-desk/settings/TransferPhone.tsx';
 import { stubApi } from './helpers.tsx';
@@ -33,6 +34,40 @@ function renderWith(view: { e164: string | null; prefill: string | null; recordi
 const phoneField = () => screen.findByLabelText(copy.label);
 const ackBox = () => screen.findByRole('checkbox', { name: copy.ack });
 const saveButton = () => screen.findByRole('button', { name: copy.save });
+
+describe('Your transfer phone: the panel', () => {
+  it('is a panel named for what it is, with the help line over the field', async () => {
+    renderWith({ e164: null, prefill: null, recordingAcknowledgedAt: null });
+    const panel = await screen.findByRole('region', { name: copy.heading });
+    expect(within(panel).getByText(copy.help)).toBeInTheDocument();
+    expect(within(panel).getByLabelText(copy.label)).toBeInTheDocument();
+  });
+
+  it('shows its shape while it loads', async () => {
+    renderWith({ e164: null, prefill: null, recordingAcknowledgedAt: null });
+    expect(screen.getByRole('status', { name: copy.loading })).toBeInTheDocument();
+    await phoneField();
+  });
+
+  it('says it could not load the number, with Try again, and Try again loads it', async () => {
+    let failures = 1;
+    api = stubApi({
+      [GET]: () => (failures-- > 0 ? { status: 500, body: { error: 'x' } } : { body: { e164: null, prefill: null, recordingAcknowledgedAt: null } }),
+    });
+    const queryClient = createQueryClient();
+    queryClient.setDefaultOptions({ queries: { retry: false } });
+    render(
+      <Providers client={queryClient}>
+        <TransferPhone />
+      </Providers>,
+    );
+    const user = userEvent.setup();
+
+    expect(await screen.findByText(copy.loadFailed)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: errors.tryAgain }));
+    expect(await phoneField()).toBeInTheDocument();
+  });
+});
 
 describe('Your transfer phone: prefill', () => {
   it('shows the prefill when no transfer phone is saved yet', async () => {

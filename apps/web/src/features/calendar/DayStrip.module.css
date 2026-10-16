@@ -1,0 +1,52 @@
+/* Seven equal tiles in one row; they slide sideways rather than shrink below a thumb on a narrow phone. */
+.strip {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.strip::-webkit-scrollbar {
+  display: none;
+}
+
+.day {
+  flex: 1 0 44px;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 60px;
+  padding: 6px 0;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-3);
+  background: var(--surface);
+}
+
+.weekday {
+  color: var(--ink-3);
+  font: 500 var(--font-size-min)/1 var(--f-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.number {
+  font: 650 18px/1 var(--f-display);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Today wears the company's ring; the picked day is filled in ink, never in a status colour */
+.day[data-today="true"] {
+  border-color: var(--brand);
+  box-shadow: inset 0 0 0 1px var(--brand);
+}
+
+.day[data-picked="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--ink-inv);
+}
+
+.day[data-picked="true"] .weekday {
+  color: var(--ink-inv);
+  opacity: 0.8;
+}

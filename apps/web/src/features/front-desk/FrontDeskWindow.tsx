@@ -1,126 +1,71 @@
-import { useEffect, useState } from 'react';
 import { useParams } from 'react-router';
-import type { ConversationFilter } from '@roofline/shared';
-import { Button, EmptyState, Skeleton } from '@roofline/ui';
+import { EmptyState, Panel } from '@roofline/ui';
 import { useMe } from '../../api/hooks.ts';
 import { frontDeskInbox } from '../../copy/front-desk-inbox.ts';
-import { ConversationRow } from './ConversationRow.tsx';
-import { useMarkReadOnOpen } from './conversation-api.ts';
-import { flattenItems, useConversations, useDayStats } from './inbox-api.ts';
-import { CallDetail } from './lift/CallDetail.tsx';
-import { KpiTiles } from './lift/KpiTiles.tsx';
+import { WINDOW_COPY } from '../../copy/rail.ts';
+import { AppPage } from '../../shell/AppPage.tsx';
+import { useIsPhone } from '../../shell/useIsPhone.ts';
+import { useDemoMode } from '../demo/api.ts';
+import { useConversation, useMarkReadOnOpen } from './conversation-api.ts';
+import { CallDetail } from './detail/CallDetail.tsx';
+import { InboxList } from './InboxList.tsx';
+import { KpiStrip } from './KpiStrip.tsx';
+import { FrontDeskStatus, SimulateCallButton } from './PageHead.tsx';
 import styles from './FrontDeskWindow.module.css';
 
-const copy = frontDeskInbox.lift;
+const copy = frontDeskInbox;
 
-/** The tabs, in order, each asking the inbox for one filter. */
-const TABS = ['all', 'booked', 'messages', 'spam'] as const satisfies readonly ConversationFilter[];
+/** What the right pane says before a call is picked: the sentence, and the shape of what will fill it. */
+function PickCall() {
+  return (
+    <Panel as="section" padded className={styles.pick}>
+      <EmptyState title={copy.pickCall} body={copy.pickCallHint} />
+      <div className={styles.ghostBubbles} aria-hidden="true">
+        <span className={styles.ghostBubble} data-side="left" />
+        <span className={styles.ghostBubble} data-side="right" />
+        <span className={styles.ghostBubble} data-side="left" />
+      </div>
+    </Panel>
+  );
+}
 
 /**
- * Front Desk: today's numbers (owner and office) under the window's own title bar, over "Latest calls" on the left and the selected call on the right.
- * `/front-desk/:conversationId` selects a call; on a phone the list and the call take turns (the CSS keys off `data-detail`).
+ * Front Desk: the number it answers and today's numbers under the page's title, over the latest calls on the left and the one that
+ * was picked on the right. `/front-desk/:conversationId` picks a call. On a phone the list and the call take turns, and an open
+ * call is a page of its own with "Front Desk" as the way back.
  */
 export function FrontDeskWindow() {
   const { conversationId } = useParams();
   useMarkReadOnOpen(conversationId ?? '');
-  const [filter, setFilter] = useState<(typeof TABS)[number]>('all');
-  const conversations = useConversations(filter);
+  const open = conversationId !== undefined;
+  const phone = useIsPhone();
+  const demo = useDemoMode();
   // Today's numbers are for the owner and the office (the server refuses a rep), so a rep never asks.
   const role = useMe().data?.role;
   const showStats = role === 'owner' || role === 'office';
-  const items = flattenItems(conversations.data?.pages);
-  // "14 min ago" counts from a clock that ticks once a minute, so the rows age without a refetch.
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 60_000);
-    return () => clearInterval(timer);
-  }, []);
-
-  let list;
-  if (conversations.isPending) {
-    list = <Skeleton lines={3} height="56px" />;
-  } else if (items.length === 0 && conversations.isError) {
-    list = <p className={styles.note}>{frontDeskInbox.loadError}</p>;
-  } else if (items.length === 0) {
-    list = <EmptyState title={filter === 'all' ? frontDeskInbox.empty : frontDeskInbox.filterEmpty} />;
-  } else {
-    list = (
-      <>
-        <ul className={styles.list}>
-          {items.map((item) => (
-            <ConversationRow key={item.id} item={item} selected={item.id === conversationId} now={now} />
-          ))}
-        </ul>
-        {conversations.hasNextPage ? (
-          <Button
-            variant="ghost"
-            className={styles.more}
-            busy={conversations.isFetchingNextPage}
-            onClick={() => void conversations.fetchNextPage()}
-          >
-            {frontDeskInbox.loadMore}
-          </Button>
-        ) : null}
-      </>
-    );
-  }
+  // The trail ends in the person's name once the call has loaded (the same read the call itself makes)
+  const conversation = useConversation(conversationId);
+  const name = conversation.data === undefined ? copy.conversation : (conversation.data.customer?.name ?? copy.unknownCaller);
+  const crumbs = open ? [{ label: WINDOW_COPY['front-desk'].title, href: '/front-desk' }, { label: name }] : undefined;
 
   return (
-    <div className={styles.root} data-detail={conversationId === undefined ? 'closed' : 'open'}>
-      {showStats ? (
-        <div className={styles.tiles}>
-          <KpiTiles />
-        </div>
-      ) : null}
-      <div className={styles.split}>
-        <section className={styles.listPane} aria-label={copy.listTitle}>
-          <div className={styles.listHeader}>
-            <h3 className={styles.listTitle}>{copy.listTitle}</h3>
-            <span className={styles.listHint}>{copy.listHint}</span>
+    <AppPage
+      app="front-desk"
+      subtitle={<FrontDeskStatus />}
+      actions={demo ? <SimulateCallButton /> : undefined}
+      stats={showStats ? <KpiStrip /> : undefined}
+      crumbs={crumbs}
+      bare={phone && open}
+      layout={phone ? 'flow' : 'fill'}
+    >
+      <div className={styles.split} data-detail={open ? 'open' : 'closed'}>
+        {phone && open ? null : <InboxList conversationId={conversationId} />}
+        {phone && !open ? null : (
+          <div className={styles.detailPane}>
+            {open ? <CallDetail key={conversationId} conversationId={conversationId} /> : <PickCall />}
           </div>
-          <Tabs filter={filter} onChange={setFilter} />
-          {list}
-        </section>
-        <section className={styles.detailPane} aria-label={frontDeskInbox.lift.title}>
-          {conversationId === undefined ? null : (
-            <Button href="/front-desk" variant="ghost" className={styles.back}>
-              {copy.backToCalls}
-            </Button>
-          )}
-          {conversationId === undefined ? (
-            <p className={styles.pick}>{copy.pickCall}</p>
-          ) : (
-            <CallDetail key={conversationId} conversationId={conversationId} />
-          )}
-        </section>
+        )}
       </div>
-    </div>
+    </AppPage>
   );
-}
-
-/** All / Booked / Text-backs / Blocked. The counts come from today's numbers, so a rep (who never asks) sees the names alone. */
-function Tabs({ filter, onChange }: { filter: (typeof TABS)[number]; onChange: (next: (typeof TABS)[number]) => void }) {
-  const counts = useDayStatsCounts();
-  return (
-    <div role="group" aria-label={copy.tabsLabel} className={styles.tabs}>
-      {TABS.map((tab) => {
-        const selected = tab === filter;
-        const count = counts?.[tab];
-        return (
-          <Button key={tab} variant="ghost" size="md" className={styles.tab} aria-pressed={selected} onClick={() => onChange(tab)}>
-            {copy.tabs[tab]}
-            {count === undefined ? null : <span className={styles.count}>{count}</span>}
-          </Button>
-        );
-      })}
-    </div>
-  );
-}
-
-function useDayStatsCounts() {
-  const role = useMe().data?.role;
-  const allowed = role === 'owner' || role === 'office';
-  // A rep is refused by the server, so a rep never asks.
-  const { data } = useDayStats(allowed);
-  return allowed ? data?.tabCounts : undefined;
 }

@@ -4,19 +4,22 @@ vi.hoisted(() => {
 });
 
 import type { AppointmentView } from '@roofline/shared';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CompanyBody, TeamBody } from '../src/api/types.ts';
 import { AgendaView } from '../src/features/calendar/AgendaView.tsx';
 import { CalendarWindow } from '../src/features/calendar/CalendarWindow.tsx';
+import { colorFor, colorOfAppointment, kindColor, PERSON_COLORS } from '../src/features/calendar/colors.ts';
 import type { AppointmentsBody, BusyBlock } from '../src/features/calendar/types.ts';
 import { calendar } from '../src/copy/calendar.ts';
 import {
   addZonedDays,
   dateKeyToInstant,
   formatDayLabel,
+  formatDayNumber,
   formatRangeLabel,
   formatTime,
+  formatWeekday,
   minutesIntoDay,
   startOfZonedDay,
   weekStart,
@@ -92,6 +95,14 @@ describe('time', () => {
     expect(formatRangeLabel(from, to, CHICAGO)).toBe('Nov 2 - Nov 8, 2026');
   });
 
+  it('formatWeekday and formatDayNumber read the day head of the grid in the zone', () => {
+    // 04:30Z is still the evening of Sunday Nov 1 in Chicago
+    expect(formatWeekday(new Date('2026-11-02T04:30:00Z'), CHICAGO)).toBe('Sun');
+    expect(formatDayNumber(new Date('2026-11-02T04:30:00Z'), CHICAGO)).toBe('1');
+    expect(formatWeekday(new Date('2026-11-02T15:00:00Z'), CHICAGO)).toBe('Mon');
+    expect(formatDayNumber(new Date('2026-11-02T15:00:00Z'), CHICAGO)).toBe('2');
+  });
+
   it('zoneName gives the long name of the zone', () => {
     expect(zoneName(CHICAGO)).toBe('Central Time');
   });
@@ -150,7 +161,13 @@ function makeAppointment(overrides: Partial<AppointmentView> & { id: string }): 
   };
 }
 
-type CalendarData = { appointments?: AppointmentView[]; busy?: BusyBlock[]; account?: typeof ACCOUNT };
+type CalendarData = {
+  appointments?: AppointmentView[];
+  busy?: BusyBlock[];
+  account?: typeof ACCOUNT;
+  /** How many of the first appointment reads answer with a server error. */
+  failReads?: number;
+};
 
 /** matchMedia that answers the phone query with `phone` and everything else with no match. */
 function stubViewport(phone: boolean) {
@@ -170,8 +187,9 @@ function stubViewport(phone: boolean) {
  * Stubs the calendar's reads. Every GET /api/appointments?… answers the same body; the tests read
  * the query string from `api.calls` instead of matching it here.
  */
-function stubCalendar({ appointments = [], busy = [], account = ACCOUNT }: CalendarData = {}) {
+function stubCalendar({ appointments = [], busy = [], account = ACCOUNT, failReads = 0 }: CalendarData = {}) {
   const body: AppointmentsBody = { appointments, busy };
+  let failures = failReads;
   const routes: Routes = {
     'GET /api/auth/me': () => ({ body: account }),
     'GET /api/company': () => ({ body: COMPANY_BODY }),
@@ -180,7 +198,9 @@ function stubCalendar({ appointments = [], busy = [], account = ACCOUNT }: Calen
   };
   const withAppointments = new Proxy(routes, {
     get(target, key, receiver) {
-      if (typeof key === 'string' && key.startsWith('GET /api/appointments?')) return () => ({ body });
+      if (typeof key === 'string' && key.startsWith('GET /api/appointments?')) {
+        return () => (failures-- > 0 ? { status: 500, body: { error: 'The calendar is down.' } } : { body });
+      }
       return Reflect.get(target, key, receiver);
     },
   });
@@ -320,7 +340,7 @@ describe('calendar window', () => {
     await waitFor(() => expect(params().get('date')).toBe('2026-11-09'));
     await waitFor(() => expect(appointmentReads().at(-1)?.searchParams.get('from')).toBe('2026-11-09T06:00:00.000Z'));
 
-    await user.click(await screen.findByRole('button', { name: calendar.viewDay }));
+    await user.click(await screen.findByRole('radio', { name: calendar.viewDay }));
     await waitFor(() => expect(params().get('view')).toBe('day'));
     await waitFor(() => {
       const read = appointmentReads().at(-1);
@@ -345,8 +365,12 @@ describe('calendar window', () => {
   it('people picker updates the request', async () => {
     const { user } = renderCalendar('/calendar?view=week&date=2026-11-02');
     await waitFor(() => expect(appointmentReads().at(-1)?.searchParams.get('userIds')).toBe('u1,u2'));
-    await user.click(await screen.findByRole('checkbox', { name: 'Jo Crew' }));
+    const jo = await screen.findByRole('button', { name: 'Jo Crew' });
+    expect(jo).toHaveAttribute('aria-pressed', 'true');
+    await user.click(jo);
     await waitFor(() => expect(appointmentReads().at(-1)?.searchParams.get('userIds')).toBe('u1'));
+    expect(screen.getByRole('button', { name: 'Jo Crew' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Sam Roofer' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('week label names the seven days shown', async () => {
@@ -359,17 +383,17 @@ describe('calendar window', () => {
       appointments: [makeAppointment({ id: 'a1' })],
     });
     expect(await screen.findByTestId('appt-a1')).toBeInTheDocument();
-    await user.click(await screen.findByRole('checkbox', { name: 'Jo Crew' }));
+    await user.click(await screen.findByRole('button', { name: 'Jo Crew' }));
     await waitFor(() => expect(appointmentReads().at(-1)?.searchParams.get('userIds')).toBe('u1'));
     const readsBefore = appointmentReads().length;
-    await user.click(await screen.findByRole('checkbox', { name: 'Sam Roofer' }));
+    await user.click(await screen.findByRole('button', { name: 'Sam Roofer' }));
     await waitFor(() => expect(screen.queryByTestId('appt-a1')).toBeNull());
     // Nobody picked: no request may go out without userIds, which the server reads as everyone
     expect(appointmentReads().slice(readsBefore).every((read) => read.searchParams.get('userIds') !== null)).toBe(true);
   });
 
-  it('agenda on phone', async () => {
-    const { user } = renderCalendar('/calendar?date=2026-11-02', {
+  it('the list on a phone loads another fortnight on Load more', async () => {
+    const { user } = renderCalendar('/calendar?view=list&date=2026-11-02', {
       appointments: [makeAppointment({ id: 'a1' })],
     }, { phone: true });
     expect(await screen.findByTestId('agenda-item-a1')).toBeInTheDocument();
@@ -400,7 +424,7 @@ describe('calendar window', () => {
       account: { ...ACCOUNT, role: 'rep' },
     });
     expect(await screen.findByTestId('appt-a1')).toBeInTheDocument();
-    expect(screen.queryByRole('checkbox', { name: 'Jo Crew' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Jo Crew' })).toBeNull();
     expect(screen.queryByText(calendar.people)).toBeNull();
   });
 
@@ -420,6 +444,272 @@ describe('calendar window', () => {
     expect(screen.queryByTestId('appt-a3')).toBeNull();
     await user.click(screen.getByRole('switch', { name: calendar.showCanceled }));
     expect(await screen.findByTestId('appt-a3')).toBeInTheDocument();
+  });
+});
+
+describe('calendar window, as redesigned', () => {
+  it('the controls are a radio group for the view, ghost buttons for the steps and a primary New appointment', async () => {
+    renderCalendar('/calendar?view=week&date=2026-11-02');
+    const views = await screen.findByRole('radiogroup', { name: calendar.viewLabel });
+    expect(within(views).getAllByRole('radio').map((radio) => radio.textContent)).toEqual([calendar.viewDay, calendar.viewWeek, calendar.viewList]);
+    expect(within(views).getByRole('radio', { name: calendar.viewWeek })).toBeChecked();
+    for (const name of [calendar.today, calendar.previous, calendar.next]) {
+      expect(screen.getByRole('button', { name })).toBeInTheDocument();
+    }
+    expect(screen.getByRole('link', { name: calendar.newAppointment })).toHaveAttribute('href', '/calendar/new');
+  });
+
+  it('the people are chips with a colour dot, grouped under a name', async () => {
+    renderCalendar('/calendar?view=week&date=2026-11-02');
+    const group = await screen.findByRole('group', { name: calendar.peopleLabel });
+    const chips = within(group).getAllByRole('button');
+    expect(chips.map((chip) => chip.textContent)).toEqual(['Sam Roofer', 'Jo Crew']);
+    expect(chips.every((chip) => chip.getAttribute('aria-pressed') === 'true')).toBe(true);
+    expect(chips[0]?.querySelector('span[style]')?.getAttribute('style')).toContain(PERSON_COLORS[0]);
+    expect(chips[1]?.querySelector('span[style]')?.getAttribute('style')).toContain(PERSON_COLORS[1]);
+  });
+
+  it('a block takes its edge from the person, tells its whole text on hover and is one line when it is 30 minutes', async () => {
+    renderCalendar('/calendar?view=week&date=2026-11-02', {
+      appointments: [
+        makeAppointment({ id: 'a1', title: 'Roof inspection for the Maple Ridge HOA clubhouse', customerName: 'Maple Ridge HOA' }),
+        makeAppointment({
+          id: 'a2',
+          title: 'Quick look',
+          assigned: { userId: 'u2', name: 'Jo Crew' },
+          startsAt: '2026-11-03T15:00:00.000Z',
+          endsAt: '2026-11-03T15:30:00.000Z',
+        }),
+        makeAppointment({ id: 'a3', kind: 'install', title: 'Tear-off', assigned: null, startsAt: '2026-11-04T15:00:00.000Z', endsAt: '2026-11-04T17:00:00.000Z' }),
+      ],
+    });
+    const tall = await screen.findByTestId('appt-a1');
+    expect(tall).toHaveAttribute('data-size', 'tall');
+    expect(tall).toHaveAttribute('title', 'Roof inspection for the Maple Ridge HOA clubhouse · Maple Ridge HOA · 9:00 AM - 10:00 AM · Sam Roofer');
+    expect(tall.style.getPropertyValue('--person')).toBe(colorFor(0));
+    const short = screen.getByTestId('appt-a2');
+    expect(short).toHaveAttribute('data-size', 'short');
+    expect(short).toHaveAttribute('data-row-span', '1');
+    expect(short.style.getPropertyValue('--person')).toBe(colorFor(1));
+    // Nobody shown is on it, so its kind gives the colour
+    expect(screen.getByTestId('appt-a3').style.getPropertyValue('--person')).toBe(kindColor('install'));
+  });
+
+  it('a canceled block is struck and says so aloud once it is shown', async () => {
+    const { user } = renderCalendar('/calendar?view=week&date=2026-11-02', {
+      appointments: [makeAppointment({ id: 'a3', status: 'canceled', startsAt: '2026-11-03T15:00:00.000Z', endsAt: '2026-11-03T16:00:00.000Z' })],
+    });
+    await user.click(await screen.findByRole('switch', { name: calendar.showCanceled }));
+    const block = await screen.findByTestId('appt-a3');
+    expect(block).toHaveAttribute('data-status', 'canceled');
+    expect(within(block).getByText(calendar.status.canceled)).toBeInTheDocument();
+  });
+
+  it('the line for the time now is in the column of today, and the head of that day is marked', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-04T16:30:00.000Z'));
+    try {
+      renderCalendar('/calendar?view=week&date=2026-11-02');
+      const line = await screen.findByTestId('now-line');
+      expect(line.closest('[data-day]')).toHaveAttribute('data-day', '2026-11-04');
+      const marked = Array.from(document.querySelectorAll('[data-testid="time-grid"] [data-today="true"]'));
+      expect(marked.length).toBeGreaterThan(0);
+      expect(marked.every((element) => element.getAttribute('data-day') === '2026-11-04')).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('no line for now when today is not in the week shown', async () => {
+    renderCalendar('/calendar?view=week&date=2020-03-02');
+    await screen.findByTestId('time-grid');
+    expect(screen.queryByTestId('now-line')).toBeNull();
+  });
+
+  it('the grid has the hours down its side, and a row for all-day visits only when a day shown has one', async () => {
+    renderCalendar('/calendar?view=day&date=2026-11-02');
+    const grid = await screen.findByTestId('time-grid');
+    expect(within(grid).getByText('9:00 AM')).toBeInTheDocument();
+    expect(within(grid).getByText('1:00 PM')).toBeInTheDocument();
+    expect(new Set(Array.from(grid.querySelectorAll('[data-day]')).map((cell) => cell.getAttribute('data-day')))).toEqual(new Set(['2026-11-02']));
+    // Nothing all-day: no row for it
+    expect(within(grid).queryByText(calendar.allDay)).toBeNull();
+  });
+
+  it('an all-day visit brings the all-day row, in the column of its day', async () => {
+    renderCalendar('/calendar?view=week&date=2026-11-02', {
+      appointments: [
+        makeAppointment({ id: 'a2', kind: 'install', title: 'Roof install', allDay: true, startsAt: '2026-11-02T06:00:00.000Z', endsAt: '2026-11-03T06:00:00.000Z' }),
+      ],
+    });
+    const grid = await screen.findByTestId('time-grid');
+    expect(await within(grid).findByText(calendar.allDay)).toBeInTheDocument();
+    expect(within(grid).getByTestId('allday-a2').closest('[data-day]')).toHaveAttribute('data-day', '2026-11-02');
+  });
+
+  it('a busy block that lasts all day brings the all-day row too', async () => {
+    renderCalendar('/calendar?view=week&date=2026-11-02', {
+      busy: [{ userId: 'u1', start: '2026-11-03T06:00:00.000Z', end: '2026-11-04T06:00:00.000Z', allDay: true }],
+    });
+    const grid = await screen.findByTestId('time-grid');
+    expect(await within(grid).findByText(calendar.allDay)).toBeInTheDocument();
+  });
+
+  it('asks for appointments only once the team is known, so no read goes out without people', async () => {
+    renderCalendar('/calendar?view=week&date=2026-11-02');
+    await screen.findByTestId('time-grid');
+    expect(appointmentReads().length).toBeGreaterThan(0);
+    expect(appointmentReads().every((read) => read.searchParams.get('userIds') === 'u1,u2')).toBe(true);
+  });
+
+  it('shows the shape of the grid while the page loads, then the grid', async () => {
+    renderCalendar('/calendar?view=week&date=2026-11-02');
+    expect(screen.getByRole('status', { name: calendar.gridLabel })).toBeInTheDocument();
+    expect(await screen.findByTestId('time-grid')).toBeInTheDocument();
+    expect(screen.queryByRole('status', { name: calendar.gridLabel })).toBeNull();
+  });
+
+  it('a failed read says so inline and Try again reads again', async () => {
+    const { user } = renderCalendar('/calendar?view=week&date=2026-11-02', { failReads: 1, appointments: [makeAppointment({ id: 'a1' })] });
+    const alert = (await screen.findByText(calendar.loadError)).closest<HTMLElement>('[role="alert"]');
+    expect(alert).not.toBeNull();
+    await user.click(within(alert!).getByRole('button', { name: calendar.tryAgain }));
+    expect(await screen.findByTestId('appt-a1')).toBeInTheDocument();
+    expect(screen.queryByText(calendar.loadError)).toBeNull();
+  });
+
+  it('a phone opens on the day, with the days of its week in a strip a thumb can reach', async () => {
+    const { router, user } = renderCalendar(
+      '/calendar?date=2026-11-04',
+      { appointments: [makeAppointment({ id: 'a1', startsAt: '2026-11-04T15:00:00.000Z', endsAt: '2026-11-04T16:00:00.000Z' })] },
+      { phone: true },
+    );
+    const strip = await screen.findByRole('group', { name: calendar.dayStripLabel });
+    const days = within(strip).getAllByRole('button');
+    expect(days.map((day) => day.getAttribute('aria-label'))).toEqual([
+      'Mon, Nov 2',
+      'Tue, Nov 3',
+      'Wed, Nov 4',
+      'Thu, Nov 5',
+      'Fri, Nov 6',
+      'Sat, Nov 7',
+      'Sun, Nov 8',
+    ]);
+    expect(days[2]).toHaveAttribute('aria-pressed', 'true');
+    expect(days[0]).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('radio', { name: calendar.viewDay })).toBeChecked();
+    expect(await screen.findByTestId('appt-a1')).toBeInTheDocument();
+
+    await user.click(days[4]!);
+    await waitFor(() => expect(new URL(where(router), 'http://localhost').searchParams.get('date')).toBe('2026-11-06'));
+    expect(screen.getByRole('button', { name: 'Fri, Nov 6' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('the strip is only for the day view on a phone', async () => {
+    renderCalendar('/calendar?view=week&date=2026-11-04');
+    await screen.findByTestId('time-grid');
+    expect(screen.queryByRole('group', { name: calendar.dayStripLabel })).toBeNull();
+  });
+
+  it('the list is a panel for each day with a table of its visits, and a tag for one that is not simply scheduled', async () => {
+    const { router, user } = renderCalendar('/calendar?view=list&date=2026-11-02', {
+      appointments: [
+        makeAppointment({ id: 'a1', title: 'Roof check', addressLine: '412 Maple Ridge Dr' }),
+        makeAppointment({ id: 'a2', title: 'Gutter walk', status: 'completed', startsAt: '2026-11-03T15:00:00.000Z', endsAt: '2026-11-03T16:00:00.000Z', assigned: null, customerName: null }),
+      ],
+    });
+    const first = await screen.findByTestId('agenda-day-2026-11-02');
+    expect(within(first).getByRole('heading', { name: 'Mon, Nov 2' })).toBeInTheDocument();
+    expect(within(first).getByText(calendar.count(1))).toBeInTheDocument();
+    for (const name of Object.values(calendar.columns)) {
+      expect(within(first).getByRole('columnheader', { name })).toBeInTheDocument();
+    }
+    expect(within(first).getByText('9:00 AM')).toBeInTheDocument();
+    expect(within(first).getByText('412 Maple Ridge Dr')).toBeInTheDocument();
+    expect(within(first).getByText('Sam Roofer')).toBeInTheDocument();
+    // A scheduled visit has no status tag
+    expect(within(first).queryByText(calendar.status.scheduled)).toBeNull();
+
+    const second = screen.getByTestId('agenda-day-2026-11-03');
+    expect(within(second).getByText(calendar.status.completed)).toBeInTheDocument();
+    expect(within(second).getByText(calendar.unassigned)).toBeInTheDocument();
+    expect(within(second).getByText(calendar.noCustomer)).toBeInTheDocument();
+
+    // The row opens it, and so does its name; each once
+    await user.click(within(first).getByText('9:00 AM'));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/calendar/appointments/a1'));
+  });
+
+  it('the list has a status column only when a visit shown is not simply scheduled, and then in every day', async () => {
+    renderCalendar('/calendar?view=list&date=2026-11-02', { appointments: [makeAppointment({ id: 'a1' })] });
+    const only = await screen.findByTestId('agenda-day-2026-11-02');
+    expect(within(only).queryByRole('columnheader', { name: calendar.columns.status })).toBeNull();
+    cleanup();
+
+    renderCalendar('/calendar?view=list&date=2026-11-02', {
+      appointments: [
+        makeAppointment({ id: 'a1' }),
+        makeAppointment({ id: 'a2', status: 'no_show', startsAt: '2026-11-03T15:00:00.000Z', endsAt: '2026-11-03T16:00:00.000Z' }),
+      ],
+    });
+    for (const day of ['2026-11-02', '2026-11-03']) {
+      const panel = await screen.findByTestId(`agenda-day-${day}`);
+      expect(within(panel).getByRole('columnheader', { name: calendar.columns.status })).toBeInTheDocument();
+    }
+    expect(screen.getByText(calendar.status.no_show)).toBeInTheDocument();
+  });
+
+  it('on a phone the list is a row for each visit, with its time, where and who, and no table', async () => {
+    renderCalendar(
+      '/calendar?view=list&date=2026-11-02',
+      { appointments: [makeAppointment({ id: 'a1', title: 'Roof check', addressLine: '412 Maple Ridge Dr', status: 'completed' })] },
+      { phone: true },
+    );
+    const day = await screen.findByTestId('agenda-day-2026-11-02');
+    expect(within(day).queryByRole('table')).toBeNull();
+    const row = within(day).getByRole('listitem');
+    expect(row).toHaveTextContent('9:00 AM');
+    expect(row).toHaveTextContent('Maple Ridge · 412 Maple Ridge Dr');
+    expect(within(row).getByText('Sam Roofer')).toBeInTheDocument();
+    expect(within(row).getByText(calendar.status.completed)).toBeInTheDocument();
+    expect(within(row).getByTestId('agenda-item-a1')).toHaveTextContent('Roof check');
+  });
+
+  it('the list marks the panel of today', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-02T16:30:00.000Z'));
+    try {
+      renderCalendar('/calendar?view=list&date=2026-11-02', { appointments: [makeAppointment({ id: 'a1' })] });
+      const today = await screen.findByTestId('agenda-day-2026-11-02');
+      expect(within(today).getByText(calendar.todayTag)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('nothing scheduled shows the sentence, the next action and the shape of the rows', async () => {
+    renderCalendar('/calendar?view=list&date=2026-11-02');
+    expect(await screen.findByText(calendar.empty)).toBeInTheDocument();
+    expect(screen.getByText(calendar.emptyHint)).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: calendar.newAppointment })).toHaveLength(2);
+  });
+});
+
+describe('colours of the calendar', () => {
+  it('colorFor gives each person in team order a palette colour and starts again after the eighth', () => {
+    expect(PERSON_COLORS).toHaveLength(8);
+    expect(colorFor(0)).toBe('var(--st-lead)');
+    expect(colorFor(7)).toBe('var(--hail-5)');
+    expect(colorFor(8)).toBe(colorFor(0));
+  });
+
+  it('an appointment takes the colour of its person, else the colour of its kind, and never red', () => {
+    const sam = { userId: 'u1', name: 'Sam Roofer', color: colorFor(0) };
+    expect(colorOfAppointment(makeAppointment({ id: 'x' }), [sam])).toBe(colorFor(0));
+    expect(colorOfAppointment(makeAppointment({ id: 'y', assigned: { userId: 'u9', name: 'Gone' } }), [sam])).toBe(kindColor('inspection'));
+    for (const kind of ['inspection', 'install', 'adjuster', 'other'] as const) {
+      expect(kindColor(kind)).not.toMatch(/bad/);
+    }
   });
 });
 

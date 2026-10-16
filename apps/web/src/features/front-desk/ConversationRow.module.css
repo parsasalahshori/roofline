@@ -1,26 +1,28 @@
-/* One row of "Latest calls". Flex children get min-width: 0 so long text ellipsizes at 375px. */
+/* One row of "Latest calls". Flex children get min-width: 0 so a long name ellipsizes and the tags wrap instead of pushing the row wide. */
 .item {
-  display: flex;
-  flex: none;
+  display: block;
   min-width: 0;
   border-bottom: 1px solid var(--line);
   list-style: none;
 }
 
-/* The whole row is the link: a 71px target with a visible focus ring; the picked row is blue with a bar on its left edge */
+.item:last-child {
+  border-bottom: 0;
+}
+
+/* The whole row is the link: at least 72px tall (a thumb target), the picked row tinted with a 3px brand edge like the rail's current item */
 .link {
   position: relative;
   display: flex;
-  flex: 1;
   align-items: center;
   gap: 12px;
   min-width: 0;
-  min-height: 71px;
+  min-height: 72px;
   padding: 12px 16px;
-  background: transparent;
   color: var(--ink);
   font-family: var(--f-ui);
   text-decoration: none;
+  transition: background var(--t-fast) var(--ease);
 }
 
 .link:hover {
@@ -28,61 +30,40 @@
 }
 
 .link[data-selected="true"] {
-  background: var(--info-tint);
+  background: var(--brand-tint);
 }
 
 .link[data-selected="true"]::before {
   position: absolute;
   inset: 0 auto 0 0;
   width: 3px;
-  background: var(--info);
+  background: var(--brand);
   content: "";
 }
 
 .link:focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
 
-.avatar {
+/* A caller nobody knows (or a number): a glyph on a sunken circle, where a person would have initials */
+.glyph {
   display: inline-flex;
+  flex: none;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   background: var(--sunken);
   color: var(--ink-2);
-  font-size: 13.7px;
-  font-weight: 600;
-}
-
-.avatar[data-unknown="true"] {
-  background: var(--bad-tint);
-  color: var(--bad-text);
-}
-
-.avatarIcon {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-/* a text thread has no initials, only a speech bubble on the pale chip color */
-.avatar:not([data-unknown]):has(.avatarIcon) {
-  background: var(--sunken);
 }
 
 .body {
   display: flex;
-  flex: 1;
+  flex: 1 1 auto;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -96,15 +77,20 @@
 .name {
   min-width: 0;
   overflow: hidden;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+  line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13.5px;
-  font-weight: 600;
-  line-height: 19.5px;
+}
+
+/* A thread with something unread reads heavier */
+.name[data-unread="true"] {
+  font-weight: 700;
 }
 
 .time {
-  flex-shrink: 0;
+  flex: none;
   margin-left: auto;
   color: var(--ink-3);
   font-size: 13px;
@@ -116,34 +102,51 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
-  color: var(--ink-3);
-  font-size: 13px;
 }
 
-.chips {
+.tags {
   display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
   min-width: 0;
 }
 
+/* How long it ran, in mono, with the channel's glyph */
 .duration {
-  flex-shrink: 0;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
   margin-left: auto;
+  color: var(--ink-3);
+  font: 500 13px/1 var(--f-mono);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.urgent {
-  display: inline-flex;
-  align-items: center;
-  min-height: 22px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: var(--bad);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
+/* The dot of a live call: green (the assistant is answering), still for people who ask for less motion */
+.liveDot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ok);
+  animation: live-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  50% {
+    transform: scale(1.5);
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .liveDot {
+    animation: none;
+  }
 }
 
 /* Read out by screen readers, not drawn */
@@ -154,40 +157,4 @@
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
-}
-
-.live {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--ink);
-  font-weight: 600;
-}
-
-/* A dot that pulses while a call is live; still for people who ask for less motion */
-.dot {
-  width: 8px;
-  height: 8px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--bad);
-  animation: live-pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes live-pulse {
-  0%,
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  50% {
-    transform: scale(1.6);
-    opacity: 0.4;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .dot {
-    animation: none;
-  }
 }

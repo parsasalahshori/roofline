@@ -1,4 +1,7 @@
-/* The agenda: one heading per day, then its rows. Rows are at least 40px tall, the phone touch target. */
+/*
+ * The list: a panel for each day, a table in it. The tables share their column widths (fixed layout), so the days line up
+ * as you scroll down them. On a phone each visit is a row of its own, so nothing runs past the screen.
+ */
 .agenda {
   display: flex;
   flex-direction: column;
@@ -6,79 +9,196 @@
   min-width: 0;
 }
 
-.day {
-  min-width: 0;
+.agenda .table {
+  table-layout: fixed;
 }
 
-.heading {
-  margin: 0 0 6px;
-  font-size: var(--font-size-body);
-  font-weight: 600;
-  color: var(--ink);
+.colTime {
+  width: 112px;
 }
 
-.list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  border: 1px solid var(--line);
-  border-radius: var(--r-3);
-  background: var(--surface);
+.colCustomer {
+  width: 19%;
 }
 
-.item + .item {
-  border-top: 1px solid var(--line);
+.colAddress {
+  width: 22%;
 }
 
-.row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 40px;
-  justify-content: flex-start;
-  text-align: left;
+.colPerson {
+  width: 17%;
+}
+
+.colStatus {
+  width: 128px;
 }
 
 .time {
-  flex: none;
-  min-width: 72px;
-  font-size: var(--font-size-body);
+  color: var(--ink-2);
+  font-family: var(--f-mono);
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
-  color: var(--ink-3);
+  white-space: nowrap;
 }
 
-.dot {
-  flex: none;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-}
-
-.text {
-  display: flex;
-  flex-direction: column;
+.visit {
   min-width: 0;
 }
 
-.title,
-.customer {
+/* Words that are too long for their column are cut, and the visit's title says them in full */
+.cut {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.title {
-  font-size: var(--font-size-body);
-  color: var(--ink);
+/* The visit's name is the row's button: text-weight, left-aligned, as wide as its words */
+.open {
+  min-height: 28px;
+  max-width: 100%;
+  justify-content: flex-start;
+  padding: 0 4px;
+  margin-left: -4px;
+  font-size: 13px;
+  font-weight: 650;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.customer {
-  font-size: var(--font-size-min);
+.open[data-status="canceled"] {
+  text-decoration: line-through;
+}
+
+.row {
+  cursor: pointer;
+}
+
+.person {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.nobody {
   color: var(--ink-3);
+}
+
+.address {
+  color: var(--ink-2);
 }
 
 .more {
   display: flex;
   justify-content: center;
+}
+
+/* A phone's day: one row for each visit, the time at the left in mono */
+.pList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pRow {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  column-gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.pRow:last-child {
+  border-bottom: 0;
+}
+
+.pTime {
+  padding-top: 6px;
+  color: var(--ink-2);
+  font: 500 13px/1.3 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pBody .open {
+  min-height: 32px;
+  white-space: normal;
+  text-align: left;
+}
+
+.pMeta {
+  padding-left: 0;
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
+  overflow-wrap: anywhere;
+}
+
+.pFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin-top: 2px;
+  font-size: var(--font-size-min);
+}
+
+/* Nothing scheduled: the sentence, the next action and the shape of the rows that will be here */
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px 16px;
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+}
+
+.ghosts {
+  display: flex;
+  flex-direction: column;
+  max-width: 560px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.ghost {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.ghost:last-child {
+  border-bottom: 0;
+}
+
+.ghostTime {
+  width: 64px;
+  height: 12px;
+  border-radius: var(--r-1);
+  background: var(--sunken);
+}
+
+.ghostLine {
+  flex: 1 1 auto;
+  height: 12px;
+  border-radius: var(--r-1);
+  background: var(--sunken);
 }

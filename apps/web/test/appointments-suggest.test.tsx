@@ -4,7 +4,7 @@ vi.hoisted(() => {
 });
 
 import type { AppointmentView } from '@roofline/shared';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CompanyBody, TeamBody } from '../src/api/types.ts';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { appointments } from '../src/copy/appointments.ts';
+import { shell } from '../src/copy/shell.ts';
 import { AppointmentWindow } from '../src/features/appointments/AppointmentWindow.tsx';
 import { ConflictWarnings } from '../src/features/appointments/ConflictWarnings.tsx';
 import { SuggestedTimes } from '../src/features/appointments/SuggestedTimes.tsx';
@@ -194,6 +195,27 @@ describe('SuggestedTimes', () => {
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 
+  it('marks the suggestion that matches the form as picked, and only that one', async () => {
+    stubSheet();
+    renderRoute(
+      <SuggestedTimes kind="inspection" userId="" propertyId="" zone={CHICAGO} onPick={vi.fn()} pickedStart={SLOTS[1]!.start} />,
+      '*',
+      '/',
+    );
+    const buttons = await within(await suggestionList()).findAllByRole('button');
+    expect(buttons.map((button) => button.getAttribute('aria-pressed'))).toEqual(['false', 'true', 'false', 'false', 'false']);
+  });
+
+  it('a failed look-up says so inline and Try again looks again', async () => {
+    stubSheet({ status: 500, body: { error: 'x' } });
+    const { user } = renderRoute(<SuggestedTimes kind="inspection" userId="" propertyId="" zone={CHICAGO} onPick={vi.fn()} />, '*', '/');
+    expect(await screen.findByText(appointments.suggestedError)).toBeInTheDocument();
+    const reads = () => api.calls.filter((call) => call.url.startsWith('/api/calendar/availability?')).length;
+    expect(reads()).toBe(1);
+    await user.click(screen.getByRole('button', { name: appointments.tryAgain }));
+    await waitFor(() => expect(reads()).toBe(2));
+  });
+
   it('AppointmentWindow on /calendar/new renders the form', async () => {
     stubSheet();
     renderRoute(<AppointmentWindow />, '/calendar/new', '/calendar/new');
@@ -216,5 +238,67 @@ describe('SuggestedTimes', () => {
 
     expect(await screen.findByText(appointments.kindLabel)).toBeInTheDocument();
     expect(screen.queryByText(appointments.detailTime)).toBeNull();
+  });
+
+  it('the trail names the calendar, then the appointment, on the new form and on an appointment', async () => {
+    stubSheet(
+      { slots: SLOTS },
+      {
+        'GET /api/appointments/a1': () => ({ body: makeAppointment({ id: 'a1' }) }),
+        'GET /api/calendar/connection': () => ({ body: { provider: null } }),
+      },
+    );
+    renderRoute(<AppointmentWindow />, '/calendar/new', '/calendar/new');
+    const trail = await screen.findByRole('navigation', { name: shell.crumbsLabel });
+    expect(within(trail).getByRole('link', { name: 'Calendar' })).toHaveAttribute('href', '/calendar');
+    expect(within(trail).getByText(appointments.newTitle)).toBeInTheDocument();
+    cleanup();
+
+    renderRoute(<AppointmentWindow />, '/calendar/appointments/:appointmentId', '/calendar/appointments/a1');
+    const second = await screen.findByRole('navigation', { name: shell.crumbsLabel });
+    expect(within(second).getByRole('link', { name: 'Calendar' })).toHaveAttribute('href', '/calendar');
+    expect(await within(second).findByText(makeAppointment({ id: 'a1' }).title)).toBeInTheDocument();
+  });
+
+  it('Cancel in the reschedule form goes back to the appointment', async () => {
+    stubSheet(
+      { slots: SLOTS },
+      {
+        'GET /api/appointments/a1': () => ({ body: makeAppointment({ id: 'a1' }) }),
+        'GET /api/calendar/connection': () => ({ body: { provider: null } }),
+      },
+    );
+    const { user } = renderRoute(<AppointmentWindow />, '/calendar/appointments/:appointmentId', '/calendar/appointments/a1');
+    await user.click(await screen.findByRole('button', { name: appointments.reschedule }));
+    await user.click(await screen.findByRole('button', { name: appointments.leaveForm }));
+    expect(await screen.findByText(appointments.detailTime)).toBeInTheDocument();
+  });
+
+  it('shows the shape of the appointment while it loads', async () => {
+    stubSheet(
+      { slots: SLOTS },
+      {
+        'GET /api/appointments/a1': () => ({ body: makeAppointment({ id: 'a1' }) }),
+        'GET /api/calendar/connection': () => ({ body: { provider: null } }),
+      },
+    );
+    renderRoute(<AppointmentWindow />, '/calendar/appointments/:appointmentId', '/calendar/appointments/a1');
+    expect(screen.getByRole('status', { name: appointments.loading })).toBeInTheDocument();
+    expect(await screen.findByText(appointments.detailTime)).toBeInTheDocument();
+  });
+
+  it('an appointment that cannot be opened says so with Try again, and Try again opens it', async () => {
+    let failures = 1;
+    stubSheet(
+      { slots: SLOTS },
+      {
+        'GET /api/appointments/a1': () => (failures-- > 0 ? { status: 500, body: { error: 'x' } } : { body: makeAppointment({ id: 'a1' }) }),
+        'GET /api/calendar/connection': () => ({ body: { provider: null } }),
+      },
+    );
+    const { user } = renderRoute(<AppointmentWindow />, '/calendar/appointments/:appointmentId', '/calendar/appointments/a1');
+    expect(await screen.findByText(appointments.loadError)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: appointments.tryAgain }));
+    expect(await screen.findByText(appointments.detailTime)).toBeInTheDocument();
   });
 });

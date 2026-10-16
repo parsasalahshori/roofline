@@ -1,69 +1,203 @@
-/* The appointment detail: a title, a definition list of facts, the sync line and the actions. */
+/*
+ * One appointment. The title and its tags at the left, the actions at the right; then two panels side by side: when it is, and
+ * the details. A phone has one column, and the actions become a bar that stays at the bottom edge so the thumb never hunts for them.
+ */
 .detail {
   display: flex;
   flex-direction: column;
   gap: 16px;
   min-width: 0;
-}
-
-.title {
-  margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
-  color: var(--ink);
+  max-width: 1100px;
 }
 
 .head {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.facts {
-  display: grid;
-  grid-template-columns: minmax(96px, max-content) minmax(0, 1fr);
-  gap: 10px 16px;
-  margin: 0;
-  padding: 12px 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-3);
-  background: var(--surface);
-}
-
-.facts dt {
-  font-size: var(--font-size-min);
-  color: var(--ink-3);
-}
-
-.facts dd {
-  margin: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 24px;
   min-width: 0;
-  overflow-wrap: anywhere;
-  font-size: var(--font-size-body);
-  color: var(--ink);
 }
 
-.link {
-  min-height: 40px;
-  display: inline-flex;
-  align-items: center;
+.titles {
+  display: flex;
+  flex: 1 1 320px;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
 }
 
-.sync {
+.title {
   margin: 0;
-  font-size: var(--font-size-min);
-  color: var(--ink-3);
+  font: 750 22px/1.1 var(--f-display);
+  font-stretch: 112%;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
   gap: 8px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  align-items: start;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* When: the day in Archivo, the hours in mono, and how long it is */
+.day {
+  margin: 0;
+  font: 650 20px/1.2 var(--f-display);
+  font-stretch: 110%;
+  overflow-wrap: anywhere;
+}
+
+.hours {
+  margin: 8px 0 0;
+  font: 500 15px/1.3 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.length {
+  margin: 4px 0 0;
+  color: var(--ink-3);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: minmax(88px, max-content) minmax(0, 1fr);
+  gap: 12px 24px;
+  margin: 0;
+}
+
+.facts dt {
+  padding-top: 6px;
+  color: var(--ink-3);
+  font: 500 var(--font-size-min)/1.2 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.facts dd {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 32px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.person {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nobody {
+  color: var(--ink-3);
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--line-ctl);
+  text-underline-offset: 3px;
+}
+
+.link:hover {
+  color: var(--brand-text);
+  text-decoration-color: var(--brand-text);
+}
+
+.notes {
+  align-items: flex-start;
+  padding-top: 6px;
+  white-space: pre-wrap;
 }
 
 .footer {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.sheetTitle {
+  margin: 0;
+  font-weight: 650;
+}
+
+.sheetWhen {
+  margin: 4px 0 0;
+  color: var(--ink-2);
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1099.98px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 767.98px) {
+  .title {
+    font-size: 26px;
+  }
+
+  /* The actions sit last on the screen and stay at its bottom edge, the main one over the full width */
+  .head {
+    display: contents;
+  }
+
+  .titles {
+    order: 0;
+    flex-basis: auto;
+  }
+
+  .detail {
+    padding-bottom: 0;
+  }
+
+  .actions {
+    order: 9;
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    margin: 0 -16px;
+    padding: 8px 16px 12px;
+    background: var(--ground);
+    justify-content: stretch;
+  }
+
+  .actions > button:nth-child(2) {
+    flex: 1 1 100%;
+    order: -1;
+  }
+
+  .actions > button {
+    flex: 1 1 0;
+  }
+
+  .facts {
+    grid-template-columns: minmax(72px, max-content) minmax(0, 1fr);
+    gap: 10px 16px;
+  }
 }

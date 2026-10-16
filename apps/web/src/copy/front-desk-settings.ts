@@ -1,7 +1,15 @@
 /* Words for Settings -> Front Desk, the on-call list and the transfer phone (Task 23). */
 export const frontDeskSettings = {
   loadFailed: 'We could not load the Front Desk settings.',
+  loading: 'Opening the Front Desk settings',
   title: 'Front Desk',
+  /** The titles of the panels of the form. */
+  sections: {
+    answering: 'Answering',
+    voiceAndFacts: 'Voice and what it knows',
+    mayDo: 'What it may do',
+    timing: 'Ringing and keeping',
+  },
   onOff: {
     label: 'Front Desk answers my calls',
     blocked: {
@@ -48,7 +56,7 @@ export const frontDeskSettings = {
   saved: 'Saved.',
   saveFailed: 'We could not save. Try again.',
   onCall: {
-    heading: 'Who answers when a call is passed to a person',
+    heading: 'Who answers passed-on calls',
     help: 'Calls ring people from the top down. After hours, the list is rung only for a leak, a danger, or an urgent message the assistant took; otherwise the assistant takes a message.',
     empty: 'No one is on the list yet.',
     noPhone: 'No transfer phone yet',
@@ -72,5 +80,6 @@ export const frontDeskSettings = {
     saved: 'Saved.',
     saveFailed: 'We could not save. Try again.',
     loadFailed: 'We could not load your phone number.',
+    loading: 'Opening your phone number',
   },
 } as const;

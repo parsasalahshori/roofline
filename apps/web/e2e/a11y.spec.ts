@@ -246,7 +246,7 @@ test('Front Desk inbox has no serious accessibility violations', async ({ page, 
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   await page.goto('/front-desk');
-  await expect(page.getByRole('heading', { name: 'This week' })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('region', { name: "Today's numbers" })).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole('link', { name: /Maria Alvarez/ })).toBeVisible();
   await scan(page);
 });
@@ -256,7 +256,7 @@ test('Front Desk conversation has no serious accessibility violations', async ({
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   await page.goto(`/front-desk/${ids.maria}`);
-  await expect(page.getByRole('heading', { name: 'What was said' })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('heading', { name: 'Transcript' })).toBeVisible({ timeout: 20_000 });
   await scan(page);
 });
 

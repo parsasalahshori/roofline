@@ -1,4 +1,4 @@
-/* One-click forwarding test: the button, then the status line under it. Targets are 40px, text is 12px or more. */
+/* One-click forwarding test: the button, then the status under it. Targets are 40px, text is 12px or more. */
 .wrap {
   display: flex;
   flex-direction: column;
@@ -10,13 +10,12 @@
 .button {
   min-height: 40px;
   min-width: 40px;
-  font-size: var(--font-size-body);
 }
 
 .status {
   width: 100%;
-  font-size: var(--font-size-body);
   color: var(--ink);
+  font-size: var(--font-size-body);
 }
 
 .status:empty {

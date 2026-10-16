@@ -4,7 +4,7 @@ vi.hoisted(() => {
 });
 
 import type { AppointmentView, CalendarConnectionView } from '@roofline/shared';
-import { act, cleanup, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, renderHook, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
@@ -157,6 +157,84 @@ describe('AppointmentDetail', () => {
     for (const name of [appointments.reschedule, appointments.markDone, appointments.noShow, appointments.cancel]) {
       expect(screen.queryByRole('button', { name })).toBeNull();
     }
+  });
+});
+
+describe('AppointmentDetail, as redesigned', () => {
+  it('names the status, the day and the hours apart, and how long it is, with the time said once', async () => {
+    api = stubApi(routesFor({}));
+    renderDetail();
+
+    expect(await screen.findByText(appointments.status.scheduled)).toBeTruthy();
+    expect(screen.getByRole('heading', { name: appointments.detailTime })).toBeTruthy();
+    expect(screen.getByText('Tue, Oct 13')).toBeTruthy();
+    expect(screen.getByText('2:00 PM - 3:00 PM')).toBeTruthy();
+    expect(screen.getByText(appointments.duration(60))).toBeTruthy();
+  });
+
+  it('an all-day install says All day and gives its days', async () => {
+    api = stubApi(routesFor({}));
+    renderDetail({
+      ...APPOINTMENT,
+      kind: 'install',
+      title: 'Tear-off and install',
+      allDay: true,
+      startsAt: '2026-10-13T05:00:00Z',
+      endsAt: '2026-10-15T05:00:00Z',
+    });
+
+    expect(await screen.findByText('Oct 13 - Oct 14, 2026')).toBeTruthy();
+    expect(screen.getByText(appointments.allDay)).toBeTruthy();
+    expect(screen.getByText(appointments.kind.install)).toBeTruthy();
+  });
+
+  it('a visit nobody is assigned to says so', async () => {
+    api = stubApi(routesFor({}));
+    renderDetail({ ...APPOINTMENT, assigned: null });
+    expect(await screen.findByText(appointments.unassigned)).toBeTruthy();
+  });
+
+  it('a pending sync is a tag and a confirmed visit says how it was confirmed', async () => {
+    api = stubApi(routesFor({}));
+    renderDetail({ ...APPOINTMENT, sync: 'pending', confirmedAt: '2026-10-12T15:00:00Z', confirmedVia: 'text' });
+    expect(await screen.findByText(appointments.sync.pending)).toBeTruthy();
+    expect(screen.getByText(appointments.confirmed.text)).toBeTruthy();
+  });
+
+  it('a visit that is done shows its status and no actions', async () => {
+    api = stubApi(routesFor({}));
+    renderDetail({ ...APPOINTMENT, status: 'completed' });
+    expect(await screen.findByText(appointments.status.completed)).toBeTruthy();
+    for (const name of [appointments.reschedule, appointments.markDone, appointments.noShow, appointments.cancel]) {
+      expect(screen.queryByRole('button', { name })).toBeNull();
+    }
+  });
+
+  it('the actions are a named group and the cancel sheet repeats what is being canceled', async () => {
+    api = stubApi(routesFor({}));
+    const { user } = renderDetail();
+
+    const group = await screen.findByRole('group', { name: appointments.actionsLabel });
+    expect(within(group).getAllByRole('button').map((button) => button.textContent)).toEqual([
+      appointments.reschedule,
+      appointments.markDone,
+      appointments.noShow,
+      appointments.cancel,
+    ]);
+    await user.click(within(group).getByRole('button', { name: appointments.cancel }));
+    const sheet = await screen.findByRole('dialog', { name: appointments.cancelConfirm });
+    expect(within(sheet).getByText('Roof check')).toBeTruthy();
+    expect(within(sheet).getByText('Tue, Oct 13, 2:00 PM - 3:00 PM')).toBeTruthy();
+    await user.click(within(sheet).getByRole('button', { name: appointments.cancelNo }));
+    expect(api.count('POST /api/appointments/a1/cancel')).toBe(0);
+  });
+
+  it('a failed action says so inline', async () => {
+    api = stubApi(routesFor({ 'POST /api/appointments/a1/complete': () => ({ status: 500, body: { error: 'x' } }) }));
+    const { user } = renderDetail();
+
+    await user.click(await screen.findByRole('button', { name: appointments.markDone }));
+    expect(await screen.findByText(appointments.actionError)).toBeTruthy();
   });
 });
 
