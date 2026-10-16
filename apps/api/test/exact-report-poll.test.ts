@@ -99,7 +99,7 @@ describe('polling exact reports', () => {
     await pollExactReports(t.deps, LATER);
     const rows = await exactMeasurements();
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ kind: 'exact', method: 'eagleview', surfaceSqFt: 2612, pitchX12: 7, ridgeFt: 62, edgeFt: 188, valleyFt: 24, facets: 9, providerRef: 'rep-1', propertyId, jobId });
+    expect(rows[0]).toMatchObject({ kind: 'exact', method: 'eagleview', surfaceSqFt: 2612, pitchX12: 7, ridgeFt: 62, edgeFt: 188, eaveFt: 142, valleyFt: 24, facets: 9, providerRef: 'rep-1', propertyId, jobId });
   });
 
   test('one usage row at the report cost, even if completed twice', async () => {

@@ -45,17 +45,20 @@ export function normalizeEagleView(raw: unknown): ExactReport {
   if (reportRef === null) throw new EagleViewNormalizeError('Report has no report ID.');
 
   const facetsValue = value('TotalRoofFacets');
+  // Eaves are where gutters go: kept on their own (the gutter total) as well as in the drip edge with the rakes.
+  const eaveFt = evNumber(value('LengthEave'), 'length', true);
   const report: ExactReport = {
     surfaceSqFt: evNumber(value('Area'), 'area'),
     pitchX12: evNumber(value('PrimaryPitch') ?? r.Pitch, 'pitch'),
     ridgeFt: evNumber(value('LengthRidge'), 'length', true) + evNumber(value('LengthHip'), 'length', true),
-    edgeFt: evNumber(value('LengthEave'), 'length', true) + evNumber(value('LengthRake'), 'length', true),
+    edgeFt: eaveFt + evNumber(value('LengthRake'), 'length', true),
+    eaveFt,
     valleyFt: evNumber(value('LengthValley'), 'length', true),
     facets: facetsValue === undefined || facetsValue === null || facetsValue === '' ? null : evNumber(facetsValue, 'count'),
     reportRef,
   };
 
-  const numbers = [report.surfaceSqFt, report.pitchX12, report.ridgeFt, report.edgeFt, report.valleyFt];
+  const numbers = [report.surfaceSqFt, report.pitchX12, report.ridgeFt, report.edgeFt, report.eaveFt, report.valleyFt];
   if (!numbers.every((n) => Number.isFinite(n)) || (report.facets !== null && !Number.isFinite(report.facets))) {
     throw new EagleViewNormalizeError('Report has missing or unsupported measurements.');
   }
