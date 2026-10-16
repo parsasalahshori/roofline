@@ -294,6 +294,37 @@ test('D1 Front Desk pages do not scroll sideways', async ({ page, loginAs, markT
   }
 });
 
+test('every Settings tab and the screens under Setup fit the phone', async ({ page, loginAs, markTodaySeen, pools, scenario, db }) => {
+  test.setTimeout(120_000);
+  await seedFrontDesk(pools, scenario);
+  await seedRooflineNumber(pools, db, scenario);
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+
+  const paths = [
+    '/settings/company',
+    '/settings/team',
+    '/settings/prices',
+    '/settings/schedule',
+    '/settings/connections',
+    '/settings/storm',
+    '/settings/billing',
+    '/settings/setup',
+    '/settings/setup/texting',
+    '/settings/setup/import',
+    '/settings/front-desk',
+    '/settings/agents',
+    '/settings/profile',
+  ];
+  for (const path of paths) {
+    await page.goto(path);
+    const main = page.getByRole('main', { name: 'Settings' });
+    // A panel's title only shows once the tab's data is in, so the width is measured on the loaded page and not on its skeleton
+    await expect(main.getByRole('heading', { level: 2 }).first()).toBeVisible({ timeout: 20_000 });
+    await noSideScroll(page);
+  }
+});
+
 test('follow-up texts review fits the phone', async ({ page, loginAs, markTodaySeen, db, pools, scenario }) => {
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
