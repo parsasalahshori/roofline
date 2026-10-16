@@ -2,7 +2,7 @@
 .legend {
   position: absolute;
   left: 16px;
-  bottom: 32px;
+  bottom: 16px;
   z-index: 3;
   display: flex;
   flex-wrap: wrap;
@@ -45,10 +45,8 @@
   border-radius: 2px;
 }
 
-/* Clears the bottom tab bar on phone. */
 @media (max-width: 767.98px) {
   .legend {
-    bottom: 88px;
     border-radius: var(--r-3);
   }
 }

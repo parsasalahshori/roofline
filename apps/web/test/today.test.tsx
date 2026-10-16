@@ -108,7 +108,7 @@ describe('the Today window', () => {
       'GET /api/approvals': () => ({ body: { count: 5, tasks } }),
     });
 
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('main');
     const section = await within(dialog).findByRole('region', {
       name: today.needYourOk,
     });
@@ -172,7 +172,7 @@ describe('auto-opens only from the map home', () => {
       'POST /api/me/today-shown': () => ({ body: { show: true } }),
     });
 
-    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(await screen.findByRole('main')).toBeInTheDocument();
     await settle();
     expect(api.count('POST /api/me/today-shown')).toBe(0);
     expect(where(router)).toBe('/jobs');

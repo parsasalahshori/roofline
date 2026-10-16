@@ -1,0 +1,33 @@
+/* The map's frame: a 10px panel with a hairline, the land colour behind the tiles while they load */
+.panel {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 320px;
+  overflow: hidden;
+  border-radius: var(--r-3);
+  background: var(--map-land);
+  box-shadow: var(--e-1);
+}
+
+.loading {
+  position: absolute;
+  inset: 0;
+}
+
+/* Over the map, top left. The wrapper lets clicks through to the map between its children. */
+.overlay {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: calc(100% - 140px);
+  pointer-events: none;
+}
+
+.overlay > * {
+  pointer-events: auto;
+}

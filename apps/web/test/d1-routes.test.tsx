@@ -6,7 +6,7 @@ import { RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
-import { dock, WINDOW_COPY } from '../src/copy/dock.ts';
+import { rail, WINDOW_COPY } from '../src/copy/rail.ts';
 import { frontDeskInbox } from '../src/copy/front-desk-inbox.ts';
 import { ACCOUNT, COMPANY, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
 
@@ -69,9 +69,9 @@ function renderApp(path: string) {
   return { router, queryClient, user: userEvent.setup() };
 }
 
-/** A dock link by its label. Its name also holds the "Coming soon" note and any badge, so only the start of the name is matched. */
-function dockLink(dockNav: HTMLElement, label: string) {
-  return within(dockNav).getByRole('link', { name: new RegExp('^' + label) });
+/** A rail link by its label. Its name also holds any count, so only the start of the name is matched. */
+function railLink(nav: HTMLElement, label: string) {
+  return within(nav).getByRole('link', { name: new RegExp('^' + label) });
 }
 
 const CONVERSATION_ABC = {
@@ -96,7 +96,7 @@ describe('D1 Front Desk routes', () => {
   it('/front-desk shows the empty window', async () => {
     signedInApi();
     renderApp('/front-desk');
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY['front-desk'].title });
+    const dialog = await screen.findByRole('main', { name: WINDOW_COPY['front-desk'].title });
     expect(await within(dialog).findByText(frontDeskInbox.empty)).toBeInTheDocument();
   });
 
@@ -106,29 +106,21 @@ describe('D1 Front Desk routes', () => {
       'POST /api/conversations/abc/read': () => ({ body: {} }),
     });
     renderApp('/front-desk/abc');
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY['front-desk'].title });
+    const dialog = await screen.findByRole('main', { name: WINDOW_COPY['front-desk'].title });
     expect(await within(dialog).findByRole('heading', { name: 'Pat Lee' })).toBeInTheDocument();
   });
 
-  it('the dock link has no Coming soon note and opens Front Desk', async () => {
+  it('the rail link opens Front Desk', async () => {
     signedInApi();
     const { router, user } = renderApp('/');
-    const dockNav = await screen.findByRole('navigation', { name: dock.label });
-    const link = dockLink(dockNav, WINDOW_COPY['front-desk'].title);
-    expect(link.textContent ?? '').not.toContain(dock.comingSoon);
+    const nav = await screen.findByRole('navigation', { name: rail.label });
+    const link = railLink(nav, WINDOW_COPY['front-desk'].title);
     await user.click(link);
     await waitFor(() => expect(where(router)).toBe('/front-desk'));
   });
 
-  it('has no Coming soon note on Storm now that S1 ships it', async () => {
-    signedInApi();
-    renderApp('/');
-    const dockNav = await screen.findByRole('navigation', { name: dock.label });
-    expect(dockLink(dockNav, WINDOW_COPY.storm.title).textContent ?? '').not.toContain(dock.comingSoon);
-  });
-
   it('words the badge', () => {
-    expect(dock.frontDeskBadge(1)).toBe('1 conversation waiting');
-    expect(dock.frontDeskBadge(2)).toBe('2 conversations waiting');
+    expect(rail.frontDeskBadge(1)).toBe('1 conversation waiting');
+    expect(rail.frontDeskBadge(2)).toBe('2 conversations waiting');
   });
 });

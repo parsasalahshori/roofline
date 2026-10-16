@@ -8,7 +8,7 @@ import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { customers } from '../src/copy/customers.ts';
 import { jobs } from '../src/copy/jobs.ts';
-import { WINDOW_COPY } from '../src/copy/dock.ts';
+import { WINDOW_COPY } from '../src/copy/rail.ts';
 import type { CustomerListItem, CustomerListPage } from '../src/features/customers/api.ts';
 import { ACCOUNT, type Routes, SHELL_ROUTES, stubApi } from './helpers.tsx';
 
@@ -255,7 +255,7 @@ describe('customers list', () => {
     signedIn(ACCOUNT, { [listKey('limit=50&offset=0')]: () => ({ body: page([]) }) });
     renderApp('/customers');
 
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.customers.title });
+    const dialog = await screen.findByRole('main', { name: WINDOW_COPY.customers.title });
     const tabs = within(dialog).getByRole('navigation', { name: jobs.tabsLabel });
     expect(within(tabs).getByRole('link', { name: jobs.tabs.customers })).toHaveAttribute('aria-current', 'page');
     expect(within(dialog).getByRole('link', { name: customers.list.newCustomer })).toBeInTheDocument();

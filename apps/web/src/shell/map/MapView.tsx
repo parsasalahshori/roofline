@@ -1,5 +1,5 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Button, useToast } from '@roofline/ui';
+import { Button, type ColorScheme, useToast } from '@roofline/ui';
 import { Map as MapLibreMap, NavigationControl } from 'maplibre-gl';
 import { useContext, useEffect, useRef, useState } from 'react';
 import { UNSAFE_LocationContext } from 'react-router';
@@ -23,6 +23,7 @@ import { needsClientClustering, normalizeBbox, toFeatureCollections } from './pi
 import type { Bbox } from '../../api/types.ts';
 import type { Geometry } from 'geojson';
 import type { MapEnv, MapMode, PickedPin, PinTarget } from './types.ts';
+import { useColorScheme } from '../useColorScheme.ts';
 import styles from './MapView.module.css';
 
 export type MapViewProps = {
@@ -52,9 +53,9 @@ function readMapEnv(): MapEnv {
 }
 
 /** Creates the map, or answers null when it cannot start (MapLibre throws when the browser has no WebGL). */
-function createMap(container: HTMLElement): MapLibreMap | null {
+function createMap(container: HTMLElement, scheme: ColorScheme): MapLibreMap | null {
   try {
-    return new MapLibreMap({ container, style: mapStyle(readMapEnv(), 'streets'), center: US_CENTER, zoom: US_ZOOM });
+    return new MapLibreMap({ container, style: mapStyle(readMapEnv(), 'streets', scheme), center: US_CENTER, zoom: US_ZOOM });
   } catch {
     return null;
   }
@@ -75,8 +76,8 @@ function summarize(result: PinsResult | undefined): string {
 }
 
 /**
- * The map home: a full-screen MapLibre map at the bottom layer, with customer and job pins. The
- * instance lives in a ref, not in state, so moving the map never re-renders the page.
+ * The map: a MapLibre map that fills the panel it is put in, with customer and job pins and the hail layer. The
+ * instance lives in a ref, not in state, so moving the map never re-renders the page. It follows the page's theme.
  */
 export function MapView({ onOpen, onEstimate }: MapViewProps) {
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -87,6 +88,10 @@ export function MapView({ onOpen, onEstimate }: MapViewProps) {
   const dataRef = useRef<MapData>(emptyMapData());
   const appliedMode = useRef<MapMode>('streets');
   const [mode, setMode] = useState<MapMode>('streets');
+  const scheme = useColorScheme();
+  // The theme the map was last painted for. The first style is made for the theme at mount.
+  const schemeRef = useRef<ColorScheme>(scheme);
+  const appliedScheme = useRef<ColorScheme>(scheme);
   const [bbox, setBbox] = useState<Bbox | null>(null);
   const [zoom, setZoom] = useState<number | null>(null);
   const [hailOn, setHailOn] = useState(true);
@@ -125,7 +130,7 @@ export function MapView({ onOpen, onEstimate }: MapViewProps) {
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const instance = createMap(container);
+    const instance = createMap(container, schemeRef.current);
     if (!instance) {
       // Not set synchronously: react-hooks/set-state-in-effect rejects a setState in the effect body.
       queueMicrotask(() => {
@@ -152,7 +157,7 @@ export function MapView({ onOpen, onEstimate }: MapViewProps) {
 
     instance.on('style.load', () => {
       styleReady.current = true;
-      installMapLayers(instance, dataRef.current);
+      installMapLayers(instance, dataRef.current, schemeRef.current);
       applyStormData(instance, stormRef.current);
       if (!hailOnRef.current) setStormVisible(instance, false);
       if (roofRef.current) setRoofHighlight(instance, roofRef.current.polygon as Geometry);
@@ -258,14 +263,16 @@ export function MapView({ onOpen, onEstimate }: MapViewProps) {
     });
   }, [focus, shownPins]);
 
-  // The satellite switch swaps the style. The style.load handler then installs the layers again.
+  // The satellite switch and the page's theme swap the style. The style.load handler then installs the layers again.
   useEffect(() => {
+    schemeRef.current = scheme;
     const instance = mapRef.current;
-    if (!instance || appliedMode.current === mode) return;
+    if (!instance || (appliedMode.current === mode && appliedScheme.current === scheme)) return;
     appliedMode.current = mode;
+    appliedScheme.current = scheme;
     styleReady.current = false;
-    instance.setStyle(mapStyle(readMapEnv(), mode), { diff: false });
-  }, [mode]);
+    instance.setStyle(mapStyle(readMapEnv(), mode, scheme), { diff: false });
+  }, [mode, scheme]);
 
   // Zoomed in to building level (owner and office): the area's outlines start loading, so a roof click is quick
   const loadBuildingsRef = useRef(loadBuildings.mutate);

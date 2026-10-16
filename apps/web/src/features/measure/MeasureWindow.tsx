@@ -728,10 +728,10 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
         quote,
       }}
     >
-      <main className={styles.main}>
+      <div className={styles.main}>
         <PropertyStrip measurementId={m.id} preview={preview.data} />
         <RoofView measurementId={m.id} captured={captured} />
-      </main>
+      </div>
       {done ? (
         <div className={styles.proposal}>
           <ProposalPanel
@@ -851,20 +851,20 @@ export function MeasureWindow() {
           <RequestsList selectedId={measurementId} onPick={() => setStep('roof')} />
         </aside>
         {measurementId === '' ? (
-          <main className={styles.main}>
+          <div className={styles.main}>
             <NothingOpen />
-          </main>
+          </div>
         ) : query.data ? (
           // A failed refetch keeps the roof on screen: only a measurement that never loaded shows the failure
           <Loaded key={query.data.id} m={query.data} onProposalReady={setProposalReady} />
         ) : query.isError ? (
-          <main className={styles.main}>
+          <div className={styles.main}>
             <EmptyState title={measure.loadFailed} />
-          </main>
+          </div>
         ) : (
-          <main className={styles.main}>
+          <div className={styles.main}>
             <p className={styles.loading}>{measure.loading}</p>
-          </main>
+          </div>
         )}
       </div>
     </div>

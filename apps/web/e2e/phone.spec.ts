@@ -5,7 +5,7 @@ import { seedFrontDesk, seedRooflineNumber } from './front-desk-seed.ts';
 import { seedOldLead, seedTextsPlan } from './g1-seeds.ts';
 
 /*
- * The phone shell (below 768px): full-screen pages, the bottom tab bar that replaces the dock, and
+ * The phone shell (below 768px): full-screen pages, the bottom tab bar that replaces the rail, and
  * the More sheet. This file runs in the `phone` Playwright project (375x812, Pixel 7). F3 Task 36
  * appends its pages to the same tests below, so keep one `test` per page group and add helpers here.
  */
@@ -24,13 +24,17 @@ async function expectAboveTabs(page: Page, button: Locator): Promise<void> {
   expect(box!.y + box!.height).toBeLessThanOrEqual(tabs!.y + 1);
 }
 
-test('bottom tabs work', async ({ page, loginAs, markTodaySeen }) => {
+test('bottom tabs work, with Measure raised in the middle', async ({ page, loginAs, markTodaySeen }) => {
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   await page.goto('/');
 
   const tabs = page.getByRole('navigation', { name: 'Main' });
   await expect(page.getByRole('navigation', { name: 'Apps' })).toHaveCount(0);
+  // Five tabs in this order: four links, then the More button
+  await expect(tabs.getByRole('link', { name: 'Map', exact: true })).toBeVisible();
+  expect(await tabs.getByRole('link').evaluateAll((links) => links.map((link) => link.getAttribute('data-tab')))).toEqual(['today', 'map', 'measure', 'jobs']);
+  await expect(tabs.getByRole('button', { name: 'More', exact: true })).toBeVisible();
 
   await tabs.getByRole('link', { name: 'Map', exact: true }).click();
   await expect(page).toHaveURL('/');
@@ -38,21 +42,32 @@ test('bottom tabs work', async ({ page, loginAs, markTodaySeen }) => {
 
   await tabs.getByRole('link', { name: 'My day', exact: true }).click();
   await expect(page).toHaveURL(/\/today$/);
-  await expect(page.getByRole('dialog', { name: 'My day' })).toBeVisible();
+  await expect(page.getByRole('main', { name: 'My day' })).toBeVisible();
   await expect(tabs.getByRole('link', { name: 'My day', exact: true })).toHaveAttribute('aria-current', 'page');
+
+  // The Measure tab stands above the bar: its tile starts higher than the bar's top edge
+  const measure = tabs.getByRole('link', { name: 'Measure', exact: true });
+  await measure.click();
+  await expect(page).toHaveURL(/\/estimator/);
+  await expect(measure).toHaveAttribute('aria-current', 'page');
+  const [tabsBox, tileBox] = await Promise.all([tabs.boundingBox(), measure.locator('span').first().boundingBox()]);
+  expect(tabsBox).not.toBeNull();
+  expect(tileBox).not.toBeNull();
+  expect(tileBox!.y).toBeLessThan(tabsBox!.y);
 
   await tabs.getByRole('link', { name: 'Jobs', exact: true }).click();
   await expect(page).toHaveURL(/\/jobs$/);
   await expect(tabs.getByRole('link', { name: 'Jobs', exact: true })).toHaveAttribute('aria-current', 'page');
 
-  await tabs.getByRole('link', { name: 'Calendar', exact: true }).click();
-  await expect(page).toHaveURL(/\/calendar$/);
-  await expect(tabs.getByRole('link', { name: 'Calendar', exact: true })).toHaveAttribute('aria-current', 'page');
-
   await tabs.getByRole('button', { name: 'More', exact: true }).click();
   const more = page.getByRole('dialog', { name: 'More', exact: true });
   await expect(more).toBeVisible();
-  await more.getByRole('link', { name: 'Storm', exact: true }).click();
+  await more.getByRole('link', { name: 'Calendar', exact: true }).click();
+  await expect(page).toHaveURL(/\/calendar$/);
+  await expect(page.getByRole('dialog', { name: 'More', exact: true })).toHaveCount(0);
+
+  await tabs.getByRole('button', { name: 'More', exact: true }).click();
+  await page.getByRole('dialog', { name: 'More', exact: true }).getByRole('link', { name: 'Storm', exact: true }).click();
   await expect(page).toHaveURL(/\/storm$/);
   await expect(page.getByRole('dialog', { name: 'More', exact: true })).toHaveCount(0);
 });
@@ -104,7 +119,7 @@ test('no horizontal scroll', async ({ page, loginAs, markTodaySeen, scenario }) 
     if (path === '/') {
       await expect(page.getByText('Map showing 70 customers and 25 open jobs.')).toBeAttached({ timeout: 20_000 });
     } else {
-      await expect(page.getByRole('dialog').first()).toBeVisible();
+      await expect(page.getByRole('main').first()).toBeVisible();
     }
     await noSideScroll(page);
   }
@@ -138,7 +153,7 @@ test('long text does not widen the page', async ({ page, loginAs, markTodaySeen,
   );
 
   await page.goto('/approvals/' + scenario.taskId);
-  await expect(page.getByRole('dialog').first()).toBeVisible();
+  await expect(page.getByRole('main').first()).toBeVisible();
   await noSideScroll(page);
 });
 
@@ -154,7 +169,7 @@ test('F3 pages do not scroll sideways', async ({ page, loginAs, markTodaySeen })
 
   for (const path of ['/settings/setup', '/settings/billing', '/settings/setup/import']) {
     await page.goto(path);
-    await expect(page.getByRole('dialog').first()).toBeVisible();
+    await expect(page.getByRole('main').first()).toBeVisible();
     await noSideScroll(page);
   }
 });

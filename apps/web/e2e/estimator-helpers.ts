@@ -84,12 +84,12 @@ export async function makeAndSendProposal(
   await makeItDaytime();
   await click(page.getByRole('button', { name: /^Approve 1 step/ }));
   try {
-    await expect(page.getByRole('dialog').getByRole('list').getByText('Done', { exact: true })).toHaveCount(1, {
+    await expect(page.getByRole('main').getByRole('list').getByText('Done', { exact: true })).toHaveCount(1, {
       timeout: 20_000,
     });
   } catch (err) {
     // Say what the review window showed, so a held or failed text is named in the CI log.
-    const shown = await page.getByRole('dialog').innerText().catch(() => '(no dialog)');
+    const shown = await page.getByRole('main').innerText().catch(() => '(no dialog)');
     throw new Error(`The send step did not finish. The window said: ${shown.replace(/\s+/g, ' ')}`, { cause: err });
   }
 

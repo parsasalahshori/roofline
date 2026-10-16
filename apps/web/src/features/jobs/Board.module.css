@@ -1,15 +1,19 @@
-/* The board: the columns scroll sideways inside this box, so the page itself never scrolls sideways. */
+/* The board takes the height the page gives it: the columns scroll sideways inside this box and each lane scrolls up and down, so the page itself never scrolls. */
 .board {
   position: relative;
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 16px;
   min-width: 0;
+  min-height: 0;
   max-width: 100%;
 }
 
 /* The scroll box for the columns: a horizontal rail on a desktop, one column wide on a phone */
 .scroller {
+  flex: 1 1 auto;
+  min-height: 0;
   max-width: 100%;
   overflow-x: auto;
   overscroll-behavior-x: contain;
@@ -20,13 +24,19 @@
   display: flex;
   align-items: stretch;
   gap: 12px;
+  height: 100%;
   min-width: min-content;
 }
 
 /* On a phone the stages stack, one under the other, instead of a rail */
 @media (max-width: 767.98px) {
+  .scroller {
+    flex: none;
+  }
+
   .columns {
     flex-direction: column;
+    height: auto;
     min-width: 0;
   }
 }

@@ -9,7 +9,7 @@ import { test, expect } from './fixtures.ts';
 
 /** The step row for one step title inside the review dialog. */
 function row(page: Page, title: string) {
-  return page.getByRole('dialog').getByRole('listitem').filter({ hasText: title });
+  return page.getByRole('main').getByRole('listitem').filter({ hasText: title });
 }
 
 test('one draft: pill to approved in 2 clicks', async ({ page, loginAs, markTodaySeen, click, clicks }) => {
@@ -19,7 +19,7 @@ test('one draft: pill to approved in 2 clicks', async ({ page, loginAs, markToda
   await click(page.getByRole('link', { name: '1 need your OK' }));
   await click(page.getByRole('button', { name: 'Approve 3 steps · up to $270' }));
   // Scoped to the step list: once every step is done the task's own status in the stat strip also reads "Done".
-  await expect(page.getByRole('dialog').getByRole('list').getByText('Done', { exact: true })).toHaveCount(3, {
+  await expect(page.getByRole('main').getByRole('list').getByText('Done', { exact: true })).toHaveCount(3, {
     timeout: 15_000,
   });
   expect(clicks.count).toBe(2);
@@ -32,7 +32,7 @@ test('from the Storm window: 2 clicks', async ({ page, loginAs, markTodaySeen, s
   await click(page.getByRole('link', { name: 'Approve storm plan' }));
   await expect(page).toHaveURL(new RegExp('/storm/plans/' + scenario.taskId + '$'));
   await click(page.getByRole('button', { name: 'Approve 3 steps · up to $270' }));
-  await expect(page.getByRole('dialog').getByRole('list').getByText('Done', { exact: true })).toHaveCount(3, {
+  await expect(page.getByRole('main').getByRole('list').getByText('Done', { exact: true })).toHaveCount(3, {
     timeout: 15_000,
   });
   expect(clicks.count).toBe(2);

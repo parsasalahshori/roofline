@@ -9,7 +9,7 @@ import { errors } from '../../copy/errors.ts';
 import { review } from '../../copy/review.ts';
 import { shell } from '../../copy/shell.ts';
 import { AGENT_LABEL, taskStatusLabel } from '../../copy/status.ts';
-import { AppWindow } from '../../shell/AppWindow.tsx';
+import { AppPage } from '../../shell/AppPage.tsx';
 import { pathAfterDecline, useApprove, useDecline, useEditStep, useRerun, useRetryStep, useTask } from './api.ts';
 import { editableText } from './editable.ts';
 import { EditStepSheet } from './EditStepSheet.tsx';
@@ -216,7 +216,7 @@ export function Review({ taskId, app = 'approvals' }: { taskId: string; app?: Re
         </div>
       );
     } else if (task.error instanceof ApiError && task.error.status === 404) {
-      body = <EmptyState title={shell.notFoundTitle} action={<Button variant="primary" href="/">{shell.backToMap}</Button>} />;
+      body = <EmptyState title={shell.notFoundTitle} action={<Button variant="primary" href="/">{shell.backHome}</Button>} />;
     } else {
       body = (
         <EmptyState
@@ -282,7 +282,7 @@ export function Review({ taskId, app = 'approvals' }: { taskId: string; app?: Re
   }
 
   return (
-    <AppWindow app={app} stats={stats}>
+    <AppPage app={app} stats={stats}>
       {body}
       {editingStep !== undefined && kit !== undefined ? (
         <StepFieldsSheet
@@ -308,7 +308,7 @@ export function Review({ taskId, app = 'approvals' }: { taskId: string; app?: Re
       {notNowOpen ? (
         <NotNowSheet saving={decline.isPending} error={notNowError} onConfirm={confirmNotNow} onClose={closeNotNow} />
       ) : null}
-    </AppWindow>
+    </AppPage>
   );
 }
 

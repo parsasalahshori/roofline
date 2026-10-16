@@ -5,7 +5,7 @@ import { RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
-import { dock, WINDOW_COPY } from '../src/copy/dock.ts';
+import { rail, WINDOW_COPY } from '../src/copy/rail.ts';
 import { connections } from '../src/copy/connections.ts';
 import { doors } from '../src/copy/doors.ts';
 import { settings } from '../src/copy/settings.ts';
@@ -101,9 +101,9 @@ function renderApp(path: string) {
   return { router, queryClient, user: userEvent.setup() };
 }
 
-/** A dock link by its label. Its name also holds the "Coming soon" note and any badge, so only the start of the name is matched. */
-function dockLink(dockNav: HTMLElement, label: string) {
-  return within(dockNav).getByRole('link', { name: new RegExp('^' + label) });
+/** A rail link by its label. Its name also holds any count, so only the start of the name is matched. */
+function railLink(nav: HTMLElement, label: string) {
+  return within(nav).getByRole('link', { name: new RegExp('^' + label) });
 }
 
 describe('S1 Storm windows', () => {
@@ -152,13 +152,12 @@ describe('S1 Storm windows', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Maple Ridge' })).toBeInTheDocument();
   });
 
-  it('the dock Storm opens /storm', async () => {
+  it('the rail Storm opens /storm', async () => {
     signedInApi(ACCOUNT, proposalListRoutes());
     const { router, user } = renderApp('/estimator');
-    const dockNav = await screen.findByRole('navigation', { name: dock.label });
-    const link = dockLink(dockNav, WINDOW_COPY.storm.title);
+    const nav = await screen.findByRole('navigation', { name: rail.label });
+    const link = railLink(nav, WINDOW_COPY.storm.title);
 
-    expect(link.textContent ?? '').not.toContain(dock.comingSoon);
     expect(link.getAttribute('href')).toBe('/storm');
     await user.click(link);
 

@@ -558,7 +558,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
 
   return (
     <>
-      <main className={frame.main}>
+      <div className={frame.main}>
         <div className={styles.strip}>
           <h3 className={styles.address}>{v.address}</h3>
           <OrderStatusChip measurementId={v.id} hasPhotoWindows={(v.photoWindows ?? []).length > 0} />
@@ -687,7 +687,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
             />
           )}
         </div>
-      </main>
+      </div>
       {flowAt !== null ? (
         <PhotoWindowsFlow
           at={flowAt}
@@ -846,21 +846,21 @@ export function WindowsWindow() {
           <WindowsStart openAddress={v?.address ?? null} />
         </aside>
         {windowMeasurementId === '' ? (
-          <main className={frame.main}>
+          <div className={frame.main}>
             <div className={frame.pick}>
               <EmptyState title={copy.pickAddress} />
             </div>
-          </main>
+          </div>
         ) : v !== undefined ? (
           <Loaded key={v.id} v={v} onQuoteReady={setQuoteReady} />
         ) : query.isError ? (
-          <main className={frame.main}>
+          <div className={frame.main}>
             <EmptyState title={copy.loadFailed} />
-          </main>
+          </div>
         ) : (
-          <main className={frame.main}>
+          <div className={frame.main}>
             <p className={frame.loading}>{copy.loading}</p>
-          </main>
+          </div>
         )}
       </div>
     </div>

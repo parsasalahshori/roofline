@@ -5,8 +5,9 @@ import { RouterProvider } from 'react-router';
 import { afterEach, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
+import { common } from '../src/copy/common.ts';
 import { doors } from '../src/copy/doors.ts';
-import { dock, WINDOW_COPY } from '../src/copy/dock.ts';
+import { rail, WINDOW_COPY } from '../src/copy/rail.ts';
 import { search } from '../src/copy/search.ts';
 import { shell } from '../src/copy/shell.ts';
 import { ACCOUNT, makeTask, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
@@ -76,18 +77,19 @@ function renderApp(path: string) {
 
 const MAIN = () => screen.findByRole('navigation', { name: shell.tabsLabel });
 
-it('shows five bottom tabs and no dock on a phone', async () => {
+it('shows five bottom tabs and no rail on a phone, with Measure raised in the middle', async () => {
   stubPhone(true);
   signedInApi();
   renderApp('/');
 
   const main = await MAIN();
   const links = within(main).getAllByRole('link');
-  expect(links.map((link) => link.textContent)).toEqual([shell.tabMyDay, shell.tabMap, shell.tabJobs, shell.tabCalendar]);
+  expect(links.map((link) => link.textContent)).toEqual([shell.tabMyDay, shell.tabMap, shell.tabMeasure, shell.tabJobs]);
+  expect(within(main).getByRole('link', { name: shell.tabMeasure })).toHaveAttribute('data-tab', 'measure');
   expect(within(main).getAllByRole('button')).toHaveLength(1);
   expect(within(main).getByRole('button', { name: shell.tabMore })).toBeInTheDocument();
   expect(within(main).getAllByRole('link').length + within(main).getAllByRole('button').length).toBe(5);
-  expect(screen.queryByRole('navigation', { name: dock.label })).toBeNull();
+  expect(screen.queryByRole('navigation', { name: rail.label })).toBeNull();
 });
 
 it('marks the current tab', async () => {
@@ -107,7 +109,7 @@ it('marks the current tab', async () => {
   expect(within(mainAtMap).getByRole('link', { name: shell.tabJobs })).not.toHaveAttribute('aria-current');
 });
 
-it('More opens a sheet with six links', async () => {
+it('More opens a sheet with the nine pages the tab bar does not hold', async () => {
   stubPhone(true);
   signedInApi();
   const { user } = renderApp('/');
@@ -115,13 +117,16 @@ it('More opens a sheet with six links', async () => {
   await user.click(within(await MAIN()).getByRole('button', { name: shell.tabMore }));
   const sheet = await screen.findByRole('dialog', { name: shell.moreTitle });
   const links = within(sheet).getAllByRole('link');
-  expect(links).toHaveLength(6);
+  expect(links).toHaveLength(9);
   const expected: [string, string][] = [
+    [WINDOW_COPY.calendar.title, '/calendar'],
+    [WINDOW_COPY.customers.title, '/customers'],
+    [WINDOW_COPY.approvals.title, '/approvals'],
+    [WINDOW_COPY['front-desk'].title, '/front-desk'],
+    [WINDOW_COPY.agents.title, '/agents'],
     [WINDOW_COPY.storm.title, '/storm'],
     [doors.myRoutesLink, '/storm/routes'],
-    [WINDOW_COPY['front-desk'].title, '/front-desk'],
-    [WINDOW_COPY.estimator.title, '/estimator'],
-    [WINDOW_COPY.agents.title, '/agents'],
+    [WINDOW_COPY.orders.title, '/estimator/windows'],
     [WINDOW_COPY.settings.title, '/settings'],
   ];
   expected.forEach(([name, href], i) => {
@@ -143,16 +148,29 @@ it('choosing a More link closes the sheet and navigates', async () => {
   expect(screen.queryByRole('dialog', { name: shell.moreTitle })).toBeNull();
 });
 
-it('windows are pages on a phone', async () => {
+it('a page on a phone is the page itself: no window to close', async () => {
   stubPhone(true);
   signedInApi();
   renderApp('/jobs');
 
-  const jobs = await screen.findByRole('dialog', { name: WINDOW_COPY.jobs.title });
-  expect(jobs).toHaveAttribute('data-variant', 'page');
+  expect(await screen.findByRole('main', { name: WINDOW_COPY.jobs.title })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: common.close })).toBeNull();
 });
 
-it('the compact top bar hides the agents line and the weather', async () => {
+it('the map is its own page on a phone, and Home on a desktop', async () => {
+  stubPhone(true);
+  signedInApi();
+  renderApp('/');
+  const map = await screen.findByRole('main', { name: shell.tabMap });
+  expect(within(map).getByRole('button', { name: 'job pin' })).toBeInTheDocument();
+  cleanup();
+
+  stubPhone(false);
+  renderApp('/');
+  expect(await screen.findByRole('main', { name: WINDOW_COPY.home.title })).toBeInTheDocument();
+});
+
+it('the compact top bar hides the agents line', async () => {
   stubPhone(true);
   signedInApi({
     'GET /api/approvals': () => ({ body: { count: 1, tasks: [makeTask({ id: 't1' })] } }),
@@ -162,14 +180,13 @@ it('the compact top bar hides the agents line and the weather', async () => {
   expect(await screen.findByText(shell.needYourOk(1))).toBeInTheDocument();
   expect(screen.getByRole('button', { name: search.open })).toBeInTheDocument();
   expect(screen.queryByText(shell.agentsWorking(0))).toBeNull();
-  expect(api.count('GET /api/weather')).toBe(0);
 });
 
-it('desktop keeps the dock and no bottom tabs', async () => {
+it('desktop keeps the rail and no bottom tabs', async () => {
   stubPhone(false);
   signedInApi();
   renderApp('/');
 
-  expect(await screen.findByRole('navigation', { name: dock.label })).toBeInTheDocument();
+  expect(await screen.findByRole('navigation', { name: rail.label })).toBeInTheDocument();
   expect(screen.queryByRole('navigation', { name: shell.tabsLabel })).toBeNull();
 });

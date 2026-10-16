@@ -23,7 +23,7 @@ test('an empty inbox says calls will show up once forwarding is on', async ({ pa
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   await page.goto('/front-desk');
-  await expect(page.getByRole('dialog', { name: FRONT_DESK })).toBeVisible();
+  await expect(page.getByRole('main', { name: FRONT_DESK })).toBeVisible();
   await expect(page.getByText('No calls yet. Once forwarding is on, every call shows up here.')).toBeVisible({
     timeout: 20_000,
   });
@@ -41,7 +41,7 @@ test('the inbox lists calls and texts, newest first, with live, unread and urgen
   await markTodaySeen('owner@a.test');
   await page.goto('/front-desk');
 
-  const dialog = page.getByRole('dialog', { name: FRONT_DESK });
+  const dialog = page.getByRole('main', { name: FRONT_DESK });
   await expect(dialog.getByRole('heading', { name: 'This week' })).toBeVisible({ timeout: 20_000 });
   // The AI minutes tile is this week's minutes alone, never set against the monthly allowance.
   for (const tile of ['Answered', 'Booked', 'Transferred', 'Messages', 'Spam', 'AI minutes this week']) {
@@ -95,7 +95,7 @@ test('a call opens with its disclosure, transcript, action cards and summary, an
   await markTodaySeen('owner@a.test');
   await page.goto('/front-desk');
 
-  const dialog = page.getByRole('dialog', { name: FRONT_DESK });
+  const dialog = page.getByRole('main', { name: FRONT_DESK });
   await dialog.getByRole('link', { name: new RegExp(MARIA.name) }).click();
   await expect(page).toHaveURL(new RegExp(`/front-desk/${ids.maria}$`));
 
@@ -137,7 +137,7 @@ test('the dock badge counts conversations that need attention and drops when one
   await expect(dock.getByRole('img', { name: '3 conversations waiting' })).toBeVisible({ timeout: 20_000 });
 
   await dock.getByRole('link', { name: FRONT_DESK, exact: false }).click();
-  const dialog = page.getByRole('dialog', { name: FRONT_DESK });
+  const dialog = page.getByRole('main', { name: FRONT_DESK });
   await dialog.getByRole('link', { name: new RegExp(TOM.name) }).click();
   await expect(dialog.getByRole('heading', { name: TOM.name })).toBeVisible({ timeout: 20_000 });
 
@@ -158,7 +158,7 @@ test('a staff reply to a text goes out through the gate and leaves the assistant
   await markTodaySeen('owner@a.test');
   await page.goto(`/front-desk/${ids.tom}`);
 
-  const dialog = page.getByRole('dialog', { name: FRONT_DESK });
+  const dialog = page.getByRole('main', { name: FRONT_DESK });
   await expect(dialog.getByText('Hi, can someone look at my roof this week?')).toBeVisible({ timeout: 20_000 });
   const handling = dialog.getByRole('switch', { name: 'Team is handling' });
   await expect(handling).toHaveAttribute('aria-checked', 'false');
@@ -223,7 +223,7 @@ test('a staff reply to a text goes out through the gate and leaves the assistant
   await page.goto('/front-desk');
   await expect(
     page
-      .getByRole('dialog', { name: FRONT_DESK })
+      .getByRole('main', { name: FRONT_DESK })
       .getByRole('link', { name: new RegExp(TOM.name) })
       .getByText('Team', { exact: true }),
   ).toBeVisible({ timeout: 20_000 });
@@ -242,7 +242,7 @@ test('Mark as spam blocks the number and moves the call to the Spam filter', asy
   await markTodaySeen('owner@a.test');
   await page.goto(`/front-desk/${ids.leak}`);
 
-  const dialog = page.getByRole('dialog', { name: FRONT_DESK });
+  const dialog = page.getByRole('main', { name: FRONT_DESK });
   await expect(dialog.getByText('Water is coming through my ceiling', { exact: false })).toBeVisible({ timeout: 20_000 });
   await expect(dialog.getByText('Took a message for the team', { exact: true })).toBeVisible();
   await dialog.getByRole('button', { name: 'Mark as spam' }).click();
@@ -283,7 +283,7 @@ test('a field rep sees none of the owner conversations and has no Front Desk set
 
   await page.goto('/settings/front-desk');
   await expect(page).toHaveURL(/\/settings\/company$/);
-  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const settings = page.getByRole('main', { name: 'Settings' });
   await expect(settings.getByRole('link', { name: 'Your profile' })).toBeVisible();
   await expect(settings.getByRole('link', { name: FRONT_DESK, exact: true })).toHaveCount(0);
 });
@@ -300,7 +300,7 @@ test('Settings: the switch is blocked without a number, the owner must confirm b
   await markTodaySeen('owner@a.test');
   await page.goto('/settings/front-desk');
 
-  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const settings = page.getByRole('main', { name: 'Settings' });
   const onOff = settings.getByRole('switch', { name: 'Front Desk answers my calls' });
   await expect(onOff).toBeDisabled({ timeout: 20_000 });
   await expect(settings.getByText('Add a business number first.')).toBeVisible();
@@ -352,7 +352,7 @@ test('Settings: your profile saves the transfer phone only with the recording ac
   await markTodaySeen('owner@a.test');
   await page.goto('/settings/profile');
 
-  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const settings = page.getByRole('main', { name: 'Settings' });
   const phone = settings.getByLabel('Your phone number');
   const save = settings.getByRole('button', { name: 'Save', exact: true });
   const ack = settings.getByRole('checkbox', { name: 'I understand calls to this phone are recorded.' });
@@ -393,7 +393,7 @@ test('Settings: the forwarding guide shows codes per carrier, and the test verif
   await markTodaySeen('owner@a.test');
   await page.goto('/settings/front-desk');
 
-  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const settings = page.getByRole('main', { name: 'Settings' });
   const guide = settings.getByRole('region', { name: 'Send your calls to Front Desk' });
   await expect(guide).toBeVisible({ timeout: 20_000 });
   await expect(guide.getByText('Your business number', { exact: true })).toBeVisible();
@@ -464,7 +464,7 @@ test('Settings: the office cannot turn Front Desk on before forwarding is verifi
   await markTodaySeen('office@a.test');
   await page.goto('/settings/front-desk');
 
-  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const settings = page.getByRole('main', { name: 'Settings' });
   const onOff = settings.getByRole('switch', { name: 'Front Desk answers my calls' });
   await expect(settings.getByText("Forwarding isn't verified yet.")).toBeVisible({ timeout: 20_000 });
   await expect(onOff).toBeDisabled();

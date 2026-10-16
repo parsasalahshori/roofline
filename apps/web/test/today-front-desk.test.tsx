@@ -78,21 +78,21 @@ function body(frontDesk: 'urgent' | 'message' | null | undefined) {
 describe('the Today window marks Front Desk follow-ups', () => {
   it('shows From Front Desk for a message', async () => {
     mount(['/today'], { 'GET /api/today': () => ({ body: body('message') }) });
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('main');
     expect(await within(dialog).findByText('From Front Desk')).toBeInTheDocument();
     expect(within(dialog).queryByText('Urgent, from Front Desk')).toBeNull();
   });
 
   it('shows Urgent, from Front Desk for an urgent message', async () => {
     mount(['/today'], { 'GET /api/today': () => ({ body: body('urgent') }) });
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('main');
     expect(await within(dialog).findByText('Urgent, from Front Desk')).toBeInTheDocument();
     expect(within(dialog).queryByText('From Front Desk')).toBeNull();
   });
 
   it('shows neither when the follow-up is not from Front Desk', async () => {
     mount(['/today'], { 'GET /api/today': () => ({ body: body(null) }) });
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('main');
     await within(dialog).findByText('Ben Carter');
     expect(within(dialog).queryByText('From Front Desk')).toBeNull();
     expect(within(dialog).queryByText('Urgent, from Front Desk')).toBeNull();

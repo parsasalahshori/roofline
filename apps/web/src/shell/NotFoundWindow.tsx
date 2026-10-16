@@ -1,12 +1,12 @@
 import { Button, EmptyState } from '@roofline/ui';
 import { shell } from '../copy/shell.ts';
-import { AppWindow } from './AppWindow.tsx';
+import { AppPage } from './AppPage.tsx';
 
-/** The window for an address that leads nowhere. Its one action goes back to the map. */
+/** The page for an address that leads nowhere. Its one action goes home. */
 export function NotFoundWindow() {
   return (
-    <AppWindow app="notFound">
-      <EmptyState title={shell.notFoundTitle} action={<Button variant="primary" href="/">{shell.backToMap}</Button>} />
-    </AppWindow>
+    <AppPage app="notFound">
+      <EmptyState title={shell.notFoundTitle} action={<Button variant="primary" href="/">{shell.backHome}</Button>} />
+    </AppPage>
   );
 }

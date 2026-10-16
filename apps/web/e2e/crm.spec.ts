@@ -29,7 +29,7 @@ test('the board shows the showcase pipeline', async ({ page, loginAs, markTodayS
   await markTodaySeen('owner@a.test');
   await page.goto('/jobs');
 
-  const jobsWindow = page.getByRole('dialog', { name: 'Jobs', exact: true });
+  const jobsWindow = page.getByRole('main', { name: 'Jobs', exact: true });
   await expect(jobsWindow).toBeVisible();
   await expect(jobsWindow.getByRole('region', { name: 'Pipeline board' })).toBeVisible();
 
@@ -84,7 +84,7 @@ test('a new job from the map home in 2 clicks to its form', async ({ page, login
   await click(search.getByRole('option', { name: new RegExp(`^${NEW_JOB_COPY}`) }));
 
   await expect(page).toHaveURL(/\/jobs\/new$/);
-  const form = page.getByRole('dialog', { name: 'Jobs', exact: true });
+  const form = page.getByRole('main', { name: 'Jobs', exact: true });
   await expect(form).toBeVisible();
   await expect(form.getByRole('button', { name: 'New customer', exact: true })).toBeVisible();
   expect(clicks.count).toBeLessThanOrEqual(2);
@@ -99,10 +99,10 @@ test('a new job from the map home in 2 clicks to its form', async ({ page, login
   await form.getByRole('button', { name: 'Create job', exact: true }).click();
 
   await expect(page).toHaveURL(/\/jobs\/[0-9a-f-]{36}$/);
-  await expect(page.getByRole('dialog').getByText('Pat Newcomer').first()).toBeVisible();
+  await expect(page.getByRole('main').getByText('Pat Newcomer').first()).toBeVisible();
 
-  // Back on the map, the new customer and the new open job are pins
-  await page.keyboard.press('Escape');
+  // Back on Home, the new customer and the new open job are pins
+  await page.getByRole('navigation', { name: 'Apps' }).getByRole('link', { name: 'Home', exact: true }).click();
   await expect(page).toHaveURL(/\/$/);
   const after = page.getByText('Map showing 71 customers and 26 open jobs.');
   await expect(after).toBeAttached({ timeout: 20_000 });
@@ -114,7 +114,7 @@ test('the timeline shows a note, a stage move and a quote', async ({ page, login
   const jobId = await jobWithoutQuote(db, scenario.a.companyId, 'lead');
   await page.goto(`/jobs/${jobId}`);
 
-  const win = page.getByRole('dialog').first();
+  const win = page.getByRole('main').first();
   const timeline = win.getByRole('list', { name: 'Timeline' });
 
   // 1. A note
@@ -133,7 +133,7 @@ test('the timeline shows a note, a stage move and a quote', async ({ page, login
   await page.goto(`/jobs/${jobId}`);
 
   // Newest first: the quote, then the move, then the note
-  const items = page.getByRole('dialog').first().getByRole('list', { name: 'Timeline' }).getByRole('listitem');
+  const items = page.getByRole('main').first().getByRole('list', { name: 'Timeline' }).getByRole('listitem');
   await expect(items.nth(0)).toContainText('Quote Q-0001 started');
   await expect(items.nth(1)).toContainText('Moved to Inspection');
   await expect(items.nth(2)).toContainText(note);

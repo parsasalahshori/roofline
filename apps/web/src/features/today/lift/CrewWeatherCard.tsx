@@ -1,6 +1,6 @@
 import { Skeleton } from '@roofline/ui';
 import { liftFeed } from '../../../copy/liftFeed.ts';
-import { WeatherIcon } from '../../../shell/topbar/topbarIcons.tsx';
+import { WeatherIcon } from '../../../shell/weatherIcon.tsx';
 import { useWeatherOutlook } from './liftApi.ts';
 import styles from './CrewWeatherCard.module.css';
 

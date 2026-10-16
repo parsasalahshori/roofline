@@ -44,7 +44,7 @@ test('exact report: owner approves the spend', async ({ page, loginAs, markToday
   await page.getByRole('button', { name: /^Approve 1 step · up to \$[\d,]+$/ }).click();
 
   // The order is placed and parks while the report is made. The step reads "Working on it".
-  await expect(page.getByRole('dialog').getByRole('list').getByText('Working on it', { exact: true })).toHaveCount(1, {
+  await expect(page.getByRole('main').getByRole('list').getByText('Working on it', { exact: true })).toHaveCount(1, {
     timeout: 20_000,
   });
 });

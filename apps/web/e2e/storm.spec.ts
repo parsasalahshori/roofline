@@ -9,7 +9,7 @@ import { test, expect, readStack } from './fixtures.ts';
  */
 
 function row(page: Page, title: string | RegExp) {
-  return page.getByRole('dialog').getByRole('listitem').filter({ hasText: title });
+  return page.getByRole('main').getByRole('listitem').filter({ hasText: title });
 }
 
 /** Drafts the fixture storm's plan as the signed-in user and returns the new task id. */
@@ -35,7 +35,7 @@ test('storm plan in 2 clicks', async ({ page, loginAs, markTodaySeen, scenario, 
   await expect(page).toHaveURL(new RegExp('/storm/plans/' + taskId + '$'));
   await click(page.getByRole('button', { name: /^Approve \d+ steps/ }));
 
-  await expect(page.getByRole('dialog').getByRole('list').getByText('Done', { exact: true })).toHaveCount(5, {
+  await expect(page.getByRole('main').getByRole('list').getByText('Done', { exact: true })).toHaveCount(5, {
     timeout: 60_000,
   });
   expect(clicks.count).toBe(2);

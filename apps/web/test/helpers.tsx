@@ -87,7 +87,7 @@ export const SHELL_ROUTES: Record<string, () => Reply> = {
   'GET /api/home/signed': () => ({ body: { monthTotalCents: 0, goalCents: null, weekly: [], openPipelineCents: 0 } }),
   'GET /api/weather/outlook': () => ({ body: { outlook: null } }),
   'GET /api/agents/feed': () => ({ body: { items: [], nextCursor: null } }),
-  'GET /api/company': () => ({ body: { id: 'c1', name: 'Acme Roofing', timezone: 'America/Chicago' } }),
+  'GET /api/company': () => ({ body: { id: 'c1', name: 'Summit Roofing', timezone: 'America/Chicago' } }),
   'GET /api/map/area': () => ({ body: { serviceArea: null, bounds: [-97.5, 32.5, -96.5, 33.5] } }),
   [STORM_LAYER_KEY]: () => ({ body: STORM_LAYER_BODY }),
   'GET /api/conversations?filter=needs_attention': () => ({ body: { items: [], nextCursor: null } }),

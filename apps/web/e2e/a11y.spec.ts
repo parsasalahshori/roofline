@@ -32,7 +32,7 @@ test('approvals list has no serious accessibility violations', async ({ page, lo
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   await page.goto('/approvals');
-  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByRole('main')).toBeVisible();
   await scan(page);
 });
 
@@ -54,7 +54,7 @@ test('setup has no serious accessibility violations', async ({ page, loginAs, ma
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   await page.goto('/settings/setup');
-  await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
+  await expect(page.getByRole('main', { name: 'Settings' })).toBeVisible();
   await scan(page);
 });
 
@@ -62,7 +62,7 @@ test('estimator has no serious accessibility violations', async ({ page, loginAs
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   await page.goto('/estimator');
-  await expect(page.getByRole('dialog', { name: 'Measure' })).toBeVisible();
+  await expect(page.getByRole('main', { name: 'Measure' })).toBeVisible();
   await expect(page.getByRole('searchbox', { name: 'Search name or address' })).toBeVisible();
   await scan(page);
 });

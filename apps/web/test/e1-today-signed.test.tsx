@@ -84,7 +84,7 @@ describe('Today: signed today', () => {
 
   it('lists signed proposals', async () => {
     mount([signed('p1', 'Maria Lopez', '12 Oak St', 1425000), signed('p2', 'Dan Reyes', '9 Pine Rd', 990000, 'exact')]);
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('main');
     expect(await within(dialog).findByRole('heading', { name: today.signedToday })).toBeInTheDocument();
     const list = await within(dialog).findByRole('list', { name: today.signedLabel });
     expect(within(list).getByText('Maria Lopez')).toBeInTheDocument();

@@ -178,7 +178,7 @@ test('waiting list: rows link to the approvals review', async ({ page, loginAs, 
   await open.click();
   await expect(page).toHaveURL(new RegExp('/approvals/' + agentsSeed.draftTaskId + '$'));
   // The /approvals/:id route opens the review dialog (approvals.spec.ts); its Approve button proves the review, not the list, is showing.
-  const review = page.getByRole('dialog');
+  const review = page.getByRole('main');
   await expect(review.getByRole('button', { name: /^Approve \d+ steps?/ })).toBeVisible({ timeout: 15_000 });
   await expect(review.getByText(agentsSeed.draftTitle).first()).toBeVisible();
 });

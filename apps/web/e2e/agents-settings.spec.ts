@@ -98,7 +98,7 @@ test('settings agents: reps cannot see the Agents tab', async ({ page, loginAs, 
   await loginAs(page, 'rep');
   await markTodaySeen('rep@a.test');
   await page.goto('/settings');
-  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const settings = page.getByRole('main', { name: 'Settings' });
   await expect(settings).toBeVisible();
   await expect(settings.getByRole('link', { name: 'Agents', exact: true })).toHaveCount(0);
   await expect(settings.getByRole('tab', { name: 'Agents', exact: true })).toHaveCount(0);

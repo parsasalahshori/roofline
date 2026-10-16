@@ -2,7 +2,7 @@ import styles from './Avatar.module.css';
 
 export type AvatarProps = {
   name: string;
-  size?: 24 | 32 | 40;
+  size?: 24 | 28 | 32 | 40;
 };
 
 /** The first letter of the first and last word: "Dana Marie Park" is DP, "Cher" is C. */

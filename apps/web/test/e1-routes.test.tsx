@@ -7,7 +7,7 @@ import { DEFAULT_TIER_TEMPLATES, defaultPricebook } from '@roofline/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
-import { dock, WINDOW_COPY } from '../src/copy/dock.ts';
+import { rail } from '../src/copy/rail.ts';
 import { homeowner } from '../src/copy/homeowner.ts';
 import { liftMeasure } from '../src/copy/liftMeasure.ts';
 import { measure } from '../src/copy/measure.ts';
@@ -91,11 +91,6 @@ function renderApp(path: string) {
     </Providers>,
   );
   return { router, queryClient, user: userEvent.setup() };
-}
-
-/** A dock link by its label. Its name also holds the "Coming soon" note and any badge, so only the start of the name is matched. */
-function dockLink(dockNav: HTMLElement, label: string) {
-  return within(dockNav).getByRole('link', { name: new RegExp('^' + label) });
 }
 
 describe('E1 windows', () => {
@@ -187,19 +182,9 @@ describe('E1 windows', () => {
     const { router } = renderApp('/p/abc');
 
     expect(await screen.findByText(homeowner.goneTitle)).toBeInTheDocument();
-    expect(screen.queryByRole('navigation', { name: dock.label })).toBeNull();
+    expect(screen.queryByRole('navigation', { name: rail.label })).toBeNull();
     expect(document.querySelector('[data-map-mock]')).toBeNull();
     expect(where(router)).toBe('/p/abc');
-  });
-
-  it('the dock Estimator has no Coming soon note', async () => {
-    signedInApi(ACCOUNT, proposalListRoutes());
-    renderApp('/estimator');
-    const dockNav = await screen.findByRole('navigation', { name: dock.label });
-
-    expect(dockLink(dockNav, WINDOW_COPY.estimator.title).textContent ?? '').not.toContain(dock.comingSoon);
-    expect(dockLink(dockNav, WINDOW_COPY.storm.title).textContent ?? '').not.toContain(dock.comingSoon);
-    expect(dockLink(dockNav, WINDOW_COPY['front-desk'].title).textContent ?? '').not.toContain(dock.comingSoon);
   });
 
   it('Settings Prices shows the three E1 sections', async () => {

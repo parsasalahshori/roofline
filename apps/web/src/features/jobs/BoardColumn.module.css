@@ -5,6 +5,7 @@
   flex-direction: column;
   gap: 12px;
   min-width: 0;
+  min-height: 0;
   padding: 12px;
   border-radius: var(--r-3);
   background: var(--surface-2);
@@ -48,9 +49,11 @@
 
 .cards {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 8px;
   min-height: 80px;
+  overflow-y: auto;
 }
 
 .empty {
@@ -64,5 +67,9 @@
   .column {
     flex: 0 0 auto;
     width: 100%;
+  }
+
+  .cards {
+    overflow-y: visible;
   }
 }

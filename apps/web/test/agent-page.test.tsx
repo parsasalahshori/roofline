@@ -9,7 +9,7 @@ import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { RunNowButton } from '../src/features/agents/RunNowButton.tsx';
 import { agentPage, agents, agentsCommon } from '../src/copy/agents.ts';
-import { WINDOW_COPY } from '../src/copy/dock.ts';
+import { WINDOW_COPY } from '../src/copy/rail.ts';
 import { AGENT_LABEL } from '../src/copy/status.ts';
 import { ACCOUNT, type Routes, SHELL_ROUTES, stubApi } from './helpers.tsx';
 
@@ -71,7 +71,7 @@ function setup(path: string, role: 'owner' | 'office' | 'rep' = 'owner', overrid
 describe('agent page', () => {
   it('shows time saved as an estimate', async () => {
     setup('/agents/storm-scout');
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
+    const dialog = await screen.findByRole('main', { name: WINDOW_COPY.agents.title });
     expect(await within(dialog).findByText(/about 31 hours/)).toBeInTheDocument();
     expect(within(dialog).getAllByText(/\(estimate\)/).length).toBeGreaterThan(0);
   });
@@ -97,7 +97,7 @@ describe('agent page', () => {
 
   it('shows not-found for an unknown agent', async () => {
     setup('/agents/nope');
-    expect(await screen.findByRole('dialog', { name: WINDOW_COPY.notFound.title })).toBeInTheDocument();
+    expect(await screen.findByRole('main', { name: WINDOW_COPY.notFound.title })).toBeInTheDocument();
   });
 
   it('shows the pause switch to the owner only', async () => {
@@ -153,7 +153,7 @@ describe('agent page', () => {
     setup('/agents/storm-scout', 'owner', {
       [GET]: () => ({ body: { ...DETAIL, runNow: { kind } as AgentDetail['runNow'] } }),
     });
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
+    const dialog = await screen.findByRole('main', { name: WINDOW_COPY.agents.title });
     expect(await within(dialog).findByText(text)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: agentPage.runNowButton })).not.toBeInTheDocument();
   });
@@ -275,7 +275,7 @@ describe('agent page', () => {
 
   it('section headings are h3 under the h2 title', async () => {
     setup('/agents/storm-scout');
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
+    const dialog = await screen.findByRole('main', { name: WINDOW_COPY.agents.title });
     await within(dialog).findByRole('link', { name: '1 inch' });
     expect(within(dialog).getByRole('heading', { level: 2, name: AGENT_LABEL.storm_scout })).toBeInTheDocument();
     expect(within(dialog).getAllByRole('heading', { level: 2 })).toHaveLength(1);

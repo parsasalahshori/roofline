@@ -1,11 +1,11 @@
-import { IconButton, useFocusTrap } from '@roofline/ui';
+import { Button, Icon, IconButton, useFocusTrap } from '@roofline/ui';
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
 import { useMe, useSearch } from '../../api/hooks.ts';
+import { rail } from '../../copy/rail.ts';
 import { search } from '../../copy/search.ts';
 import styles from './SearchDialog.module.css';
-import { SearchIcon } from './searchIcon.tsx';
 import { readRecents } from '../recents.ts';
 import { OPEN_SEARCH_EVENT } from './openSearch.ts';
 import { actionOptions, measureOptions, recentOptions, toOptions, type SearchOption } from './searchOptions.ts';
@@ -22,8 +22,13 @@ function stepIndex(current: number, count: number, direction: 'down' | 'up'): nu
   return current <= 0 ? count - 1 : current - 1;
 }
 
-/** The search button in the top bar, and the search it opens. Cmd+K or Ctrl+K opens it from anywhere. */
-export function SearchDialog() {
+const isMac = (): boolean => typeof navigator !== 'undefined' && /mac|iphone|ipad/i.test(navigator.platform);
+
+/**
+ * The search the rail and the phone's top bar open. `field` is the rail's search box (the words and the key hint),
+ * `icon` the phone's button. Cmd+K or Ctrl+K opens it from anywhere.
+ */
+export function SearchDialog({ variant = 'icon' }: { variant?: 'icon' | 'field' }) {
   const [open, setOpen] = useState(false);
 
   // Cmd+K on a Mac, Ctrl+K elsewhere: works from anywhere on the page, including inside a text field
@@ -45,13 +50,21 @@ export function SearchDialog() {
 
   return (
     <>
-      <IconButton
-        label={search.open}
-        icon={<SearchIcon />}
-        onClick={() => setOpen(true)}
-        aria-haspopup="dialog"
-        className={styles.trigger}
-      />
+      {variant === 'field' ? (
+        <Button variant="ghost" aria-label={search.open} aria-haspopup="dialog" onClick={() => setOpen(true)} className={styles.field}>
+          <Icon name="search" size={16} />
+          <span className={styles.fieldText}>{rail.searchField}</span>
+          <kbd className={styles.hint}>{rail.searchHint(isMac())}</kbd>
+        </Button>
+      ) : (
+        <IconButton
+          label={search.open}
+          icon={<Icon name="search" />}
+          onClick={() => setOpen(true)}
+          aria-haspopup="dialog"
+          className={styles.trigger}
+        />
+      )}
       {open ? <SearchPanel onClose={() => setOpen(false)} /> : null}
     </>
   );

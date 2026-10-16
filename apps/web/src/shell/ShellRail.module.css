@@ -1,0 +1,43 @@
+/* The company block: the mark, the name in Archivo and the place. A link home. */
+.company {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.names {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.name {
+  overflow: hidden;
+  font: 700 13px/1.15 var(--f-display);
+  font-stretch: 108%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.place {
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--ink-3);
+  font: 500 var(--font-size-min)/1.2 var(--f-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Below 1100px the rail is icons only: the mark alone, centred */
+@media (min-width: 768px) and (max-width: 1099.98px) {
+  .company {
+    justify-content: center;
+  }
+
+  .names {
+    display: none;
+  }
+}

@@ -1,15 +1,15 @@
-/* The popover is positioned against the name; the top bar's layer sits above the Window, so the menu opens over it */
+/* The popover is positioned against the trigger: below it in the phone's bar, above it at the foot of the rail */
 .root {
   position: relative;
   display: flex;
   align-items: center;
+  min-width: 0;
 }
 
-/* lift-01: the trigger is just the initials in a dark circle; the name is kept for assistive technology.
-   0,2,0 so these beat the kit's Button rules without a !important. */
+/* 0,2,0 so these beat the kit's Button rules without a !important */
 .root .trigger {
-  min-width: 30px;
-  min-height: 26px;
+  min-width: 36px;
+  min-height: 36px;
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -19,21 +19,47 @@
   background: var(--sunken);
 }
 
-.root .trigger:focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
+/* At the foot of the rail: initials, the name and the role in one row */
+.root[data-variant="rail"] {
+  width: 100%;
+  gap: 4px;
 }
 
-.root .trigger [data-size] {
-  width: 22px;
-  height: 22px;
-  background: var(--ink);
-  color: var(--ink-inv);
+.root[data-variant="rail"] .trigger {
+  flex: 1 1 auto;
+  justify-content: flex-start;
+  gap: 10px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px;
+  border-radius: var(--r-2);
+  text-align: left;
+}
+
+.root[data-variant="rail"] .trigger:hover {
+  background: var(--surface-2);
+}
+
+.who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.name {
+  overflow: hidden;
+  font: 600 13px/1.2 var(--f-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role {
+  color: var(--ink-3);
   font-size: var(--font-size-min);
-  font-weight: 600;
+  font-weight: 400;
 }
 
-/* Phone: a 40px target around the 30px circle */
+/* Phone: a 40px target around the 28px circle */
 @media (max-width: 767.98px) {
   .root .trigger {
     min-width: 40px;
@@ -41,12 +67,30 @@
   }
 }
 
+/* Below 1100px the rail shows the initials alone */
+@media (min-width: 768px) and (max-width: 1099.98px) {
+  .root[data-variant="rail"] .who {
+    display: none;
+  }
+
+  .root[data-variant="rail"] .trigger {
+    justify-content: center;
+  }
+}
+
 .popover {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  z-index: 1;
+  z-index: 60;
   min-width: 220px;
+}
+
+.root[data-variant="rail"] .popover {
+  top: auto;
+  right: auto;
+  bottom: calc(100% + 8px);
+  left: 0;
 }
 
 /* The popover takes focus only to hold it; the entries carry the ring */

@@ -4,10 +4,10 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
-  height: 26px;
+  height: 32px;
   padding: 0 8px;
-  border-radius: 7px;
-  color: var(--ink);
+  border-radius: var(--r-2);
+  color: var(--ink-3);
   font-size: 13px;
   font-weight: 500;
   white-space: nowrap;
@@ -16,11 +16,7 @@
 
 .agents:hover {
   background: var(--sunken);
-}
-
-.agents:focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
+  color: var(--ink);
 }
 
 .dot {

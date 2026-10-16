@@ -4,7 +4,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router';
 import type { StepView, TaskView } from '../src/api/types.ts';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { approvals } from '../src/copy/approvals.ts';
-import { WINDOW_COPY } from '../src/copy/dock.ts';
+import { WINDOW_COPY } from '../src/copy/rail.ts';
 import { review } from '../src/copy/review.ts';
 import { shell } from '../src/copy/shell.ts';
 import { stepAds } from '../src/copy/stepAds.ts';
@@ -313,7 +313,7 @@ describe('the review screen', () => {
     renderAt(<Review taskId="t1" />, '/approvals/t1');
 
     expect(await screen.findByText(shell.notFoundTitle)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: shell.backToMap })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('link', { name: shell.backHome })).toHaveAttribute('href', '/');
   });
 
   it('the route shows the plan named in the address', async () => {
@@ -578,7 +578,7 @@ describe('the review screen', () => {
     renderAt(<Review taskId="t1" />, '/approvals/t1');
 
     // The window opens while the plan loads, so the stat strip is awaited, not just the window
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.approvals.title });
+    const dialog = await screen.findByRole('main', { name: WINDOW_COPY.approvals.title });
     expect(await within(dialog).findByText('Storm Scout')).toBeInTheDocument();
     expect(within(dialog).getByText('Waiting for your OK')).toBeInTheDocument();
     expect(within(dialog).getByText(review.drafted(plan.createdAt))).toBeInTheDocument();

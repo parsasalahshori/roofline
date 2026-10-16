@@ -1,163 +1,74 @@
 /*
- * Layers, bottom to top: the map, an open window (20), the top bar (25), the dock on a desktop or the
- * bottom tabs on a phone (30). The Sheet (40) and toasts (50) come from the kit. Nothing here sets a
- * z-index, transform, filter or opacity on the shell, the windows wrapper or the outlet, so the window
- * and the dock compare in the page's own stacking context. A floating window or a phone page is kept
- * between the top bar and the dock or the tabs (the last rules), so neither one covers it.
- *
- * The banner slot sits directly under the top bar (between the top bar and the windows). Its measured
- * height is --shell-banner-height, set on .shell from the slot's ResizeObserver, and it is 0 when empty.
- *
- * The inset variables on .shell are the space the chrome takes: --shell-base-top is the top bar's height,
- * --shell-top-inset is that plus the banner slot, and --shell-bottom-inset is the dock (desktop) or the
- * tab bar (phone). Windows read them, so a window never sits under the chrome or a banner. Change the
- * chrome's height here and the windows follow.
+ * The shell is the height of the screen and does not scroll: the rail and the top bar stay put, and the content
+ * column under them is the one thing that scrolls. Layers, bottom to top: the page, the phone's tab bar (2), the
+ * account menu (60). Sheets (40), search (40) and toasts (50) come from the kit and are portaled to the body.
  */
 .shell {
-  --shell-base-top: 34px;
-  --shell-top-inset: calc(var(--shell-base-top) + var(--shell-banner-height, 0px));
-  --shell-bottom-inset: 90px;
-  max-width: 100vw;
-  overflow-x: clip;
+  --rail-w: 236px;
+  display: grid;
+  grid-template-columns: var(--rail-w) minmax(0, 1fr);
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--ground);
   color: var(--ink);
 }
 
-/* Phone: the compact top bar is 52px tall and the tab bar is 64px plus the device's bottom safe area */
+/* Between a phone and a laptop the rail keeps to its icons */
+@media (min-width: 768px) and (max-width: 1099.98px) {
+  .shell {
+    --rail-w: 64px;
+  }
+}
+
+.rail {
+  min-width: 0;
+  min-height: 0;
+}
+
+.rail > aside {
+  height: 100%;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.topBar,
+.banners {
+  flex: none;
+}
+
+/* The banner strip is empty (zero tall) unless the plan needs attention */
+.content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* Phone: the content, then the tab bar in the same column. The Measure tile stands above the bar, so the bar does not clip it. */
 @media (max-width: 767.98px) {
   .shell {
-    --shell-base-top: 44px;
-    --shell-bottom-inset: calc(64px + env(safe-area-inset-bottom, 0px));
-  }
-}
-
-.map {
-  position: fixed;
-  inset: 0;
-}
-
-.topBar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 25;
-}
-
-/*
- * The banner slot sits under the top bar, at the top bar's height. Windows read --shell-top-inset, which
- * adds the measured banner height, so they move down while a banner shows. Nothing here sets a transform,
- * filter or opacity, so the slot does not make a stacking context for the windows. It is 0 tall when empty.
- */
-.banners {
-  position: fixed;
-  top: var(--shell-base-top);
-  left: 0;
-  right: 0;
-  z-index: 24;
-}
-
-/* The outlet's wrapper: it only keeps the page inside the screen width */
-.windows {
-  max-width: 100vw;
-}
-
-/*
- * Desktop only: the end slot (weather, search, account) is never narrower than its content, so it
- * cannot spill left over the middle. The company name on the left takes the squeeze and ends in an
- * ellipsis. When both sides fit in equal columns the middle stays centered, as the kit intends.
- * `.topBar > header` is 0,1,1 and beats the kit's 0,1,0.
- */
-@media (min-width: 768px) {
-  .topBar > header {
-    grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
-  }
-}
-
-/*
- * lift-01: the thin, quiet bar: translucent over the map with a hairline under it. `.topBar > header` is
- * 0,1,1 and beats the kit's 0,1,0 for the same properties.
- */
-.topBar > header {
-  min-height: var(--shell-base-top);
-  padding: 0 12px;
-  gap: 8px;
-  border-bottom: 0;
-  box-shadow: 0 1px 0 var(--line);
-  background: var(--surface);
-  color: var(--ink);
-  font-family: var(--f-ui);
-  font-size: 13px;
-  -webkit-backdrop-filter: blur(22px) saturate(1.4);
-  backdrop-filter: blur(22px) saturate(1.4);
-}
-
-.topBar > header > [data-slot="end"] {
-  gap: 4px;
-}
-
-/* Phone: a 52px bar with a narrower side padding, so the three slots fit 360px */
-@media (max-width: 767.98px) {
-  .topBar > header {
-    padding: 0 12px;
-    gap: 6px;
+    display: flex;
+    flex-direction: column;
   }
 
-  .topBar > header > [data-slot="end"] {
-    gap: 2px;
+  .main {
+    flex: 1 1 auto;
   }
-}
 
-/* The dock's row takes clicks only where its apps are; the map stays usable around it */
-.dock {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 12px;
-  z-index: 30;
-  display: flex;
-  justify-content: center;
-  padding: 0 16px;
-  pointer-events: none;
-}
-
-.dock > * {
-  pointer-events: auto;
-}
-
-/*
- * Phone only: the bottom tab bar is fixed to the bottom edge above the map, and the windows stop at
- * its top edge through --shell-bottom-inset. The safe-area padding keeps the tabs off the home bar.
- */
-.tabs {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 30;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-  border-top: 1px solid var(--line);
-  background: var(--surface);
-  box-shadow: var(--e-2);
-  -webkit-backdrop-filter: blur(18px) saturate(1.4);
-  backdrop-filter: blur(18px) saturate(1.4);
-}
-
-/*
- * A floating window (the kit's Window, rendered by the outlet) sits between the top bar and the dock,
- * each inset from the window by the variables above. With height auto it fills that band up to 860px,
- * and the kit's auto margins center it there. The kit's selector is 0,2,0 and this one is 0,3,0, so
- * this one wins. Only the Window has role dialog and data-variant. The search dialog is portaled to
- * the body, outside .shell.
- */
-.shell [role="dialog"][data-variant="floating"] {
-  top: var(--shell-top-inset);
-  bottom: var(--shell-bottom-inset);
-  height: auto;
-  max-height: 860px;
-}
-
-/* Phone: a page window starts below the compact top bar and stops above the tab bar */
-.shell [role="dialog"][data-variant="page"] {
-  top: var(--shell-top-inset);
-  bottom: var(--shell-bottom-inset);
+  .tabs {
+    position: relative;
+    z-index: 2;
+    flex: none;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    border-top: 1px solid var(--line);
+    background: var(--surface);
+  }
 }

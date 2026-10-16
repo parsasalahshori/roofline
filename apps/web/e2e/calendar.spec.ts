@@ -24,7 +24,7 @@ test('book an inspection from a lead in 3 clicks and the job moves', async ({
   expect(jobId).toBeDefined();
 
   await page.goto(`/jobs/${jobId}`);
-  await expect(page.getByRole('dialog').first()).toBeVisible();
+  await expect(page.getByRole('main').first()).toBeVisible();
 
   await click(page.getByRole('link', { name: 'Book inspection' }));
   const times = page.getByRole('list', { name: 'Suggested times' });
@@ -53,7 +53,7 @@ test('connect a calendar, and appointments sync both ways', async ({ page, login
   await markTodaySeen('owner@a.test');
 
   await page.goto('/settings/connections');
-  await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
+  await expect(page.getByRole('main', { name: 'Settings' })).toBeVisible();
   await page.getByRole('link', { name: 'Connect Google Calendar' }).click();
 
   // The fake sign-in sends the browser straight back through the callback.

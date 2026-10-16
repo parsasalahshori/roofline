@@ -1,0 +1,46 @@
+.crumb {
+  min-width: 0;
+}
+
+.list {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font: 500 var(--font-size-body)/1 var(--f-ui);
+  color: var(--ink-3);
+}
+
+.item,
+.sep {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.sep {
+  color: var(--ink-3);
+}
+
+.link {
+  color: var(--ink-3);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.link:hover {
+  color: var(--ink);
+}
+
+.here {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.here[data-last="true"] {
+  color: var(--ink);
+  font-weight: 600;
+}

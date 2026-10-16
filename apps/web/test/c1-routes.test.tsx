@@ -8,7 +8,7 @@ import { DEFAULT_TIER_TEMPLATES } from '@roofline/shared';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { create } from '../src/copy/create.ts';
-import { dock, WINDOW_COPY } from '../src/copy/dock.ts';
+import { WINDOW_COPY } from '../src/copy/rail.ts';
 import { job } from '../src/copy/job.ts';
 import { jobs } from '../src/copy/jobs.ts';
 import { prices } from '../src/copy/prices.ts';
@@ -72,11 +72,6 @@ function renderApp(path: string) {
   return { router, queryClient, user: userEvent.setup() };
 }
 
-/** A dock link by its label. Its name also holds the "Coming soon" note and any badge, so only the start of the name is matched. */
-function dockLink(dockNav: HTMLElement, label: string) {
-  return within(dockNav).getByRole('link', { name: new RegExp('^' + label) });
-}
-
 /** The row of tab links in the Settings window. */
 const settingsTabs = () => screen.findByRole('navigation', { name: settings.tabsLabel });
 
@@ -101,7 +96,7 @@ describe('C1 windows', () => {
     signedInApi();
     renderApp(path);
 
-    const dialog = await screen.findByRole('dialog', { name: title });
+    const dialog = await screen.findByRole('main', { name: title });
     expect(await within(dialog).findByText(copy)).toBeInTheDocument();
   });
 
@@ -127,7 +122,7 @@ describe('C1 windows', () => {
     });
     renderApp('/jobs/j1/quotes/q1');
 
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.jobs.title });
+    const dialog = await screen.findByRole('main', { name: WINDOW_COPY.jobs.title });
     expect(await within(dialog).findByText('Q-0001')).toBeInTheDocument();
   });
 
@@ -135,7 +130,7 @@ describe('C1 windows', () => {
     signedInApi();
     renderApp('/jobs');
 
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.jobs.title });
+    const dialog = await screen.findByRole('main', { name: WINDOW_COPY.jobs.title });
     const tabs = within(dialog).getByRole('navigation', { name: jobs.tabsLabel });
     expect(within(tabs).getByRole('link', { name: jobs.tabs.pipeline })).toHaveAttribute('aria-current', 'page');
     expect(within(tabs).getByRole('link', { name: jobs.tabs.customers })).toHaveAttribute('href', '/customers');
@@ -146,7 +141,7 @@ describe('C1 windows', () => {
     signedInApi(ACCOUNT, { 'GET /api/customers?limit=50&offset=0': () => ({ body: { customers: [], total: 0 } }) });
     renderApp('/customers');
 
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.customers.title });
+    const dialog = await screen.findByRole('main', { name: WINDOW_COPY.customers.title });
     const tabs = within(dialog).getByRole('navigation', { name: jobs.tabsLabel });
     expect(within(tabs).getByRole('link', { name: jobs.tabs.customers })).toHaveAttribute('aria-current', 'page');
   });
@@ -155,7 +150,7 @@ describe('C1 windows', () => {
     signedInApi();
     renderApp('/jobs/x/y/z');
 
-    expect(await screen.findByRole('dialog', { name: WINDOW_COPY.notFound.title })).toBeInTheDocument();
+    expect(await screen.findByRole('main', { name: WINDOW_COPY.notFound.title })).toBeInTheDocument();
   });
 });
 
@@ -164,7 +159,7 @@ describe('the New job and New customer screens', () => {
     signedInApi();
     renderApp('/jobs/new');
 
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.jobs.title });
+    const dialog = await screen.findByRole('main', { name: WINDOW_COPY.jobs.title });
     expect((await within(dialog).findAllByText(create.newJob.stepCustomer)).length).toBeGreaterThan(0);
   });
 
@@ -212,16 +207,3 @@ describe('settings tabs for the C1 screens', () => {
   });
 });
 
-describe('dock notes', () => {
-  it('has no "Coming soon" note on Jobs, Calendar, Agents, Storm or Front Desk', async () => {
-    signedInApi();
-    renderApp('/');
-    const dockNav = await screen.findByRole('navigation', { name: dock.label });
-
-    expect(dockLink(dockNav, WINDOW_COPY.jobs.title).textContent ?? '').not.toContain(dock.comingSoon);
-    expect(dockLink(dockNav, WINDOW_COPY.calendar.title).textContent ?? '').not.toContain(dock.comingSoon);
-    expect(dockLink(dockNav, WINDOW_COPY.agents.title).textContent ?? '').not.toContain(dock.comingSoon);
-    expect(dockLink(dockNav, WINDOW_COPY.storm.title).textContent ?? '').not.toContain(dock.comingSoon);
-    expect(dockLink(dockNav, WINDOW_COPY['front-desk'].title).textContent ?? '').not.toContain(dock.comingSoon);
-  });
-});

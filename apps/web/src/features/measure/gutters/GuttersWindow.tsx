@@ -776,7 +776,7 @@ function Loaded({ m, server, onQuoteReady }: { m: MeasurementView; server: Gutte
   const t = view.totals;
   return (
     <>
-      <main className={frame.main}>
+      <div className={frame.main}>
         <div className={styles.stage}>
           <GutterMap m={m} view={view} scan={scan} canToggle={done} onToggle={toggle} />
           <div className={styles.overlay}>
@@ -800,7 +800,7 @@ function Loaded({ m, server, onQuoteReady }: { m: MeasurementView; server: Gutte
           </div>
           {scan.phase === 'idle' ? <ScanBar scan={scan} introName={copy.scanIntroName} introRest={copy.scanIntroRest} button={copy.scanButton} /> : null}
         </div>
-      </main>
+      </div>
       {done ? (
         <div className={frame.proposal}>
           <TierPanel
@@ -896,22 +896,22 @@ export function GuttersWindow() {
         </aside>
         {m !== undefined && g !== undefined ? (
           usableRoof(m.roof) === null && g.runs.length === 0 ? (
-            <main className={frame.main}>
+            <div className={frame.main}>
               <div className={frame.pick}>
                 <EmptyState title={copy.noRoof} />
               </div>
-            </main>
+            </div>
           ) : (
             <Loaded key={m.id} m={m} server={g} onQuoteReady={setQuoteReady} />
           )
         ) : measurement.isError || gutters.isError ? (
-          <main className={frame.main}>
+          <div className={frame.main}>
             <EmptyState title={copy.loadFailed} />
-          </main>
+          </div>
         ) : (
-          <main className={frame.main}>
+          <div className={frame.main}>
             <p className={frame.loading}>{copy.loading}</p>
-          </main>
+          </div>
         )}
       </div>
     </div>

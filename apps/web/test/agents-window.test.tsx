@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { agentsCommon, agentsDash, agentsWindow } from '../src/copy/agents.ts';
-import { WINDOW_COPY } from '../src/copy/dock.ts';
+import { WINDOW_COPY } from '../src/copy/rail.ts';
 import { ACCOUNT, AGENTS_DASH_ROUTES, DASH_BODY, dashDetail, type Routes, SHELL_ROUTES, stubApi } from './helpers.tsx';
 
 vi.mock('../src/shell/map/MapView.tsx', async () => {
@@ -47,7 +47,7 @@ function renderApp(overrides: Routes, role: 'owner' | 'office' | 'rep' = 'owner'
 }
 
 async function openWindow() {
-  const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
+  const dialog = await screen.findByRole('main', { name: WINDOW_COPY.agents.title });
   await within(dialog).findByRole('region', { name: agentsWindow.gridLabel });
   return dialog;
 }
@@ -153,7 +153,7 @@ describe('Agents window', () => {
 
   it('shows the load error when the server fails', async () => {
     renderApp({ 'GET /api/agents': () => ({ status: 500, body: { error: 'boom' } }) });
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
+    const dialog = await screen.findByRole('main', { name: WINDOW_COPY.agents.title });
     expect(await within(dialog).findByText(agentsWindow.loadError)).toBeInTheDocument();
   });
 
@@ -178,7 +178,7 @@ describe('Agents window', () => {
         }),
       );
     });
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
+    const dialog = await screen.findByRole('main', { name: WINDOW_COPY.agents.title });
     expect(await within(dialog).findByRole('status', { name: agentsWindow.loading })).toBeInTheDocument();
     expect(within(dialog).queryByRole('region', { name: agentsWindow.gridLabel })).toBeNull();
     release();
@@ -203,7 +203,7 @@ describe('Agents window', () => {
     const { user } = renderApp({
       'GET /api/agents': () => (fail ? { status: 500, body: { error: 'boom' } } : { body: OVERVIEW }),
     });
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
+    const dialog = await screen.findByRole('main', { name: WINDOW_COPY.agents.title });
     expect(await within(dialog).findByText(agentsWindow.loadError)).toBeInTheDocument();
     fail = false;
     await user.click(within(dialog).getByRole('button', { name: agentsCommon.retry }));

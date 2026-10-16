@@ -2,8 +2,11 @@ import { UiLink } from '@roofline/ui';
 import { useState } from 'react';
 import { useApprovals, useMe } from '../../api/hooks.ts';
 import { home } from '../../copy/home.ts';
+import { shell } from '../../copy/shell.ts';
 import { liftFeed } from '../../copy/liftFeed.ts';
+import { AppPage } from '../../shell/AppPage.tsx';
 import { countedDrafts } from '../../shell/countedDrafts.ts';
+import { MapPanel } from '../../shell/MapPanel.tsx';
 import { zonedDateKey } from '../calendar/time.ts';
 import { useCompany } from '../settings/api.ts';
 import { useStorm, useStorms } from '../storm/api.ts';
@@ -59,8 +62,8 @@ export function Home() {
   const recent = storm !== undefined && Date.parse(todayKey) - Date.parse(storm.day) <= 86_400_000;
 
   return (
-    <div className={styles.home}>
-      <div className={styles.left}>
+    <AppPage app="home" bare crumbs={[{ label: shell.crumbHome }]}>
+      <div className={styles.home}>
         <section className={styles.greeting} aria-labelledby="home-greeting">
           <p className={styles.date}>{dateLine}</p>
           <h2 id="home-greeting" className={styles.heading}>
@@ -89,13 +92,16 @@ export function Home() {
             ) : null}
           </div>
         </section>
-        <SignedCard />
+        <div className={styles.map}>
+          <MapPanel />
+        </div>
+        <div className={styles.side}>
+          {storm && recent && toastShown ? <StormToast storm={storm} when={when} onDismiss={() => setToastShown(false)} /> : null}
+          <SignedCard />
+          <CrewWeatherCard />
+          <AiFeedCard />
+        </div>
       </div>
-      <div className={styles.right}>
-        {storm && recent && toastShown ? <StormToast storm={storm} when={when} onDismiss={() => setToastShown(false)} /> : null}
-        <CrewWeatherCard />
-        <AiFeedCard />
-      </div>
-    </div>
+    </AppPage>
   );
 }

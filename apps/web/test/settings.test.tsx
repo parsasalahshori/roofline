@@ -7,7 +7,7 @@ import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { billing } from '../src/copy/billing.ts';
 import { connections } from '../src/copy/connections.ts';
-import { WINDOW_COPY } from '../src/copy/dock.ts';
+import { WINDOW_COPY } from '../src/copy/rail.ts';
 import { setup } from '../src/copy/setup.ts';
 import { settings } from '../src/copy/settings.ts';
 import { storm } from '../src/copy/storm.ts';
@@ -199,7 +199,7 @@ it('opens in a window titled Settings', async () => {
   signedInApi();
   renderApp('/settings/company');
 
-  expect(await screen.findByRole('dialog', { name: WINDOW_COPY.settings.title })).toBeInTheDocument();
+  expect(await screen.findByRole('main', { name: WINDOW_COPY.settings.title })).toBeInTheDocument();
 });
 
 it('shows the Storm tab to the owner and opens it', async () => {

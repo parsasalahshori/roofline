@@ -7,7 +7,6 @@ import type {
   Account,
   ApprovalsList,
   Bbox,
-  CurrentWeather,
   MapArea,
   PinsResult,
   SearchResult,
@@ -117,7 +116,6 @@ export function useMapPins(bbox: Bbox | null) {
 
 /** How often the shell's counts are asked for again, and the weather (the server caches it for as long). */
 const COUNTS_EVERY = 30_000;
-const WEATHER_EVERY = 30 * 60_000;
 
 /** The plans the agents drafted. Asked again every 30 seconds and when the window is focused again. */
 export function useApprovals() {
@@ -145,16 +143,6 @@ export function useAttentionCount() {
     queryFn: ({ signal }) => apiFetch<{ tasks: TaskView[] }>('/api/tasks?status=needs_attention&limit=200', { signal }),
     select: (result) => result.tasks.length,
     refetchInterval: COUNTS_EVERY,
-  });
-}
-
-/** The weather at the company: `data.weather` is null when there is none. Asked again every 30 minutes. */
-export function useWeather() {
-  return useQuery({
-    queryKey: keys.weather,
-    queryFn: ({ signal }) => apiFetch<{ weather: CurrentWeather | null }>('/api/weather', { signal }),
-    refetchInterval: WEATHER_EVERY,
-    staleTime: WEATHER_EVERY,
   });
 }
 

@@ -5,7 +5,7 @@ import { useParams } from 'react-router';
 import { useMe } from '../../api/hooks.ts';
 import { agentPage, agents, agentsCommon } from '../../copy/agents.ts';
 import { AGENT_LABEL } from '../../copy/status.ts';
-import { AppWindow } from '../../shell/AppWindow.tsx';
+import { AppPage } from '../../shell/AppPage.tsx';
 import { NotFoundWindow } from '../../shell/NotFoundWindow.tsx';
 import styles from './AgentPage.module.css';
 import { useAgentDetail } from './api.ts';
@@ -106,8 +106,8 @@ export function AgentRoute() {
   const agent = agentFromSlug(useParams().agent);
   if (!agent) return <NotFoundWindow />;
   return (
-    <AppWindow app="agents">
+    <AppPage app="agents">
       <AgentPage agent={agent} />
-    </AppWindow>
+    </AppPage>
   );
 }

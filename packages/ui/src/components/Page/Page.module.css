@@ -1,0 +1,95 @@
+/*
+ * One screen in the shell's content column. The shell scrolls the column; a "fill" page takes exactly the
+ * column's height instead and lets its panels scroll, so a board keeps its headers in view.
+ */
+.page {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 20px 24px 32px;
+}
+
+.page[data-layout="fill"] {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-bottom: 20px;
+}
+
+/* No shell around (a test, a page alone): the trail sits above the head as a quiet row */
+.inlineCrumb {
+  margin-bottom: 12px;
+}
+
+.head {
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+/* The content draws its own header: the title is read out but not shown, so the head takes no room */
+.head[data-hidden="true"] {
+  margin: 0;
+}
+
+.titles {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font: 750 26px/1.05 var(--f-display);
+  font-stretch: 118%;
+  letter-spacing: -0.01em;
+}
+
+.subtitle {
+  margin: 6px 0 0;
+  color: var(--ink-3);
+}
+
+.actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.stats,
+.tabs {
+  flex: none;
+  margin-bottom: 16px;
+}
+
+.body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The body's children decide their own layout: a flow page stacks them, a fill page gives them the height */
+.page[data-layout="flow"] .body {
+  flex: none;
+}
+
+@media (max-width: 767.98px) {
+  .page {
+    padding: 8px 16px 24px;
+  }
+
+  .head {
+    align-items: flex-start;
+    margin-bottom: 12px;
+  }
+
+  .title {
+    font-size: 26px;
+    font-stretch: 112%;
+  }
+}

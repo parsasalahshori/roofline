@@ -1,13 +1,12 @@
 /*
- * The phone's bottom tab bar, in the dock's tile style (lift-01): a solid-coloured rounded tile with a
- * white glyph over its label. The shell's fixed wrapper places it at the bottom of the screen, gives it
- * the translucent tray look and pads it for the home indicator; this file only lays out the five tabs.
+ * The phone's bottom tab bar. The shell's fixed wrapper places it, gives it its surface and pads it for the home
+ * indicator; this file lays out the five tabs. Measure is the middle one and is raised: an ink tile standing above the bar.
  */
 .nav {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  padding: 6px 4px;
-  color: var(--ink);
+  align-items: end;
+  padding: 8px 8px 6px;
   font-family: var(--f-ui);
 }
 
@@ -17,87 +16,62 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 4px;
   min-width: 0;
   min-height: 52px;
   padding: 0 2px;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--r-2);
   background: transparent;
   color: var(--ink-3);
-  font-weight: 600;
-}
-
-.nav .tab:hover {
-  background: var(--sunken);
+  font-size: var(--font-size-min);
+  font-weight: 500;
+  text-decoration: none;
 }
 
 .nav .tab[data-current="true"] {
-  color: var(--ink);
-  font-weight: 700;
+  color: var(--brand-text);
+  font-weight: 600;
 }
 
-.nav .tab:focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
+.glyph {
+  position: relative;
+  display: inline-flex;
 }
 
-/* The tile: 34px, the dock's 40px scaled down for a row of five */
-.tile {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: var(--ink);
-  color: var(--ink-inv);
-  box-shadow: var(--e-1);
-}
-
-.tab[data-tab="today"] .tile {
-  background: var(--tape);
-}
-
-.tab[data-tab="map"] .tile {
-  background: var(--ink);
-}
-
-.tab[data-tab="jobs"] .tile {
-  background: var(--brand);
-}
-
-.tab[data-tab="calendar"] .tile {
-  background: var(--warn);
-}
-
-.tab[data-tab="more"] .tile {
-  background: var(--ink);
-}
-
-/* The open tab gets a ring around its tile */
-.tab[data-current="true"] .tile {
-  box-shadow:
-    0 0 0 2px var(--surface),
-    0 0 0 4px var(--ink);
-}
-
-.icon {
-  display: flex;
-  width: 20px;
-  height: 20px;
-}
-
-.icon > svg {
-  width: 20px;
-  height: 20px;
+.count {
+  position: absolute;
+  top: -8px;
+  left: 12px;
 }
 
 .label {
   max-width: 100%;
   overflow: hidden;
-  font-size: var(--font-size-min);
-  line-height: 1.2;
+  line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The raised Measure tab: a 46px ink tile lifted 18px above the bar */
+.nav .tab[data-tab="measure"] {
+  color: var(--ink-3);
+}
+
+.nav .tab[data-tab="measure"] .glyph {
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  margin-top: -18px;
+  border-radius: 14px;
+  background: var(--ink);
+  color: var(--ink-inv);
+  box-shadow: var(--e-2);
+}
+
+.nav .tab[data-tab="measure"][data-current="true"] .glyph {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--brand);
 }

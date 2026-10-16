@@ -89,7 +89,7 @@ const TODAY_BODY = {
 };
 
 async function todayWindow() {
-  return screen.findByRole('dialog');
+  return screen.findByRole('main');
 }
 
 describe('the Today window with CRM data', () => {

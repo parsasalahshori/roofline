@@ -7,7 +7,7 @@ import type { Account } from '../src/api/types.ts';
 import { keys } from '../src/api/keys.ts';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
-import { dock } from '../src/copy/dock.ts';
+import { rail } from '../src/copy/rail.ts';
 import { mapCopy } from '../src/copy/map.ts';
 import { SOURCE } from '../src/shell/map/layers.ts';
 import type { MapViewProps } from '../src/shell/map/MapView.tsx';
@@ -243,7 +243,7 @@ it('a failed map chunk keeps the app usable', async () => {
   expect(await screen.findByText(mapCopy.error)).toBeInTheDocument();
   // The top bar (the company's name) and the dock are still there
   expect(screen.getByText(COMPANY.name)).toBeInTheDocument();
-  expect(await screen.findByRole('navigation', { name: dock.label })).toBeInTheDocument();
+  expect(await screen.findByRole('navigation', { name: rail.label })).toBeInTheDocument();
 });
 
 it('switching company does not keep the old company pins or PinCard', async () => {

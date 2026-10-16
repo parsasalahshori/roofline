@@ -59,7 +59,7 @@ test('the three G1 agents start paused, Turn on Follow-up shows its rules, and R
     .not.toBe('');
 
   await page.goto('/approvals/' + taskId);
-  const dialog = page.getByRole('dialog');
+  const dialog = page.getByRole('main');
   await expect(dialog.getByText('Send 1 personal text')).toBeVisible({ timeout: 20_000 });
   await page.getByRole('button', { name: /^Approve 1 step/ }).click();
   await expect(dialog.getByRole('list').getByText('Done', { exact: true })).toHaveCount(1, { timeout: 20_000 });
@@ -113,7 +113,7 @@ test('a weather move review shows the new day and the reason, then Approve', asy
   const day = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' }).format(
     new Date(`${plan.newDay}T12:00:00Z`),
   );
-  const dialog = page.getByRole('dialog');
+  const dialog = page.getByRole('main');
   await expect(dialog.getByText('Move the install to ' + day, { exact: false })).toBeVisible({ timeout: 20_000 });
   await expect(dialog.getByRole('paragraph').filter({ hasText: plan.reason })).toBeVisible();
 

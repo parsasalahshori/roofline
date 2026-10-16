@@ -61,7 +61,7 @@ test('rep marks a door Wants a check and the lead reaches the rep Today', async 
 
   // The follow-up is on the Today of the rep who knocked.
   await page.goto('/today');
-  const today = page.getByRole('dialog', { name: 'My day' });
+  const today = page.getByRole('main', { name: 'My day' });
   await expect(today).toBeVisible();
   await expect(today.getByText('Pat Door')).toBeVisible();
 });
@@ -98,7 +98,7 @@ test('landing page on a phone submits a request', async ({ page, loginAs, markTo
   await loginAs(page, 'rep');
   await markTodaySeen('rep@a.test');
   await page.goto('/today');
-  const today = page.getByRole('dialog', { name: 'My day' });
+  const today = page.getByRole('main', { name: 'My day' });
   await expect(today).toBeVisible();
   await expect(today.getByText('Lee Landing')).toBeVisible();
 });

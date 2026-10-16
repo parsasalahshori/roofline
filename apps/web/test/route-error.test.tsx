@@ -4,7 +4,7 @@ import { RouterProvider } from 'react-router';
 import { afterEach, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
-import { dock } from '../src/copy/dock.ts';
+import { rail } from '../src/copy/rail.ts';
 import { errors } from '../src/copy/errors.ts';
 import { ACCOUNT, SHELL_ROUTES, stubApi } from './helpers.tsx';
 
@@ -45,6 +45,6 @@ it('a window that crashes shows the error in the window area and keeps the dock'
   // Found by its text: the toast region is another, always-mounted alert
   const title = await screen.findByText(errors.pageTitle);
   expect(title.closest('[role="alert"]')).toHaveAttribute('data-variant', 'window');
-  expect(screen.getByRole('navigation', { name: dock.label })).toBeInTheDocument();
+  expect(screen.getByRole('navigation', { name: rail.label })).toBeInTheDocument();
   expect(api.unexpected).toEqual([]);
 });

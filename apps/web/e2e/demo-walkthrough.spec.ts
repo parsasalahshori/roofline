@@ -161,7 +161,7 @@ test('Roofline demo walkthrough', async ({ page }) => {
     await expect(page).toHaveURL(/\/approvals\//);
     await page.getByRole('button', { name: /^Approve 1 step · up to \$[\d,]+$/ }).click();
     // Demo mode: the report completes about 20 s after the order and the worker asks every 30 s.
-    await expect(page.getByRole('dialog').getByRole('list').getByText('Done', { exact: true })).toHaveCount(1, { timeout: 150_000 });
+    await expect(page.getByRole('main').getByRole('list').getByText('Done', { exact: true })).toHaveCount(1, { timeout: 150_000 });
     expect(serverErrors).toEqual([]);
   });
 });

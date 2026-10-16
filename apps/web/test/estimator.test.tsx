@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { measure } from '../src/copy/measure.ts';
-import { WINDOW_COPY } from '../src/copy/dock.ts';
+import { WINDOW_COPY } from '../src/copy/rail.ts';
 import type { MeasurementView } from '../src/features/measure/types.ts';
 import { ACCOUNT, proposalListRoutes, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
 
@@ -105,7 +105,7 @@ describe('/estimator is the Measure window', () => {
     await waitFor(() => expect(where(router)).toBe('/estimator/measure/m1'));
     // Back does not land on the redirect again: /estimator was replaced
     expect(router.state.historyAction).toBe('REPLACE');
-    const dialog = screen.getByRole('dialog', { name: WINDOW_COPY.estimator.title });
+    const dialog = screen.getByRole('main', { name: WINDOW_COPY.estimator.title });
     expect(within(dialog).getByRole('searchbox', { name: measure.requestsSearch })).toBeInTheDocument();
     expect(within(dialog).getAllByText(measure.subtitle).length).toBeGreaterThan(0);
     expect(within(dialog).getByText('Dana Fox')).toBeInTheDocument();
@@ -118,7 +118,7 @@ describe('/estimator is the Measure window', () => {
     renderApp();
 
     expect(WINDOW_COPY.estimator.title).toBe('Measure');
-    expect(await screen.findByRole('dialog', { name: 'Measure' })).toBeInTheDocument();
+    expect(await screen.findByRole('main', { name: 'Measure' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /^Measure/ })).toHaveAttribute('href', '/estimator');
   });
 
