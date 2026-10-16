@@ -33,7 +33,7 @@ import { StormWindow } from '../features/storm/StormWindow.tsx';
 import { StormDetail } from '../features/storm/StormDetail.tsx';
 import { RoutesWindow } from '../features/storm/routes/RoutesWindow.tsx';
 import { RouteDetail } from '../features/storm/routes/RouteDetail.tsx';
-import { Today } from '../features/today/Today.tsx';
+import { TodayPage } from '../features/today/Today.tsx';
 import { TextingSetup } from '../features/texting/TextingSetup.tsx';
 import { AppPage } from '../shell/AppPage.tsx';
 import { HomeRoute } from '../shell/HomeRoute.tsx';
@@ -102,7 +102,7 @@ const routes: RouteObject[] = [
           { path: 'settings/setup/import/:importId', element: <AppPage app="settings"><Settings subpage={<ImportWizard />} /></AppPage> },
           { path: 'settings/setup/texting', element: <AppPage app="settings"><Settings subpage={<TextingSetup />} /></AppPage> },
           { path: 'settings/:tab', element: <AppPage app="settings"><Settings /></AppPage> },
-          { path: 'today', element: <AppPage app="today"><Today /></AppPage> },
+          { path: 'today', element: <TodayPage /> },
           // Anything else
           { path: '*', element: <NotFoundWindow /> },
             ],

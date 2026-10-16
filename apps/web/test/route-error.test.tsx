@@ -19,7 +19,7 @@ vi.mock('../src/shell/map/MapView.tsx', async () => {
 });
 
 vi.mock('../src/features/today/Today.tsx', () => ({
-  Today: () => {
+  TodayPage: () => {
     throw new Error('The Today window broke');
   },
 }));

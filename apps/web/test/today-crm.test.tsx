@@ -101,13 +101,89 @@ describe('the Today window with CRM data', () => {
     expect(within(list).getByText('Maria Lopez')).toBeInTheDocument();
     expect(within(list).getByText('12 Oak St')).toBeInTheDocument();
     expect(within(list).getByText(today.kindLabel.inspection)).toBeInTheDocument();
-    expect(within(list).getByRole('link')).toHaveAttribute('href', '/calendar/appointments/ap1');
+    const [visitLink] = within(list).getAllByRole('link');
+    expect(visitLink).toHaveAttribute('href', '/calendar/appointments/ap1');
+    // Directions to the address, as a link to a maps page in a new tab
+    const directions = within(list).getByRole('link', { name: today.directionsTo('Maria Lopez') });
+    expect(directions).toHaveAttribute('href', 'https://www.google.com/maps/dir/?api=1&destination=12%20Oak%20St');
+    expect(directions).toHaveAttribute('target', '_blank');
 
     const followUps = await within(dialog).findByRole('list', { name: today.followUpsLabel });
     expect(within(followUps).getByText('Ben Carter')).toBeInTheDocument();
     expect(within(followUps).getByText('Send proposal')).toBeInTheDocument();
     expect(within(followUps).getByRole('link')).toHaveAttribute('href', '/jobs/j9');
     expect(api.unexpected).toEqual([]);
+  });
+
+  it('marks the visit that is next and the one that is done, each with a word as well as a colour', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-12T14:30:00.000Z')); // 9:30 in Chicago
+    const visit = (id: string, startsAt: string, endsAt: string, status: string, who: string) => ({
+      id,
+      kind: 'inspection',
+      title: 'Roof inspection',
+      status,
+      startsAt,
+      endsAt,
+      allDay: false,
+      customerName: who,
+      addressLine: `${id} Oak St`,
+    });
+    mount(['/today'], {
+      'GET /api/today': () => ({
+        body: {
+          appointments: [
+            visit('v2', '2026-10-12T16:00:00.000Z', '2026-10-12T17:00:00.000Z', 'scheduled', 'Second Visit'),
+            visit('v1', '2026-10-12T13:00:00.000Z', '2026-10-12T14:00:00.000Z', 'completed', 'First Visit'),
+            visit('v3', '2026-10-12T18:00:00.000Z', '2026-10-12T19:00:00.000Z', 'scheduled', 'Third Visit'),
+          ],
+          followUps: [],
+        },
+      }),
+    });
+
+    const list = await screen.findByRole('list', { name: today.appointmentsLabel });
+    await within(list).findByText('Second Visit');
+    const rows = within(list).getAllByRole('listitem');
+    // Earliest first
+    expect(rows.map((row) => within(row).getByText(/Visit$/).textContent)).toEqual(['First Visit', 'Second Visit', 'Third Visit']);
+    expect(within(rows[0]!).getByText(today.done)).toBeInTheDocument();
+    expect(within(rows[1]!).getByText(today.next)).toBeInTheDocument();
+    expect(within(rows[2]!).queryByText(today.next)).toBeNull();
+    expect(rows[1]).toHaveAttribute('data-next', 'true');
+    expect(within(screen.getByRole('region', { name: new RegExp(today.appointments) })).getByText(today.visitsCount(3))).toBeInTheDocument();
+  });
+
+  it('flags the follow-ups the Front Desk raised, in words', async () => {
+    mount(['/today'], {
+      'GET /api/today': () => ({
+        body: {
+          appointments: [],
+          followUps: [
+            { id: 'j1', customerName: 'Ann Urgent', nextStep: 'Call back', frontDesk: 'urgent' },
+            { id: 'j2', customerName: 'Bo Message', nextStep: null, frontDesk: 'message' },
+            { id: 'j3', customerName: 'Cy Plain', nextStep: 'Send proposal', frontDesk: null },
+          ],
+        },
+      }),
+    });
+
+    const followUps = await screen.findByRole('list', { name: today.followUpsLabel });
+    const rows = within(followUps).getAllByRole('listitem');
+    expect(within(rows[0]!).getByText(today.fromFrontDeskUrgent)).toBeInTheDocument();
+    expect(within(rows[1]!).getByText(today.fromFrontDesk)).toBeInTheDocument();
+    expect(within(rows[1]!).getByText(today.nextStep(null))).toBeInTheDocument();
+    expect(within(rows[2]!).queryByText(/Front Desk/)).toBeNull();
+  });
+
+  it('shows this month: what was signed and the open pipeline', async () => {
+    mount(['/today'], {
+      'GET /api/home/signed': () => ({ body: { monthTotalCents: 1555300, goalCents: null, weekly: [], openPipelineCents: 3292200 } }),
+    });
+
+    const month = await screen.findByRole('region', { name: today.thisMonth });
+    expect(await within(month).findByText('$15,553')).toBeInTheDocument();
+    expect(within(month).getByText('$32,922')).toBeInTheDocument();
   });
 
   it('shows the see-everyone link for owner and office only', async () => {
