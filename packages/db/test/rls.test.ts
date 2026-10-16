@@ -776,6 +776,32 @@ describe('grants', () => {
     expect(rows).toEqual(FOOTPRINT_TABLES.map((table) => ({ table, references: false, trigger: false })));
   });
 
+  test('google_retention_runs (0039): app_system SELECT, INSERT and UPDATE only, no DELETE, TRUNCATE, REFERENCES or TRIGGER; app_tenant nothing; no RLS', async () => {
+    expect(await tablePrivileges('app_system', ['google_retention_runs'])).toEqual([privs('google_retention_runs', true, true, true, false)]);
+    expect(await tablePrivileges('app_tenant', ['google_retention_runs'])).toEqual([privs('google_retention_runs', false, false, false, false)]);
+    const [extra] = await ownerQuery<{ truncate: boolean; references: boolean; trigger: boolean }>(
+      `select has_table_privilege('app_system', 'public.google_retention_runs', 'TRUNCATE') as truncate,
+              has_table_privilege('app_system', 'public.google_retention_runs', 'REFERENCES') as references,
+              has_table_privilege('app_system', 'public.google_retention_runs', 'TRIGGER') as trigger`,
+    );
+    expect(extra).toEqual({ truncate: false, references: false, trigger: false });
+    const [cls] = await ownerQuery<{ relrowsecurity: boolean }>(`select relrowsecurity from pg_class where oid = 'public.google_retention_runs'::regclass`);
+    expect(cls).toEqual({ relrowsecurity: false });
+    expect([...TENANT_TABLES]).not.toContain('google_retention_runs');
+  });
+
+  test('measurements.google_delete_by (0038) is indexed, and app_tenant may read and set it (table-level grants)', async () => {
+    const idx = await ownerQuery<{ indexname: string }>(`select indexname from pg_indexes where tablename = 'measurements' and indexname = 'measurements_google_delete_by_idx'`);
+    expect(idx).toHaveLength(1);
+    const [col] = await ownerQuery<{ select: boolean; update: boolean }>(
+      `select has_column_privilege('app_tenant', 'public.measurements', 'google_delete_by', 'SELECT') as select,
+              has_column_privilege('app_tenant', 'public.measurements', 'google_delete_by', 'UPDATE') as update`,
+    );
+    expect(col).toEqual({ select: true, update: true });
+    const wIdx = await ownerQuery<{ indexname: string }>(`select indexname from pg_indexes where tablename = 'window_measurements' and indexname = 'window_measurements_photos_delete_by_idx'`);
+    expect(wIdx).toHaveLength(1);
+  });
+
   test('app_system holds column-level SELECT on exactly the whitelisted proposal and exact order columns', async () => {
     const rows = await ownerQuery<{ table_name: string; column_name: string; privilege_type: string }>(
       `select table_name, column_name, privilege_type from information_schema.column_privileges

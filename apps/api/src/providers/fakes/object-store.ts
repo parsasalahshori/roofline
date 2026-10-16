@@ -1,12 +1,12 @@
-import type { ObjectStore } from '../object-store.ts';
+import type { ObjectStore, StoredObject } from '../object-store.ts';
 
-export type ObjectStoreCall = { method: 'put'; key: string; contentType: string } | { method: 'get'; key: string } | { method: 'signedGetUrl'; key: string; seconds: number } | { method: 'delete'; key: string };
+export type ObjectStoreCall = { method: 'put'; key: string; contentType: string } | { method: 'get'; key: string } | { method: 'signedGetUrl'; key: string; seconds: number } | { method: 'delete'; key: string } | { method: 'list'; prefix: string };
 
 export class MemoryObjectStore implements ObjectStore {
   readonly configured = true;
   readonly calls: ObjectStoreCall[] = [];
   private failures = 0;
-  private readonly items = new Map<string, { bytes: Uint8Array; contentType: string }>();
+  private readonly items = new Map<string, { bytes: Uint8Array; contentType: string; lastModified: Date }>();
   failNext(n = 1): void {
     this.failures = n;
   }
@@ -19,7 +19,7 @@ export class MemoryObjectStore implements ObjectStore {
   }
   async put(key: string, bytes: Uint8Array, contentType: string): Promise<void> {
     this.record({ method: 'put', key, contentType });
-    this.items.set(key, { bytes: new Uint8Array(bytes), contentType });
+    this.items.set(key, { bytes: new Uint8Array(bytes), contentType, lastModified: new Date() });
   }
   async get(key: string): Promise<Uint8Array | null> {
     this.record({ method: 'get', key });
@@ -34,5 +34,18 @@ export class MemoryObjectStore implements ObjectStore {
   async delete(key: string): Promise<void> {
     this.record({ method: 'delete', key });
     this.items.delete(key);
+  }
+  async list(prefix: string): Promise<StoredObject[]> {
+    this.record({ method: 'list', prefix });
+    return [...this.items.entries()].filter(([key]) => key.startsWith(prefix)).map(([key, item]) => ({ key, lastModified: new Date(item.lastModified) }));
+  }
+  /** Tests: whether an object is there (no call recorded). */
+  has(key: string): boolean {
+    return this.items.has(key);
+  }
+  /** Tests: back-date (or move) an object's last-modified time. */
+  setLastModified(key: string, at: Date): void {
+    const item = this.items.get(key);
+    if (item !== undefined) item.lastModified = new Date(at);
   }
 }

@@ -25,7 +25,8 @@ import { ProposalPanel } from './lift/ProposalPanel.tsx';
 import { RequestsList } from './lift/RequestsList.tsx';
 import { useRequestRows } from './lift/requests.ts';
 import { addRoofLayers, facetName, readRoof, usableRoof } from './lift/roofModel.ts';
-import { addRoofPhoto, roofPhotoFor } from './lift/roofPhoto.ts';
+import { googlePhotoFailure } from './googlePhoto.ts';
+import { addRoofPhoto, isRoofPhotoError, removeRoofPhoto, roofPhotoFor } from './lift/roofPhoto.ts';
 import { RoofView } from './lift/RoofView.tsx';
 import { useRoofScan } from './lift/scan.ts';
 import { MeasureSlotsContext, type QuoteSession, type RoofSession } from './lift/slots.ts';
@@ -220,6 +221,8 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
   }).current;
   const startRef = useRef({ ring: m.outline?.[0] ?? [], drawMode: m.drawMode || !m.outline?.[0]?.length, locked: m.locked, model, m });
   const [mapFailed, setMapFailed] = useState(false);
+  // Google's roof photo failed with 410 (past Google's 30 days) after the view named it
+  const [roofPhotoGone, setRoofPhotoGone] = useState(false);
   const [mapInstance, setMapInstance] = useState<MapLibreMap | null>(null);
   const [zoom, setZoom] = useState(START_ZOOM);
   const structuresRef = useRef(m.structures);
@@ -261,7 +264,16 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
       queueMicrotask(() => setMapFailed(true));
       return;
     }
-    instance.on('error', () => setMapFailed(true));
+    instance.on('error', (event: unknown) => {
+      // The roof photo's own failure never fails the map: the photo comes off and, at Google's limit, the view says so
+      if (isRoofPhotoError(event)) {
+        removeRoofPhoto(instance);
+        const url = roofPhotoFor(startRef.current.m)?.url;
+        if (url !== undefined) void googlePhotoFailure(url).then((why) => setRoofPhotoGone(why === 'expired'));
+        return;
+      }
+      setMapFailed(true);
+    });
     instance.on('zoom', () => setZoom(instance.getZoom()));
     // Set up as soon as the style is ready: 'load' also waits for every first tile, and a slow photo tile must not
     // hold back the roof, its labels and its numbers
@@ -516,6 +528,7 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
     conflict,
     problem,
     mapFailed,
+    roofPhotoExpired: roofPhotoGone || m.roofPhotoExpired === true,
     saving: patch.isPending,
     saveFailed: patch.isError && !conflict,
     finishDrawing: () => editorRef.current?.finishDrawing(),

@@ -267,6 +267,20 @@
       "when": 1792115472497,
       "tag": "0037_window_orders_grants_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1792157811086,
+      "tag": "0038_google_retention_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1792157831208,
+      "tag": "0039_google_retention_grants",
+      "breakpoints": true
     }
   ]
 }

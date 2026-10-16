@@ -29,7 +29,8 @@ describe('Front Desk skeleton', () => {
   });
 
   test('SCHEDULES gain fd-retention and fd-health with their crons', () => {
-    expect(SCHEDULES.slice(-7, -5).map((s) => [s.name, s.cron])).toEqual([
+    // G1's five agent schedules follow them, then google-retention.
+    expect(SCHEDULES.slice(-8, -6).map((s) => [s.name, s.cron])).toEqual([
       ['fd-retention', '47 3 * * *'],
       ['fd-health', '*/2 * * * *'],
     ]);

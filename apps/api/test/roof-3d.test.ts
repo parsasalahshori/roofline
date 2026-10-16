@@ -299,7 +299,11 @@ describe('Measure with the roof in 3D', () => {
     const read = await later.get(`/api/measurements/${view.id}`);
     expect(read.status).toBe(200);
     expect(read.body.roofPhoto).toBeNull();
-    expect((await later.get(view.roofPhoto!.url)).status).toBe(404);
+    // ... and the roof view is told it expired (Google's 30-day limit), the measured roof itself kept.
+    expect(read.body.roofPhotoExpired).toBe(true);
+    expect(read.body.roof3d).not.toBeNull();
+    expect((await later.get(view.roofPhoto!.url)).status).toBe(410);
+    expect((await rep.get(`/api/measurements/${view.id}`)).body.roofPhotoExpired).toBeUndefined();
   });
 
   it('a 3D roof that misses a quality target is marked for review', async () => {

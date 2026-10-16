@@ -1,7 +1,9 @@
 import { Button } from '@roofline/ui';
 import type { DoorRuler, FacadePhoto } from '@roofline/shared';
 import { useEffect, useRef, useState, type CSSProperties, type RefObject, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { legal } from '../../../copy/legal.ts';
 import { measureWindows as copy } from '../../../copy/measureWindows.ts';
+import { googlePhotoFailure, type PhotoFailure } from '../googlePhoto.ts';
 import { ScanOverlay } from '../lift/ScanOverlay.tsx';
 import type { ScanTimer } from '../lift/scan.ts';
 import {
@@ -144,7 +146,8 @@ export function PhotoStage({
   const areaRef = useRef<HTMLDivElement>(null);
   const area = useSize(areaRef);
   const [drag, setDrag] = useState<Drag | null>(null);
-  const [failed, setFailed] = useState(false);
+  // Google's photo past its 30 days is gone: the view says so up front, or the server's 410 does when it loads.
+  const [failed, setFailed] = useState<PhotoFailure | null>(photo.expired === true ? 'expired' : null);
   const [zoom, setZoom] = useState<Zoom>(WHOLE_PHOTO);
   const scanning = scan.phase === 'scanning';
   const p = scan.phase === 'done' ? 1 : scan.phase === 'idle' ? 0 : scan.progress;
@@ -392,10 +395,20 @@ export function PhotoStage({
           onPointerUp={onUp}
           onPointerCancel={onCancel}
         >
-          {failed ? (
-            <p className={styles.photoFailed}>{copy.photoFailed}</p>
+          {failed !== null ? (
+            <p className={styles.photoFailed} role="status" data-photo-state={failed}>
+              {failed === 'expired' ? legal.googlePhotoExpired : copy.photoFailed}
+            </p>
           ) : (
-            <img className={styles.photo} src={src} alt={copy.photoAlt(address)} draggable={false} onError={() => setFailed(true)} />
+            <img
+              className={styles.photo}
+              src={src}
+              alt={copy.photoAlt(address)}
+              draggable={false}
+              onError={() => {
+                void googlePhotoFailure(src).then(setFailed);
+              }}
+            />
           )}
           {shownCorners !== null && p > 0.3 ? <WallOverlay corners={shownCorners} drawn={scan.phase === 'done' ? 1 : wallDrawn(p)} /> : null}
           {scanning ? <ScanOverlay box={bracketBox} sweeping={p < 0.55} /> : null}

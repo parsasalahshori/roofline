@@ -184,6 +184,12 @@ const ConfigSchema = z
      */
     ROOF_3D_MODE: z.enum(['off', 'shadow', 'on'], { error: 'must be off, shadow or on' }).default('on'),
     /**
+     * Days Google content (Solar answers, the roof photo, Street View photos) is kept after download before the daily
+     * google-retention job deletes it; 1 to 30, unset 30 (the most Google's terms allow). Our own measurements made
+     * from it are kept. See docs/compliance/google-data-retention.md.
+     */
+    GOOGLE_CONTENT_RETENTION_DAYS: z.coerce.number().int().min(1).max(30).optional(),
+    /**
      * Leaf-off USGS 3DEP lidar for roofs under trees (providers/usgs-lidar*.ts, public domain, no key). off (default):
      * nothing is asked of USGS. prefetch: an address search fetches and keeps the lidar round the house (and Measure
      * records what is already known, without waiting or downloading) but the roof is made from Google's heights alone.

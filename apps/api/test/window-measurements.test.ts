@@ -193,7 +193,7 @@ describe('GET, photos and visibility', () => {
     expect((await owner.get('/api/window-measurements/not-an-id')).status).toBe(404);
   });
 
-  it('serves the photo as a private JPEG for 30 days, then 404', async () => {
+  it('serves the photo as a private JPEG for 30 days, then 410 (expired)', async () => {
     const { owner, view } = await measuredHouse();
     const url = `/api/window-measurements/${view.id}/photos/${view.photos[0]!.id}`;
     const res = await owner.get(url).buffer(true);
@@ -204,7 +204,10 @@ describe('GET, photos and visibility', () => {
     expect((await owner.get(`/api/window-measurements/${view.id}/photos/${NO_UUID}`)).status).toBe(404);
     // 30 days on (Google's terms): the stored date has passed.
     await ownerSql(`update window_measurements set photos = jsonb_set(photos, '{0,deleteBy}', to_jsonb($1::text)) where id = $2`, ['2026-10-12T14:00:00.000Z', view.id]);
-    expect((await owner.get(url)).status).toBe(404);
+    const gone = await owner.get(url);
+    expect(gone.status).toBe(410);
+    expect(gone.body.error).toBe("Photo expired (Google's 30-day limit). Re-measure to see it again.");
+    expect((await owner.get(`/api/window-measurements/${view.id}`)).body.photos[0].expired).toBe(true);
   });
 });
 

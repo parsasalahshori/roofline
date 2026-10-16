@@ -32,3 +32,18 @@ export function addRoofPhoto(instance: MapLibreMap, photo: RoofPhoto | null): bo
     return false;
   }
 }
+
+/** Whether a map error is the roof photo's own (its image failed: expired at Google's limit, or any other failure). */
+export function isRoofPhotoError(event: unknown): boolean {
+  return typeof event === 'object' && event !== null && (event as { sourceId?: unknown }).sourceId === ROOF_PHOTO_SOURCE;
+}
+
+/** Takes the photo off the map (it failed to load); the map's own photos show instead. */
+export function removeRoofPhoto(instance: MapLibreMap): void {
+  try {
+    if (instance.getLayer(ROOF_PHOTO_LAYER)) instance.removeLayer(ROOF_PHOTO_LAYER);
+    if (instance.getSource(ROOF_PHOTO_SOURCE)) instance.removeSource(ROOF_PHOTO_SOURCE);
+  } catch {
+    // The map may be going away.
+  }
+}

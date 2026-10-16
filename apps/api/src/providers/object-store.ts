@@ -12,7 +12,15 @@ export interface ObjectStore {
   signedGetUrl(key: string, seconds: number): Promise<string>;
   /** Removes one object; a missing key is not an error (Task 16 sweep). */
   delete(key: string): Promise<void>;
+  /**
+   * Every object whose key starts with `prefix`, with when it was last written (the google-retention job's sweep of
+   * Google content under its own prefixes, orphans included). Keys only, never bytes.
+   */
+  list(prefix: string): Promise<StoredObject[]>;
 }
+
+/** One object in a listing. */
+export type StoredObject = { key: string; lastModified: Date };
 
 export class ObjectStoreUnavailableError extends Error {}
 
@@ -28,6 +36,9 @@ export class UnconfiguredObjectStore implements ObjectStore {
     throw new ObjectStoreUnavailableError("File storage isn't set up.");
   }
   async delete(): Promise<void> {
+    throw new ObjectStoreUnavailableError("File storage isn't set up.");
+  }
+  async list(): Promise<StoredObject[]> {
     throw new ObjectStoreUnavailableError("File storage isn't set up.");
   }
 }

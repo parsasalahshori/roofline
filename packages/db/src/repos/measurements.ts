@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
-import { carryExcluded, cleanExcluded, isRoof3d, measureRoof, ROOF_3D_NONE_REASONS, roof3dSnapshotCurrent, sameOutline, solarDataCurrent, type InstantEstimate, type LngLat, type MeasurementKind, type MeasurementMethod, type MeasurementView, type Outline, type PitchSource, type Ring, type Roof3dInput, type Roof3dSnapshot, type RoofModel, type RoofPlane, type SolarSnapshot } from '@roofline/shared';
+import { carryExcluded, cleanExcluded, isRoof3d, measureRoof, measurementGoogleDeleteBy, ROOF_3D_NONE_REASONS, roof3dSnapshotCurrent, sameOutline, solarDataCurrent, type InstantEstimate, type LngLat, type MeasurementKind, type MeasurementMethod, type MeasurementView, type Outline, type PitchSource, type Ring, type Roof3dInput, type Roof3dSnapshot, type RoofModel, type RoofPlane, type SolarSnapshot } from '@roofline/shared';
 import { jobs, measurements, properties, proposals } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { getProperty, type PropertyRow } from './properties.ts';
@@ -266,6 +266,8 @@ export async function createMeasurement(tx: Tx, ctx: TenantContext, m: NewMeasur
       pitchPlanes: measuredPitch(m.pitchSource ?? null) && m.pitchPlanes != null && m.pitchPlanes.length > 0 ? m.pitchPlanes : null,
       solar: m.solar ?? null,
       roof3d: m.roof3d ?? null,
+      // Google's content on the row (the Solar answer, the roof photo) goes 30 days after its download.
+      googleDeleteBy: measurementGoogleDeleteBy(m.solar ?? null, m.roof3d ?? null),
       createdByUserId: ctx.userId,
       createdAt: now,
       updatedAt: now,
@@ -345,9 +347,17 @@ export async function getMeasurement(tx: Tx, ctx: TenantContext, id: string, now
       in3d && row.roof3d?.photo != null && solarDataCurrent(row.roof3d, now)
         ? { url: `/api/measurements/${row.id}/roof-photo`, corners: row.roof3d.photo.corners }
         : null,
+    ...(in3d && roofPhotoGone(row.roof3d ?? null, now) ? { roofPhotoExpired: true } : {}),
     needsReview: in3d && (roof3d.roof.quality?.reasons.length ?? 0) > 0 ? { reasons: [...roof3d.roof.quality!.reasons] } : null,
     ...roof3dStatus(row.roof3d ?? null, in3d),
   };
+}
+
+/** Whether a 3D snapshot's Google photo is past its days: deleted by the retention job, or still named but expired. */
+export function roofPhotoGone(snapshot: Roof3dSnapshot | null, now: Date): boolean {
+  if (snapshot === null || typeof snapshot !== 'object') return false;
+  if (typeof snapshot.photoDeletedAt === 'string') return true;
+  return snapshot.photo != null && !solarDataCurrent(snapshot, now);
 }
 
 /**

@@ -1,6 +1,7 @@
 import type { PgBoss } from 'pg-boss';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, test } from 'vitest';
 import { type AppDeps, createApp } from '../src/app.ts';
+import { latestGoogleRetentionRuns } from '@roofline/db/system';
 import { SCHEDULES, startWorker } from '../src/jobs/worker.ts';
 import { createBoss, ensureStepQueue, PgBossQueue, SENDER_OPTIONS, STEP_QUEUE } from '../src/tasks/pgboss-queue.ts';
 import { registerStepHandler } from '../src/tasks/runner.ts';
@@ -188,6 +189,16 @@ describe('the worker', () => {
     }
   });
 
+  test('a starting worker runs google-retention once at start (as well as on its daily cron) and records the run', async () => {
+    await withWorker(async () => {
+      const runs = await eventually(
+        () => latestGoogleRetentionRuns(t.deps.pools.system, 5),
+        (r) => r.some((run) => run.finishedAt !== null),
+      );
+      expect(runs.find((run) => run.finishedAt !== null)).toMatchObject({ retentionDays: 30, errorPlain: null });
+    });
+  });
+
   test('it schedules expire-drafts every 5 minutes, sweep-queued, sweep-imports and dispatch-messages every minute, and prune-early-reports daily at 03:17', async () => {
     await withWorker(async (worker) => {
       const schedules = await worker.getSchedules();
@@ -204,6 +215,7 @@ describe('the worker', () => {
         ['fd-retention', '47 3 * * *'],
         ['followup-daily-schedule', '*/15 * * * *'],
         ['footprints-ensure', '*/15 * * * *'],
+        ['google-retention', '23 4 * * *'],
         ['hail-health', '*/15 * * * *'],
         ['poll-texting', '0 * * * *'],
         ['provision-texting', '* * * * *'],
@@ -245,6 +257,7 @@ describe('the worker', () => {
       'scheduler-agenda-schedule',
       'scheduler-weather-schedule',
       'followup-daily-schedule',
+      'google-retention',
     ]);
   });
 });

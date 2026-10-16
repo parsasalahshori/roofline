@@ -236,6 +236,13 @@ export function publicPhoto(plan: Plan | null, geometry: WindowGeometry | null, 
   };
 }
 
+/** Google's Street View photo is past its days (deleted by google-retention, or due): the photo area says it expired. */
+export function facadePhotoExpired(p: StoredFacadePhoto, now: Date): boolean {
+  if (p.deletedAt !== undefined) return true;
+  const by = Date.parse(p.deleteBy);
+  return p.key !== null && Number.isFinite(by) && by <= now.getTime();
+}
+
 function yearsBetween(capturedOn: string, now: Date): number {
   const [y, m] = capturedOn.split('-').map(Number);
   return (now.getUTCFullYear() - y! + (now.getUTCMonth() + 1 - m!) / 12);
@@ -283,7 +290,7 @@ export function toWindowView(row: WindowMeasurementRow, now: Date): WindowMeasur
     address: row.address,
     center: row.center,
     createdAt: row.createdAt.toISOString(),
-    photos: photos.map((p) => publicPhoto(plan, geometry, p)),
+    photos: photos.map((p) => (facadePhotoExpired(p, now) ? { ...publicPhoto(plan, geometry, p), expired: true } : publicPhoto(plan, geometry, p))),
     windows,
     estimated,
     stories,

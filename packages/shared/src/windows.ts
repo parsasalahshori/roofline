@@ -46,6 +46,11 @@ export type FacadePhoto = {
   /** Camera to the front wall along the photo's centre line, metres. */
   distanceM: number;
   /**
+   * The photo is past the days Google's terms let it be kept and is deleted (or about to be): the photo area says so
+   * instead of loading it. Its numbers (heading, line-up, the windows marked on it) are kept. Absent or false otherwise.
+   */
+  expired?: boolean;
+  /**
    * The front wall from the outline and Google's heights, drawn into this photo: its four corners (bottom-left,
    * bottom-right, top-right, top-left; 0..1 of the photo) at ground and eave level. If it lines up with the house in the
    * photo, the camera, wall length and wall height are right. Absent when the wall is not in this photo.
