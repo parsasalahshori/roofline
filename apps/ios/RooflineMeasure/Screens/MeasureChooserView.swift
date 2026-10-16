@@ -1,3 +1,4 @@
+#if STAFF_APP
 import ARKit
 import RooflineCore
 import SwiftUI
@@ -96,31 +97,6 @@ private struct MethodRow: View {
     }
 }
 
-/// What this phone can do.
-@MainActor
-enum DeviceCaps {
-    static var arSupported: Bool { ARWorldTrackingConfiguration.isSupported }
-
-    /// LiDAR: scene depth and mesh reconstruction (iPhone 12 Pro and later Pro models).
-    static var hasLiDAR: Bool {
-        ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) && ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh)
-    }
-
-    static var roomPlanSupported: Bool { RoomScanSupport.isSupported }
-
-    /// Why AR corners or Room scan are greyed out on this device (the simulator has neither), or nil.
-    static func unavailableReason(again: Bool) -> String? {
-        if !arSupported {
-            return "AR corners and Room scan need an iPhone with a camera (Room scan: a LiDAR iPhone, 12 Pro or a later Pro). "
-                + "Not available on this device; Sheet photo still works."
-        }
-        if !roomPlanSupported && !again {
-            return "Room scan needs an iPhone with LiDAR (12 Pro or a later Pro)."
-        }
-        return nil
-    }
-}
-
 /// Shown instead of the AR / room-scan screen on a device that cannot run it (the simulator, an old phone), so the
 /// session is never started with an unsupported configuration.
 struct UnsupportedDeviceView: View {
@@ -140,3 +116,4 @@ struct UnsupportedDeviceView: View {
         .background(Color(.systemBackground))
     }
 }
+#endif

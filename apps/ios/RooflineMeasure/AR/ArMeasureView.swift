@@ -1,3 +1,4 @@
+#if STAFF_APP
 import ARKit
 import RooflineCore
 import SwiftUI
@@ -216,13 +217,6 @@ private struct ArMeasureScreen: View {
     }
 }
 
-/// Hosts the controller's ARSCNView.
-struct ArSceneContainer: UIViewRepresentable {
-    let view: ARSCNView
-    func makeUIView(context: Context) -> ARSCNView { view }
-    func updateUIView(_ uiView: ARSCNView, context: Context) {}
-}
-
 /// The centre crosshair, with a ring that fills while a corner is sampled.
 private struct Reticle: View {
     let active: Bool
@@ -269,3 +263,4 @@ private struct Chip: View {
             .background(tint.opacity(0.25), in: Capsule()).foregroundStyle(tint)
     }
 }
+#endif

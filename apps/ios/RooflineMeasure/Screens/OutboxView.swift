@@ -1,3 +1,4 @@
+#if STAFF_APP
 import RooflineCore
 import SwiftUI
 
@@ -141,3 +142,4 @@ struct ExportTestDataView: View {
         }
     }
 }
+#endif

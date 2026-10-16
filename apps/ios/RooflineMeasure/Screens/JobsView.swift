@@ -1,3 +1,4 @@
+#if STAFF_APP
 import RooflineCore
 import SwiftUI
 
@@ -209,3 +210,4 @@ extension Bundle {
     var shortVersion: String { object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?" }
     var buildNumber: String { object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?" }
 }
+#endif

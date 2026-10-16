@@ -38,6 +38,9 @@ targets:
         excludes:
           - "PrivacyInfo.xcprivacy"
           - "Info.plist"
+          # the homeowner app and its brand are not part of the rep app
+          - "Homeowner/**"
+          - "Brand/**"
       - path: RooflineMeasure/PrivacyInfo.xcprivacy
         buildPhase: resources
     dependencies:
@@ -60,6 +63,8 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_PREVIEWS: YES
+        # The rep screens (jobs, windows, outbox, sign-in, sheet photo) compile only with this flag
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) STAFF_APP"
 
   RooflineMeasureTests:
     type: bundle.unit-test

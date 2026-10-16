@@ -1,3 +1,4 @@
+#if STAFF_APP
 import Foundation
 import RooflineCore
 
@@ -246,3 +247,4 @@ struct APIOutboxTransport: OutboxTransport {
         } catch let e as APIError { throw Self.map(e) }
     }
 }
+#endif

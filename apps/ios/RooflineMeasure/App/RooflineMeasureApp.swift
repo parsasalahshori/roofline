@@ -1,3 +1,4 @@
+#if STAFF_APP
 import SwiftUI
 
 @main
@@ -34,3 +35,4 @@ struct RootView: View {
         }
     }
 }
+#endif
