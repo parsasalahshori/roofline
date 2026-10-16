@@ -3,6 +3,7 @@ import {
   photoWindowKey,
   sizeFromArPoints,
   WINDOW_PHOTO_REFERENCES,
+  type ArDevice,
   type PhotoWindow,
   type PhotoWindowInput,
   type Quad,
@@ -62,7 +63,13 @@ const METHODS: Method[] = ['sheet', 'reference', 'known-side'];
 const METHODS_WITH_AR: Method[] = ['ar', ...METHODS];
 
 /** An AR measurement as the screen keeps it: the 3D corners and the photo (with the corners drawn in) kept with them. */
-type ArKept = Pick<ArResult, 'pointsM' | 'trackingLostCount' | 'corners'> & { uploadId: string; projected: boolean | null };
+type ArKept = Pick<ArResult, 'pointsM' | 'trackingLostCount' | 'corners'> & {
+  uploadId: string;
+  projected: boolean | null;
+  /** Kept from a window measured on the iPhone app (its AR and corner spread set the ±); absent for this phone's AR. */
+  device?: ArDevice | undefined;
+  cornerSpreadM?: [number, number, number, number] | undefined;
+};
 const TARGETS = Object.keys(PLANE_TARGETS) as (keyof typeof PLANE_TARGETS)[];
 
 /** One corner of a quad moved to (x, y), kept on the photo. */
@@ -124,13 +131,21 @@ export function PhotoMeasure({
   const W = upload.widthPx;
   const H = upload.heightPx;
   const initialScale = initial?.scale;
-  const [method, setMethod] = useState<Method>(initialAr !== undefined ? 'ar' : (initialScale?.kind ?? 'sheet'));
+  const [method, setMethod] = useState<Method>(initialAr !== undefined ? 'ar' : initialScale === undefined || initialScale.kind === 'roomplan' ? 'sheet' : initialScale.kind);
   const arSupport = useArSupport();
   const [ar, setAr] = useState<ArKept | null>(
     initialAr !== undefined
       ? { pointsM: initialAr.pointsM, trackingLostCount: initialAr.trackingLostCount, corners: initialAr.corners, uploadId: initialAr.upload.id, projected: initialAr.projected }
-      : initialScale?.kind === 'ar' && initial !== null
-        ? { pointsM: initialScale.pointsM, trackingLostCount: initialScale.trackingLostCount, corners: initial.corners, uploadId: initial.uploadId, projected: null }
+      : initialScale?.kind === 'ar' && initial !== null && initial.corners !== undefined && initial.uploadId !== undefined
+        ? {
+            pointsM: initialScale.pointsM,
+            trackingLostCount: initialScale.trackingLostCount,
+            corners: initial.corners,
+            uploadId: initial.uploadId,
+            projected: null,
+            device: initialScale.device,
+            cornerSpreadM: initialScale.cornerSpreadM,
+          }
         : null,
   );
   const [arAgain, setArAgain] = useState(false);
@@ -247,11 +262,17 @@ export function PhotoMeasure({
 
   const inches = Number.parseFloat(inchesText);
   const arMode = method === 'ar';
-  const arSize = arMode && ar !== null ? sizeFromArPoints(ar.pointsM) : null;
+  const arSize = arMode && ar !== null ? sizeFromArPoints(ar.pointsM, { device: ar.device, cornerSpreadM: ar.cornerSpreadM }) : null;
   const scale: WindowPhotoScale | null =
     method === 'ar'
       ? ar !== null
-        ? { kind: 'ar', pointsM: ar.pointsM, trackingLostCount: ar.trackingLostCount }
+        ? {
+            kind: 'ar',
+            pointsM: ar.pointsM,
+            trackingLostCount: ar.trackingLostCount,
+            ...(ar.device !== undefined && { device: ar.device }),
+            ...(ar.cornerSpreadM !== undefined && { cornerSpreadM: ar.cornerSpreadM }),
+          }
         : null
       : method === 'reference'
       ? { kind: 'reference', reference, corners: paperQuad }

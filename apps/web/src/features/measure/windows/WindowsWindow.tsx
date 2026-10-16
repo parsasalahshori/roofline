@@ -678,7 +678,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
                   coverAll={adj.photosCoverAllWindows}
                   srcFor={uploads.srcFor}
                   waiting={uploads.waiting}
-                  onOpen={(w) => setFlowAt({ step: 'measure', uploadId: w.uploadId, windowId: w.id })}
+                  onOpen={(w) => (w.uploadId !== undefined ? setFlowAt({ step: 'measure', uploadId: w.uploadId, windowId: w.id }) : undefined)}
                   onToggle={toggleMany}
                   onDelete={deletePhoto}
                   onCoverAll={coverAll}

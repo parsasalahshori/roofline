@@ -3,11 +3,14 @@ import {
   DEFAULT_FOCAL_35MM,
   SHEET_FOCAL_UNKNOWN_SIGMA,
   focalPxFrom35mm,
+  INCHES_PER_METRE,
   measureWithSheet,
   type PhotoWindow,
   type PhotoWindowInput,
   type Pt,
   type Quad,
+  ROOMPLAN_MIN_UNCERTAINTY_IN,
+  ROOMPLAN_UNCERTAINTY_IN,
   SHEET_MAX_RMS_PX,
   SHEET_MIN_POINTS,
   STEEP_CHECK_DEG,
@@ -172,49 +175,76 @@ function referenceSize(reference: keyof typeof WINDOW_PHOTO_REFERENCES, q: Quad)
 /**
  * One photographed window sized with the shared math, as the view shows it; null when the math cannot size it (a
  * degenerate quad) or the result is not a window's size (3 to 400 in). `photo` is the upload's displayed size and
- * focal length (DEFAULT_FOCAL_35MM when the photo does not say).
+ * focal length (DEFAULT_FOCAL_35MM when the photo does not say); null when the window has no photo, which only a
+ * RoomPlan window may (any other kind without a photo is null).
  */
-export function sizePhotoWindow(input: PhotoWindowInput, photo: { widthPx: number; heightPx: number; focal35mm: number | null }): PhotoWindow | null {
+export function sizePhotoWindow(input: PhotoWindowInput, photo: { widthPx: number; heightPx: number; focal35mm: number | null } | null): PhotoWindow | null {
   const s = input.scale;
+  if (s.kind === 'roomplan') return sizeRoomPlanWindow(input, s);
+  const corners = input.corners;
+  if (photo === null || corners === undefined) return null;
   let size: { widthIn: number; heightIn: number } | null;
   const focalPx = focalPxFrom35mm(photo.focal35mm ?? DEFAULT_FOCAL_35MM, photo.widthPx, photo.heightPx);
-  const angle = viewingAngleDeg(input.corners, photo.widthPx, photo.heightPx, focalPx);
-  let good = quadIsGood(input.corners) && angle !== null && angle <= STEEP_VIEW_DEG;
+  const angle = viewingAngleDeg(corners, photo.widthPx, photo.heightPx, focalPx);
+  let good = quadIsGood(corners) && angle !== null && angle <= STEEP_VIEW_DEG;
   let extra: Pick<PhotoWindow, 'uncertaintyIn' | 'distanceIn' | 'viewAngleDeg'> = {};
   // The sheet method is exact to a few hundredths of an inch: kept to 0.01 in (the others to 0.1 in).
   let step = 10;
   if (s.kind === 'reference') {
     const ref = referenceSize(s.reference, s.corners);
-    size = sizeFromReference(input.corners, s.corners, ref.w, ref.h);
+    size = sizeFromReference(corners, s.corners, ref.w, ref.h);
     good = good && quadIsGood(s.corners);
   } else if (s.kind === 'sheet') {
     if (sheetProblem(input, photo) !== null) return null;
     // No focal length in the photo: 26 mm is assumed, so the ± is widened for it (the order sheet takes k·± off).
     const focalSigmaFrac = photo.focal35mm === null ? SHEET_FOCAL_UNKNOWN_SIGMA : undefined;
-    const m = measureWithSheet({ widthPx: photo.widthPx, heightPx: photo.heightPx, focalPx, imagePoints: s.imagePoints, sheetPointsIn: s.sheetPointsIn, sheetIndex: s.sheetIndex, printScale: s.printScale, windowQuad: input.corners, planeOffsetIn: s.planeOffsetIn, focalSigmaFrac })!;
+    const m = measureWithSheet({ widthPx: photo.widthPx, heightPx: photo.heightPx, focalPx, imagePoints: s.imagePoints, sheetPointsIn: s.sheetPointsIn, sheetIndex: s.sheetIndex, printScale: s.printScale, windowQuad: corners, planeOffsetIn: s.planeOffsetIn, focalSigmaFrac })!;
     size = { widthIn: m.widthIn, heightIn: m.heightIn };
     // The sheet's pose gives the true viewing angle (the quad-based estimate above is only a fallback).
-    good = quadIsGood(input.corners) && m.viewAngleDeg <= STEEP_CHECK_DEG;
+    good = quadIsGood(corners) && m.viewAngleDeg <= STEEP_CHECK_DEG;
     const r2 = (v: number) => Math.round(v * 100) / 100;
     extra = { uncertaintyIn: { width: r2(m.uncertaintyIn.width), height: r2(m.uncertaintyIn.height) }, distanceIn: Math.round(m.distanceIn), viewAngleDeg: Math.round(m.viewAngleDeg * 10) / 10 };
     step = 100;
   } else if (s.kind === 'ar') {
     // AR: the size is the distance between the tapped points (metres in AR space); the photo only carries the thumbnail.
     if (arProblem(input) !== null) return null;
-    const m = sizeFromArPoints(s.pointsM)!;
+    const m = sizeFromArPoints(s.pointsM, { device: s.device, cornerSpreadM: s.cornerSpreadM })!;
     size = { widthIn: m.widthIn, heightIn: m.heightIn };
     good = m.quality === 'good' && s.trackingLostCount <= AR_MAX_TRACKING_LOST;
     const r2 = (v: number) => Math.round(v * 100) / 100;
     extra = { uncertaintyIn: { width: r2(m.uncertaintyIn.width), height: r2(m.uncertaintyIn.height) }, distanceIn: null, viewAngleDeg: null };
     step = 100;
   } else {
-    size = sizeFromKnownSide(input.corners, photo.widthPx, photo.heightPx, s.side, s.inches, focalPx);
+    size = sizeFromKnownSide(corners, photo.widthPx, photo.heightPx, s.side, s.inches, focalPx);
   }
   if (size === null || !Number.isFinite(size.widthIn) || !Number.isFinite(size.heightIn)) return null;
   if (size.widthIn < 3 || size.heightIn < 3 || size.widthIn > 400 || size.heightIn > 400) return null;
   const widthIn = Math.round(size.widthIn * step) / step;
   const heightIn = Math.round(size.heightIn * step) / step;
   return { ...input, widthIn, heightIn, sizeClass: windowSizeClass(widthIn, heightIn), ...extra, quality: good ? 'good' : 'check' };
+}
+
+/**
+ * A RoomPlan window: its size as the scan gave it (0.1 in), always 'check', with at least ROOMPLAN_MIN_UNCERTAINTY_IN
+ * of ± (more at lower confidence), so it is never order-grade. Null outside AR_MIN_IN..AR_MAX_IN.
+ */
+function sizeRoomPlanWindow(input: PhotoWindowInput, s: Extract<PhotoWindowInput['scale'], { kind: 'roomplan' }>): PhotoWindow | null {
+  if (roomPlanProblem(input) !== null) return null;
+  const widthIn = Math.round(s.widthM * INCHES_PER_METRE * 10) / 10;
+  const heightIn = Math.round(s.heightM * INCHES_PER_METRE * 10) / 10;
+  const u = Math.max(ROOMPLAN_MIN_UNCERTAINTY_IN, ROOMPLAN_UNCERTAINTY_IN[s.confidence] ?? ROOMPLAN_MIN_UNCERTAINTY_IN);
+  return { ...input, widthIn, heightIn, sizeClass: windowSizeClass(widthIn, heightIn), uncertaintyIn: { width: u, height: u }, distanceIn: null, viewAngleDeg: null, quality: 'check' };
+}
+
+/** Why a RoomPlan window cannot be sized, in words for the person; null when it can (or it is not a RoomPlan window). */
+export function roomPlanProblem(input: PhotoWindowInput): string | null {
+  const s = input.scale;
+  if (s.kind !== 'roomplan') return null;
+  const w = s.widthM * INCHES_PER_METRE;
+  const h = s.heightM * INCHES_PER_METRE;
+  const out = (v: number) => !(v >= AR_MIN_IN && v <= AR_MAX_IN);
+  if (out(w) || out(h)) return `its room-scan size ${w.toFixed(1)} x ${h.toFixed(1)} in is outside ${AR_MIN_IN} to ${AR_MAX_IN} in`;
+  return null;
 }
 
 /**
@@ -225,7 +255,7 @@ export function sizePhotoWindow(input: PhotoWindowInput, photo: { widthPx: numbe
  */
 export function sheetProblem(input: PhotoWindowInput, photo: { widthPx: number; heightPx: number; focal35mm: number | null }): string | null {
   const s = input.scale;
-  if (s.kind !== 'sheet') return null;
+  if (s.kind !== 'sheet' || input.corners === undefined) return null;
   if (s.imagePoints.length < SHEET_MIN_POINTS || s.imagePoints.length !== s.sheetPointsIn.length) return 'too few points of the measuring sheet were found';
   const focalPx = focalPxFrom35mm(photo.focal35mm ?? DEFAULT_FOCAL_35MM, photo.widthPx, photo.heightPx);
   const m = measureWithSheet({ widthPx: photo.widthPx, heightPx: photo.heightPx, focalPx, imagePoints: s.imagePoints, sheetPointsIn: s.sheetPointsIn, sheetIndex: s.sheetIndex, printScale: s.printScale, windowQuad: input.corners, planeOffsetIn: s.planeOffsetIn });
@@ -247,7 +277,7 @@ export const AR_MAX_TRACKING_LOST = 3;
 export function arProblem(input: PhotoWindowInput): string | null {
   const s = input.scale;
   if (s.kind !== 'ar') return null;
-  const m = sizeFromArPoints(s.pointsM);
+  const m = sizeFromArPoints(s.pointsM, { device: s.device, cornerSpreadM: s.cornerSpreadM });
   if (m === null) return 'its AR corners are on top of each other or in a line';
   const out = (v: number) => !(v >= AR_MIN_IN && v <= AR_MAX_IN);
   if (out(m.widthIn) || out(m.heightIn)) return `its AR size ${m.widthIn.toFixed(1)} x ${m.heightIn.toFixed(1)} in is outside ${AR_MIN_IN} to ${AR_MAX_IN} in`;

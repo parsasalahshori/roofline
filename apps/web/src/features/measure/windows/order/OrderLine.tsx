@@ -123,7 +123,11 @@ export function OrderLine({ line, checked, n, measurementId, locked, selected, o
           <Checkbox checked={selected} disabled={locked} onChange={onSelect} label={<span className="visually-hidden">{copy.selectLine(n, name)}</span>} />
         </td>
         <td className={styles.photoCell}>
-          <img className={styles.thumb} src={uploadSrc(measurementId, line.uploadId)} alt={copy.photoAlt(name)} width={64} height={64} loading="lazy" />
+          {line.uploadId !== null ? (
+            <img className={styles.thumb} src={uploadSrc(measurementId, line.uploadId)} alt={copy.photoAlt(name)} width={64} height={64} loading="lazy" />
+          ) : (
+            <span className={styles.thumb} aria-hidden="true" />
+          )}
         </td>
         <td className={styles.locationCell}>
           <div className={styles.locationInner}>

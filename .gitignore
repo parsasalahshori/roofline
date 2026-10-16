@@ -31,3 +31,10 @@ demo-artifacts/
 
 # Google Solar files kept by the roof-3d-check script (Solar API terms: delete after 30 days)
 .roof-3d-cache/
+
+# The iPhone app (apps/ios): the Xcode project is generated from project.yml by XcodeGen; build output stays local
+apps/ios/*.xcodeproj
+apps/ios/build/
+apps/ios/Core/.build/
+build/
+DerivedData/

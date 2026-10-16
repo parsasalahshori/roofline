@@ -291,6 +291,8 @@ export function toWindowView(row: WindowMeasurementRow, now: Date, opts: { photo
   const uploads = row.uploads ?? [];
   const photoWindows = (row.adjustments.photoWindows ?? [])
     .map((input) => {
+      // A room-scan window may have no photo (sizePhotoWindow sizes only that kind without one)
+      if (input.uploadId === undefined) return sizePhotoWindow(input, null);
       const u = uploads.find((x) => x.id === input.uploadId);
       return u === undefined ? null : sizePhotoWindow(input, u);
     })

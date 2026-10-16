@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { focalPxFrom35mm, type Quad, sizeFromKnownSide, sizeFromReference } from '@roofline/shared';
-import { arProblem, quadIsGood, readImageInfo, sizePhotoWindow, sniff, viewingAngleDeg } from '../../src/estimator/window-uploads.ts';
+import { arProblem, quadIsGood, readImageInfo, roomPlanProblem, sizePhotoWindow, sniff, viewingAngleDeg } from '../../src/estimator/window-uploads.ts';
 import { exifSegment, windowPhoto, WINDOW_IN, withExif } from '../window-photo-fixture.ts';
 
 /* On-site window photos: reading the photo (type by its bytes, displayed size, EXIF) and sizing a window from it. */
@@ -105,8 +105,27 @@ describe('a window measured in AR (Android WebXR)', () => {
     expect(w.widthIn).toBe(30.25);
     expect(w.heightIn).toBe(48.5);
     expect(w.quality).toBe('good');
-    expect(w.uncertaintyIn).toEqual({ width: 0.12, height: 0.12 });
+    // No device: WebXR, 6 mm a point (0.236 in) and 1% of the side, in quadrature
+    expect(w.uncertaintyIn).toEqual({ width: 0.38, height: 0.54 });
     expect(w.sizeClass).toBe('standard');
+  });
+
+  it("the iPhone's device and corner spread set the ±", () => {
+    const lidar = input(30.25, 48.5);
+    const w = sizePhotoWindow({ ...lidar, scale: { ...lidar.scale, device: 'arkit-lidar' } }, photo)!;
+    // 2.5 mm (0.098 in) and 1%
+    expect(w.uncertaintyIn).toEqual({ width: 0.32, height: 0.49 });
+    const spread = sizePhotoWindow({ ...lidar, scale: { ...lidar.scale, device: 'arkit-lidar', cornerSpreadM: [0.02, 0.02, 0.02, 0.02] } }, photo)!;
+    // 2 cm a corner (0.787 in) is more than the device's 2.5 mm: it is used
+    expect(spread.uncertaintyIn!.width).toBe(0.84);
+  });
+
+  it('tapped in any order (here TL, BL, BR, TR) the width and height do not swap', () => {
+    const a = input(24, 60);
+    const [tl, tr, br, bl] = a.scale.pointsM;
+    const w = sizePhotoWindow({ ...a, scale: { ...a.scale, pointsM: [tl, bl, br, tr] } }, photo)!;
+    expect(w.widthIn).toBe(24);
+    expect(w.heightIn).toBe(60);
   });
 
   it('AR losing the wall more than 3 times makes it check', () => {
@@ -119,5 +138,29 @@ describe('a window measured in AR (Android WebXR)', () => {
     expect(arProblem(input(5, 48))).toMatch(/outside 6 to 200 in/);
     expect(arProblem(input(30, 201))).toMatch(/outside 6 to 200 in/);
     expect(sizePhotoWindow(input(5, 48), photo)).toBeNull();
+  });
+});
+
+describe('a window from the iPhone room scan (RoomPlan)', () => {
+  const room = (widthM: number, heightM: number, confidence: 'low' | 'medium' | 'high' = 'high') => ({ id: 'r1', scale: { kind: 'roomplan' as const, widthM, heightM, confidence } });
+
+  it('is sized straight from the scan with no photo: always check, at least 1 in of ±, more at lower confidence', () => {
+    const w = sizePhotoWindow(room(0.9144, 1.524), null)!;
+    expect(w).toMatchObject({ id: 'r1', widthIn: 36, heightIn: 60, sizeClass: 'standard', quality: 'check', uncertaintyIn: { width: 1, height: 1 } });
+    expect(sizePhotoWindow(room(0.9144, 1.524, 'medium'), null)!.uncertaintyIn).toEqual({ width: 1.5, height: 1.5 });
+    expect(sizePhotoWindow(room(0.9144, 1.524, 'low'), null)!.uncertaintyIn).toEqual({ width: 2, height: 2 });
+    // With a photo kept for the thumbnail, the same
+    expect(sizePhotoWindow({ ...room(0.9144, 1.524), uploadId: 'u' }, { widthPx: 900, heightPx: 1200, focal35mm: null })!.quality).toBe('check');
+  });
+
+  it('sizes outside 6..200 in are refused with a reason', () => {
+    expect(roomPlanProblem(room(0.9, 1.5))).toBeNull();
+    expect(roomPlanProblem(room(0.1, 1.5))).toMatch(/outside 6 to 200 in/);
+    expect(roomPlanProblem(room(0.9, 5.2))).toMatch(/outside 6 to 200 in/);
+    expect(sizePhotoWindow(room(0.1, 1.5), null)).toBeNull();
+  });
+
+  it('any other kind without a photo cannot be sized', () => {
+    expect(sizePhotoWindow({ id: 'k', scale: { kind: 'known-side', side: 'width', inches: 36 } }, null)).toBeNull();
   });
 });

@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import type { EstimatedWindows, LngLat, MeasuredWindow, WindowAdjustments, WindowDetectorName, WindowsMissReason } from '@roofline/shared';
 import { properties, type StoredFacadePhoto, type StoredWindowUpload, type WindowGeometry, windowMeasurements } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
@@ -67,13 +67,29 @@ export async function createWindowMeasurement(tx: Tx, ctx: TenantContext, m: New
   return row!;
 }
 
-/** One window measurement the member may see; null otherwise. */
-export async function getWindowMeasurement(tx: Tx, ctx: TenantContext, id: string): Promise<WindowMeasurementRow | null> {
-  const [found] = await tx
+/**
+ * One window measurement the member may see; null otherwise. `lock`: the row is locked (FOR UPDATE) until the
+ * transaction ends, for a read-change-write of its adjustments that must not lose a change made at the same time.
+ */
+export async function getWindowMeasurement(tx: Tx, ctx: TenantContext, id: string, opts?: { lock?: boolean }): Promise<WindowMeasurementRow | null> {
+  const query = tx
     .select({ row: windowMeasurements })
     .from(windowMeasurements)
     .innerJoin(properties, and(eq(properties.id, windowMeasurements.propertyId), eq(properties.companyId, windowMeasurements.companyId)))
     .where(and(eq(windowMeasurements.id, id), eq(windowMeasurements.companyId, ctx.companyId), propertyScope(ctx)))
+    .limit(1);
+  const [found] = await (opts?.lock === true ? query.for('update', { of: windowMeasurements }) : query);
+  return found?.row ?? null;
+}
+
+/** The newest window measurement of a property the member may see; null when there is none (or they may not see it). */
+export async function getLatestWindowMeasurementForProperty(tx: Tx, ctx: TenantContext, propertyId: string): Promise<WindowMeasurementRow | null> {
+  const [found] = await tx
+    .select({ row: windowMeasurements })
+    .from(windowMeasurements)
+    .innerJoin(properties, and(eq(properties.id, windowMeasurements.propertyId), eq(properties.companyId, windowMeasurements.companyId)))
+    .where(and(eq(windowMeasurements.propertyId, propertyId), eq(windowMeasurements.companyId, ctx.companyId), propertyScope(ctx)))
+    .orderBy(desc(windowMeasurements.createdAt), desc(windowMeasurements.id))
     .limit(1);
   return found?.row ?? null;
 }
