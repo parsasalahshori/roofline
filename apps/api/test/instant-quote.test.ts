@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import pg from 'pg';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, inject, test, vi } from 'vitest';
@@ -428,6 +431,26 @@ describe('Turnstile (only when TURNSTILE_SECRET is set)', () => {
     expect(ok.status).toBe(200);
     expect(spy).toHaveBeenCalledTimes(2);
   }, 30_000);
+});
+
+describe('GET /q/:slug (the page, framed by the company sites only)', () => {
+  test("a turned-on page may be framed by the company's embed origins; any other path keeps frame-ancestors 'none'", async () => {
+    const dist = mkdtempSync(join(tmpdir(), 'quote-web-'));
+    writeFileSync(join(dist, 'index.html'), '<!doctype html><div id="root"></div>');
+    await t.close();
+    t = await makeTestApp({ WEB_DIST_DIR: dist });
+    await enable(t.seed.a.companyId, ACME, { quote_embed_origins: [EMBED] });
+    const page = await request(t.app).get(`/q/${ACME}`);
+    expect(page.status).toBe(200);
+    expect(page.headers['content-security-policy']).toContain(`frame-ancestors 'self' ${EMBED}`);
+    expect(page.headers['x-frame-options']).toBeUndefined();
+    expect(page.headers['x-robots-tag']).toBe('noindex');
+    const unknown = await request(t.app).get('/q/nobody-here');
+    expect(unknown.headers['content-security-policy']).toContain("frame-ancestors 'none'");
+    expect(unknown.headers['x-frame-options']).toBeDefined();
+    const app = await request(t.app).get('/settings');
+    expect(app.headers['content-security-policy']).toContain("frame-ancestors 'none'");
+  });
 });
 
 describe('/api/instant-quote/settings', () => {

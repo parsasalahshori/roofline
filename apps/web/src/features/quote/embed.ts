@@ -9,15 +9,18 @@ export const RESIZE_MESSAGE = 'roofline-quote:height';
 /** Inside an iframe: posts the document's height to the parent on every change. Returns the stop function. */
 export function reportHeight(win: Window = window): () => void {
   if (win.parent === win) return () => undefined;
+  // Embedded, the page is as tall as its content (no full-screen minimum), so the frame can shrink as well as grow.
+  win.document.documentElement.setAttribute('data-embedded', '');
+  const root = win.document.getElementById('root') ?? win.document.body;
   let last = 0;
   const send = () => {
-    const height = Math.ceil(win.document.documentElement.scrollHeight);
+    const height = Math.ceil(root.getBoundingClientRect().height);
     if (height === last) return;
     last = height;
     win.parent.postMessage({ type: RESIZE_MESSAGE, height }, '*');
   };
   const observer = new ResizeObserver(send);
-  observer.observe(win.document.body);
+  observer.observe(root);
   send();
   return () => observer.disconnect();
 }
@@ -30,7 +33,7 @@ export function embedSnippet(pageUrl: string, title: string): string {
   const origin = new URL(pageUrl).origin;
   const id = 'roofline-quote';
   return [
-    `<iframe id="${id}" src="${pageUrl}" title="${title.replace(/"/g, '&quot;')}" style="width:100%;border:0;min-height:640px" loading="lazy" allow="clipboard-write"></iframe>`,
+    `<iframe id="${id}" src="${pageUrl}" title="${title.replace(/"/g, '&quot;')}" style="width:100%;border:0;height:640px" loading="lazy" allow="clipboard-write"></iframe>`,
     `<script>`,
     `window.addEventListener("message", function (e) {`,
     `  if (e.origin !== "${origin}" || !e.data || e.data.type !== "${RESIZE_MESSAGE}") return;`,

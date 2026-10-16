@@ -10,7 +10,7 @@ import { turnstileOn } from '../quote/guards.ts';
  * Content-Security-Policy says frame-ancestors 'none'; this page may be framed by the company's own sites, so for
  * a known, turned-on slug the policy is rewritten to `frame-ancestors 'self' <the company's embed origins>` and
  * X-Frame-Options is dropped (frame-ancestors replaces it). With Turnstile set up, its script and frame host is
- * allowed too. An unknown slug keeps the strict headers. Never cached; not indexed.
+ * allowed too. An unknown slug keeps the strict headers. Not indexed; web.ts sends it with no-cache like every page.
  */
 
 const PAGE = /^\/q\/([^/]+)\/?$/i;
@@ -33,7 +33,6 @@ export function quotePage(deps: AppDeps): RequestHandler {
       next();
       return;
     }
-    res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Robots-Tag', 'noindex');
     if (!QUOTE_SLUG_RE.test(slug)) {
       next();
