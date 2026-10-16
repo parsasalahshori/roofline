@@ -80,6 +80,7 @@ export type WindowPhotoCv = {
   /**
    * Proposes the window's rectangle around the found sheet (the sheet sits on the glass), so the person rarely drags
    * corners from scratch; null when nothing rectangular encloses the sheet. Same shape as snapQuad (candidates ranked).
+   * The browser engine implements it; optional so a stand-in engine (tests) can leave it out.
    */
   proposeQuad?(img: RgbaImage, sheet: SheetDetection, target?: WindowMeasureTarget): Promise<SnappedQuad | null>;
   /** The window's size from the sheet, its corners, the camera focal length (pixels) and the frame's offset. */
@@ -97,6 +98,8 @@ export type WindowPhotoCv = {
     printScale?: number;
     /** From snapQuad (1.5 px when not given: corners placed by hand). */
     cornerSigmaPx?: number | [number, number, number, number];
+    /** One-sigma doubt in focalPx as a fraction: SHEET_FOCAL_UNKNOWN_SIGMA when the photo did not say (3% when not given). */
+    focalSigmaFrac?: number;
   }): WindowPhotoMeasurement | null;
   /** Several photos of the same window combined: the median size and the spread between photos. */
   combine(ms: WindowPhotoMeasurement[]): { widthIn: number; heightIn: number; spreadIn: { width: number; height: number } } | null;

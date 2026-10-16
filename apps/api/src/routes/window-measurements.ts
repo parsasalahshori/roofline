@@ -30,8 +30,12 @@ const PHOTO_WINDOWS_MESSAGE = 'Mark each window inside its photo, with a paper o
 const COVER_MESSAGE = 'Please check this field.';
 const UPLOAD_TOO_BIG_MESSAGE = 'That photo is over 12 MB.';
 const UPLOAD_TYPE_MESSAGE = 'Upload a JPEG or PNG photo.';
-/** HEIC is refused for now (no converter on the server): the phone can save JPEG instead. */
-export const HEIC_MESSAGE = 'Take the photo as JPEG, or set the camera to Most Compatible.';
+/**
+ * HEIC is converted to JPEG in the browser where it can be opened (Safari); the server has no HEIC decoder (sharp's
+ * prebuilt libvips has no HEVC), so a HEIC that reaches it is refused with what to change on the phone.
+ */
+export const HEIC_MESSAGE =
+  'This photo is in the HEIC (high efficiency) format. Set the camera to save JPEG and take it again: on iPhone, Settings > Camera > Formats > Most Compatible; on Samsung, Camera settings > Advanced > High efficiency pictures off.';
 const UPLOAD_MISSING_MESSAGE = 'Add a photo (form field "photo").';
 const UPLOADS_FULL_MESSAGE = 'This measurement has 40 photos already.';
 const STORAGE_DOWN_MESSAGE = "Photo storage isn't available right now.";

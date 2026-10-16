@@ -1,6 +1,7 @@
 import exifr from 'exifr';
 import {
   DEFAULT_FOCAL_35MM,
+  SHEET_FOCAL_UNKNOWN_SIGMA,
   focalPxFrom35mm,
   measureWithSheet,
   type PhotoWindow,
@@ -188,7 +189,9 @@ export function sizePhotoWindow(input: PhotoWindowInput, photo: { widthPx: numbe
     good = good && quadIsGood(s.corners);
   } else if (s.kind === 'sheet') {
     if (sheetProblem(input, photo) !== null) return null;
-    const m = measureWithSheet({ widthPx: photo.widthPx, heightPx: photo.heightPx, focalPx, imagePoints: s.imagePoints, sheetPointsIn: s.sheetPointsIn, sheetIndex: s.sheetIndex, printScale: s.printScale, windowQuad: input.corners, planeOffsetIn: s.planeOffsetIn })!;
+    // No focal length in the photo: 26 mm is assumed, so the ± is widened for it (the order sheet takes k·± off).
+    const focalSigmaFrac = photo.focal35mm === null ? SHEET_FOCAL_UNKNOWN_SIGMA : undefined;
+    const m = measureWithSheet({ widthPx: photo.widthPx, heightPx: photo.heightPx, focalPx, imagePoints: s.imagePoints, sheetPointsIn: s.sheetPointsIn, sheetIndex: s.sheetIndex, printScale: s.printScale, windowQuad: input.corners, planeOffsetIn: s.planeOffsetIn, focalSigmaFrac })!;
     size = { widthIn: m.widthIn, heightIn: m.heightIn };
     // The sheet's pose gives the true viewing angle (the quad-based estimate above is only a fallback).
     good = quadIsGood(input.corners) && m.viewAngleDeg <= STEEP_CHECK_DEG;

@@ -7,10 +7,11 @@ import jpeg from 'jpeg-js';
 import { DEFAULT_FOCAL_35MM, focalPxFrom35mm, measureWithSheet, type Pt, type Quad, sizeFromKnownSide, sizeFromReference } from '@roofline/shared';
 import { detectSheetSync } from '../../apps/web/src/features/measure/windows/cv/detect-sheet.ts';
 import { mulberry32, renderScene } from '../../apps/web/src/features/measure/windows/cv/synth/render.ts';
+import { proposeQuadSync } from '../../apps/web/src/features/measure/windows/cv/propose-quad.ts';
 import { snapQuadSync } from '../../apps/web/src/features/measure/windows/cv/snap-quad.ts';
 import type { BenchPhoto } from './scenes.ts';
 
-export const METHODS = ['paper4', 'knownSide', 'sheetNoSnap', 'sheetSnap', 'sheetSnapOffset', 'sheetSnapExactOffset', 'homographySnapOffset', 'snap1Offset', 'snap4Picked', 'snap1Picked'] as const;
+export const METHODS = ['paper4', 'knownSide', 'sheetNoSnap', 'sheetSnap', 'sheetSnapOffset', 'sheetSnapExactOffset', 'homographySnapOffset', 'snap1Offset', 'snap4Picked', 'snap1Picked', 'proposedTop', 'proposedPicked'] as const;
 export type Method = (typeof METHODS)[number];
 export type MethodResult = { w: number; h: number; uw?: number; uh?: number; warnings?: string[] } | null;
 export type PhotoResult = {
@@ -27,6 +28,10 @@ export type PhotoResult = {
   /** Rank (1-based) of the first candidate on the right boundary (all corners within 3 px), 0 = none; 4% and 1% clicks. */
   rank4: number;
   rank1: number;
+  /** The same for the engine's own proposal around the sheet (no clicks); -1 = no proposal. */
+  rankP: number;
+  /** The window's measured outline is wholly in the photo (else no outline can be right: the scene left the frame). */
+  inFrame: boolean;
   sheets: number;
   rivals: number[] | null;
   ms: { render: number; detect: number; snap: number };
@@ -78,9 +83,12 @@ export function evaluatePhoto(windowId: number, photoIdx: number, bp: BenchPhoto
     const a = 2 * Math.PI * rnd();
     return [x + r * Math.cos(a), y + r * Math.sin(a)] as Pt;
   }) as Quad;
+  // The 1% clicks draw from their own stream: drawing them from rnd would shift every later draw (the typed offset's
+  // noise below) and silently change the earlier methods' numbers for the same seed.
+  const rnd1 = mulberry32(bp.seed ^ 0x1c11c5);
   const rough1 = truthQ.map(([x, y]) => {
-    const r = 0.01 * sidePx * Math.sqrt(rnd());
-    const a = 2 * Math.PI * rnd();
+    const r = 0.01 * sidePx * Math.sqrt(rnd1());
+    const a = 2 * Math.PI * rnd1();
     return [x + r * Math.cos(a), y + r * Math.sin(a)] as Pt;
   }) as Quad;
   const sheetOpt = det === null ? undefined : { imagePoints: det.imagePoints, sheetPointsIn: det.sheetPointsIn, sheetIndex: det.sheetIndex };
@@ -100,6 +108,8 @@ export function evaluatePhoto(windowId: number, photoIdx: number, bp: BenchPhoto
     return r >= 1 && r <= 3 ? listOf(s)[r - 1]! : s.quad;
   };
   const enteredOffset = truth.offsetIn + gauss() / 8;
+  // The engine's proposal around the sheet, no clicks at all (after the stream draws above, so they stay the same).
+  const proposal = det === null ? null : proposeQuadSync(img, det, 'inside-frame');
   const m = (quad: Quad, offset: number, sigma?: [number, number, number, number] | number, model: 'pose' | 'homography' = 'pose'): MethodResult => {
     if (det === null) return null;
     const r = measureWithSheet({ widthPx: W, heightPx: H, focalPx, imagePoints: det.imagePoints, sheetPointsIn: det.sheetPointsIn, sheetIndex: det.sheetIndex, windowQuad: quad, planeOffsetIn: offset, cornerSigmaPx: sigma, offsetSigmaIn: 0.125, planeModel: model });
@@ -114,6 +124,8 @@ export function evaluatePhoto(windowId: number, photoIdx: number, bp: BenchPhoto
   results.snap1Offset = m(snap1.quad, enteredOffset, snap1.cornerSigmaPx);
   results.snap4Picked = m(picked(snap), enteredOffset, snap.cornerSigmaPx);
   results.snap1Picked = m(picked(snap1), enteredOffset, snap1.cornerSigmaPx);
+  results.proposedTop = proposal === null ? null : m(proposal.quad, enteredOffset, proposal.cornerSigmaPx);
+  results.proposedPicked = proposal === null ? null : m(picked(proposal), enteredOffset, proposal.cornerSigmaPx);
   // Camera geometry for the bins: distance to the window's centre and angle off square.
   const sc = bp.scene;
   const out = {
@@ -128,7 +140,9 @@ export function evaluatePhoto(windowId: number, photoIdx: number, bp: BenchPhoto
     rmsPx: det?.rmsErrorPx ?? null,
     snapCornerErrPx: snap.quad.map((p, k) => Math.hypot(p[0] - truthQ[k]![0], p[1] - truthQ[k]![1])),
     rank4: rankOf(snap),
+    inFrame: truthQ.every(([x, y]) => x >= 2 && y >= 2 && x <= W - 2 && y <= H - 2),
     rank1: rankOf(snap1),
+    rankP: proposal === null ? -1 : rankOf(proposal),
     sheets: det?.sheets ?? (det === null ? 0 : 1),
     rivals: snap.rivals,
     ms: { render: tRender, detect: tDetect, snap: tSnap },

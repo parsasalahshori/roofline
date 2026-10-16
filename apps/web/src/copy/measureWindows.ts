@@ -262,8 +262,13 @@ export const windowPhotos = {
   uploading: (name: string) => `Uploading ${name}`,
   uploaded: 'Ready to measure',
   uploadFailed: 'This photo did not upload. Try again.',
-  tooBig: 'This photo is over 12 MB. Take it again at a smaller size.',
+  tooBig: 'This photo is too big to upload, even made smaller. Take it again at a smaller size.',
   wrongType: 'Use a JPEG, PNG or HEIC photo.',
+  heicUnsupported:
+    'This photo is in the HEIC (high efficiency) format, which this browser cannot open. Set the camera to save JPEG and take it again: on iPhone, Settings > Camera > Formats > Most Compatible; on Samsung, Camera settings > Advanced > High efficiency pictures off.',
+  preparing: 'Getting the photo ready…',
+  waitingOffline: 'Waiting for a connection. It uploads by itself.',
+  photosWaiting: (n: number) => (n === 1 ? '1 photo waiting to upload' : `${n} photos waiting to upload`),
   retry: 'Try again',
   remove: 'Remove',
   measure: 'Measure',
@@ -291,6 +296,7 @@ export const windowPhotos = {
   size: (w: number, h: number) => `${w.toFixed(1)} × ${h.toFixed(1)} in`,
   sizeLabel: 'Size',
   noSize: 'Move the corners to size the window.',
+  cornersFirst: (placed: number, of: number) => `Place every corner to see the size (${placed} of ${of}).`,
   typeSide: 'Type the side you measured.',
   check: 'Check the corners: the photo is at a steep angle or the corners are nearly in a line.',
   fromServer: 'Checked by Estimator',
@@ -319,7 +325,9 @@ export const windowPhotos = {
 
   // The measuring sheet (recommended)
   methodSheet: 'Measuring sheet',
-  sheetHint: 'The sheet on the glass is found for you. Check the yellow corners sit on the window frame.',
+  sheetHintProposed: 'The window was found around the sheet. Check the yellow corners sit on the window frame.',
+  sheetHintPlace: 'Drag the four corners onto the frame.',
+  sheetHintCheck: 'Check the yellow corners sit on the window frame.',
   howToTitle: 'How to photograph a window',
   howTo: [
     'Tape the measuring sheet flat on the glass, in a lower corner.',
@@ -331,6 +339,7 @@ export const windowPhotos = {
   sheetPick: 'Which sheet',
   twoSheets: 'Two sheets found',
   twoSheetsSize: 'Sized from both sheets',
+  noCameraData: 'No camera data in this photo, so the size is less certain.',
   printCheckTitle: 'Check the print',
   printCheckHint: (length: number, unit: string) => `Measure the ruler on the printed sheet. It should be exactly ${length} ${unit}.`,
   printCheckField: (unit: string) => `The ruler measured (${unit})`,

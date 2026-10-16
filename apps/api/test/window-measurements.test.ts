@@ -8,6 +8,7 @@ import jpeg from 'jpeg-js';
 import { DetectorError, type WindowDetector } from '../src/providers/window-detector.ts';
 import { windowPhoto } from './window-photo-fixture.ts';
 import { hipLayers, layersCover } from './roof-3d-fixture.ts';
+import { HEIC_MESSAGE } from '../src/routes/window-measurements.ts';
 
 /*
  * Measure windows through the API, with fakes for every outside service: the house's outline comes from a footprint
@@ -475,7 +476,7 @@ describe('on-site window photos', () => {
     expect(text.body.error).toBe('Upload a JPEG or PNG photo.');
     const heic = await upload(owner, view.id, Uint8Array.from([0, 0, 0, 24, ...Buffer.from('ftypheic'), 0, 0, 0, 0, 1, 2, 3, 4]));
     expect(heic.status).toBe(415);
-    expect(heic.body.error).toBe('Take the photo as JPEG, or set the camera to Most Compatible.');
+    expect(heic.body.error).toBe(HEIC_MESSAGE);
     const big = new Uint8Array(12 * 1024 * 1024 + 10);
     big.set([0xff, 0xd8, 0xff]);
     expect((await upload(owner, view.id, big)).status).toBe(413);

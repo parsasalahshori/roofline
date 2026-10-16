@@ -155,6 +155,8 @@ export function PhotoMeasure({
   // The corners the person has put on the frame (a new window). Snapping fits all four edges at once, so it waits
   // until every corner is roughly on the frame: snapping a quad with corners still far off moves the placed ones.
   const [placed, setPlaced] = useState<ReadonlySet<number>>(() => new Set(initial !== null ? [0, 1, 2, 3] : []));
+  // The paper's corners (paper on the glass), the same way: a size from corners nobody placed is a made-up size
+  const [paperPlaced, setPaperPlaced] = useState<ReadonlySet<number>>(() => new Set(initialScale?.kind === 'reference' ? [0, 1, 2, 3] : []));
   const [drag, setDrag] = useState<Drag | null>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const snapSeq = useRef(0);
@@ -206,15 +208,21 @@ export function PhotoMeasure({
   // A new window on the sheet: once the photo is read and the sheet looked for, start from the engine's proposed
   // outline around the sheet (when it can propose one), else fit the starting corners to the frame nearby
   const seeded = useRef(initial !== null);
+  // Whether the engine proposed this new window's outline (the hint says so only when it did)
+  const [proposed, setProposed] = useState<'pending' | 'found' | 'none'>('pending');
   const looked = find.status === 'found' || find.status === 'missing' || find.status === 'failed';
   const seed = () => {
     // Without a proposal the corners stay where they start until the person places them
-    if (propose === null) return;
+    if (propose === null) {
+      setProposed('none');
+      return;
+    }
     const seq = ++snapSeq.current;
     setSnapping(true);
     void propose(engineTarget).then((s) => {
       if (seq !== snapSeq.current) return;
       setSnapping(false);
+      setProposed(s !== null ? 'found' : 'none');
       if (s !== null) applySnap(s);
     });
   };
@@ -272,37 +280,41 @@ export function PhotoMeasure({
           scale,
         };
   const unchanged = saved !== null && input !== null && sizingKey(saved) === sizingKey(input);
+  // No size (and no Save) until every corner the size depends on was put there by the person or the engine's fit
+  const cornersReady = arMode || (placed.size === 4 && (method !== 'reference' || paperPlaced.size === 4));
 
   // Each outline on offer, sized (for "A: 35 7/8 x 59 3/4"); the picked one is the measurement
   const offered = useMemo(
     () =>
-      sheetMode && pick !== null && engine.cv !== null && detection !== null
+      sheetMode && cornersReady && pick !== null && engine.cv !== null && detection !== null
         ? (snapInfo?.candidates ?? []).slice(0, PICK_MAX).map((c, i) => ({
             ...c,
             size: measureOnSheet(engine.cv!, upload, detection, c.quad, offsetIn, { cornerSigmaPx: i === 0 ? snapInfo?.cornerSigmaPx : undefined, printScale }),
           }))
         : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps -- detection is derived from find / initial
-    [sheetMode, pick, engine.cv, find, upload, snapInfo, offsetIn, printScale],
+    [sheetMode, cornersReady, pick, engine.cv, find, upload, snapInfo, offsetIn, printScale],
   );
   const pickedSize = pick !== null && offered.length > 1 ? (offered[pick.index]?.size ?? null) : undefined;
   const measurement: WindowPhotoMeasurement | null = useMemo(
     () =>
       pickedSize !== undefined
         ? pickedSize
-        : sheetMode && engine.cv !== null && detection !== null
+        : sheetMode && cornersReady && engine.cv !== null && detection !== null
           ? measureOnSheet(engine.cv, upload, detection, windowQuad, offsetIn, { cornerSigmaPx, printScale })
           : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps -- detection is derived from find / initial
-    [pickedSize, sheetMode, engine.cv, find, upload, windowQuad, offsetIn, cornerSigmaPx, printScale],
+    [pickedSize, sheetMode, cornersReady, engine.cv, find, upload, windowQuad, offsetIn, cornerSigmaPx, printScale],
   );
   const size: { widthIn: number; heightIn: number } | null = unchanged
     ? { widthIn: saved.widthIn, heightIn: saved.heightIn }
-    : sheetMode
-      ? measurement
-      : input !== null
-        ? sizePhotoWindow(input, upload)
-        : null;
+    : !cornersReady
+      ? null
+      : sheetMode
+        ? measurement
+        : input !== null
+          ? sizePhotoWindow(input, upload)
+          : null;
   const uncertainty = unchanged ? (saved.uncertaintyIn ?? null) : arMode ? (arSize?.uncertaintyIn ?? null) : (measurement?.uncertaintyIn ?? null);
   const uMax = uncertainty === null ? null : Math.max(uncertainty.width, uncertainty.height);
   const warnings = sheetMode && !unchanged ? (measurement?.warnings ?? []) : [];
@@ -362,6 +374,7 @@ export function PhotoMeasure({
       setPlaced(next);
       if (sheetMode && next.size === 4) runSnap(windowQuad);
     }
+    if (drag !== null && drag.which === 'paper') setPaperPlaced(new Set(paperPlaced).add(drag.i));
     setDrag(null);
   };
 
@@ -373,6 +386,9 @@ export function PhotoMeasure({
     e.preventDefault();
     const q = which === 'window' ? windowQuad : paperQuad;
     set(which, i, q[i]![0] + move[0], q[i]![1] + move[1]);
+    // A corner moved with the keys was placed too (keyboard and switch users)
+    if (which === 'window' && !placed.has(i)) setPlaced(new Set(placed).add(i));
+    if (which === 'paper' && !paperPlaced.has(i)) setPaperPlaced(new Set(paperPlaced).add(i));
   };
 
   const pct = (v: number, of: number) => `${(v / of) * 100}%`;
@@ -517,7 +533,7 @@ export function PhotoMeasure({
           </Button>
         ))}
       </div>
-      <p className={styles.hint}>{arMode ? copy.arHint : method === 'sheet' ? copy.sheetHint : method === 'reference' ? copy.referenceHint : copy.knownSideHint}</p>
+      <p className={styles.hint}>{arMode ? copy.arHint : method === 'sheet' ? (initial !== null ? copy.sheetHintCheck : proposed === 'found' ? copy.sheetHintProposed : copy.sheetHintPlace) : method === 'reference' ? copy.referenceHint : copy.knownSideHint}</p>
       {sheetStatus}
       {arMode ? (
         <div className={styles.arPanel} data-ar-panel="">
@@ -707,7 +723,19 @@ export function PhotoMeasure({
         )}
         <div className={styles.size} role="status" data-live-size={size === null ? 'none' : 'live'} data-retake={retake ? 'true' : undefined}>
           <span className={styles.sizeLabel}>{copy.sizeLabel}</span>
-          {sizeText !== null ? <strong className={styles.sizeValue}>{sizeText}</strong> : <span>{arMode ? copy.arNoSize : method === 'known-side' && !(inches > 0) ? copy.typeSide : copy.noSize}</span>}
+          {sizeText !== null ? (
+            <strong className={styles.sizeValue}>{sizeText}</strong>
+          ) : (
+            <span data-no-size={!cornersReady ? 'corners' : undefined}>
+              {arMode
+                ? copy.arNoSize
+                : !cornersReady
+                  ? copy.cornersFirst(placed.size + (method === 'reference' ? paperPlaced.size : 0), method === 'reference' ? 8 : 4)
+                  : method === 'known-side' && !(inches > 0)
+                    ? copy.typeSide
+                    : copy.noSize}
+            </span>
+          )}
           {sizeText !== null && uMax !== null && (sheetMode || arMode || unchanged) ? (
             <span className={styles.plusMinus} data-plus-minus="">
               {copy.plusMinus(plusMinusFraction(uMax))}
@@ -715,6 +743,11 @@ export function PhotoMeasure({
           ) : null}
           {sizeText !== null ? <span className={styles.sizeSource}>{unchanged ? copy.fromServer : copy.live}</span> : null}
           {sizeText !== null && twoSheets && sheetMode ? <span className={styles.sizeNote} data-size-two-sheets="">{copy.twoSheetsSize}</span> : null}
+          {sizeText !== null && sheetMode && upload.focal35mm == null ? (
+            <span className={styles.sizeNote} data-no-camera-data="">
+              {copy.noCameraData}
+            </span>
+          ) : null}
           {sizeText !== null && sheetMode && printScale !== 1 ? (
             <span className={styles.sizeNote} data-size-print-scale="">
               {copy.printCheckApplied((printScale * 100).toFixed(1))}

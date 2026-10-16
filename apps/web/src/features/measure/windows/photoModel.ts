@@ -1,6 +1,7 @@
 import {
   DEFAULT_FOCAL_35MM,
   focalPxFrom35mm,
+  SHEET_FOCAL_UNKNOWN_SIGMA,
   sizeFromArPoints,
   sizeFromKnownSide,
   sizeFromReference,
@@ -162,6 +163,8 @@ export function measureOnSheet(
     planeOffsetIn,
     ...(extra.cornerSigmaPx !== undefined && { cornerSigmaPx: extra.cornerSigmaPx }),
     ...(extra.printScale !== undefined && extra.printScale !== 1 && { printScale: extra.printScale }),
+    // No focal length in the photo: 26 mm is assumed, and the ± says how much less certain that makes the size
+    ...(upload.focal35mm == null && { focalSigmaFrac: SHEET_FOCAL_UNKNOWN_SIGMA }),
   });
   if (m === null || !(m.widthIn > 0) || !(m.heightIn > 0) || !Number.isFinite(m.widthIn) || !Number.isFinite(m.heightIn)) return null;
   return m;

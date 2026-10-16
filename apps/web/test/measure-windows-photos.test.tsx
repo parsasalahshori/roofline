@@ -85,9 +85,11 @@ describe('Measure a window on its photo (PhotoMeasure)', () => {
     renderMeasure();
     for (let i = 0; i < 4; i++) dragTo('paper', i, PAPER[i]!);
     for (let i = 0; i < 3; i++) dragTo('window', i, WIN[i]!);
-    // Part way: the size already follows the corners
+    // Part way: no size yet (a corner still where it started is a guess, not the window)
     const partial = sizeFromReference([WIN[0], WIN[1], WIN[2], seedWindowQuad(1200, 1600)[3]], PAPER, 8.5, 11)!;
-    expect(liveSize()).toContain(sizeText(partial));
+    expect(liveSize()).not.toContain(sizeText(partial));
+    expect(liveSize()).toContain(copy.cornersFirst(7, 8));
+    expect((screen.getByRole('button', { name: copy.save }) as HTMLButtonElement).disabled).toBe(true);
     dragTo('window', 3, WIN[3]);
     const expected = sizeFromReference(WIN, PAPER, 8.5, 11)!;
     expect(liveSize()).toContain(sizeText(expected));
@@ -340,6 +342,19 @@ describe('Photograph windows on site', () => {
     fireEvent.change(screen.getByLabelText(copy.takeLabel), { target: { files: [big, new File(['x'], 'notes.pdf', { type: 'application/pdf' })] } });
     await screen.findByText(copy.tooBig);
     expect(screen.getByText(copy.wrongType)).toBeTruthy();
+    expect(xhrSent).toHaveLength(0);
+  });
+
+  it('a HEIC this browser cannot open: says what to change on the phone, no broken thumbnail, no useless retry', async () => {
+    await open();
+    fireEvent.click(within(card()).getByRole('button', { name: copy.add }));
+    const heic = new File([new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63, 0, 0, 0, 0])], 'IMG_0001.HEIC', { type: 'image/heic' });
+    fireEvent.change(screen.getByLabelText(copy.takeLabel), { target: { files: [heic] } });
+    const alert = await screen.findByText(copy.heicUnsupported);
+    const row = alert.closest('[data-upload]') as HTMLElement;
+    expect(row.querySelector('img')).toBeNull();
+    expect(within(row).queryByRole('button', { name: copy.retry })).toBeNull();
+    expect(within(row).getByRole('button', { name: copy.remove })).toBeTruthy();
     expect(xhrSent).toHaveLength(0);
   });
 

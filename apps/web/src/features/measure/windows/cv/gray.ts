@@ -37,6 +37,11 @@ export function sample(g: Gray, px: number, py: number): number {
   return a + (b - a) * fy;
 }
 
+/** Like sample, but a point off the photo reads the nearest pixel on it (never NaN). */
+export function sampleClamped(g: Gray, px: number, py: number): number {
+  return sample(g, Math.min(g.w - 0.5, Math.max(0.5, px)), Math.min(g.h - 0.5, Math.max(0.5, py)));
+}
+
 /** An RGBA image shrunk by an integer factor (box average), for the marker finder. */
 export function shrinkRgba(img: RgbaImage, f: number): RgbaImage {
   if (f <= 1) return img;
