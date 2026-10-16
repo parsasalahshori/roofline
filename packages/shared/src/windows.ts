@@ -128,7 +128,22 @@ export type WindowPhotoUpload = { id: string; widthPx: number; heightPx: number;
 /** How a window photo is scaled: a reference of known size on the glass, or one side measured by hand. */
 export type WindowPhotoScale =
   | { kind: 'reference'; reference: WindowPhotoReference; corners: Quad }
-  | { kind: 'known-side'; side: 'width' | 'height'; inches: number };
+  | { kind: 'known-side'; side: 'width' | 'height'; inches: number }
+  | {
+      /**
+       * The printable measuring sheet (window-photo-cv.ts calibrationSheetSvg), found automatically in the photo: many
+       * matched points (photo pixels <-> inches on the sheet) give a least-squares homography instead of four clicks.
+       */
+      kind: 'sheet';
+      paper: 'letter' | 'a4';
+      imagePoints: [number, number][];
+      sheetPointsIn: [number, number][];
+      /**
+       * How far the measured frame sits in front of (+) or behind (-) the sheet's plane, inches (the sheet is on the
+       * glass; the frame being measured is usually 0.5-2 in proud of it). Corrected using the camera distance.
+       */
+      planeOffsetIn: number;
+    };
 
 /** What the person enters for one photographed window: corners in photo pixels (TL, TR, BR, BL). */
 export type PhotoWindowInput = { id: string; uploadId: string; label?: string; corners: Quad; scale: WindowPhotoScale };
@@ -138,6 +153,11 @@ export type PhotoWindow = PhotoWindowInput & {
   widthIn: number;
   heightIn: number;
   sizeClass: WindowSizeClass;
+  /** Expected error of widthIn / heightIn (inches, about 1 sigma), when the method can tell (sheet method). */
+  uncertaintyIn?: { width: number; height: number } | null;
+  /** Camera to the sheet's plane, inches, and the viewing angle off straight-on, degrees (sheet method). */
+  distanceIn?: number | null;
+  viewAngleDeg?: number | null;
   /** 'check' when the corners are nearly degenerate or the photo was steeply angled (> 50 deg). */
   quality: 'good' | 'check';
 };
