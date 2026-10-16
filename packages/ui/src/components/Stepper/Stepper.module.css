@@ -94,12 +94,19 @@
     clip-path: inset(50%);
   }
 
-  .step:not(:last-child)::after {
-    margin: 0 8px;
+  /* A step without a name is a marker and a short rule; the step with one takes all the room that is left */
+  .step {
+    flex: 0 0 auto;
+    gap: 6px;
   }
 
-  /* The step with a name keeps the room the others gave up */
   .step[data-named] {
-    flex: 3 1 0;
+    flex: 1 1 auto;
+  }
+
+  .step:not(:last-child)::after {
+    flex: 1 1 8px;
+    min-width: 8px;
+    margin: 0 4px;
   }
 }
