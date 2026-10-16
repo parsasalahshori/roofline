@@ -2,8 +2,8 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  color: var(--text);
-  font-family: var(--font);
+  color: var(--ink);
+  font-family: var(--f-ui);
   font-size: var(--font-size-body);
 }
 
@@ -22,7 +22,7 @@
   gap: 12px;
   padding: 12px 16px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: var(--surface);
 }
 
@@ -32,7 +32,7 @@
 }
 
 .row[data-state="off"] .title {
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .row[data-state="off"] .bubble {
@@ -67,7 +67,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-min);
   font-weight: 600;
 }
@@ -79,30 +79,30 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--text-muted);
+  background: var(--ink-3);
 }
 
 .status[data-status="done"]::before {
-  background: var(--success);
+  background: var(--ok);
 }
 
 .status[data-status="running"]::before,
 .status[data-status="queued"]::before {
-  background: var(--accent);
+  background: var(--brand);
 }
 
 .status[data-status="failed"]::before,
 .status[data-status="needs_attention"]::before {
-  background: var(--danger);
+  background: var(--bad);
 }
 
 .bubble {
   margin: 4px 0 0;
   padding: 10px 12px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: var(--surface-2);
-  color: var(--text);
+  color: var(--ink);
 }
 
 /* A 400-character message with no spaces must wrap inside the card instead of widening the window. */
@@ -123,7 +123,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 4px 16px;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-variant-numeric: tabular-nums;
 }
 
@@ -138,13 +138,13 @@
 
 .note {
   margin: 8px 0 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .error {
   margin: 8px 0 0;
   padding-left: 10px;
-  border-left: 3px solid var(--danger);
+  border-left: 3px solid var(--bad);
   overflow-wrap: anywhere;
 }
 
@@ -167,7 +167,7 @@
 
 .footerNote {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .footerActions {

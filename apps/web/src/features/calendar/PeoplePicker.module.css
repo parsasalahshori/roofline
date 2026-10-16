@@ -10,7 +10,7 @@
   padding: 0;
   margin-bottom: 4px;
   font-size: var(--font-size-min);
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .list {
@@ -31,7 +31,7 @@
   align-items: center;
   gap: 6px;
   font-size: var(--font-size-body);
-  color: var(--text);
+  color: var(--ink);
 }
 
 .dot {

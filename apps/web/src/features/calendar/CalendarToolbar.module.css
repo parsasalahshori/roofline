@@ -28,14 +28,14 @@
 .label {
   font-size: var(--font-size-body);
   font-weight: 600;
-  color: var(--text);
+  color: var(--ink);
   overflow-wrap: anywhere;
 }
 
 .zoneNote {
   margin: 0;
   font-size: var(--font-size-min);
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 @media (max-width: 767.98px) {

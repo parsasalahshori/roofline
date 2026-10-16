@@ -17,9 +17,9 @@
   margin: 0;
   padding: 12px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: var(--surface-2);
-  color: var(--text);
+  color: var(--ink);
   overflow-wrap: anywhere;
 }
 

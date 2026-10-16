@@ -13,7 +13,7 @@
 
 .intro {
   margin: 0;
-  color: var(--ds-text-2, #3a444d);
+  color: var(--ink-2);
   font-size: 14px;
   line-height: 1.45;
 }
@@ -51,13 +51,13 @@
   min-height: 48px;
   border: 1px solid var(--line, #dde2e6);
   border-radius: 10px;
-  color: var(--ds-text-1, #151c22);
+  color: var(--ink);
   font-weight: 600;
   text-decoration: none;
 }
 
 .download:focus-visible {
-  outline: 2px solid var(--ds-focus, #2f6fde);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
@@ -104,7 +104,7 @@
   gap: 4px;
   padding: 4px;
   border-radius: 12px;
-  background: var(--ds-surface-2, #eceff1);
+  background: var(--surface-2);
 }
 
 .whichButton {
@@ -113,7 +113,7 @@
 }
 
 .whichButton[data-selected="true"] {
-  background: var(--ds-surface, #fff);
+  background: var(--surface);
   box-shadow: 0 1px 3px rgba(21, 28, 34, 0.15);
 }
 

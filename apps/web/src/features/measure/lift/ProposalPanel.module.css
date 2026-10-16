@@ -6,7 +6,7 @@
   height: 100%;
   min-height: 0;
   border-left: 1px solid var(--line, #dde2e6);
-  background: var(--ds-bg, #f6f7f8);
+  background: var(--ground);
   box-sizing: border-box;
 }
 
@@ -24,7 +24,7 @@
 .title {
   margin: 0;
   overflow: hidden;
-  color: var(--ds-text-1, #151c22);
+  color: var(--ink);
   font-size: 14px;
   font-weight: 600;
   text-overflow: ellipsis;
@@ -40,7 +40,7 @@
   height: 22px;
   padding: 0 8px;
   border-radius: 999px;
-  background: var(--ds-accent-tint, #fff1d1);
+  background: var(--tape-tint);
   box-shadow: inset 0 0 0 1px rgba(217, 158, 0, 0.35);
   color: #6b4c00;
   font-size: 12px;
@@ -55,7 +55,7 @@
 
 .squares {
   margin: 2px 0 0;
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
@@ -87,7 +87,7 @@
   padding: 8px 12px;
   border: 0;
   border-radius: 12px;
-  background: var(--ds-surface, #fff);
+  background: var(--surface);
   box-shadow: 0 0 0 1px rgba(21, 28, 34, 0.08), 0 1px 2px rgba(21, 28, 34, 0.08);
   font-weight: 400;
   text-align: left;
@@ -95,12 +95,12 @@
 }
 
 .tier:hover {
-  background: var(--ds-bg, #f6f7f8);
+  background: var(--ground);
 }
 
 .tier[data-checked="true"] {
-  background: var(--ds-info-tint, #e3ecfb);
-  box-shadow: inset 0 0 0 1.5px var(--ds-info, #2f6fde);
+  background: var(--info-tint);
+  box-shadow: inset 0 0 0 1.5px var(--info);
 }
 
 .radio {
@@ -111,12 +111,12 @@
   height: 16px;
   margin-top: 3px;
   border-radius: 50%;
-  background: var(--ds-surface, #fff);
-  box-shadow: inset 0 0 0 1.5px var(--ds-fill, #c3cbd1);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line-2);
 }
 
 .tier[data-checked="true"] .radio {
-  background: var(--ds-info, #2f6fde);
+  background: var(--info);
   box-shadow: none;
 }
 
@@ -141,13 +141,13 @@
 }
 
 .tierName {
-  color: var(--ds-text-1, #151c22);
+  color: var(--ink);
   font-size: 13.5px;
   font-weight: 600;
 }
 
 .tier[data-checked="true"] .tierName {
-  color: var(--ds-info-ink, #1f55b3);
+  color: var(--info);
 }
 
 .tierMaterial,
@@ -159,12 +159,12 @@
 }
 
 .tierMaterial {
-  color: var(--ds-text-2, #3a444d);
+  color: var(--ink-2);
   font-size: 12.5px;
 }
 
 .tierNote {
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 12px;
 }
 
@@ -175,7 +175,7 @@
 
 .price {
   display: block;
-  color: var(--ds-text-1, #151c22);
+  color: var(--ink);
   font-size: 15px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -183,7 +183,7 @@
 
 .monthly {
   display: block;
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
@@ -191,7 +191,7 @@
 .note {
   margin: 0;
   padding: 8px 4px;
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 13px;
 }
 
@@ -205,7 +205,7 @@
 
 .groupTitle {
   margin: 0;
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 12px;
   font-weight: 600;
 }
@@ -221,7 +221,7 @@
   align-items: baseline;
   gap: 8px;
   padding: 3.5px 0;
-  border-bottom: 1px solid var(--ds-surface-2, #eceff1);
+  border-bottom: 1px solid var(--surface-2);
   font-size: 12.5px;
 }
 
@@ -229,21 +229,21 @@
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-  color: var(--ds-text-2, #3a444d);
+  color: var(--ink-2);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .lineQty {
   flex: none;
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-variant-numeric: tabular-nums;
 }
 
 .lineCost {
   flex: none;
   width: 64px;
-  color: var(--ds-text-1, #151c22);
+  color: var(--ink);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -256,7 +256,7 @@
   gap: 8px;
   padding: 12px 16px 14px;
   border-top: 1px solid var(--line, #dde2e6);
-  background: var(--ds-surface, #fff);
+  background: var(--surface);
 }
 
 .totalRow {
@@ -266,7 +266,7 @@
 }
 
 .totalLabel {
-  color: var(--ds-text-1, #151c22);
+  color: var(--ink);
   font-size: 13.5px;
   font-weight: 600;
 }
@@ -282,12 +282,12 @@
 
 .finance {
   margin: -4px 0 0;
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 12px;
 }
 
 .finance b {
-  color: var(--ds-text-2, #3a444d);
+  color: var(--ink-2);
   font-weight: 600;
 }
 

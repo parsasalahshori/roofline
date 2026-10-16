@@ -6,10 +6,10 @@
   min-height: 40px;
   padding: 0 16px;
   border: 1px solid transparent;
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: transparent;
-  color: var(--text);
-  font-family: var(--font);
+  color: var(--ink);
+  font-family: var(--f-ui);
   font-size: var(--font-size-body);
   font-weight: 600;
   line-height: 1.2;
@@ -26,19 +26,19 @@
 }
 
 .button[data-variant="primary"] {
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: var(--brand);
+  color: var(--brand-ink);
 }
 
 .button[data-variant="ghost"] {
   background: transparent;
-  color: var(--text);
+  color: var(--ink);
 }
 
 /* White on --danger is 4.5:1 only at full white and bold, so this is the one place for it. */
 .button[data-variant="danger"] {
-  background: var(--danger);
-  color: var(--on-danger);
+  background: var(--bad);
+  color: var(--bad-ink);
   font-weight: 700;
 }
 
@@ -48,7 +48,7 @@
 
 /* Danger changes only its fill on hover: a filter would dim the white text below 4.5:1 as well. */
 .button[data-variant="danger"]:hover {
-  background: var(--danger-hover);
+  background: var(--bad);
 }
 
 .button[data-variant="primary"]:hover {
@@ -68,7 +68,7 @@
 
 .button[data-variant="danger"]:disabled:hover,
 .button[data-variant="danger"][aria-disabled="true"]:hover {
-  background: var(--danger);
+  background: var(--bad);
 }
 
 .button[data-variant="ghost"]:disabled:hover,

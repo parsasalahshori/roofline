@@ -9,20 +9,20 @@
   margin: 0 0 8px;
   font-size: var(--font-size-body);
   font-weight: 600;
-  color: var(--text);
+  color: var(--ink);
 }
 
 /* Who may change the values, shown above the read-only fields */
 .note {
   margin: 0 0 16px;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-body);
 }
 
 /* Words under a field or a switch: what the value does on a proposal */
 .help {
   margin: 4px 0 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-body);
 }
 
@@ -67,7 +67,7 @@
 }
 
 .previewLink {
-  color: var(--ds-info-ink, #1f55b3);
+  color: var(--info);
   font-weight: 600;
 }
 

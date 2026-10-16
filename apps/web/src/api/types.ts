@@ -80,6 +80,8 @@ export type CompanyBody = {
   addressZip: string | null;
   timezone: string;
   logoUrl: string | null;
+  /** The company's one brand colour (#rrggbb), or null for Roofline's default blue. Read-only: the instant quote page's accent colour. */
+  brandColor?: string | null;
   located: boolean;
   serviceAreaMiles: number | null;
 };

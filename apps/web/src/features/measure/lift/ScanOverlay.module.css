@@ -14,7 +14,7 @@
   position: absolute;
   width: 26px;
   height: 26px;
-  border: 0 solid var(--ds-accent, #ffc21a);
+  border: 0 solid var(--tape);
 }
 
 .brackets > span[data-corner="tl"] {
@@ -56,7 +56,7 @@
   left: 0;
   right: 0;
   height: 40%;
-  border-bottom: 2.5px solid var(--ds-accent, #ffc21a);
+  border-bottom: 2.5px solid var(--tape);
   background: linear-gradient(180deg, rgba(255, 194, 26, 0), rgba(255, 194, 26, 0.34));
   animation: sweep 1.5s ease-in-out infinite;
 }

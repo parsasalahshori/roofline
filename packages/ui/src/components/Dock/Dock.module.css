@@ -3,9 +3,9 @@
   max-width: 100%;
   padding: 6px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-window);
+  border-radius: var(--r-4);
   background: var(--surface);
-  box-shadow: var(--shadow-window);
+  box-shadow: var(--e-2);
 }
 
 .list {
@@ -30,8 +30,8 @@
   min-width: 72px;
   min-height: 56px;
   padding: 6px 8px;
-  border-radius: var(--radius-card);
-  color: var(--text);
+  border-radius: var(--r-3);
+  color: var(--ink);
   text-decoration: none;
 }
 
@@ -46,7 +46,7 @@
 
 /* Not built yet: muted, but still a link that goes somewhere */
 .link[data-state="soon"] {
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .icon {

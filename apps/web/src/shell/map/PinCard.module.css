@@ -3,7 +3,7 @@
   flex-direction: column;
   gap: 8px;
   width: 100%;
-  box-shadow: var(--shadow-window);
+  box-shadow: var(--e-2);
 }
 
 .name {
@@ -15,7 +15,7 @@
 
 .address {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .stage {
@@ -31,24 +31,24 @@
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: var(--text-muted);
+  background: var(--ink-3);
 }
 
 .stage[data-stage="lead"]::before {
-  background: var(--stage-lead);
+  background: var(--st-lead);
 }
 
 .stage[data-stage="inspection"]::before {
-  background: var(--stage-inspection);
+  background: var(--st-insp);
 }
 
 .stage[data-stage="proposal"]::before {
-  background: var(--stage-proposal);
+  background: var(--st-prop);
 }
 
 .stage[data-stage="won"]::before,
 .stage[data-stage="installed"]::before {
-  background: var(--stage-won);
+  background: var(--st-won);
 }
 
 .actions {

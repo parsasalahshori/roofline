@@ -13,19 +13,19 @@
   overflow: hidden;
   border: 1px solid var(--line);
   background: var(--surface);
-  color: var(--text);
+  color: var(--ink);
 }
 
 .window[data-variant="floating"] {
   width: min(90vw, 1280px);
   height: min(90vh, 860px);
-  border-radius: var(--radius-window);
-  box-shadow: var(--shadow-window);
+  border-radius: var(--r-4);
+  box-shadow: var(--e-2);
 }
 
 /* Wide: between the top bar and the dock, 20px from each side (the Measure window's three columns) */
 .window[data-variant="floating"][data-wide="true"] {
-  inset: calc(var(--lift-bar-h, 34px) + 8px) 20px 92px;
+  inset: calc(var(--shell-base-top) + 8px) 20px 92px;
   width: auto;
   height: auto;
   margin: 0;
@@ -67,7 +67,7 @@
   height: 32px;
   border-radius: 9px;
   background: var(--surface-2);
-  box-shadow: var(--lift-tile-shadow, none);
+  box-shadow: var(--e-1);
 }
 
 .tile > svg {
@@ -98,7 +98,7 @@
   margin: 0;
   min-width: 0;
   overflow: hidden;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-body);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -107,7 +107,7 @@
 .close {
   flex: none;
   border-radius: 50%;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .stats {

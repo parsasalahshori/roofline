@@ -8,7 +8,7 @@
 .heading {
   margin: 0;
   font-size: var(--font-size-body);
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .columns {
@@ -33,7 +33,7 @@
 .columnHeading {
   margin: 0;
   font-size: var(--font-size-body);
-  color: var(--text);
+  color: var(--ink);
 }
 
 .cards {
@@ -47,7 +47,7 @@
 .empty {
   margin: 0;
   font-size: var(--font-size-min);
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .card {
@@ -58,16 +58,16 @@
   min-width: 0;
   padding: 10px 12px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: var(--surface);
-  color: var(--text);
+  color: var(--ink);
   text-decoration: none;
   font-size: 0.875rem;
   overflow-wrap: anywhere;
 }
 
 .card:focus-visible {
-  outline: 2px solid var(--text);
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
 
@@ -76,5 +76,5 @@
 }
 
 .meta {
-  color: var(--text-muted);
+  color: var(--ink-3);
 }

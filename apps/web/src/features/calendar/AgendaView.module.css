@@ -14,7 +14,7 @@
   margin: 0 0 6px;
   font-size: var(--font-size-body);
   font-weight: 600;
-  color: var(--text);
+  color: var(--ink);
 }
 
 .list {
@@ -22,7 +22,7 @@
   padding: 0;
   list-style: none;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: var(--surface);
 }
 
@@ -45,7 +45,7 @@
   min-width: 72px;
   font-size: var(--font-size-body);
   font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .dot {
@@ -70,12 +70,12 @@
 
 .title {
   font-size: var(--font-size-body);
-  color: var(--text);
+  color: var(--ink);
 }
 
 .customer {
   font-size: var(--font-size-min);
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .more {

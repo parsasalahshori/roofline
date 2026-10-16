@@ -18,7 +18,7 @@
   margin-bottom: 8px;
   font-size: var(--font-size-body);
   font-weight: 600;
-  color: var(--text);
+  color: var(--ink);
 }
 
 .grid {
@@ -48,7 +48,7 @@
 .hint {
   margin: 0;
   font-size: var(--font-size-min);
-  color: var(--danger);
+  color: var(--bad);
 }
 
 @media (min-width: 640px) {

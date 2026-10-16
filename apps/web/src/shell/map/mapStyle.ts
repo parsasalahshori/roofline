@@ -18,7 +18,7 @@ function blankStyle(): StyleSpecification {
   return {
     version: 8,
     sources: {},
-    layers: [{ id: 'background', type: 'background', paint: { 'background-color': tokens.bg } }],
+    layers: [{ id: 'background', type: 'background', paint: { 'background-color': tokens['map-land'] } }],
   };
 }
 

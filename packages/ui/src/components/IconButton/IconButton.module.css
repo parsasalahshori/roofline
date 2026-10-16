@@ -6,9 +6,9 @@
   min-height: 40px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: transparent;
-  color: var(--text);
+  color: var(--ink);
   text-decoration: none;
   cursor: pointer;
 }

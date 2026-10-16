@@ -3,7 +3,7 @@
   display: flex;
   flex: none;
   min-width: 0;
-  border-bottom: 1px solid var(--ds-hairline-soft, rgb(21 28 34 / 8%));
+  border-bottom: 1px solid var(--line);
   list-style: none;
 }
 
@@ -18,29 +18,29 @@
   min-height: 71px;
   padding: 12px 16px;
   background: transparent;
-  color: var(--ds-text-1, #151c22);
-  font-family: var(--ds-font, "Archivo Variable", ui-sans-serif, system-ui, sans-serif);
+  color: var(--ink);
+  font-family: var(--f-ui);
   text-decoration: none;
 }
 
 .link:hover {
-  background: var(--ds-surface-2-soft, rgb(236 239 241 / 55%));
+  background: var(--surface-2);
 }
 
 .link[data-selected="true"] {
-  background: var(--ds-info-tint, #e3ecfb);
+  background: var(--info-tint);
 }
 
 .link[data-selected="true"]::before {
   position: absolute;
   inset: 0 auto 0 0;
   width: 3px;
-  background: var(--ds-info, #2f6fde);
+  background: var(--info);
   content: "";
 }
 
 .link:focus-visible {
-  outline: 2px solid var(--ds-text-1, #151c22);
+  outline: 2px solid var(--ink);
   outline-offset: -2px;
 }
 
@@ -52,15 +52,15 @@
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: var(--ds-avatar-bg, #d8dee2);
-  color: var(--ds-text-2, #3a444d);
+  background: var(--sunken);
+  color: var(--ink-2);
   font-size: 13.7px;
   font-weight: 600;
 }
 
 .avatar[data-unknown="true"] {
-  background: var(--ds-danger-tint, #fbe3e3);
-  color: var(--ds-danger, #a32424);
+  background: var(--bad-tint);
+  color: var(--bad);
 }
 
 .avatarIcon {
@@ -75,7 +75,7 @@
 
 /* a text thread has no initials, only a speech bubble on the pale chip color */
 .avatar:not([data-unknown]):has(.avatarIcon) {
-  background: var(--ds-chip-bg, #e4e8eb);
+  background: var(--sunken);
 }
 
 .body {
@@ -106,7 +106,7 @@
 .time {
   flex-shrink: 0;
   margin-left: auto;
-  color: var(--ds-text-3, #6b7680);
+  color: var(--ink-3);
   font-size: 13px;
   white-space: nowrap;
 }
@@ -116,7 +116,7 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
-  color: var(--ds-text-3, #6b7680);
+  color: var(--ink-3);
   font-size: 13px;
 }
 
@@ -139,7 +139,7 @@
   min-height: 22px;
   padding: 0 8px;
   border-radius: 999px;
-  background: var(--ds-danger, #a32424);
+  background: var(--bad);
   color: #fff;
   font-size: 12px;
   font-weight: 600;
@@ -160,7 +160,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--ds-text-1, #151c22);
+  color: var(--ink);
   font-weight: 600;
 }
 
@@ -170,7 +170,7 @@
   height: 8px;
   flex-shrink: 0;
   border-radius: 50%;
-  background: var(--ds-danger, #a32424);
+  background: var(--bad);
   animation: live-pulse 1.5s ease-in-out infinite;
 }
 

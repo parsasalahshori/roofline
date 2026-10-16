@@ -1,4 +1,4 @@
-/* S1 base styles. Import after tokens.css. */
+/* Chalk Line base styles. Import after tokens.css. */
 
 *,
 *::before,
@@ -6,16 +6,31 @@
   box-sizing: border-box;
 }
 
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font: 400 var(--font-size-body)/1.45 var(--font);
+html {
+  -webkit-text-size-adjust: 100%;
 }
 
-/* One visible ring for everything keyboard-reachable */
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font: 400 var(--font-size-body)/1.45 var(--f-ui);
+  font-stretch: 100%;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Titles are Archivo; the widths (118% for page titles, 112% for panels) are set where each title lives */
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--f-display);
+  letter-spacing: -0.005em;
+}
+
+/* One visible ring for everything keyboard-reachable: the company's brand colour, 3:1 or better on every surface */
 :focus-visible {
-  outline: 2px solid var(--text);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
@@ -33,6 +48,7 @@ body {
   white-space: nowrap;
 }
 
+/* Reduced motion: no transitions or animations; the design asks for fades only, which an instant change satisfies */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -16,19 +16,19 @@
 }
 
 .root .trigger:hover {
-  background: var(--lift-hover);
+  background: var(--sunken);
 }
 
 .root .trigger:focus-visible {
-  outline: 2px solid var(--lift-bar-ink);
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
 
 .root .trigger [data-size] {
   width: 22px;
   height: 22px;
-  background: var(--lift-avatar-bg);
-  color: var(--lift-avatar-ink);
+  background: var(--ink);
+  color: var(--ink-inv);
   font-size: var(--font-size-min);
   font-weight: 600;
 }

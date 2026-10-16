@@ -76,7 +76,7 @@ describe('mapStyle', () => {
   it('falls back to a blank style with one background layer and no sources', () => {
     const blank = asObject(mapStyle({}, 'streets'));
     expect(Object.keys(blank.sources)).toHaveLength(0);
-    expect(blank.layers).toEqual([{ id: 'background', type: 'background', paint: { 'background-color': tokens.bg } }]);
+    expect(blank.layers).toEqual([{ id: 'background', type: 'background', paint: { 'background-color': tokens['map-land'] } }]);
   });
 
   it('keeps the blank style free of glyphs, so no text layer needs a font', () => {
@@ -88,7 +88,7 @@ describe('mapStyle', () => {
     for (const maptilerKey of ['', '   ']) {
       const style = mapStyle({ maptilerKey }, 'streets');
       expect(typeof style).toBe('object');
-      expect(asObject(style).layers).toEqual([{ id: 'background', type: 'background', paint: { 'background-color': tokens.bg } }]);
+      expect(asObject(style).layers).toEqual([{ id: 'background', type: 'background', paint: { 'background-color': tokens['map-land'] } }]);
     }
   });
 

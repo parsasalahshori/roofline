@@ -119,18 +119,20 @@ function stageColor(): unknown[] {
     'match',
     ['get', 'stage'],
     'lead',
-    tokens['stage-lead'],
+    tokens['st-lead'],
     'inspection',
-    tokens['stage-inspection'],
+    tokens['st-insp'],
     'proposal',
-    tokens['stage-proposal'],
+    tokens['st-prop'],
     'won',
-    tokens['stage-won'],
+    tokens['st-won'],
     'installed',
-    tokens['stage-won'],
+    tokens['st-inst'],
+    'paid',
+    tokens['st-paid'],
     'lost',
-    tokens.text,
-    tokens['stage-lead'],
+    tokens.ink,
+    tokens['st-lead'],
   ];
 }
 
@@ -143,17 +145,17 @@ function hitPaint(): Record<string, unknown> {
     'circle-radius': 20,
     'circle-opacity': 0,
     'circle-stroke-opacity': 0,
-    'circle-color': tokens['pin-customer'],
+    'circle-color': tokens['st-inst'],
   };
 }
 
 /** A cluster bubble sized by the number of points it holds, read from `countKey`. */
 function clusterPaint(countKey: 'count' | 'point_count'): Record<string, unknown> {
   return {
-    'circle-color': tokens.accent,
+    'circle-color': tokens.brand,
     'circle-radius': ['step', ['get', countKey], 16, 10, 20, 50, 26, 200, 32],
     'circle-stroke-width': 2,
-    'circle-stroke-color': tokens.text,
+    'circle-stroke-color': tokens.ink,
   };
 }
 
@@ -169,7 +171,7 @@ function countLabel(id: string, source: string, textField: unknown[], clustersOn
       'text-font': ['Noto Sans Regular'],
       'text-size': 14,
     },
-    paint: { 'text-color': tokens['accent-ink'] },
+    paint: { 'text-color': tokens['brand-ink'] },
   });
 }
 
@@ -231,7 +233,7 @@ function addBaseGroup(map: MapLibreMap, data: MapData, hasGlyphs: boolean): void
       id: LAYER.serviceArea,
       type: 'line',
       source: SOURCE.serviceArea,
-      paint: { 'line-color': tokens.text, 'line-opacity': 0.5, 'line-width': 2 },
+      paint: { 'line-color': tokens.ink, 'line-opacity': 0.5, 'line-width': 2 },
     }),
   );
 
@@ -285,7 +287,7 @@ function addPinGroup(map: MapLibreMap, data: MapData, hasGlyphs: boolean): void 
       source: SOURCE.customers,
       filter: ['!', ['has', 'point_count']],
       paint: {
-        'circle-color': tokens['pin-customer'],
+        'circle-color': tokens['st-inst'],
         'circle-radius': 7,
         'circle-stroke-width': 2,
         'circle-stroke-color': tokens.surface,

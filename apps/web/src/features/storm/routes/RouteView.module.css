@@ -32,13 +32,13 @@
   min-width: 0;
   padding: 16px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: var(--surface);
 }
 
 .doorLabel {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: 0.875rem;
   font-weight: 600;
 }
@@ -53,7 +53,7 @@
 
 .hail {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: 0.875rem;
   overflow-wrap: anywhere;
 }
@@ -67,7 +67,7 @@
 .listHeading {
   margin: 0;
   font-size: 0.875rem;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 /* The doors in order: a number, the address, and a done mark when the door has an outcome */
@@ -91,16 +91,16 @@
   min-width: 0;
   padding: 8px 12px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: var(--surface);
 }
 
 .item[data-current] {
-  border: 2px solid var(--text);
+  border: 2px solid var(--ink);
 }
 
 .item[data-done] {
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .number {
@@ -112,7 +112,7 @@
   height: 28px;
   border-radius: 50%;
   background: var(--surface-2);
-  color: var(--text);
+  color: var(--ink);
   font-weight: 700;
   font-size: 0.875rem;
 }
@@ -132,7 +132,7 @@
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface-2);
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: 0.875rem;
   font-weight: 600;
   white-space: nowrap;

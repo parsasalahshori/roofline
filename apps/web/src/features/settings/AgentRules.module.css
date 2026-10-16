@@ -40,7 +40,7 @@
 
 .help {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-min);
 }
 
@@ -78,7 +78,7 @@
 
 .problem {
   margin: 0;
-  color: var(--danger);
+  color: var(--bad);
   font-size: var(--font-size-body);
 }
 

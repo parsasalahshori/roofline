@@ -22,20 +22,20 @@
   min-width: 0;
   padding: 12px;
   overflow: hidden;
-  border-radius: var(--ds-r-card, 14px);
-  background: var(--ds-surface, #fff);
-  box-shadow: var(--ds-shadow, 0 0 0 1px rgb(21 28 34 / 8%), 0 6px 16px -8px rgb(21 28 34 / 30%));
-  color: var(--ds-text-1, #151c22);
-  font-family: var(--ds-font, inherit);
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: var(--e-2);
+  color: var(--ink);
+  font-family: var(--f-ui);
 }
 
 .card[data-selected='true'] {
-  box-shadow: 0 0 0 2px var(--ds-info, #2f6de0), 0 6px 16px -8px rgb(21 28 34 / 30%);
+  box-shadow: 0 0 0 2px var(--info), 0 6px 16px -8px rgb(21 28 34 / 30%);
 }
 
 .card[data-status='paused'] .big,
 .card[data-status='coming_soon'] .big {
-  color: var(--ds-text-3, #6b7680);
+  color: var(--ink-3);
 }
 
 .tab {
@@ -66,8 +66,8 @@
 .card .pick {
   min-height: 0;
   padding: 0;
-  border-radius: var(--ds-r-ctl, 9px);
-  color: var(--ds-text-1, #151c22);
+  border-radius: var(--r-2);
+  color: var(--ink);
   font-size: inherit;
   font-weight: inherit;
   background: transparent;
@@ -83,7 +83,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: var(--ds-r-card, 14px);
+  border-radius: var(--r-3);
 }
 
 .pick:focus-visible {
@@ -91,7 +91,7 @@
 }
 
 .pick:focus-visible::after {
-  outline: 2px solid var(--ds-text-1, #151c22);
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
 
@@ -106,23 +106,23 @@
 .status {
   font-size: 13px;
   font-weight: 600;
-  color: var(--ds-success, #107a2c);
+  color: var(--ok);
 }
 
 .status[data-status='waiting'] {
-  color: var(--ds-accent-ink, #8a5a00);
+  color: var(--brand-text);
 }
 
 .waiting {
   margin: 0;
   font-size: 13px;
   font-weight: 600;
-  color: var(--ds-accent-ink, #8a5a00);
+  color: var(--brand-text);
 }
 
 .status[data-status='paused'],
 .status[data-status='coming_soon'] {
-  color: var(--ds-text-3, #6b7680);
+  color: var(--ink-3);
 }
 
 /* The switch sits above the stretched name button. It is drawn in the dashboard green, not the kit's amber. */
@@ -141,7 +141,7 @@
   height: 26px;
   border: 0;
   border-radius: 13px;
-  background: var(--ds-hairline, #c3cbd1);
+  background: var(--line);
 }
 
 .toggle button[role='switch'] > span:first-child > span {
@@ -149,17 +149,17 @@
   left: 3px;
   width: 20px;
   height: 20px;
-  background: var(--ds-surface, #fff);
+  background: var(--surface);
   box-shadow: 0 1px 2px rgb(21 28 34 / 30%);
 }
 
 .toggle button[role='switch'][data-state='on'] > span:first-child {
   border: 0;
-  background: var(--ds-success, #17a34a);
+  background: var(--ok);
 }
 
 .toggle button[role='switch'][data-state='on'] > span:first-child > span {
-  background: var(--ds-surface, #fff);
+  background: var(--surface);
   transform: translateX(20px);
 }
 
@@ -174,7 +174,7 @@
 
 .bigLabel {
   margin: 2px 0 0;
-  color: var(--ds-text-3, #6b7680);
+  color: var(--ink-3);
   font-size: 14px;
 }
 
@@ -194,7 +194,7 @@
 }
 
 .muted {
-  color: var(--ds-text-3, #6b7680);
+  color: var(--ink-3);
 }
 
 .spark {
@@ -214,7 +214,7 @@
 }
 
 .latestText {
-  color: var(--ds-text-1, #151c22);
+  color: var(--ink);
 }
 
 @container (max-width: 49.99rem) {
@@ -233,7 +233,7 @@
     bottom: 0;
     left: 24px;
     width: 3px;
-    background: var(--ds-text-1, #151c22);
+    background: var(--ink);
     opacity: 0.85;
   }
 
@@ -249,7 +249,7 @@
     height: 50px;
     border: 3px solid var(--agent);
     border-radius: 50%;
-    background: var(--ds-surface, #fff);
+    background: var(--surface);
     color: var(--agent);
   }
 

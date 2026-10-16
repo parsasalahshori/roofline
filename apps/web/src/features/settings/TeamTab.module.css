@@ -32,7 +32,7 @@
 
 .table th {
   font-size: var(--font-size-min);
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-weight: 600;
 }
 

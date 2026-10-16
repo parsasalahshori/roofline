@@ -6,8 +6,8 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--text);
-  font-family: var(--font);
+  color: var(--ink);
+  font-family: var(--f-ui);
   font-size: var(--font-size-body);
   text-align: left;
   cursor: pointer;
@@ -19,7 +19,7 @@
   flex: none;
   width: 44px;
   height: 24px;
-  border: 2px solid var(--text-muted);
+  border: 2px solid var(--ink-3);
   border-radius: 12px;
   background: var(--surface-2);
 }
@@ -31,17 +31,17 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: var(--text-muted);
+  background: var(--ink-3);
   transition: transform 120ms ease;
 }
 
 .toggle[data-state="on"] .track {
-  border-color: var(--text);
-  background: var(--accent);
+  border-color: var(--ink);
+  background: var(--brand);
 }
 
 .toggle[data-state="on"] .thumb {
-  background: var(--text);
+  background: var(--ink);
   transform: translateX(20px);
 }
 

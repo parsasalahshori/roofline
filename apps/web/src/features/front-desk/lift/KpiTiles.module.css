@@ -36,18 +36,18 @@
   gap: 5.5px;
   padding: 12px 16px;
   border: 0;
-  border-radius: var(--ds-r-card, 14px);
-  background: var(--ds-surface, #fff);
+  border-radius: var(--r-3);
+  background: var(--surface);
   box-shadow:
-    0 0 0 1px var(--ds-hairline-soft, rgb(21 28 34 / 8%)),
+    0 0 0 1px var(--line),
     0 6px 16px -8px rgb(21 28 34 / 30%);
-  color: var(--ds-text-1, #151c22);
-  font-family: var(--ds-font, "Archivo Variable", ui-sans-serif, system-ui, sans-serif);
+  color: var(--ink);
+  font-family: var(--f-ui);
   scroll-snap-align: start;
 }
 
 .tile[data-highlight="true"] {
-  background: var(--ds-accent-tint, #fff3cf);
+  background: var(--brand-tint);
   box-shadow: inset 0 0 0 1px rgb(217 158 0 / 40%);
 }
 
@@ -75,14 +75,14 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--ds-text-2, #505b64);
+  color: var(--ink-2);
   font-size: 12.5px;
   font-weight: 600;
   line-height: 18px;
 }
 
 .hint {
-  color: var(--ds-text-3, #6b7680);
+  color: var(--ink-3);
   font-size: 12px;
   line-height: 17.4px;
 }
@@ -99,9 +99,9 @@
   width: 15px;
   height: 15px;
   border-radius: 5px;
-  background: var(--ds-accent, #ffc21a);
+  background: var(--brand);
   box-shadow: inset 0 0 0 1px rgb(217 158 0 / 60%);
-  color: var(--ds-text-1, #151c22);
+  color: var(--ink);
 }
 
 .mark svg {
@@ -125,7 +125,7 @@
 .note {
   flex: 1;
   margin: 0;
-  color: var(--ds-text-3, #6b7680);
+  color: var(--ink-3);
 }
 
 /* The Answering tile: on a phone one strip with the status left and the button right */
@@ -143,7 +143,7 @@
   gap: 8px;
   min-width: 0;
   margin: 0;
-  color: var(--ds-text-2, #505b64);
+  color: var(--ink-2);
   font-size: 14px;
   font-weight: 600;
   line-height: 18px;
@@ -164,7 +164,7 @@
   flex-shrink: 0;
   margin: 5px;
   border-radius: 50%;
-  background: var(--ds-success-dot, #0ca30c);
+  background: var(--ok);
   box-shadow: 0 0 0 5px rgb(12 163 12 / 18%);
 }
 
@@ -177,7 +177,7 @@
   padding: 0 14px;
   border: 0;
   border-radius: 9px;
-  background: var(--ds-text-1, #151c22);
+  background: var(--ink);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 12%);
   color: #fff;
   font-size: 13.5px;

@@ -16,7 +16,7 @@
 /* The sent date, under the main message; muted but still well above AA contrast */
 .note {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-body);
   overflow-wrap: anywhere;
 }

@@ -5,7 +5,7 @@
   padding: 12px;
   border: 0;
   box-shadow: 0 0 0 1px rgba(21, 28, 34, 0.08);
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: var(--surface);
 }
 
@@ -17,5 +17,5 @@
 
 .hint {
   margin: 0;
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
 }

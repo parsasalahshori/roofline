@@ -14,9 +14,9 @@
 .counter {
   margin: 0;
   font-size: 0.875rem;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .counter[data-over] {
-  color: var(--danger);
+  color: var(--bad);
 }

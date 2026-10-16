@@ -25,7 +25,7 @@
 
 .reason {
   font-size: 0.875rem;
-  color: var(--text-muted);
+  color: var(--ink-3);
   overflow-wrap: anywhere;
 }
 
@@ -38,7 +38,7 @@
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface);
-  color: var(--text);
+  color: var(--ink);
   font-size: 0.875rem;
   font-weight: 600;
 }

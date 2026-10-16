@@ -8,7 +8,7 @@
 
 .title {
   margin: 0;
-  color: var(--text);
+  color: var(--ink);
   font-size: var(--font-size-body);
   font-weight: 600;
 }
@@ -31,14 +31,14 @@
 
 .account {
   margin: 0;
-  color: var(--text);
+  color: var(--ink);
   font-size: var(--font-size-body);
   overflow-wrap: anywhere;
 }
 
 .muted {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-body);
 }
 
@@ -47,12 +47,12 @@
   gap: 12px;
   padding: 12px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: var(--surface-2);
 }
 
 .confirm > p {
   margin: 0;
-  color: var(--text);
+  color: var(--ink);
   font-size: var(--font-size-body);
 }

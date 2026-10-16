@@ -10,13 +10,13 @@
   margin: 0;
   font-size: var(--font-size-body);
   font-weight: 600;
-  color: var(--text);
+  color: var(--ink);
 }
 
 .line {
   margin: 0;
   font-size: var(--font-size-body);
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .list {
@@ -39,9 +39,9 @@
   justify-content: flex-start;
   text-align: left;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: var(--surface);
-  color: var(--text);
+  color: var(--ink);
   font-size: var(--font-size-body);
   overflow-wrap: anywhere;
 }

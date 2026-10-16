@@ -5,9 +5,9 @@
   gap: 8px;
   padding: 12px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: var(--surface);
-  color: var(--text);
+  color: var(--ink);
 }
 
 /* The whole top of the card is the link: a 40px target with a visible focus ring */
@@ -23,7 +23,7 @@
 }
 
 .link:focus-visible {
-  outline: 2px solid var(--text);
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
 
@@ -35,7 +35,7 @@
 .address,
 .next {
   font-size: 0.875rem;
-  color: var(--text-muted);
+  color: var(--ink-3);
   overflow-wrap: anywhere;
 }
 
@@ -54,20 +54,20 @@
 .unassigned,
 .meta {
   font-size: 0.875rem;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .stuck {
   align-self: flex-start;
   padding: 2px 8px;
   border-radius: 999px;
-  background: var(--danger);
-  color: var(--on-danger);
+  background: var(--bad);
+  color: var(--bad-ink);
   font-size: 0.75rem;
   font-weight: 600;
 }
 
 /* Stuck cards carry the stuck tone on their border as well as the chip */
 .card[data-stuck='true'] {
-  border-color: var(--danger);
+  border-color: var(--bad);
 }

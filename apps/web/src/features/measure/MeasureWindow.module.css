@@ -6,9 +6,9 @@
   min-height: 0;
   min-width: 0;
   max-width: 100%;
-  background: var(--ds-bg, #f6f7f8);
-  color: var(--ds-text-1, #151c22);
-  font-family: var(--ds-font, var(--font));
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--f-ui);
   font-size: 13px;
 }
 
@@ -32,8 +32,8 @@
   width: 26px;
   height: 26px;
   border-radius: 7.28px;
-  background: var(--lift-tile-estimator, linear-gradient(160deg, #ffd24d, #f0b000));
-  color: var(--ds-text-1, #151c22);
+  background: var(--tape);
+  color: var(--ink);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), inset 0 -1px 0 rgba(0, 0, 0, 0.18), 0 1px 2px rgba(21, 28, 34, 0.25);
 }
 
@@ -48,7 +48,7 @@
 .subtitle {
   min-width: 0;
   overflow: hidden;
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -70,7 +70,7 @@
   min-height: 0;
   overflow: hidden;
   border-right: 1px solid var(--line, #dde2e6);
-  background: var(--ds-surface, #fff);
+  background: var(--surface);
 }
 
 .main {
@@ -104,7 +104,7 @@
 
 .loading {
   margin: 16px;
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
 }
 
 /* The phone's numbered steps; hidden on a desktop, where all three columns show */
@@ -115,7 +115,7 @@
 /* The controls that change the estimate. They live inside the measure card under Adjust, so they are flat. */
 .hint {
   margin: 0;
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -136,7 +136,7 @@
   gap: 8px;
   margin: 0 -8px;
   padding: 2px 8px;
-  border-radius: var(--ds-r-ctl, 9px);
+  border-radius: var(--r-2);
 }
 
 .building > :first-child {
@@ -145,7 +145,7 @@
 }
 
 .building[data-hovered="true"] {
-  background: var(--ds-accent-tint, #fff1d1);
+  background: var(--tape-tint);
   box-shadow: inset 0 0 0 1px rgba(217, 158, 0, 0.45);
 }
 
@@ -154,8 +154,8 @@
   min-height: 30px;
   padding: 0 10px;
   border: 1px solid var(--line, #dde2e6);
-  border-radius: var(--ds-r-ctl, 9px);
-  background: var(--ds-surface, #fff);
+  border-radius: var(--r-2);
+  background: var(--surface);
   font-size: 12.5px;
 }
 
@@ -168,7 +168,7 @@
 
 .title {
   margin: 0;
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -190,15 +190,15 @@
   gap: 4px;
   padding: 0 6px;
   border: 1px solid var(--line, #dde2e6);
-  border-radius: var(--ds-r-ctl, 9px);
-  background: var(--ds-surface, #fff);
+  border-radius: var(--r-2);
+  background: var(--surface);
   font-size: 12px;
 }
 
 .pitch[data-state="on"] {
-  background: var(--ds-accent, #ffc21a);
-  color: var(--ds-text-1, #151c22);
-  border-color: var(--ds-accent, #ffc21a);
+  background: var(--tape);
+  color: var(--ink);
+  border-color: var(--tape);
 }
 
 .diagram {
@@ -223,7 +223,7 @@
 }
 
 .row dt {
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
 }
 
 .row dd {
@@ -248,7 +248,7 @@
   width: 100%;
   min-height: 44px;
   gap: 8px;
-  border-radius: var(--ds-r-ctl, 9px);
+  border-radius: var(--r-2);
   box-shadow: inset 0 0 0 1px rgba(217, 158, 0, 0.55);
   font-size: 15px;
 }
@@ -256,9 +256,9 @@
 .sent {
   width: 100%;
   min-height: 44px;
-  border-radius: var(--ds-r-ctl, 9px);
-  background: var(--ds-success-tint, #e2f4e2);
-  color: var(--ds-success-ink, #0a6e1d);
+  border-radius: var(--r-2);
+  background: var(--ok-tint);
+  color: var(--ok);
   font-size: 15px;
 }
 
@@ -267,8 +267,8 @@
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  border-radius: var(--ds-r-ctl, 9px);
-  background: var(--ds-surface-2, #eceff1);
+  border-radius: var(--r-2);
+  background: var(--surface-2);
 }
 
 /* Nothing open: one quiet card in the middle */
@@ -309,7 +309,7 @@
     margin: 10px 12px;
     padding: 4px;
     border-radius: 14px;
-    background: var(--ds-surface-2, #eceff1);
+    background: var(--surface-2);
   }
 
   .step {
@@ -318,14 +318,14 @@
     padding: 0 6px;
     border: 0;
     border-radius: 11px;
-    color: var(--ds-text-label, #505b64);
+    color: var(--ink-3);
     font-size: 15px;
     font-weight: 600;
   }
 
   .step[data-selected="true"] {
-    background: var(--ds-surface, #fff);
-    color: var(--ds-text-1, #151c22);
+    background: var(--surface);
+    color: var(--ink);
     box-shadow: 0 0 0 1px rgba(21, 28, 34, 0.08), 0 2px 6px rgba(21, 28, 34, 0.1);
   }
 
@@ -335,15 +335,15 @@
     width: 22px;
     height: 22px;
     border-radius: 50%;
-    background: var(--ds-surface, #fff);
-    box-shadow: inset 0 0 0 1.5px var(--ds-fill, #c3cbd1);
-    color: var(--ds-text-2, #3a444d);
+    background: var(--surface);
+    box-shadow: inset 0 0 0 1.5px var(--line-2);
+    color: var(--ink-2);
     font-size: 12px;
     font-weight: 700;
   }
 
   .step[data-selected="true"] .stepNumber {
-    background: var(--ds-info, #2f6fde);
+    background: var(--info);
     box-shadow: none;
     color: #fff;
   }

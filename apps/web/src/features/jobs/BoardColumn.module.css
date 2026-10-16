@@ -6,7 +6,7 @@
   gap: 12px;
   min-width: 0;
   padding: 12px;
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: var(--surface-2);
 }
 
@@ -19,20 +19,20 @@
 }
 
 .column[data-stage='lead'] .header {
-  border-top-color: var(--stage-lead);
+  border-top-color: var(--st-lead);
 }
 
 .column[data-stage='inspection'] .header {
-  border-top-color: var(--stage-inspection);
+  border-top-color: var(--st-insp);
 }
 
 .column[data-stage='proposal'] .header {
-  border-top-color: var(--stage-proposal);
+  border-top-color: var(--st-prop);
 }
 
 .column[data-stage='won'] .header,
 .column[data-stage='installed'] .header {
-  border-top-color: var(--stage-won);
+  border-top-color: var(--st-won);
 }
 
 .title {
@@ -43,7 +43,7 @@
 
 .total {
   font-size: 0.875rem;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .cards {
@@ -56,7 +56,7 @@
 .empty {
   margin: 0;
   font-size: 0.875rem;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 /* On a phone the column is as wide as the window; the stages stack */

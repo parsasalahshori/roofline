@@ -8,7 +8,7 @@
 .intro {
   margin: 0;
   font-size: var(--font-size-body);
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 /* Inputs are 16px so iOS does not zoom the page when a person taps them. */

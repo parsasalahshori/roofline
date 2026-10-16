@@ -10,8 +10,8 @@
   align-items: center;
   gap: 12px;
   min-height: 40px;
-  color: var(--text);
-  font-family: var(--font);
+  color: var(--ink);
+  font-family: var(--f-ui);
   font-size: var(--font-size-body);
   cursor: pointer;
 }
@@ -27,12 +27,12 @@
   height: 20px;
   min-width: 20px;
   margin: 0;
-  accent-color: var(--accent);
+  accent-color: var(--brand);
   cursor: inherit;
 }
 
 .input:focus-visible {
-  outline: 2px solid var(--text);
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
 
@@ -45,7 +45,7 @@
 .description {
   margin: 0;
   padding-left: 32px;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-min);
 }
 
@@ -54,8 +54,8 @@
   margin: 0;
   margin-left: 32px;
   padding-left: 8px;
-  border-left: 3px solid var(--danger);
-  color: var(--text);
+  border-left: 3px solid var(--bad);
+  color: var(--ink);
   font-size: var(--font-size-min);
   font-weight: 600;
 }

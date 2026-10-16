@@ -15,7 +15,7 @@
 .text {
   margin: 0;
   font-size: 0.875rem;
-  color: var(--text-muted);
+  color: var(--ink-3);
   overflow-wrap: anywhere;
 }
 
@@ -29,7 +29,7 @@
 .link {
   align-self: center;
   font-size: 0.875rem;
-  color: var(--text);
+  color: var(--ink);
   text-decoration: underline;
   overflow-wrap: anywhere;
 }
@@ -41,7 +41,7 @@
   border-radius: 999px;
   font-size: 0.8125rem;
   font-weight: 600;
-  color: var(--text);
+  color: var(--ink);
 }
 
 .fields {
@@ -61,13 +61,13 @@
 
 .term {
   font-size: 0.75rem;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .detail {
   margin: 0;
   font-size: 0.875rem;
-  color: var(--text);
+  color: var(--ink);
   overflow-wrap: anywhere;
 }
 
@@ -85,7 +85,7 @@
   padding: 0;
   list-style: none;
   font-size: 0.875rem;
-  color: var(--text);
+  color: var(--ink);
   overflow-wrap: anywhere;
 }
 

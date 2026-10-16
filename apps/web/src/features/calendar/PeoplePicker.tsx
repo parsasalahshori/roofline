@@ -5,11 +5,11 @@ import styles from './PeoplePicker.module.css';
 
 /** The colour of each person, in team order. Stage and hail tokens only: they are the palette the app already uses. */
 export const PERSON_COLORS = [
-  'var(--stage-lead)',
-  'var(--stage-inspection)',
-  'var(--stage-proposal)',
-  'var(--stage-won)',
-  'var(--pin-customer)',
+  'var(--st-lead)',
+  'var(--st-insp)',
+  'var(--st-prop)',
+  'var(--st-won)',
+  'var(--st-inst)',
   'var(--hail-3)',
   'var(--hail-4)',
   'var(--hail-5)',

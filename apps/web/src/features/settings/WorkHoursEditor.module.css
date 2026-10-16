@@ -27,7 +27,7 @@
 }
 
 .state {
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-min);
 }
 
@@ -52,6 +52,6 @@
 
 .error {
   margin: 0;
-  color: var(--danger-hover);
+  color: var(--bad);
   font-size: var(--font-size-min);
 }

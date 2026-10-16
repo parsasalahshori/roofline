@@ -10,7 +10,7 @@
 
 .empty {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .scroll {
@@ -41,7 +41,7 @@
 }
 
 .table th {
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-weight: 600;
 }
 
@@ -63,7 +63,7 @@
   gap: 4px 12px;
   min-height: 44px;
   padding: 8px 0;
-  color: var(--text);
+  color: var(--ink);
   text-decoration: none;
   overflow-wrap: anywhere;
 }
@@ -74,5 +74,5 @@
 }
 
 .meta {
-  color: var(--text-muted);
+  color: var(--ink-3);
 }

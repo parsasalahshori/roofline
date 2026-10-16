@@ -6,7 +6,7 @@
   padding: 0 12px;
   border: 1px solid transparent;
   border-radius: 16px;
-  font-family: var(--font);
+  font-family: var(--f-ui);
   font-size: var(--font-size-body);
   font-weight: 600;
   line-height: 1.2;
@@ -25,14 +25,14 @@
 }
 
 .pill[data-tone="accent"] {
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: var(--brand);
+  color: var(--brand-ink);
 }
 
 .pill[data-tone="neutral"] {
   border-color: var(--line);
   background: var(--surface-2);
-  color: var(--text);
+  color: var(--ink);
 }
 
 .pill:hover {

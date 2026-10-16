@@ -17,7 +17,7 @@
 .targetText {
   margin: 0;
   font-size: var(--font-size-body);
-  color: var(--text);
+  color: var(--ink);
   overflow-wrap: anywhere;
 }
 
@@ -32,22 +32,22 @@
   margin: 0;
   font-size: var(--font-size-body);
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .error {
   margin: 0;
   font-size: var(--font-size-body);
-  color: var(--text);
+  color: var(--ink);
 }
 
 /* The "Estimate" tag: a label, not a control. */
 .estimate {
   align-self: flex-start;
   padding: 8px 16px;
-  border-radius: var(--radius-card);
-  background: var(--accent);
-  color: var(--accent-ink);
+  border-radius: var(--r-3);
+  background: var(--brand);
+  color: var(--brand-ink);
   font-size: var(--font-size-min);
   font-weight: 600;
 }

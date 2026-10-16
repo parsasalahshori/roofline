@@ -12,8 +12,8 @@
   align-items: center;
   min-height: 48px;
   padding: 0 16px;
-  border-radius: var(--radius-card);
-  color: var(--text);
+  border-radius: var(--r-3);
+  color: var(--ink);
   font-size: var(--font-size-body);
   font-weight: 600;
   text-decoration: none;
@@ -24,6 +24,6 @@
 }
 
 .link:focus-visible {
-  outline: 2px solid var(--text);
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
 }

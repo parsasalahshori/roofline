@@ -5,8 +5,8 @@
   gap: 12px;
   padding: 16px;
   text-align: center;
-  background: var(--bg);
-  color: var(--text);
+  background: var(--ground);
+  color: var(--ink);
   font-size: var(--font-size-body);
 }
 
@@ -14,8 +14,8 @@
   min-height: 0;
   height: 100%;
   background: var(--surface);
-  border-radius: var(--radius-window);
-  box-shadow: var(--shadow-window);
+  border-radius: var(--r-4);
+  box-shadow: var(--e-2);
 }
 
 .title {

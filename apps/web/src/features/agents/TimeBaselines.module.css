@@ -14,11 +14,11 @@
 
 .problem {
   margin: 0;
-  color: var(--danger);
+  color: var(--bad);
 }
 
 .link {
-  color: var(--text);
+  color: var(--ink);
   text-decoration: underline;
 }
 
@@ -55,7 +55,7 @@
 
 .cellLabel {
   display: none;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-weight: 600;
 }
 
@@ -66,7 +66,7 @@
 }
 
 .hint {
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .saveRow {

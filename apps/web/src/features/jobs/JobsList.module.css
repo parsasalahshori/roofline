@@ -15,7 +15,7 @@
 }
 
 .jobLink:focus-visible {
-  outline: 2px solid var(--text);
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
 
@@ -24,7 +24,7 @@
 }
 
 .address {
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: 13px;
 }
 
@@ -44,7 +44,7 @@
 }
 
 .table th {
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-weight: 600;
 }
 
@@ -67,7 +67,7 @@
   flex-direction: column;
   gap: 4px;
   padding: 12px;
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: var(--surface);
 }
 

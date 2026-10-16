@@ -14,8 +14,8 @@
   overflow: hidden;
   border-left: 1px solid var(--line);
   background: var(--surface);
-  color: var(--text);
-  box-shadow: var(--shadow-window);
+  color: var(--ink);
+  box-shadow: var(--e-2);
 }
 
 /* The container takes focus so the title is read out; it is not a control, so it gets no ring. */
@@ -64,7 +64,7 @@
     max-height: 85vh;
     border-left: 0;
     border-top: 1px solid var(--line);
-    border-radius: var(--radius-window) var(--radius-window) 0 0;
+    border-radius: var(--r-4) var(--r-4) 0 0;
   }
 
   .titleBar {

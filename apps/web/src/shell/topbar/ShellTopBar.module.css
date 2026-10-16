@@ -10,14 +10,14 @@
   flex: none;
   width: 20px;
   height: 20px;
-  color: var(--ds-text-1, #151c22);
+  color: var(--ink);
 }
 
 /* The wordmark: Archivo at its widest, bold, as the reference sets it */
 .company {
   min-width: 0;
   overflow: hidden;
-  color: var(--lift-bar-ink);
+  color: var(--ink);
   font-size: 13px;
   font-stretch: 125%;
   font-weight: 700;
@@ -29,7 +29,7 @@
 /* The open app, quiet beside the company */
 .app {
   flex: none;
-  color: var(--ds-text-3, #6b7680);
+  color: var(--ink-3);
   font-size: 13px;
   font-weight: 500;
   white-space: nowrap;

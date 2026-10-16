@@ -5,16 +5,16 @@
   inset: 0;
   display: flex;
   flex-direction: column;
-  background: var(--ds-bg, #f6f7f8);
-  color: var(--ds-text-1, #151c22);
-  font-family: var(--ds-font, var(--font));
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--f-ui);
 }
 
 @media (min-width: 900px) {
   .overlay {
     inset: 32px max(32px, calc(50% - 420px));
     border-radius: 16px;
-    box-shadow: 0 0 0 100vmax rgba(21, 28, 34, 0.45), var(--ds-shadow, 0 20px 50px rgba(21, 28, 34, 0.35));
+    box-shadow: 0 0 0 100vmax rgba(21, 28, 34, 0.45), var(--e-2);
   }
 }
 
@@ -65,7 +65,7 @@
   margin: 0;
   padding: 12px 14px;
   border-radius: 12px;
-  background: var(--ds-accent-tint, #fff1d1);
+  background: var(--tape-tint);
   font-size: 14px;
   line-height: 1.45;
 }
@@ -83,13 +83,13 @@
 
 .empty {
   margin: 0;
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 14px;
 }
 
 .waiting {
   margin: 0;
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 14px;
   font-weight: 600;
 }
@@ -109,7 +109,7 @@
   gap: 12px;
   padding: 8px;
   border-radius: 12px;
-  background: var(--ds-surface, #fff);
+  background: var(--surface);
   box-shadow: 0 0 0 1px var(--line, #dde2e6);
 }
 
@@ -118,7 +118,7 @@
   width: 56px;
   height: 56px;
   border-radius: 8px;
-  background: var(--ds-surface-2, #eceff1);
+  background: var(--surface-2);
   object-fit: cover;
 }
 
@@ -147,7 +147,7 @@
 }
 
 .measured {
-  color: var(--ds-success-ink, #0a6e1d);
+  color: var(--ok);
   font-weight: 600;
 }
 
@@ -165,7 +165,7 @@
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
 }
 
 .rows {
@@ -213,7 +213,7 @@
   height: 40px;
   border-radius: 6px;
   object-fit: cover;
-  background: var(--ds-surface-2, #eceff1);
+  background: var(--surface-2);
 }
 
 .rowText {
@@ -232,7 +232,7 @@
 }
 
 .rowSize {
-  color: var(--ds-text-2, #3a444d);
+  color: var(--ink-2);
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
@@ -240,15 +240,15 @@
 .chip {
   padding: 0 6px;
   border-radius: 6px;
-  background: var(--ds-info-tint, #e3ecfb);
-  color: var(--ds-info-ink, #1f55b3);
+  background: var(--info-tint);
+  color: var(--info);
   font-size: 12px;
   font-weight: 600;
 }
 
 .rowDelete {
   min-height: 44px;
-  color: var(--ds-danger-ink, #a3201f);
+  color: var(--bad);
 }
 
 
@@ -260,7 +260,7 @@
   padding: 12px 14px;
   border: 1px solid var(--line, #dde2e6);
   border-radius: 12px;
-  background: var(--ds-surface, #fff);
+  background: var(--surface);
 }
 
 .howToTitle {
@@ -287,20 +287,20 @@
 }
 
 .rowDetail {
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 12px;
 }
 
 .bigWindow {
   margin: 0;
-  color: var(--ds-text-2, #3a444d);
+  color: var(--ink-2);
   font-size: 13px;
   line-height: 1.4;
 }
 
 .arNote {
   margin: 8px 0 0;
-  color: var(--ds-text-2, #3a444d);
+  color: var(--ink-2);
   font-size: 13px;
   line-height: 1.4;
 }

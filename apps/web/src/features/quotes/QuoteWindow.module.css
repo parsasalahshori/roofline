@@ -38,7 +38,7 @@
   padding: 0 16px;
   border-radius: 999px;
   border: 1px solid var(--line);
-  color: var(--text);
+  color: var(--ink);
   background: transparent;
   font-size: 0.875rem;
   text-decoration: none;
@@ -49,19 +49,19 @@
 }
 
 .pdf:focus-visible {
-  outline: 2px solid var(--text);
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
 
 .note {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-body);
 }
 
 .loading {
   margin: 0 0 8px;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .sheetActions {

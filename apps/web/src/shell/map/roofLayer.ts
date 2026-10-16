@@ -26,6 +26,6 @@ export function setRoofHighlight(map: MapLibreMap, geometry: Geometry | null): v
   }
   if (geometry === null) return;
   map.addSource(ROOF.source, { type: 'geojson', data });
-  map.addLayer({ id: ROOF.fill, type: 'fill', source: ROOF.source, paint: { 'fill-color': tokens.accent, 'fill-opacity': 0.35 } });
-  map.addLayer({ id: ROOF.line, type: 'line', source: ROOF.source, paint: { 'line-color': tokens.accent, 'line-width': 3 } });
+  map.addLayer({ id: ROOF.fill, type: 'fill', source: ROOF.source, paint: { 'fill-color': tokens.tape, 'fill-opacity': 0.35 } });
+  map.addLayer({ id: ROOF.line, type: 'line', source: ROOF.source, paint: { 'line-color': tokens.tape, 'line-width': 3 } });
 }

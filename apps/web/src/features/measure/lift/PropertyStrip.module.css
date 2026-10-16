@@ -7,8 +7,8 @@
   min-width: 0;
   min-height: 62px;
   padding: 0 4px;
-  color: var(--ds-text-1, #151c22);
-  font-family: var(--ds-font, var(--font));
+  color: var(--ink);
+  font-family: var(--f-ui);
 }
 
 .who {
@@ -39,7 +39,7 @@
 
 .number {
   flex: none;
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
@@ -47,7 +47,7 @@
 .owner {
   margin: 0;
   overflow: hidden;
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -66,8 +66,8 @@
   height: 22px;
   padding: 0 8px;
   border-radius: 999px;
-  background: var(--ds-surface-2, #eceff1);
-  color: var(--ds-text-2, #3a444d);
+  background: var(--surface-2);
+  color: var(--ink-2);
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
@@ -75,8 +75,8 @@
 
 /* Hail is the one warm chip */
 .chip[data-tone="hail"] {
-  background: var(--ds-accent-tint, #fff1d1);
-  color: var(--ds-accent-ink, #8a5a00);
+  background: var(--tape-tint);
+  color: var(--tape-ink);
 }
 
 @media (max-width: 640px) {

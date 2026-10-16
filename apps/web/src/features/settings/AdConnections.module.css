@@ -20,7 +20,7 @@
 .stepsLabel {
   margin: 0 0 4px;
   font-size: var(--font-size-min);
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .steps {
@@ -69,7 +69,7 @@
 
 .statusLabel {
   font-size: var(--font-size-min);
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 /* The status is a chip: green when connected, the accent while it waits, the danger colour when it needs attention */
@@ -80,27 +80,27 @@
   border-radius: 999px;
   font-size: var(--font-size-min);
   font-weight: 600;
-  color: var(--text);
+  color: var(--ink);
   background: var(--surface-2);
 }
 
 .status[data-status='active'] {
-  border-color: var(--success);
+  border-color: var(--ok);
 }
 
 .status[data-status='pending'] {
-  border-color: var(--accent);
+  border-color: var(--brand);
 }
 
 .status[data-status='error'] {
-  border-color: var(--danger);
-  color: var(--danger);
+  border-color: var(--bad);
+  color: var(--bad);
 }
 
 .reason {
   margin: 0;
   font-size: var(--font-size-body);
-  color: var(--text-muted);
+  color: var(--ink-3);
   overflow-wrap: anywhere;
 }
 
@@ -113,7 +113,7 @@
 .note {
   margin: 0;
   font-size: var(--font-size-body);
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .loading {

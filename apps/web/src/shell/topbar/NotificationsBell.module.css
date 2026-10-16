@@ -6,17 +6,17 @@
   width: 30px;
   height: 26px;
   border-radius: 7px;
-  color: var(--lift-bar-muted);
+  color: var(--ink-2);
   text-decoration: none;
 }
 
 .bell:hover {
-  background: var(--lift-hover);
-  color: var(--lift-bar-ink);
+  background: var(--sunken);
+  color: var(--ink);
 }
 
 .bell:focus-visible {
-  outline: 2px solid var(--lift-bar-ink);
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
 
@@ -27,8 +27,8 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--ds-danger, #d03b3b);
-  box-shadow: 0 0 0 1.5px var(--lift-bar-bg);
+  background: var(--bad);
+  box-shadow: 0 0 0 1.5px var(--surface);
 }
 
 @media (max-width: 767.98px) {

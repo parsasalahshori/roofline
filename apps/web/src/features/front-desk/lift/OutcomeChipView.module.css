@@ -7,9 +7,9 @@
   padding: 0 8px;
   border: 0;
   border-radius: 999px;
-  background: var(--ds-chip-bg, #e4e8eb);
-  color: var(--ds-text-2, #3a444d);
-  font-family: var(--ds-font, "Archivo Variable", ui-sans-serif, system-ui, sans-serif);
+  background: var(--sunken);
+  color: var(--ink-2);
+  font-family: var(--f-ui);
   font-size: 12px;
   font-weight: 600;
   line-height: 16.7px;
@@ -28,17 +28,17 @@
 }
 
 .chip[data-tone="good"] {
-  background: var(--ds-success-tint, #e2f4e2);
-  color: var(--ds-success, #0a6e1d);
+  background: var(--ok-tint);
+  color: var(--ok);
 }
 
 .chip[data-tone="warn"] {
-  background: var(--ds-danger-tint, #fbe3e3);
-  color: var(--ds-danger, #a32424);
+  background: var(--bad-tint);
+  color: var(--bad);
 }
 
 /* a claim chip reads as plain grey, as the other neutral outcomes do */
 .chip[data-tone="info"] {
-  background: var(--ds-chip-bg, #e4e8eb);
-  color: var(--ds-text-2, #3a444d);
+  background: var(--sunken);
+  color: var(--ink-2);
 }

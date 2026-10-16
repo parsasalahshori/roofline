@@ -8,7 +8,7 @@
 .heading {
   margin: 0 0 8px;
   font-size: var(--font-size-body);
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .list {
@@ -28,17 +28,17 @@
 
 .agent {
   font-weight: 600;
-  color: var(--text);
+  color: var(--ink);
 }
 
 .text {
-  color: var(--text);
+  color: var(--ink);
   overflow-wrap: anywhere;
 }
 
 .time {
   font-size: var(--font-size-min);
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .open {

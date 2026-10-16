@@ -1,12 +1,12 @@
 /* The public instant quote page: one column, phone first, capped at 600px on a wide screen. */
 .page {
-  --quote-accent: var(--ds-accent, #ffc21a);
+  --quote-accent: var(--brand);
 
   min-height: 100dvh;
   padding: 0 0 40px;
-  background: var(--ds-bg, #f6f7f8);
-  color: var(--ds-text-1, #151c22);
-  font-family: var(--ds-font, var(--font));
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--f-ui);
   font-size: 1rem;
   line-height: 1.5;
   box-sizing: border-box;
@@ -42,7 +42,7 @@
 }
 
 .phone {
-  color: var(--ds-text-1, #151c22);
+  color: var(--ink);
   font-weight: 600;
   text-decoration: none;
   white-space: nowrap;
@@ -64,9 +64,9 @@
   flex-direction: column;
   gap: 12px;
   padding: 20px 16px;
-  border: 1px solid var(--ds-hairline, rgba(21, 28, 34, 0.08));
-  border-radius: var(--ds-r-card, 12px);
-  background: var(--ds-surface, #fff);
+  border: 1px solid var(--line);
+  border-radius: var(--r-3);
+  background: var(--surface);
   box-shadow: 0 1px 2px rgba(21, 28, 34, 0.04);
   min-width: 0;
 }
@@ -92,13 +92,13 @@
 
 .text {
   margin: 0;
-  color: var(--ds-text-2, #3a444d);
+  color: var(--ink-2);
   overflow-wrap: anywhere;
 }
 
 .small {
   margin: 0;
-  color: var(--ds-text-3, #6b7680);
+  color: var(--ink-3);
   font-size: 0.875rem;
   overflow-wrap: anywhere;
 }
@@ -106,9 +106,9 @@
 .note {
   margin: 0;
   padding: 10px 12px;
-  border-radius: var(--ds-r-ctl, 9px);
-  background: var(--ds-accent-tint, #fff1d1);
-  color: var(--ds-accent-ink, #8a5a00);
+  border-radius: var(--r-2);
+  background: var(--brand-tint);
+  color: var(--brand-text);
   font-weight: 600;
 }
 
@@ -166,7 +166,7 @@
   width: 100%;
   aspect-ratio: 3 / 2;
   overflow: hidden;
-  border-radius: var(--ds-r-ctl, 9px);
+  border-radius: var(--r-2);
   background: #1d2a1f;
 }
 
@@ -226,7 +226,7 @@
 
 .outline polygon {
   fill: rgba(255, 194, 26, 0.22);
-  stroke: var(--ds-accent, #ffc21a);
+  stroke: var(--brand);
   stroke-width: 2.5;
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
@@ -234,7 +234,7 @@
 
 .credit {
   margin: 0;
-  color: var(--ds-text-3, #6b7680);
+  color: var(--ink-3);
   font-size: 0.75rem;
 }
 
@@ -250,7 +250,7 @@
 .stages li {
   position: relative;
   padding-left: 22px;
-  color: var(--ds-text-3, #6b7680);
+  color: var(--ink-3);
 }
 
 .stages li::before {
@@ -261,28 +261,28 @@
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  border: 2px solid var(--ds-fill, #c3cbd1);
+  border: 2px solid var(--line-2);
   box-sizing: border-box;
 }
 
 .stages li[data-state="now"] {
-  color: var(--ds-text-1, #151c22);
+  color: var(--ink);
   font-weight: 600;
 }
 
 .stages li[data-state="now"]::before {
-  border-color: var(--ds-accent, #ffc21a);
-  background: var(--ds-accent, #ffc21a);
+  border-color: var(--brand);
+  background: var(--brand);
 }
 
 .stages li[data-state="done"]::before {
-  border-color: var(--ds-success, #0ca30c);
-  background: var(--ds-success, #0ca30c);
+  border-color: var(--ok);
+  background: var(--ok);
 }
 
 .timer {
   margin: 0;
-  color: var(--ds-text-3, #6b7680);
+  color: var(--ink-3);
   font-variant-numeric: tabular-nums;
   font-size: 0.875rem;
 }
@@ -301,12 +301,12 @@
   flex-direction: column;
   gap: 2px;
   padding: 12px;
-  border-radius: var(--ds-r-ctl, 9px);
-  background: var(--ds-surface-2, #eceff1);
+  border-radius: var(--r-2);
+  background: var(--surface-2);
 }
 
 .rangeLabel {
-  color: var(--ds-text-2, #3a444d);
+  color: var(--ink-2);
   font-weight: 600;
 }
 
@@ -334,7 +334,7 @@
 
 .error {
   margin: 0;
-  color: var(--ds-danger-ink, #a32424);
+  color: var(--bad);
   font-size: 0.875rem;
 }
 
@@ -350,16 +350,16 @@
   gap: 8px;
   min-height: 44px;
   padding: 8px 10px;
-  border: 1px solid var(--ds-hairline-strong, #c3cbd1);
-  border-radius: var(--ds-r-ctl, 9px);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-2);
   font-size: 0.875rem;
   cursor: pointer;
   box-sizing: border-box;
 }
 
 .slot[data-checked] {
-  border-color: var(--ds-accent-line, rgba(217, 158, 0, 0.55));
-  background: var(--ds-accent-tint, #fff1d1);
+  border-color: var(--brand-line);
+  background: var(--brand-tint);
 }
 
 .check {
@@ -368,8 +368,8 @@
   width: 52px;
   height: 52px;
   border-radius: 50%;
-  background: var(--ds-success-tint, #e2f4e2);
-  color: var(--ds-success-ink, #0a6e1d);
+  background: var(--ok-tint);
+  color: var(--ok);
 }
 
 @media (min-width: 768px) {

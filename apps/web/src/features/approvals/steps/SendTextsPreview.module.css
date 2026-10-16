@@ -14,7 +14,7 @@
   min-width: 0;
   padding: 12px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: var(--surface-2);
 }
 
@@ -27,7 +27,7 @@
 
 .label {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-min);
   overflow-wrap: anywhere;
 }
@@ -42,7 +42,7 @@
 .hint,
 .warning {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-min);
   overflow-wrap: anywhere;
 }

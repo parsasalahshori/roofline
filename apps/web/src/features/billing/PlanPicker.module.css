@@ -41,7 +41,7 @@
 
 .includes {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-body);
   overflow-wrap: anywhere;
 }
@@ -60,6 +60,6 @@
 
 .note {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-min);
 }

@@ -10,10 +10,10 @@
   padding: 12px 14px 10px;
   box-sizing: border-box;
   border-radius: 12px;
-  background: var(--ds-glass-strong, rgba(246, 247, 248, 0.98));
-  color: var(--ds-text-1, #151c22);
-  font-family: var(--ds-font, var(--font));
-  box-shadow: var(--ds-shadow, 0 0 0 1px rgba(21, 28, 34, 0.1), 0 14px 34px -12px rgba(21, 28, 34, 0.45));
+  background: var(--raised);
+  color: var(--ink);
+  font-family: var(--f-ui);
+  box-shadow: var(--e-2);
 }
 
 .title {
@@ -24,7 +24,7 @@
 
 .detail {
   margin: 0;
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
@@ -39,18 +39,18 @@
 .action {
   width: 100%;
   min-height: 36px;
-  border-radius: var(--ds-r-ctl, 9px);
+  border-radius: var(--r-2);
   font-size: 13px;
 }
 
 .action[data-variant="ghost"] {
   border: 1px solid var(--line, #dde2e6);
-  background: var(--ds-surface, #fff);
+  background: var(--surface);
 }
 
 .error {
   margin: 0;
-  color: var(--ds-danger-ink, #b42318);
+  color: var(--bad);
   font-size: 12.5px;
 }
 
@@ -58,7 +58,7 @@
   align-self: flex-end;
   min-height: 28px;
   padding: 0 8px;
-  border-radius: var(--ds-r-ctl, 9px);
-  color: var(--ds-text-2, #3a444d);
+  border-radius: var(--r-2);
+  color: var(--ink-2);
   font-size: 12.5px;
 }

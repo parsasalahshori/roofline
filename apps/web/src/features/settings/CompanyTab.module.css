@@ -22,14 +22,14 @@
 
 .problem {
   margin: 0;
-  color: var(--danger);
+  color: var(--bad);
   font-size: var(--font-size-body);
 }
 
 /* Who may change the details, shown above the read-only fields */
 .note {
   margin: 0 0 16px;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-body);
 }
 

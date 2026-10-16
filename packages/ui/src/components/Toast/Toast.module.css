@@ -29,24 +29,24 @@
   padding: 4px 4px 4px 16px;
   border: 1px solid var(--line);
   border-left-width: 4px;
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: var(--surface);
-  color: var(--text);
-  box-shadow: var(--shadow-window);
+  color: var(--ink);
+  box-shadow: var(--e-2);
   pointer-events: auto;
 }
 
 /* The tone shows in the bar on the left, not in the text colour: --success must not be a text colour */
 .toast[data-tone="info"] {
-  border-left-color: var(--accent);
+  border-left-color: var(--brand);
 }
 
 .toast[data-tone="success"] {
-  border-left-color: var(--success);
+  border-left-color: var(--ok);
 }
 
 .toast[data-tone="error"] {
-  border-left-color: var(--danger);
+  border-left-color: var(--bad);
 }
 
 .message {

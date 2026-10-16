@@ -19,11 +19,11 @@
   min-width: 0;
   min-height: 130px;
   padding: 14px 16px;
-  border-radius: var(--ds-r-card, 14px);
-  background: var(--ds-surface, #fff);
-  box-shadow: var(--ds-shadow, 0 0 0 1px rgb(21 28 34 / 8%), 0 6px 16px -8px rgb(21 28 34 / 30%));
-  color: var(--ds-text-1, #151c22);
-  font-family: var(--ds-font, inherit);
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: var(--e-2);
+  color: var(--ink);
+  font-family: var(--f-ui);
 }
 
 .label {
@@ -31,7 +31,7 @@
   align-items: center;
   gap: 8px;
   margin: 0;
-  color: var(--ds-text-2, #505b64);
+  color: var(--ink-2);
   font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
@@ -41,8 +41,8 @@
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: var(--ds-success, #17a34a);
-  box-shadow: 0 0 0 4px var(--ds-success-tint, #d7f1de);
+  background: var(--ok);
+  box-shadow: 0 0 0 4px var(--ok-tint);
 }
 
 .value {
@@ -67,14 +67,14 @@
 .about {
   font-size: 14px;
   font-weight: 500;
-  color: var(--ds-text-3, #6b7680);
+  color: var(--ink-3);
 }
 
 .sub {
   margin: auto 0 0;
   padding-top: 8px;
   overflow: hidden;
-  color: var(--ds-text-3, #6b7680);
+  color: var(--ink-3);
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -88,7 +88,7 @@
   display: flex;
   justify-content: space-between;
   margin: 4px 0 0;
-  color: var(--ds-text-3, #6b7680);
+  color: var(--ink-3);
   font-size: 13px;
 }
 

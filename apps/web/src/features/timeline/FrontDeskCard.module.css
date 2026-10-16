@@ -4,7 +4,7 @@
   gap: 4px;
   padding: 12px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: var(--surface-2);
 }
 
@@ -18,19 +18,19 @@
 .label {
   font-size: 0.75rem;
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .summary {
   margin: 0;
   overflow-wrap: anywhere;
-  color: var(--text);
+  color: var(--ink);
 }
 
 .meta {
   margin: 0;
   font-size: 0.875rem;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .link {

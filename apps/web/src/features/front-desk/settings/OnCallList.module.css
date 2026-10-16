@@ -13,7 +13,7 @@
 
 .help {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-body);
 }
 
@@ -39,7 +39,7 @@
   min-height: 56px;
   padding: 8px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
 }
 
 .handle,
@@ -54,7 +54,7 @@
 
 .place {
   min-width: 24px;
-  color: var(--text-muted);
+  color: var(--ink-3);
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
@@ -73,7 +73,7 @@
 }
 
 .phone {
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-body);
   overflow-wrap: anywhere;
 }
@@ -85,7 +85,7 @@
 
 .empty {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-body);
 }
 

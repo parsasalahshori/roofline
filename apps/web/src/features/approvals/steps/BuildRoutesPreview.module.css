@@ -12,7 +12,7 @@
 
 .note {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-min);
 }
 
@@ -37,11 +37,11 @@
 }
 
 .detail {
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .cap {
   margin: 0;
   font-size: var(--font-size-min);
-  color: var(--text-muted);
+  color: var(--ink-3);
 }

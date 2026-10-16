@@ -41,15 +41,15 @@
   padding: 10px 12px;
   min-height: 40px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: var(--surface);
-  color: var(--text);
+  color: var(--ink);
   font-size: 0.875rem;
   overflow-wrap: anywhere;
 }
 
 .item[data-status='canceled'] {
-  color: var(--text-muted);
+  color: var(--ink-3);
   text-decoration: line-through;
 }
 
@@ -63,9 +63,9 @@
   min-height: 40px;
   padding: 10px 12px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: var(--surface);
-  color: var(--text);
+  color: var(--ink);
   text-decoration: none;
   font-size: 0.875rem;
   min-width: 0;
@@ -73,7 +73,7 @@
 }
 
 .link:focus-visible {
-  outline: 2px solid var(--text);
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
 
@@ -84,7 +84,7 @@
 }
 
 .meta {
-  color: var(--text-muted);
+  color: var(--ink-3);
   overflow-wrap: anywhere;
 }
 

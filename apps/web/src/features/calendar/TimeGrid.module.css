@@ -5,7 +5,7 @@
   overflow: auto;
   min-width: 0;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: var(--surface);
   -webkit-overflow-scrolling: touch;
 }
@@ -14,7 +14,7 @@
   display: grid;
   min-width: 100%;
   font-size: var(--font-size-min);
-  color: var(--text);
+  color: var(--ink);
 }
 
 .corner {
@@ -43,7 +43,7 @@
   align-items: center;
   padding: 4px 6px;
   border-bottom: 1px solid var(--line);
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .allDayCell {
@@ -73,14 +73,14 @@
 .allDayBusy {
   padding: 2px 6px;
   border-radius: 6px;
-  color: var(--text-muted);
+  color: var(--ink-3);
   background: repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 6px, var(--line) 6px, var(--line) 12px);
 }
 
 .gutter {
   display: grid;
   grid-template-rows: repeat(30, var(--row-h));
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .gutterCell {
@@ -115,7 +115,7 @@
 .slot:focus-visible,
 .appt:focus-visible,
 .allDayItem:focus-visible {
-  outline: 2px solid var(--text);
+  outline: 2px solid var(--ink);
   outline-offset: -2px;
 }
 
@@ -148,7 +148,7 @@
 }
 
 .itemTime {
-  color: var(--text-muted);
+  color: var(--ink-3);
   white-space: nowrap;
 }
 
@@ -160,7 +160,7 @@
   box-sizing: border-box;
   padding: 2px 6px;
   border-radius: 6px;
-  color: var(--text-muted);
+  color: var(--ink-3);
   background: repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 6px, var(--line) 6px, var(--line) 12px);
   overflow: hidden;
   pointer-events: none;
@@ -172,7 +172,7 @@
   right: 0;
   z-index: 2;
   height: 2px;
-  background: var(--danger);
+  background: var(--bad);
   pointer-events: none;
 }
 

@@ -1,4 +1,8 @@
 import '@fontsource-variable/archivo/wdth.css';
+import '@fontsource-variable/instrument-sans/wdth.css';
+import '@fontsource/ibm-plex-mono/latin-400.css';
+import '@fontsource/ibm-plex-mono/latin-500.css';
+import '@fontsource/ibm-plex-mono/latin-600.css';
 import '@roofline/ui/tokens.css';
 import '@roofline/ui/base.css';
 

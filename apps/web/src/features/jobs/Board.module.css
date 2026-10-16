@@ -47,13 +47,13 @@
   min-height: 80px;
   padding: 12px;
   border: 2px dashed var(--line);
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
 }
 
 .hint {
   margin: 0;
   font-size: 0.875rem;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .visuallyHidden {

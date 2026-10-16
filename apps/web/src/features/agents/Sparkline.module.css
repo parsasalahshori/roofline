@@ -5,19 +5,19 @@
 }
 
 .grid {
-  stroke: var(--ds-hairline, #d9dee2);
+  stroke: var(--line);
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
 
 .area {
-  fill: var(--ds-surface-2, #e8eaec);
+  fill: var(--surface-2);
   opacity: 0.9;
 }
 
 .line {
   fill: none;
-  stroke: var(--ds-text-1, #151c22);
+  stroke: var(--ink);
   stroke-width: 2;
   stroke-linejoin: round;
   stroke-linecap: round;
@@ -25,12 +25,12 @@
 }
 
 .dot {
-  fill: var(--ds-text-1, #151c22);
+  fill: var(--ink);
 }
 
 .endLabel {
-  fill: var(--ds-text-1, #151c22);
-  font-family: var(--ds-font, inherit);
+  fill: var(--ink);
+  font-family: var(--f-ui);
   font-size: 15px;
   font-weight: 700;
 }

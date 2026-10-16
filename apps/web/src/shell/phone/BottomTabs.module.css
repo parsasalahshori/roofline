@@ -7,8 +7,8 @@
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   padding: 6px 4px;
-  color: var(--text);
-  font-family: var(--font);
+  color: var(--ink);
+  font-family: var(--f-ui);
 }
 
 /* 0,2,0 so these beat the kit's Button rules (0,1,0) without a !important */
@@ -24,21 +24,21 @@
   border: 0;
   border-radius: 12px;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-weight: 600;
 }
 
 .nav .tab:hover {
-  background: var(--lift-hover);
+  background: var(--sunken);
 }
 
 .nav .tab[data-current="true"] {
-  color: var(--text);
+  color: var(--ink);
   font-weight: 700;
 }
 
 .nav .tab:focus-visible {
-  outline: 2px solid var(--text);
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
 
@@ -50,36 +50,36 @@
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  background: var(--lift-tile-launcher);
-  color: var(--lift-tile-ink);
-  box-shadow: var(--lift-tile-shadow);
+  background: var(--ink);
+  color: var(--ink-inv);
+  box-shadow: var(--e-1);
 }
 
 .tab[data-tab="today"] .tile {
-  background: var(--lift-tile-estimator);
+  background: var(--tape);
 }
 
 .tab[data-tab="map"] .tile {
-  background: var(--lift-tile-storm);
+  background: var(--ink);
 }
 
 .tab[data-tab="jobs"] .tile {
-  background: var(--lift-tile-jobs);
+  background: var(--brand);
 }
 
 .tab[data-tab="calendar"] .tile {
-  background: var(--lift-tile-calendar);
+  background: var(--warn);
 }
 
 .tab[data-tab="more"] .tile {
-  background: var(--lift-tile-launcher);
+  background: var(--ink);
 }
 
 /* The open tab gets a ring around its tile */
 .tab[data-current="true"] .tile {
   box-shadow:
-    0 0 0 2px var(--lift-tray-bg),
-    0 0 0 4px var(--text);
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--ink);
 }
 
 .icon {

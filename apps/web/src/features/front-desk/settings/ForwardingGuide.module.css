@@ -13,7 +13,7 @@
   margin: 0;
   font-size: var(--font-size-stat);
   font-weight: 600;
-  color: var(--text);
+  color: var(--ink);
 }
 
 .numbers {
@@ -31,20 +31,20 @@
 
 .numberLabel {
   font-size: var(--font-size-min);
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .numberValue {
   margin: 0;
   font-size: var(--font-size-body);
-  color: var(--text);
+  color: var(--ink);
   overflow-wrap: anywhere;
 }
 
 .hint {
   margin: 0;
   font-size: var(--font-size-min);
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .pickers {
@@ -62,7 +62,7 @@
 .intro {
   margin: 0;
   font-size: var(--font-size-body);
-  color: var(--text);
+  color: var(--ink);
 }
 
 .group {
@@ -75,7 +75,7 @@
   margin: 0;
   font-size: var(--font-size-body);
   font-weight: 600;
-  color: var(--text);
+  color: var(--ink);
 }
 
 .codeRow {
@@ -90,7 +90,7 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: var(--font-size-stat);
   font-weight: 600;
-  color: var(--text);
+  color: var(--ink);
   overflow-wrap: anywhere;
   word-break: break-all;
   min-width: 0;
@@ -103,7 +103,7 @@
   flex-direction: column;
   gap: 8px;
   font-size: var(--font-size-body);
-  color: var(--text);
+  color: var(--ink);
 }
 
 @media (max-width: 767.98px) {

@@ -13,8 +13,8 @@
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface);
-  color: var(--text);
-  box-shadow: var(--shadow-window);
+  color: var(--ink);
+  box-shadow: var(--e-2);
   font-size: var(--font-size-min);
 }
 
@@ -49,6 +49,6 @@
 @media (max-width: 767.98px) {
   .legend {
     bottom: 88px;
-    border-radius: var(--radius-card);
+    border-radius: var(--r-3);
   }
 }

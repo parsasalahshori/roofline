@@ -2,8 +2,8 @@
   display: grid;
   gap: 16px;
   min-width: 0;
-  color: var(--text);
-  font-family: var(--font);
+  color: var(--ink);
+  font-family: var(--f-ui);
   font-size: var(--font-size-body);
 }
 

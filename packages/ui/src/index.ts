@@ -1,5 +1,7 @@
-export { tokens } from './tokens.ts';
-export type { TokenName } from './tokens.ts';
+export { darkTokens, tokens, tokensFor } from './tokens.ts';
+export type { ColorScheme, TokenName } from './tokens.ts';
+export { applyBrand, badShift, brandCss, contrastRatio, deltaE, deriveBrand, parseColor, relativeLuminance, toHex } from './brand.ts';
+export type { BrandPalette, BrandScheme } from './brand.ts';
 
 export { UiLink, UiLinkProvider } from './link.tsx';
 export type { UiLinkComponent, UiLinkProps } from './link.tsx';

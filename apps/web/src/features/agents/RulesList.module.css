@@ -10,11 +10,11 @@
 }
 
 .link {
-  color: var(--text);
+  color: var(--ink);
   text-decoration: underline;
 }
 
 .empty {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }

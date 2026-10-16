@@ -3,14 +3,14 @@ import type { ScreenAgent } from '@roofline/shared';
 /** The order the dashboard lays the agents out, left to right along the roof. */
 export const DASH_ORDER: readonly ScreenAgent[] = ['storm_scout', 'front_desk', 'estimator', 'claims', 'scheduler', 'follow_up'];
 
-/** Each agent's own color (node ring, card tab, handoff dot). Tokens first, reference values as fallback. */
+/** Each agent's own color (node ring, card tab, handoff dot). Colour tokens, so each follows the theme. */
 export const AGENT_COLOR: Record<ScreenAgent, string> = {
-  storm_scout: 'var(--ds-agent-storm, #6b3fa0)',
-  front_desk: 'var(--ds-agent-desk, #138a8a)',
-  estimator: 'var(--ds-agent-estimator, #e0a100)',
-  claims: 'var(--ds-agent-claims, #1f7a5a)',
-  scheduler: 'var(--ds-agent-scheduler, #c0652a)',
-  follow_up: 'var(--ds-agent-follow, #2f6de0)',
+  storm_scout: 'var(--hail-5)',
+  front_desk: 'var(--st-insp)',
+  estimator: 'var(--tape)',
+  claims: 'var(--st-won)',
+  scheduler: 'var(--st-prop)',
+  follow_up: 'var(--st-inst)',
 };
 
 /** Whole hours from minutes, never below zero. */

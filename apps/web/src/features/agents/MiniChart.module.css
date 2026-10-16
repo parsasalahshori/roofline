@@ -10,7 +10,7 @@
 }
 
 .bar {
-  fill: var(--accent);
+  fill: var(--brand);
 }
 
 .srOnly {

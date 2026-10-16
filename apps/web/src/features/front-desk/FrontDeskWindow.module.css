@@ -4,8 +4,8 @@
   flex-direction: column;
   gap: 12px;
   min-width: 0;
-  color: var(--ds-text-1, #151c22);
-  font-family: var(--ds-font, "Archivo Variable", ui-sans-serif, system-ui, sans-serif);
+  color: var(--ink);
+  font-family: var(--f-ui);
   font-size: 14px;
 }
 
@@ -27,10 +27,10 @@
   min-width: 0;
   min-height: 0;
   border: 0;
-  border-radius: var(--ds-r-card, 14px);
-  background: var(--ds-surface, #fff);
+  border-radius: var(--r-3);
+  background: var(--surface);
   box-shadow:
-    0 0 0 1px var(--ds-hairline-soft, rgb(21 28 34 / 8%)),
+    0 0 0 1px var(--line),
     0 6px 16px -8px rgb(21 28 34 / 30%);
 }
 
@@ -60,7 +60,7 @@
 }
 
 .listHint {
-  color: var(--ds-text-3, #6b7680);
+  color: var(--ink-3);
   font-size: 13px;
 }
 
@@ -73,7 +73,7 @@
   margin: 10px 16px 12px;
   padding: 4px;
   border-radius: 10px;
-  background: var(--ds-surface-2, #eceff1);
+  background: var(--surface-2);
 }
 
 .tabs .tab[data-variant] {
@@ -87,7 +87,7 @@
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: var(--ds-text-2, #505b64);
+  color: var(--ink-2);
   font-size: 12.5px;
   font-weight: 600;
   line-height: 18px;
@@ -96,24 +96,24 @@
 
 .tabs .tab[data-variant]:hover {
   background: transparent;
-  color: var(--ds-text-1, #151c22);
+  color: var(--ink);
 }
 
 .tabs .tab[data-variant][aria-pressed="true"] {
-  background: var(--ds-surface, #fff);
+  background: var(--surface);
   box-shadow:
-    0 0 0 1px var(--ds-hairline-soft, rgb(21 28 34 / 8%)),
+    0 0 0 1px var(--line),
     0 6px 16px -8px rgb(21 28 34 / 30%);
-  color: var(--ds-text-1, #151c22);
+  color: var(--ink);
 }
 
 .tabs .tab[data-variant]:focus-visible {
-  outline: 2px solid var(--ds-text-1, #151c22);
+  outline: 2px solid var(--ink);
   outline-offset: 1px;
 }
 
 .count {
-  color: var(--ds-text-3, #6b7680);
+  color: var(--ink-3);
   font-weight: 500;
 }
 
@@ -126,7 +126,7 @@
   padding: 0;
   list-style: none;
   min-width: 0;
-  border-top: 1px solid var(--ds-hairline-soft, rgb(21 28 34 / 8%));
+  border-top: 1px solid var(--line);
   overflow-y: auto;
 }
 
@@ -139,7 +139,7 @@
 .pick {
   margin: 0;
   padding: 16px;
-  color: var(--ds-text-3, #6b7680);
+  color: var(--ink-3);
 }
 
 .back {

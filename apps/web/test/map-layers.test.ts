@@ -193,7 +193,7 @@ describe('installMapLayers', () => {
     expect(layerSpec(withArea, 'service-area')).toMatchObject({
       type: 'line',
       source: 'service-area',
-      paint: { 'line-color': tokens.text, 'line-opacity': 0.5, 'line-width': 2 },
+      paint: { 'line-color': tokens.ink, 'line-opacity': 0.5, 'line-width': 2 },
     });
     expect(sourceSpec(withArea, 'service-area')).toEqual({
       type: 'geojson',
@@ -213,7 +213,7 @@ describe('installMapLayers', () => {
       type: 'circle',
       source: 'customers',
       filter: ['!', ['has', 'point_count']],
-      paint: { 'circle-color': tokens['pin-customer'], 'circle-radius': 7 },
+      paint: { 'circle-color': tokens['st-inst'], 'circle-radius': 7 },
     });
 
     const jobs = layerSpec(fake, 'jobs');
@@ -224,18 +224,20 @@ describe('installMapLayers', () => {
       'match',
       ['get', 'stage'],
       'lead',
-      tokens['stage-lead'],
+      tokens['st-lead'],
       'inspection',
-      tokens['stage-inspection'],
+      tokens['st-insp'],
       'proposal',
-      tokens['stage-proposal'],
+      tokens['st-prop'],
       'won',
-      tokens['stage-won'],
+      tokens['st-won'],
       'installed',
-      tokens['stage-won'],
+      tokens['st-inst'],
+      'paid',
+      tokens['st-paid'],
       'lost',
-      tokens.text,
-      tokens['stage-lead'],
+      tokens.ink,
+      tokens['st-lead'],
     ]);
   });
 

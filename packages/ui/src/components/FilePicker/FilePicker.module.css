@@ -6,7 +6,7 @@
 
 .label {
   margin: 0;
-  color: var(--text);
+  color: var(--ink);
   font-size: var(--font-size-body);
   font-weight: 600;
   overflow-wrap: anywhere;
@@ -16,9 +16,9 @@
 .zone {
   min-height: 40px;
   padding: 16px;
-  border: 2px dashed var(--text-muted);
-  border-radius: var(--radius-card);
-  color: var(--text);
+  border: 2px dashed var(--ink-3);
+  border-radius: var(--r-3);
+  color: var(--ink);
   font-size: var(--font-size-body);
   text-align: center;
   overflow-wrap: anywhere;
@@ -26,6 +26,6 @@
 
 .zone[data-state="over"] {
   border-style: solid;
-  border-color: var(--text);
+  border-color: var(--ink);
   background: var(--surface-2);
 }

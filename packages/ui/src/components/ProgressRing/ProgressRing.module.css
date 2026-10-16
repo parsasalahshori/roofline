@@ -8,12 +8,12 @@
 }
 
 .arc {
-  stroke: var(--accent);
+  stroke: var(--brand);
   transition: stroke-dashoffset 200ms ease;
 }
 
 .ring[data-complete] .arc {
-  stroke: var(--success);
+  stroke: var(--ok);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -121,7 +121,7 @@ export function TimeGrid({ zone, days, appointments, busy, people, showCanceled,
   const nowMinute = wallMinutes(now, zone);
   const shownAppointments = showCanceled ? appointments : appointments.filter((appt) => appt.status !== 'canceled');
 
-  const colorOf = (appt: AppointmentView): string => people.find((person) => person.userId === appt.assigned?.userId)?.color ?? 'var(--pin-customer)';
+  const colorOf = (appt: AppointmentView): string => people.find((person) => person.userId === appt.assigned?.userId)?.color ?? 'var(--st-inst)';
 
   /** Arrow keys walk the appointments in DOM order; Enter opens the focused one. */
   const onItemKeyDown = (event: KeyboardEvent<HTMLElement>, appointmentId: string) => {

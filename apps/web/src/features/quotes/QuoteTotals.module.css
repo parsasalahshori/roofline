@@ -21,7 +21,7 @@
 }
 
 .totals dt {
-  color: var(--text-muted);
+  color: var(--ink-3);
   overflow-wrap: anywhere;
 }
 
@@ -38,7 +38,7 @@
 .grand {
   padding-top: 10px;
   border-bottom: none;
-  border-top: 2px solid var(--text);
+  border-top: 2px solid var(--ink);
   font-weight: 600;
 }
 
@@ -53,5 +53,5 @@
 .caption {
   font-size: var(--font-size-min);
   font-weight: 400;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }

@@ -3,11 +3,11 @@
   box-sizing: border-box;
   min-width: 0;
   padding: 20px;
-  border-radius: var(--ds-r-widget, 20px);
-  background: var(--ds-glass-strong, rgba(246, 247, 248, 0.97));
-  box-shadow: var(--ds-shadow, 0 0 0 1px rgba(21, 28, 34, 0.08), 0 14px 34px -16px rgba(21, 28, 34, 0.35));
-  color: var(--ds-text-1, #151c22);
-  font-family: var(--ds-font, var(--font));
+  border-radius: var(--r-4);
+  background: var(--raised);
+  box-shadow: var(--e-2);
+  color: var(--ink);
+  font-family: var(--f-ui);
   font-size: 14px;
   line-height: 1.45;
 }
@@ -22,7 +22,7 @@
 
 .title {
   margin: 0;
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 13px;
   font-weight: 600;
   line-height: 1.45;

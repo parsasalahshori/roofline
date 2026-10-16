@@ -2,7 +2,7 @@
 .clock {
   flex: none;
   padding: 0 8px;
-  color: var(--lift-bar-ink);
+  color: var(--ink);
   font-size: 13px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;

@@ -31,14 +31,14 @@
 .bubble {
   max-width: 85%;
   padding: 8px 12px;
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: var(--surface-2);
-  color: var(--text);
+  color: var(--ink);
 }
 
 .bubble[data-direction="out"] {
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: var(--brand);
+  color: var(--brand-ink);
 }
 
 .body,
@@ -49,13 +49,13 @@
 }
 
 .summary {
-  color: var(--text);
+  color: var(--ink);
 }
 
 .meta {
   margin: 0;
   font-size: 0.875rem;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .time {
@@ -64,7 +64,7 @@
 
 .empty {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .loading {

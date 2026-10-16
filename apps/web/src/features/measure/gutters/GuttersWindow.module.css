@@ -91,8 +91,8 @@
 }
 
 .runLabel[data-run-label][data-excluded="true"] {
-  background: var(--ds-glass-strong, rgba(246, 247, 248, 0.97));
-  color: var(--ds-text-label, #505b64);
+  background: var(--raised);
+  color: var(--ink-3);
   text-decoration: line-through;
 }
 
@@ -101,7 +101,7 @@
 }
 
 .runLabel[data-run-label][data-kind]:focus-visible {
-  outline: 3px solid var(--ds-accent, #ffc21a);
+  outline: 3px solid var(--tape);
   outline-offset: 2px;
 }
 
@@ -123,9 +123,9 @@
   margin: 0;
   padding: 8px 12px;
   border-radius: 12px;
-  background: var(--ds-glass-strong, rgba(246, 247, 248, 0.97));
+  background: var(--raised);
   box-shadow: 0 0 0 1px rgba(21, 28, 34, 0.08), 0 2px 6px rgba(21, 28, 34, 0.12);
-  color: var(--ds-text-2, #3a444d);
+  color: var(--ink-2);
   font-size: 12px;
   font-weight: 500;
   list-style: none;
@@ -203,14 +203,14 @@
 
 .reason {
   margin: 0;
-  color: var(--ds-text-1, #151c22);
+  color: var(--ink);
   font-size: 13px;
   line-height: 1.4;
 }
 
 .small {
   margin: 0;
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -254,8 +254,8 @@
   min-width: 36px;
   min-height: 36px;
   border: 1px solid var(--line, #dde2e6);
-  border-radius: var(--ds-r-ctl, 9px);
-  background: var(--ds-surface, #fff);
+  border-radius: var(--r-2);
+  background: var(--surface);
   font-size: 16px;
   font-weight: 700;
 }
@@ -281,15 +281,15 @@
   min-height: 40px;
   padding: 0 12px;
   border: 1px solid var(--line, #dde2e6);
-  border-radius: var(--ds-r-ctl, 9px);
-  background: var(--ds-surface, #fff);
+  border-radius: var(--r-2);
+  background: var(--surface);
   font-size: 13px;
 }
 
 .size[data-state="on"] {
-  border-color: var(--ds-accent, #ffc21a);
-  background: var(--ds-accent, #ffc21a);
-  color: var(--ds-text-1, #151c22);
+  border-color: var(--tape);
+  background: var(--tape);
+  color: var(--ink);
 }
 
 /* "Likely short": the warning and a way straight into Adjust */
@@ -306,8 +306,8 @@
   min-height: 36px;
   padding: 0 12px;
   border: 1px solid var(--line, #dde2e6);
-  border-radius: var(--ds-r-ctl, 9px);
-  background: var(--ds-surface, #fff);
+  border-radius: var(--r-2);
+  background: var(--surface);
   font-size: 13px;
   font-weight: 600;
 }
@@ -323,8 +323,8 @@
   margin: 4px 0 0;
   padding: 6px 8px;
   border-radius: 8px;
-  background: var(--ds-surface-2, #eceff1);
-  color: var(--ds-text-2, #3a444d);
+  background: var(--surface-2);
+  color: var(--ink-2);
   font-size: 12px;
   line-height: 1.4;
 }

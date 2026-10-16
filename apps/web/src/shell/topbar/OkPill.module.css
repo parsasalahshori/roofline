@@ -5,10 +5,10 @@
   gap: 6px;
   min-height: 28px;
   padding: 0 11px;
-  border: 1px solid var(--lift-ok-line);
+  border: 1px solid var(--tape);
   border-radius: 14px;
-  background: var(--lift-ok-bg);
-  color: var(--lift-ok-ink);
+  background: var(--tape-tint);
+  color: var(--tape-ink);
   font-size: var(--font-size-min);
   font-weight: 700;
   line-height: 1.2;
@@ -30,7 +30,7 @@
 }
 
 .pill:focus-visible {
-  outline: 2px solid var(--lift-bar-ink);
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
 
@@ -39,7 +39,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--lift-ok-line);
+  background: var(--tape);
 }
 
 @media (max-width: 767.98px) {

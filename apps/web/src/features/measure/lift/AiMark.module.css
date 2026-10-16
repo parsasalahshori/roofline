@@ -3,7 +3,7 @@
   flex: none;
   place-items: center;
   border-radius: 5px;
-  background: var(--ds-accent, #ffc21a);
+  background: var(--tape);
   box-shadow: inset 0 0 0 1px rgba(217, 158, 0, 0.6);
-  color: var(--ds-text-1, #151c22);
+  color: var(--ink);
 }

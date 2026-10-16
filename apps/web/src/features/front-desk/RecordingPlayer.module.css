@@ -2,8 +2,8 @@
   display: grid;
   gap: 8px;
   min-width: 0;
-  color: var(--text);
-  font-family: var(--font);
+  color: var(--ink);
+  font-family: var(--f-ui);
 }
 
 .heading {
@@ -19,6 +19,6 @@
 
 .status {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-min);
 }

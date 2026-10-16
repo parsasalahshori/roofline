@@ -8,9 +8,9 @@ import { useIsPhone } from './useIsPhone.ts';
 
 /** The glyph colour on each app's tile, as the dock draws it; an app not listed uses the default tile ink. */
 const TILE_INK: Partial<Record<WindowKey, string>> = {
-  storm: 'var(--lift-tile-ink-accent)',
-  agents: 'var(--lift-tile-ink-accent)',
-  estimator: 'var(--lift-tile-ink-dark)',
+  storm: 'var(--tape)',
+  agents: 'var(--tape)',
+  estimator: 'var(--ink)',
 };
 
 /**
@@ -31,7 +31,7 @@ export function AppWindow({ app, children, stats, bare, wide }: { app: WindowKey
       stats={stats}
       icon={dockApp?.icon}
       iconBackground={dockApp ? `var(--lift-tile-${app})` : undefined}
-      iconColor={dockApp ? (TILE_INK[app] ?? 'var(--lift-tile-ink)') : undefined}
+      iconColor={dockApp ? (TILE_INK[app] ?? 'var(--ink-inv)') : undefined}
       bare={bare}
       wide={wide}
       variant={phone ? 'page' : 'floating'}

@@ -32,17 +32,17 @@
 
 .agent {
   font-weight: 600;
-  color: var(--text);
+  color: var(--ink);
 }
 
 .text {
   min-width: 0;
-  color: var(--text);
+  color: var(--ink);
   overflow-wrap: anywhere;
 }
 
 .time {
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-min);
   white-space: nowrap;
 }

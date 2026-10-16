@@ -2,8 +2,8 @@
   display: grid;
   gap: 16px;
   min-width: 0;
-  color: var(--text);
-  font-family: var(--font);
+  color: var(--ink);
+  font-family: var(--f-ui);
   font-size: var(--font-size-body);
 }
 
@@ -21,7 +21,7 @@
 
 .phone {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .transcript {
@@ -38,7 +38,7 @@
 
 .empty {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .turns {
@@ -54,27 +54,27 @@
   gap: 4px;
   max-width: 85%;
   padding: 10px 12px;
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   min-width: 0;
 }
 
 .caller {
   justify-self: start;
   background: var(--surface-2);
-  color: var(--text);
+  color: var(--ink);
 }
 
 .assistant {
   justify-self: end;
   background: var(--surface);
   border: 1px solid var(--line);
-  color: var(--text);
+  color: var(--ink);
 }
 
 .team {
   justify-self: end;
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: var(--brand);
+  color: var(--brand-ink);
 }
 
 .system {
@@ -82,7 +82,7 @@
   max-width: 100%;
   padding: 4px 8px;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--ink-3);
   text-align: center;
   font-size: var(--font-size-min);
 }
@@ -100,7 +100,7 @@
 
 .note {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-style: italic;
 }
 
@@ -110,7 +110,7 @@
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface-2);
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-min);
 }
 
@@ -135,7 +135,7 @@
 
 .actionFailed {
   margin: 0;
-  color: var(--danger-hover);
+  color: var(--bad);
   font-weight: 600;
   font-size: var(--font-size-min);
 }
