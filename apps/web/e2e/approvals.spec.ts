@@ -169,3 +169,38 @@ test('queue: H sets a plan aside with a reason, E edits a plan with one text to 
   const row = await db.query<{ status: string }>('select status from agent_tasks where id = $1', [texts.taskId]);
   expect(row.rows[0]?.status).toBe('declined');
 });
+
+test.describe('queue on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test('cards run the full width, their buttons are 44px tall and nothing scrolls sideways', async ({
+    page,
+    loginAs,
+    markTodaySeen,
+    scenario,
+    db,
+    pools,
+  }) => {
+    await seedWeatherMovePlan(pools, db, scenario.a.companyId);
+    await loginAs(page, 'owner');
+    await markTodaySeen('owner@a.test');
+    await page.goto('/approvals');
+
+    const cards = page.getByRole('list', { name: 'Plans waiting for your OK' }).getByRole('article');
+    await expect(cards.first()).toBeVisible({ timeout: 15_000 });
+    expect(await cards.count()).toBeGreaterThanOrEqual(2);
+
+    for (const card of await cards.all()) {
+      const box = await card.boundingBox();
+      // The screen's 16px margins on both sides, give or take a rounded edge
+      expect(box?.width ?? 0).toBeGreaterThanOrEqual(390 - 2 * 16 - 2);
+      for (const button of await card.getByRole('button').all()) {
+        expect((await button.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+      }
+      for (const link of await card.getByRole('link', { name: /^Review/ }).all()) {
+        expect((await link.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+      }
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  });
+});

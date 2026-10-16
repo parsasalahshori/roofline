@@ -2,11 +2,19 @@ import type { StepResult } from '@roofline/shared';
 import type { ApprovalSummary, ReviewStepsCopy } from '@roofline/ui';
 import { stepStatusLabel } from './status.ts';
 
-/** Whole dollars, as the screen shows every amount. */
-const dollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+const wholeDollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+const exactDollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+
+/** Whole dollars when the amount is whole, with its cents when it is not, so a step's $148.50 and the total next to it add up. */
+const dollars = {
+  format: (amount: number): string => (Number.isInteger(amount) ? wholeDollars : exactDollars).format(amount),
+};
 
 /** When a plan was drafted: a short date and a clock time, in the browser's own time zone. */
 const draftedAt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+/** When a plan ends: a weekday, a short date and a clock time. */
+const endsAt = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 const stepWord = (n: number) => (n === 1 ? 'step' : 'steps');
 
@@ -61,15 +69,35 @@ export const review = {
   /** Shown with the placeholder bars while the plan loads. */
   loading: 'Loading this plan…',
   expiredTitle: 'This plan expired',
+  expiredBody: 'Nobody answered in time, so nothing was sent. Run it again to draft a fresh plan.',
   runAgain: 'Run it again',
-  /** The window's stat strip: the names above the agent, the status and the time. */
+  /** The breadcrumb's last item while the plan's own title is still loading. */
+  crumbFallback: 'Plan',
+  /** The two panels beside the steps: the facts of the plan, and what each step looks like. */
+  /** The name of a step whose plan did not keep one: "Step 2". */
+  stepFallback: (position: number): string => `Step ${position}`,
+  stepsTitle: 'Steps',
+  /** The count beside the steps' title: how many are switched on. */
+  stepsOn: (on: number, total: number): string => `${on} of ${total} on`,
+  aboutTitle: 'About this plan',
+  detailsTitle: 'Step details',
   statAgent: 'Agent',
-  statStatus: 'Status',
   statDrafted: 'Drafted',
+  statExpires: 'Expires',
+  statSaved: 'Time saved',
+  /** The time saved, as an estimate: "about 31 hours (estimate)". */
+  saved: (hours: string): string => `${hours} (estimate)`,
+  /** The name of the bar that holds the decision. */
+  barLabel: 'Your decision',
   /** When the plan was drafted, from the ISO time the server sent, in the browser's own time zone. */
   drafted: (iso: string): string => {
     const date = new Date(iso);
     return Number.isNaN(date.getTime()) ? '' : draftedAt.format(date);
+  },
+  /** When the plan ends: a weekday, a date and a clock time, in the browser's own time zone. */
+  expiresAt: (iso: string): string => {
+    const date = new Date(iso);
+    return Number.isNaN(date.getTime()) ? '' : endsAt.format(date);
   },
 
   // --- The edit sheet ---

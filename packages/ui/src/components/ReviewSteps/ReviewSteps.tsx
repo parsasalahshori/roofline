@@ -91,6 +91,7 @@ function ReviewRow({ step, mode, copy, pending, error, onToggle, onEdit, onRetry
   const canRetry = !reviewing && RETRYABLE.has(step.status) && step.canApprove && onRetry !== undefined;
   const resultLines = step.result ? copy.resultLines(step.result) : [];
   const hasFacts = preview.recipientCount !== undefined || Boolean(preview.sendTime);
+  const compact = step.compact === true;
 
   return (
     <li className={styles.row} data-state={step.enabled ? 'on' : 'off'} data-status={step.status}>
@@ -128,12 +129,12 @@ function ReviewRow({ step, mode, copy, pending, error, onToggle, onEdit, onRetry
             {preview.sendTime ? <li>{copy.sendTime(preview.sendTime)}</li> : null}
           </ul>
         ) : null}
-        {preview.messageSample ? (
+        {!compact && preview.messageSample ? (
           <p className={styles.bubble} data-wrap="anywhere">
             {preview.messageSample}
           </p>
         ) : null}
-        {preview.lines.length > 0 ? (
+        {!compact && preview.lines.length > 0 ? (
           <ul className={styles.lines}>
             {preview.lines.map((line, index) => (
               <li key={index}>{line}</li>
@@ -170,7 +171,7 @@ function ReviewRow({ step, mode, copy, pending, error, onToggle, onEdit, onRetry
 
         {canEdit ? (
           <div className={styles.actions}>
-            <Button variant="ghost" size="sm" aria-describedby={titleId} onClick={() => onEdit(step.id)}>
+            <Button variant="default" size="sm" aria-describedby={titleId} onClick={() => onEdit(step.id)}>
               {copy.edit}
             </Button>
           </div>

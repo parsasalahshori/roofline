@@ -87,7 +87,23 @@ describe('the review step the kit draws', () => {
       result: { sent: 2 },
       errorPlain: 'Something went wrong.',
       editable: false,
+      compact: false,
     });
+  });
+
+  it('names a step whose stored preview has no title or lines, and never fails over them', () => {
+    const current = task([], { status: 'needs_attention' });
+    // As a plan written without a preview comes back from the API
+    const bare = toReviewStep(step({ type: 'send_sms_batch', position: 1, preview: {} as StepView['preview'] }), current);
+    expect(bare.title).toBe('Texts sent');
+    expect(bare.preview.lines).toEqual([]);
+    expect(toReviewStep(step({ type: 'build_routes', position: 2, preview: {} as StepView['preview'] }), current).title).toBe('Step 2');
+  });
+
+  it('is compact when the step has a review kit, because its words are shown in the details beside the steps', () => {
+    const current = task([], { status: 'draft' });
+    expect(toReviewStep(step({ type: 'build_routes' }), current).compact).toBe(true);
+    expect(toReviewStep(step({ type: 'demo_noop' }), current).compact).toBe(false);
   });
 
   it('is editable when the step has text a person may rewrite', () => {

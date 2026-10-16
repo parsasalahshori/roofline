@@ -1,42 +1,103 @@
-/* The window's stat strip: the agent, the status and the drafted time, side by side and wrapping on a narrow window. */
-.stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
+/* The plan in two columns: the steps with their switches at the left, what the plan is and what each step looks like at the right. */
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+  gap: 16px;
+  align-items: start;
 }
 
-.stats > * {
-  flex: 1 1 160px;
+/*
+ * A plan with a decision to make: the page is as tall as the column, its body takes what the head leaves, and the
+ * decision bar rides the bottom edge (margin-top: auto), so a short plan keeps its bar down there like a long one, which
+ * pins it as it scrolls. The page's own bottom padding goes: the bar runs to the edge.
+ */
+.pinned[data-layout] {
+  min-height: 100%;
+  padding-bottom: 0;
 }
 
-/* The plan: its title, its summary and the steps, one column. */
-.plan {
+.pinned[data-layout="flow"] > :last-child {
+  flex: 1 0 auto;
+}
+
+.pinned .layout {
+  padding-bottom: 24px;
+}
+
+.main,
+.side {
   display: flex;
   flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* The facts of the plan: a label and its value in a row, as the details of a job read */
+.facts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+}
+
+.fact {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
   gap: 12px;
+  min-width: 0;
 }
 
-.title {
-  margin: 0;
-  font-size: 1.125rem;
-}
-
-.summary {
-  margin: 0;
+.fact > dt {
   color: var(--ink-3);
 }
 
-/* Shown while the plan loads: the words, then the placeholder bars. */
-.loading {
+.fact > dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.fact > dd a {
+  color: var(--brand-text);
+  text-underline-offset: 2px;
+}
+
+.fact > dd[data-mono="true"] {
+  font: 500 14px/1.4 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A step's own detail (its kit's preview): they run edge to edge in the panel, parted by a hairline */
+.detail {
+  padding: 16px;
+}
+
+.detail + .detail {
+  border-top: 1px solid var(--line);
+}
+
+/* Placeholders while the plan loads */
+.skeleton {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-/* A step's own detail under the list (its kit's preview): a card with its border, its corners and its padding. */
-.detail {
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-3);
-  background: var(--surface);
+/* A refusal on a plan that has no decision bar (an expired plan being run again, a plan at work) */
+.refusal {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--r-2);
+  background: var(--bad-tint);
+  color: var(--bad-text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+@media (max-width: 899.98px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

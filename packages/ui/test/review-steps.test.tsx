@@ -131,7 +131,7 @@ describe('ReviewSteps in review mode', () => {
     ]);
     const edits = screen.getAllByRole('button', { name: copy.edit });
     expect(edits).toHaveLength(1);
-    expect(edits[0]).toHaveAttribute('data-variant', 'ghost');
+    expect(edits[0]).toHaveAttribute('data-variant', 'default');
     await user.click(edits[0]!);
     expect(onEdit).toHaveBeenCalledWith('msg');
   });
@@ -226,6 +226,17 @@ describe('ReviewSteps in the Chalk Line style', () => {
     const alert = within(row('Plan the route')).getByRole('alert');
     expect(alert).toHaveTextContent('That step is locked right now.');
     expect(within(row('Text customers')).queryByRole('alert')).toBeNull();
+  });
+
+  it('keeps only the title, cost and facts of a compact step: its words are shown somewhere else', () => {
+    setup([msg({ compact: true, preview: { ...msg().preview, maxSpendCents: 900 } }), internal()]);
+    const compact = row('Text customers');
+    expect(within(compact).queryByText('Hi Dana, we are in your area this week.')).toBeNull();
+    expect(within(compact).queryByText('From the shop number')).toBeNull();
+    expect(within(compact).getByText(copy.recipients(31))).toBeInTheDocument();
+    expect(within(compact).getByText(copy.spend(900))).toBeInTheDocument();
+    // A step that is not compact still shows what it will do
+    expect(within(row('Plan the route')).getByText('12 doors, 3 hours')).toBeInTheDocument();
   });
 
   it('leaves out the footer when the screen has its own action bar', () => {
