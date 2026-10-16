@@ -46,7 +46,7 @@ export type TierOption = {
   finance: ReactNode;
 };
 
-function TierCard({ option, checked, onPick }: { option: TierOption; checked: boolean; onPick: () => void }) {
+function TierCard({ option, checked, onPick, recommended = RECOMMENDED }: { option: TierOption; checked: boolean; onPick: () => void; recommended?: Tier }) {
   const tierName = liftProposal.tier[option.tier];
   return (
     <Button
@@ -63,7 +63,7 @@ function TierCard({ option, checked, onPick }: { option: TierOption; checked: bo
       <span className={styles.tierText}>
         <span className={styles.tierHead}>
           <span className={styles.tierName}>{tierName}</span>
-          {option.tier === RECOMMENDED ? (
+          {option.tier === recommended ? (
             <span className={styles.recommended}>
               <AiMark size={11} />
               {liftProposal.recommended}
@@ -94,6 +94,7 @@ export function TierPanel({
   emptyNote,
   controls = null,
   footer,
+  recommended = RECOMMENDED,
 }: {
   title: string;
   /** The lines under the title; may follow the tier picked. */
@@ -104,9 +105,11 @@ export function TierPanel({
   emptyNote: string;
   controls?: ReactNode;
   footer: ReactNode;
+  /** The tier marked Recommended and chosen first (the better tier unless the measurement says otherwise). */
+  recommended?: Tier;
 }) {
   const [picked, setPicked] = useState<Tier | null>(null);
-  const selected = options.find((o) => o.tier === picked) ?? options.find((o) => o.tier === RECOMMENDED) ?? options[0];
+  const selected = options.find((o) => o.tier === picked) ?? options.find((o) => o.tier === recommended) ?? options[0];
   return (
     <aside className={styles.panel} aria-label={liftProposal.label}>
       <div className={styles.head}>
@@ -123,7 +126,7 @@ export function TierPanel({
         {options.length > 0 ? (
           <div className={styles.tiers} role="radiogroup" aria-label={liftProposal.tiersLabel}>
             {options.map((o) => (
-              <TierCard key={o.tier} option={o} checked={o.tier === selected?.tier} onPick={() => setPicked(o.tier)} />
+              <TierCard key={o.tier} option={o} checked={o.tier === selected?.tier} onPick={() => setPicked(o.tier)} recommended={recommended} />
             ))}
           </div>
         ) : pending ? (

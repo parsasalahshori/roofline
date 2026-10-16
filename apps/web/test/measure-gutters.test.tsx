@@ -18,8 +18,8 @@ const fake = vi.hoisted(() => {
     constructor(readonly options: Record<string, unknown>) {
       FakeMap.instances.push(this);
     }
-    // A degree is 100,000 pixels: the house is a few hundred pixels across.
-    project = ([lng, lat]: [number, number]) => ({ x: (lng + 96.8) * 1e5 + 400, y: (32.8 - lat) * 1e5 + 300 });
+    // A degree is 5,000,000 pixels: the 12 m house is about 640 pixels across.
+    project = ([lng, lat]: [number, number]) => ({ x: (lng + 96.8) * 5e6 + 400, y: (32.8 - lat) * 5e6 + 300 });
     fitBounds = vi.fn();
     isStyleLoaded = () => true;
     resize = vi.fn();

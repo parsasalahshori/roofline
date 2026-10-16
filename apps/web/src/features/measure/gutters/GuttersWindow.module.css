@@ -62,17 +62,18 @@
 }
 
 .spout {
-  fill: #ffffff;
-  stroke: #0b1a24;
+  fill: #0b3b52;
+  stroke: #ffffff;
   stroke-width: 2.5;
 }
 
-/* A run's length: a pill on the outside of the eave, a button that leaves the run out or puts it back */
-.runLabel {
+/* A run's length: a pill on the outside of the eave, a button that leaves the run out or puts it back. The kit's ghost
+   button sets its own background, so these rules are written specific enough to win. */
+.runLabel[data-run-label][data-kind] {
   position: absolute;
   z-index: 2;
   min-width: 44px;
-  min-height: 28px;
+  min-height: 26px;
   padding: 0 9px;
   transform: translate(-50%, -50%);
   border-radius: 999px;
@@ -85,22 +86,26 @@
   touch-action: manipulation;
 }
 
-.runLabel[data-kind="low-attachment"] {
+.runLabel[data-run-label][data-kind="low-attachment"] {
   background: #7fe3ff;
 }
 
-.runLabel[data-excluded="true"] {
+.runLabel[data-run-label][data-excluded="true"] {
   background: var(--ds-glass-strong, rgba(246, 247, 248, 0.97));
   color: var(--ds-text-label, #505b64);
   text-decoration: line-through;
 }
 
-.runLabel:focus-visible {
+.runLabel[data-run-label][data-kind]:hover:not(:disabled) {
+  background: #7ddcf5;
+}
+
+.runLabel[data-run-label][data-kind]:focus-visible {
   outline: 3px solid var(--ds-accent, #ffc21a);
   outline-offset: 2px;
 }
 
-.runLabel:disabled {
+.runLabel[data-run-label][data-kind]:disabled {
   opacity: 1;
   cursor: default;
 }
@@ -150,11 +155,12 @@
 }
 
 .legendDot {
-  width: 10px;
-  height: 10px;
-  border: 2px solid #0b1a24;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #fff;
   border-radius: 50%;
-  background: #fff;
+  background: #0b3b52;
+  box-shadow: 0 0 0 1px rgba(21, 28, 34, 0.35);
   box-sizing: border-box;
 }
 
@@ -192,7 +198,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 0 16px 10px;
+  padding: 0 0 10px;
 }
 
 .reason {
@@ -289,6 +295,13 @@
 @media (max-width: 899.98px) {
   .stage {
     min-height: 560px;
+  }
+
+  /* Under the "worked out" chip, not over it */
+  .legend {
+    top: 52px;
+    right: auto;
+    left: 14px;
   }
 
   .overlay {

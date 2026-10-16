@@ -46,6 +46,8 @@ const RUNS_FROM = 0.3;
 const RUNS_TO = 0.55;
 const SPOUTS_TO = 0.8;
 const LABEL_OFFSET_PX = 18;
+/** Runs shorter than this on screen get no length pill (pills would cover each other and the roof). */
+const PILL_MIN_PX = 56;
 
 function readMapEnv(): MapEnv {
   return { maptilerKey: import.meta.env.VITE_MAPTILER_KEY, tiles: import.meta.env.VITE_MAP_TILES, imagery: import.meta.env.VITE_MAP_IMAGERY };
@@ -131,6 +133,33 @@ function GutterMap({
     }
     const loose = map as unknown as Loose;
     map.on('error', () => setFailed(true));
+    // Frames the roof above the card (the card covers more of a phone's map, which is portrait)
+    const fit = () => {
+      const ring = startRef.current.outline;
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      if (ring.length < 3 || w < 50 || h < 50) return;
+      const lngs = ring.map((p) => p[0]);
+      const lats = ring.map((p) => p[1]);
+      try {
+        loose.fitBounds?.(
+          [
+            [Math.min(...lngs), Math.min(...lats)],
+            [Math.max(...lngs), Math.max(...lats)],
+          ],
+          {
+            padding:
+              h > w
+                ? { top: Math.round(h * 0.14), bottom: Math.round(h * 0.56), left: Math.round(w * 0.08), right: Math.round(w * 0.08) }
+                : { top: Math.round(h * 0.14), bottom: Math.round(h * 0.38), left: Math.round(w * 0.18), right: Math.round(w * 0.18) },
+            maxZoom: FIT_MAX_ZOOM,
+            duration: 0,
+          },
+        );
+      } catch {
+        // A map too small to fit into keeps its start view.
+      }
+    };
     let started = false;
     const setup = () => {
       if (started) return;
@@ -140,33 +169,19 @@ function GutterMap({
         return;
       }
       started = true;
-      const ring = startRef.current.outline;
-      if (ring.length >= 3) {
-        const lngs = ring.map((p) => p[0]);
-        const lats = ring.map((p) => p[1]);
-        const w = container.clientWidth;
-        const h = container.clientHeight;
-        try {
-          loose.fitBounds?.(
-            [
-              [Math.min(...lngs), Math.min(...lats)],
-              [Math.max(...lngs), Math.max(...lats)],
-            ],
-            {
-              padding: { top: Math.round(h * 0.14), bottom: Math.round(h * 0.38), left: Math.round(w * 0.18), right: Math.round(w * 0.18) },
-              maxZoom: FIT_MAX_ZOOM,
-              duration: 0,
-            },
-          );
-        } catch {
-          // A map too small to fit into keeps its start view.
-        }
-      }
+      fit();
       setInstance(map);
     };
     map.on('styledata', setup);
     map.on('load', setup);
-    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(() => loose.resize?.()) : null;
+    // The map's box changes as the columns settle (and on a phone's steps): resize it and frame the roof again
+    const observer =
+      typeof ResizeObserver === 'function'
+        ? new ResizeObserver(() => {
+            loose.resize?.();
+            if (started) fit();
+          })
+        : null;
     observer?.observe(container);
     return () => {
       observer?.disconnect();
@@ -230,7 +245,7 @@ function GutterMap({
                 ) : null,
               )
             : null}
-          {spouts.slice(0, shownSpouts).map((s) => (s.at ? <circle key={s.key} cx={s.at.x} cy={s.at.y} r={6} className={styles.spout} data-downspout="" /> : null))}
+          {spouts.slice(0, shownSpouts).map((s) => (s.at ? <circle key={s.key} cx={s.at.x} cy={s.at.y} r={7} className={styles.spout} data-downspout="" /> : null))}
         </svg>
       ) : null}
       {instance !== null && spoutsShare > 0
@@ -242,6 +257,8 @@ function GutterMap({
             // Outward (the roof is on the run's left in map terms; on screen y points down, so the right-hand normal)
             const nx = -dy / l;
             const ny = dx / l;
+            // A run too short on screen for a pill has none (its line still takes a tap; Adjust lists every run)
+            if (l < PILL_MIN_PX) return null;
             const x = (a.x + b.x) / 2 - nx * LABEL_OFFSET_PX;
             const y = (a.y + b.y) / 2 - ny * LABEL_OFFSET_PX;
             const side = copy.side[r.side];
@@ -575,6 +592,7 @@ function Loaded({ m, server, onQuoteReady }: { m: MeasurementView; server: Gutte
               </>
             }
             options={view.quotes === null ? [] : quoteOptions(view.quotes)}
+            recommended={view.size.recommended === '6in' ? 'better' : 'good'}
             pending={false}
             emptyNote={view.quotes === null ? copy.noMoney : copy.noQuote}
             footer={
