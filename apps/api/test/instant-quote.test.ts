@@ -489,6 +489,19 @@ describe("the page's checks: a call back instead of a doubtful price", () => {
     expect(t.solar.calls).toHaveLength(0);
   });
 
+  test('a call back for how the address was typed is not handed to a visitor who typed it right', async () => {
+    const RIGHT = '19 Elmwood St, Omaha, NE 68102';
+    await houseAt(RIGHT);
+    const real = t.deps.geocoder.geocode.bind(t.deps.geocoder);
+    // The lookup "corrects" Elm St to Elmwood St: a call back, filed under Elmwood St.
+    vi.spyOn(t.deps.geocoder, 'geocode').mockImplementationOnce(async (_a, o) => real(RIGHT, o));
+    const wrong = await estimated(ACME, '19 Elm St, Omaha, NE 68102');
+    expect(wrong.status).toBe('fallback');
+    const right = await estimated(ACME, RIGHT);
+    expect(right.quoteId).not.toBe(wrong.quoteId);
+    expect(right.status).toBe('ready');
+  });
+
   test("a commercial building is measured, then a call back that does not use up the daily cap; every measurement stays under twice the cap", async () => {
     await q(`update company_settings set quote_daily_cap = 1 where company_id = $1`, [t.seed.a.companyId]);
     await houseAt(BIG, 2);

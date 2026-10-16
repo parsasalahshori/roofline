@@ -211,6 +211,9 @@ async function locate(deps: AppDeps, ctx: TenantContext, address: string): Promi
   }
 }
 
+/** The call backs a measurement decided: the same home's answer whoever asks, however it was typed. */
+const MEASURED_CALLBACKS: ReadonlySet<string> = new Set<QuoteCallbackReason>(['roof-review', 'too-big', 'flat-unmeasured']);
+
 /** Why a stored call back was decided (gates.ts), plus 'visit-only': the page offers nothing priced online. */
 export type StoredCallback = QuoteCallbackReason | 'visit-only';
 
@@ -277,9 +280,13 @@ export async function estimateForAddress(
   // Only gutters on the page: they are priced at the visit, so there is nothing to measure.
   if (!wantsRoof && !wantsWindows) return fallback({ callback: 'visit-only' });
 
+  // By the found address, a call back is reused only when the measurement decided it: one the lookup decided was
+  // about how the address was typed (a unit, another street), which this visitor typed differently.
   const found = await withTenant(deps.pools, ctx, async (tx) => {
     const hit = await findCachedEstimate(tx, ctx, { addressKey }, now);
-    if (hit) await noteEstimateReused(tx, ctx, hit.id, now);
+    const callback = (hit?.result as { callback?: string } | undefined)?.callback;
+    if (hit === null || (callback !== undefined && !MEASURED_CALLBACKS.has(callback))) return null;
+    await noteEstimateReused(tx, ctx, hit.id, now);
     return hit;
   });
   if (found) return estimateView(found);
