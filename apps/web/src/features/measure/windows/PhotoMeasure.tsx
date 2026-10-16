@@ -238,19 +238,29 @@ export function PhotoMeasure({
         };
   const unchanged = saved !== null && input !== null && sizingKey(saved) === sizingKey(input);
 
-  const measurement: WindowPhotoMeasurement | null = useMemo(
-    () => (sheetMode && engine.cv !== null && detection !== null ? measureOnSheet(engine.cv, upload, detection, windowQuad, offsetIn, { cornerSigmaPx, printScale }) : null),
+  // Each outline on offer, sized (for "A: 35 7/8 x 59 3/4"); the picked one is the measurement
+  const offered = useMemo(
+    () =>
+      sheetMode && pick !== null && engine.cv !== null && detection !== null
+        ? (snapInfo?.candidates ?? []).slice(0, PICK_MAX).map((c, i) => ({
+            ...c,
+            size: measureOnSheet(engine.cv!, upload, detection, c.quad, offsetIn, { cornerSigmaPx: i === 0 ? snapInfo?.cornerSigmaPx : undefined, printScale }),
+          }))
+        : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps -- detection is derived from find / initial
-    [sheetMode, engine.cv, find, upload, windowQuad, offsetIn, cornerSigmaPx, printScale],
+    [sheetMode, pick, engine.cv, find, upload, snapInfo, offsetIn, printScale],
   );
-  // Each outline on offer, sized (for "A: 35 7/8 x 59 3/4")
-  const offered =
-    sheetMode && pick !== null && engine.cv !== null && detection !== null
-      ? (snapInfo?.candidates ?? []).slice(0, PICK_MAX).map((c, i) => ({
-          ...c,
-          size: measureOnSheet(engine.cv!, upload, detection, c.quad, offsetIn, { cornerSigmaPx: i === 0 ? snapInfo?.cornerSigmaPx : undefined, printScale }),
-        }))
-      : [];
+  const pickedSize = pick !== null && offered.length > 1 ? (offered[pick.index]?.size ?? null) : undefined;
+  const measurement: WindowPhotoMeasurement | null = useMemo(
+    () =>
+      pickedSize !== undefined
+        ? pickedSize
+        : sheetMode && engine.cv !== null && detection !== null
+          ? measureOnSheet(engine.cv, upload, detection, windowQuad, offsetIn, { cornerSigmaPx, printScale })
+          : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- detection is derived from find / initial
+    [pickedSize, sheetMode, engine.cv, find, upload, windowQuad, offsetIn, cornerSigmaPx, printScale],
+  );
   const size: { widthIn: number; heightIn: number } | null = unchanged
     ? { widthIn: saved.widthIn, heightIn: saved.heightIn }
     : sheetMode
