@@ -7,8 +7,10 @@ on:
   push:
     # Ledger, brief, report and spec/plan commits (ops/, docs/) must not start a run, because a new run cancels the
     # one in progress for the same branch.
-    paths-ignore: ['ops/**', 'docs/**']
+    paths-ignore: ['ops/**', 'docs/**', 'apps/ios/**']
+  # The native iPhone app (apps/ios) is Swift, built with Xcode on a Mac; nothing in this Node job checks it.
   pull_request:
+    paths-ignore: ['apps/ios/**']
   workflow_dispatch:
 
 permissions:
