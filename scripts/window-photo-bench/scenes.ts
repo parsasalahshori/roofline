@@ -23,13 +23,13 @@ const PALETTES: SynthScene['colors'][] = [
 ];
 
 /** `count` windows, three photos each, from one seed. */
-export function benchWindows(count: number, seed: number): BenchWindow[] {
+export function benchWindows(count: number, seed: number, o: { twoSheets?: boolean; big?: boolean } = {}): BenchWindow[] {
   const rnd = mulberry32(seed);
   const U = (a: number, b: number) => a + (b - a) * rnd();
   const out: BenchWindow[] = [];
   for (let id = 0; id < count; id++) {
-    const widthIn = Math.round(U(20, 60) * 8) / 8;
-    const heightIn = Math.round(U(24, 72) * 8) / 8;
+    const widthIn = Math.round((o.big ? U(44, 60) : U(20, 60)) * 8) / 8;
+    const heightIn = Math.round((o.big ? U(56, 72) : U(24, 72)) * 8) / 8;
     const offsetIn = Math.round(U(0, 2) * 8) / 8;
     const colors = PALETTES[Math.floor(rnd() * PALETTES.length)]!;
     const grille = rnd() < 0.5;
@@ -74,7 +74,8 @@ export function benchWindows(count: number, seed: number): BenchWindow[] {
           rollDeg: U(-3, 3),
           aim: [widthIn / 2 + U(-0.08, 0.08) * widthIn, heightIn / 2 + U(-0.08, 0.08) * heightIn],
           window: { widthIn, heightIn, offsetIn, trimIn: 3.5, frameIn: 1.5, sashIn: 1.25, grille },
-          sheet: { paper, xIn: sx, yIn: sy, rotDeg, curlIn },
+          sheet: o.big ? { paper, xIn: widthIn - inner - sheetW - 0.5, yIn: heightIn - inner - sheetH - 0.5, rotDeg, curlIn } : { paper, xIn: sx, yIn: sy, rotDeg, curlIn },
+          sheet2: o.twoSheets ? { paper, xIn: inner + 0.5, yIn: inner + 0.5, rotDeg: -rotDeg, curlIn } : null,
           k1: U(-0.01, 0.01),
           light: { gain: U(0.75, 1.1), gradX: U(-0.3, 0.3), gradY: U(-0.3, 0.3), vignette: U(0.1, 0.4) },
           colors,

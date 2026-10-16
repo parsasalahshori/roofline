@@ -34,6 +34,10 @@ const NAMES: Record<string, string> = {
   sheetSnap: 'sheet + snapping, no offset correction',
   sheetSnapOffset: 'sheet + snapping + offset correction',
   sheetSnapExactOffset: '(diagnostic) same, offset known exactly',
+  homographySnapOffset: '(A/B) same, free 8-dof homography instead of the known-focal pose',
+  snap1Offset: 'sheet + snapping + offset, 1% clicks',
+  snap4Picked: 'end-to-end, 4% clicks, person picks among the top 3 outlines',
+  snap1Picked: 'end-to-end, 1% clicks, person picks among the top 3 outlines',
   combined3: 'sheet + snapping + offset, 3 photos combined',
 };
 
@@ -122,6 +126,21 @@ async function main() {
     cal.filter((r) => Math.abs(r.results.sheetSnapOffset!.w - r.truth.w) <= k * r.results.sheetSnapOffset!.uw! && Math.abs(r.results.sheetSnapOffset!.h - r.truth.h) <= k * r.results.sheetSnapOffset!.uh!).length / Math.max(1, cal.length);
   md += `\n### Reported uncertainty (sheet + snapping + offset)\n\nBoth width and height inside 1 sigma: ${(100 * within(1)).toFixed(0)}% (ideal about 47% for two independent normals), inside 2 sigma: ${(100 * within(2)).toFixed(0)}% (ideal about 91%). Median reported sigma: width ${median(cal.map((r) => r.results.sheetSnapOffset!.uw!)).toFixed(3)} in, height ${median(cal.map((r) => r.results.sheetSnapOffset!.uh!)).toFixed(3)} in.\n`;
 
+  // Right boundary in the ranked outlines.
+  const rk = (key: 'rank4' | 'rank1', zone: (r: PhotoResult) => boolean) => {
+    const sel = rs.filter((r) => r.detected && zone(r));
+    const pct = (k: number) => ((100 * sel.filter((r) => r[key] >= 1 && r[key] <= k).length) / Math.max(1, sel.length)).toFixed(0);
+    return `top 1 ${pct(1)}%, top 2 ${pct(2)}%, top 3 ${pct(3)}% (n ${sel.length})`;
+  };
+  md += `\n### Right boundary among the ranked outlines\n\n- 4% clicks: all ${rk('rank4', () => true)}; target zone ${rk('rank4', near)}.\n- 1% clicks: all ${rk('rank1', () => true)}; target zone ${rk('rank1', near)}.\n`;
+  // Sigma calibration: the factor that makes 68% of normalized errors fall inside 1 sigma (target zone, end-to-end 1%).
+  const z = rs
+    .filter((r) => near(r) && r.results.snap1Picked !== null)
+    .flatMap((r) => [Math.abs(r.results.snap1Picked!.w - r.truth.w) / r.results.snap1Picked!.uw!, Math.abs(r.results.snap1Picked!.h - r.truth.h) / r.results.snap1Picked!.uh!]);
+  const k68 = quantile(z, 0.68);
+  const cover = (k: number, f: number) => ((100 * z.filter((v) => v <= k * f).length) / Math.max(1, z.length)).toFixed(0);
+  md += `\n### Sigma calibration (target zone, end-to-end 1%)\n\n- Raw sigma covers ${cover(1, 1)}% at 1 sigma, ${cover(2, 1)}% at 2 sigma.\n- Factor that makes 1 sigma cover 68% here: ${k68.toFixed(2)} (95% needs ${quantile(z, 0.95).toFixed(2)}). With SIGMA_SCALE=${process.env.SIGMA_SCALE ?? '1'} applied by the caller: ${cover(1, Number(process.env.SIGMA_SCALE ?? 1))}% / ${cover(2, Number(process.env.SIGMA_SCALE ?? 1))}%.\n`;
+
   // Engine diagnostics.
   const det = rs.filter((r) => r.detected);
   const snapErr = rs.flatMap((r) => r.snapCornerErrPx ?? []);
@@ -147,7 +166,7 @@ async function main() {
   console.log(md);
 
   // Example photos: truth green, rough yellow, snapped red, the sheet's outline blue.
-  const wins = benchWindows(windows, seed);
+  const wins = benchWindows(windows, seed, { twoSheets: process.env.TWO_SHEETS === '1', big: process.env.BIG === '1' });
   for (const [wi, k] of [
     [0, 0],
     [1, 1],

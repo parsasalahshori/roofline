@@ -10,7 +10,7 @@ import { mulberry32, renderScene } from '../../apps/web/src/features/measure/win
 import { snapQuadSync } from '../../apps/web/src/features/measure/windows/cv/snap-quad.ts';
 import type { BenchPhoto } from './scenes.ts';
 
-export const METHODS = ['paper4', 'knownSide', 'sheetNoSnap', 'sheetSnap', 'sheetSnapOffset', 'sheetSnapExactOffset'] as const;
+export const METHODS = ['paper4', 'knownSide', 'sheetNoSnap', 'sheetSnap', 'sheetSnapOffset', 'sheetSnapExactOffset', 'homographySnapOffset', 'snap1Offset', 'snap4Picked', 'snap1Picked'] as const;
 export type Method = (typeof METHODS)[number];
 export type MethodResult = { w: number; h: number; uw?: number; uh?: number; warnings?: string[] } | null;
 export type PhotoResult = {
@@ -24,6 +24,10 @@ export type PhotoResult = {
   points: number;
   rmsPx: number | null;
   snapCornerErrPx: number[] | null;
+  /** Rank (1-based) of the first candidate on the right boundary (all corners within 3 px), 0 = none; 4% and 1% clicks. */
+  rank4: number;
+  rank1: number;
+  sheets: number;
   rivals: number[] | null;
   ms: { render: number; detect: number; snap: number };
   results: Record<Method, MethodResult>;
@@ -74,13 +78,31 @@ export function evaluatePhoto(windowId: number, photoIdx: number, bp: BenchPhoto
     const a = 2 * Math.PI * rnd();
     return [x + r * Math.cos(a), y + r * Math.sin(a)] as Pt;
   }) as Quad;
+  const rough1 = truthQ.map(([x, y]) => {
+    const r = 0.01 * sidePx * Math.sqrt(rnd());
+    const a = 2 * Math.PI * rnd();
+    return [x + r * Math.cos(a), y + r * Math.sin(a)] as Pt;
+  }) as Quad;
+  const sheetOpt = det === null ? undefined : { imagePoints: det.imagePoints, sheetPointsIn: det.sheetPointsIn, sheetIndex: det.sheetIndex };
   t = Date.now();
-  const snap = snapQuadSync(img, rough);
+  const snap = snapQuadSync(img, rough, { sheet: sheetOpt });
   const tSnap = Date.now() - t;
+  const snap1 = snapQuadSync(img, rough1, { sheet: sheetOpt });
+  const right = (q: Quad) => q.every((p, k) => Math.hypot(p[0] - truthQ[k]![0], p[1] - truthQ[k]![1]) <= 3);
+  const listOf = (s: typeof snap) => (s.candidates !== undefined && s.candidates.length > 0 ? s.candidates.map((c) => c.quad) : [s.quad]);
+  const rankOf = (s: typeof snap) => {
+    const i = listOf(s).findIndex(right);
+    return i < 0 ? 0 : i + 1;
+  };
+  // The person picks the right outline when the screen asks (top 3 shown when the top two are close).
+  const picked = (s: typeof snap): Quad => {
+    const r = rankOf(s);
+    return r >= 1 && r <= 3 ? listOf(s)[r - 1]! : s.quad;
+  };
   const enteredOffset = truth.offsetIn + gauss() / 8;
-  const m = (quad: Quad, offset: number, sigma?: [number, number, number, number] | number): MethodResult => {
+  const m = (quad: Quad, offset: number, sigma?: [number, number, number, number] | number, model: 'pose' | 'homography' = 'pose'): MethodResult => {
     if (det === null) return null;
-    const r = measureWithSheet({ widthPx: W, heightPx: H, focalPx, imagePoints: det.imagePoints, sheetPointsIn: det.sheetPointsIn, windowQuad: quad, planeOffsetIn: offset, cornerSigmaPx: sigma, offsetSigmaIn: 0.125 });
+    const r = measureWithSheet({ widthPx: W, heightPx: H, focalPx, imagePoints: det.imagePoints, sheetPointsIn: det.sheetPointsIn, sheetIndex: det.sheetIndex, windowQuad: quad, planeOffsetIn: offset, cornerSigmaPx: sigma, offsetSigmaIn: 0.125, planeModel: model });
     return r === null ? null : { w: r.widthIn, h: r.heightIn, uw: r.uncertaintyIn.width, uh: r.uncertaintyIn.height, warnings: r.warnings };
   };
   results.sheetNoSnap = m(clicked, 0, 0.25 * pxPerIn);
@@ -88,6 +110,10 @@ export function evaluatePhoto(windowId: number, photoIdx: number, bp: BenchPhoto
   results.sheetSnapOffset = m(snap.quad, enteredOffset, snap.cornerSigmaPx);
   // Diagnostic: the offset known exactly (what the person's 1/8 in offset guess costs).
   results.sheetSnapExactOffset = m(snap.quad, truth.offsetIn, snap.cornerSigmaPx);
+  results.homographySnapOffset = m(snap.quad, enteredOffset, snap.cornerSigmaPx, 'homography');
+  results.snap1Offset = m(snap1.quad, enteredOffset, snap1.cornerSigmaPx);
+  results.snap4Picked = m(picked(snap), enteredOffset, snap.cornerSigmaPx);
+  results.snap1Picked = m(picked(snap1), enteredOffset, snap1.cornerSigmaPx);
   // Camera geometry for the bins: distance to the window's centre and angle off square.
   const sc = bp.scene;
   const out = {
@@ -101,6 +127,9 @@ export function evaluatePhoto(windowId: number, photoIdx: number, bp: BenchPhoto
     points: det?.imagePoints.length ?? 0,
     rmsPx: det?.rmsErrorPx ?? null,
     snapCornerErrPx: snap.quad.map((p, k) => Math.hypot(p[0] - truthQ[k]![0], p[1] - truthQ[k]![1])),
+    rank4: rankOf(snap),
+    rank1: rankOf(snap1),
+    sheets: det?.sheets ?? (det === null ? 0 : 1),
     rivals: snap.rivals,
     ms: { render: tRender, detect: tDetect, snap: tSnap },
     results,

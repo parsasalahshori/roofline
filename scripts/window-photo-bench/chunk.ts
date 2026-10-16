@@ -4,7 +4,7 @@ import { benchWindows } from './scenes.ts';
 import { evaluatePhoto } from './evaluate.ts';
 
 const [count, seed, worker, workers, outFile] = process.argv.slice(2);
-const wins = benchWindows(Number(count), Number(seed));
+const wins = benchWindows(Number(count), Number(seed), { twoSheets: process.env.TWO_SHEETS === '1', big: process.env.BIG === '1' });
 let job = 0;
 for (const w of wins) {
   for (let k = 0; k < w.photos.length; k++, job++) {
