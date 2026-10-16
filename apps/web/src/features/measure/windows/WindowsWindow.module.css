@@ -250,7 +250,7 @@
   touch-action: none;
 }
 
-.photoFrame[data-dragging="true"] {
+.photoFrame[data-dragging] {
   touch-action: none;
 }
 
@@ -745,4 +745,120 @@
   .box {
     transition: none;
   }
+}
+
+/* Adjust: the whole photo, zoomed and panned with a pinch, the wheel or these buttons */
+.photoArea[data-fit="zoom"] {
+  background: #0f1418;
+}
+
+.photoFrame[data-adjusting="true"] {
+  touch-action: none;
+}
+
+.zoomBar {
+  position: absolute;
+  z-index: 6;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  max-width: calc(100% - 16px);
+  padding: 4px;
+  border-radius: 10px;
+  background: rgba(21, 28, 34, 0.78);
+  color: #fff;
+}
+
+.zoomButton,
+.zoomText {
+  min-width: 44px;
+  min-height: 44px;
+  color: #fff;
+}
+
+.zoomText {
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.zoomValue {
+  min-width: 44px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* The door marked as a ruler */
+.rulerBox {
+  position: absolute;
+  z-index: 2;
+  box-sizing: border-box;
+  border: 2px dashed #5cc8ff;
+  background: rgba(92, 200, 255, 0.12);
+  pointer-events: none;
+}
+
+.rulerLabel {
+  position: absolute;
+  bottom: calc(100% + 3px);
+  left: -2px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #0b4f73;
+  color: #fff;
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.drawing[data-ruler="true"] {
+  border-color: #5cc8ff;
+  background: rgba(92, 200, 255, 0.18);
+}
+
+.photoFrame[data-ruler-marking="true"] {
+  cursor: crosshair;
+}
+
+.rulerRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.rulerField {
+  display: flex;
+  flex: 1 1 140px;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.rulerField select {
+  min-height: 44px;
+  padding: 0 8px;
+  border: 1px solid var(--ds-border, #c9d1d8);
+  border-radius: 8px;
+  background: var(--ds-surface, #fff);
+  font: inherit;
+}
+
+.rulerResult {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--ds-surface-sunken, #f2f5f7);
+  font-size: 13px;
+}
+
+.rulerWarn {
+  color: #8a5300;
 }

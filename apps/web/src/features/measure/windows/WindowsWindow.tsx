@@ -1,8 +1,14 @@
 import { Banner, Button, Checkbox, EmptyState, Field } from '@roofline/ui';
 import {
   priceWindows,
+  RULER_KINDS,
+  RULER_MAX_IN,
+  RULER_MIN_IN,
+  RULER_SIZES,
   WINDOW_SIZE_CLASSES,
+  type DoorRuler,
   type MarkedBox,
+  type RulerKind,
   type PhotoWindowInput,
   type WindowMeasurementPatch,
   type WindowMeasurementView,
@@ -24,7 +30,7 @@ import { TierPanel, type TierOption } from '../lift/ProposalPanel.tsx';
 import { wholeDollars } from '../lift/proposalLines.ts';
 import panelStyles from '../lift/ProposalPanel.module.css';
 import { photoSrc, useCreateWindowMeasurement, usePatchWindowMeasurement, useWindowMeasurement, useWindowPreview } from './api.ts';
-import { liveCounts, newMarkId, readAdjustments, shownWindows, tiersFromQuotes, totalOf, type Box, type Corners } from './model.ts';
+import { liveCounts, newMarkId, readAdjustments, rulerSizeLabel, shownWindows, tiersFromQuotes, totalOf, type Box, type Corners } from './model.ts';
 import { PhotoStage, wallDrawn, type StageEdit } from './PhotoStage.tsx';
 import { livePhotoWindows, type LocalSheetSize } from './photoModel.ts';
 import { PhotoWindowsFlow, PhotoWindowsList, useWindowUploads, type FlowAt } from './PhotoWindows.tsx';
@@ -44,7 +50,143 @@ function monthYear(capturedOn: string | null | undefined): string | null {
 }
 
 type Adj = ReturnType<typeof readAdjustments>;
-type Snapshot = Pick<Adj, 'marked' | 'wallCorners'>;
+type Snapshot = Pick<Adj, 'marked' | 'wallCorners' | 'ruler'>;
+
+/** How a ruler reads: its kind's name and its size ("Garage door", "16 × 7 ft"). */
+function rulerWords(r: Pick<DoorRuler, 'kind' | 'widthIn' | 'heightIn'>): { kind: string; size: string } {
+  return { kind: copy.rulerKind[r.kind], size: rulerSizeLabel(r.widthIn, r.heightIn, r.kind) };
+}
+
+/**
+ * Adjust's "Door as a ruler": which door (garage door first: it is flush with its wall), its standard size or a
+ * custom one, then Mark the door on the photo. Once the server has applied it: what it was sized with and how.
+ */
+function RulerPanel({
+  id,
+  ruler,
+  applied,
+  marking,
+  onMark,
+  onChange,
+  onRemove,
+}: {
+  id: string;
+  ruler: DoorRuler | null;
+  applied: WindowMeasurementView['ruler'];
+  marking: boolean;
+  onMark: (next: boolean) => void;
+  onChange: (size: Pick<DoorRuler, 'kind' | 'widthIn' | 'heightIn'>) => void;
+  onRemove: () => void;
+}) {
+  const [kind, setKind] = useState<RulerKind>(ruler?.kind ?? 'garage-door');
+  const [index, setIndex] = useState(() =>
+    ruler === null || ruler.kind === 'custom' ? 0 : Math.max(0, RULER_SIZES[ruler.kind].findIndex((z) => z.widthIn === ruler.widthIn && z.heightIn === ruler.heightIn)),
+  );
+  const [custom, setCustom] = useState({ w: String(ruler?.kind === 'custom' ? ruler.widthIn : 36), h: String(ruler?.kind === 'custom' ? ruler.heightIn : 80) });
+  const inRange = (v: number) => Number.isFinite(v) && v >= RULER_MIN_IN && v <= RULER_MAX_IN;
+  /** The size picked: a standard one, or the custom one when both sides are in range. */
+  const picked = (k: RulerKind, i: number, c: { w: string; h: string }): Pick<DoorRuler, 'kind' | 'widthIn' | 'heightIn'> | null => {
+    if (k !== 'custom') return { kind: k, ...RULER_SIZES[k][i]! };
+    const size = { widthIn: Number(c.w), heightIn: Number(c.h) };
+    return inRange(size.widthIn) && inRange(size.heightIn) ? { kind: k, ...size } : null;
+  };
+  const chosen = picked(kind, index, custom);
+  const pick = (k: RulerKind, i: number, c: { w: string; h: string }, now = true) => {
+    setKind(k);
+    setIndex(i);
+    setCustom(c);
+    const next = picked(k, i, c);
+    if (next !== null && now) onChange(next);
+  };
+  const sizes = kind === 'custom' ? [] : RULER_SIZES[kind];
+  const words = applied != null ? rulerWords(applied) : null;
+  return (
+    <section className={frame.panel} aria-labelledby={`ruler-${id}`} data-ruler-panel="">
+      <h3 id={`ruler-${id}`} className={frame.title}>
+        {copy.rulerTitle}
+      </h3>
+      <p className={frame.hint}>{copy.rulerHint}</p>
+      <div className={styles.rulerRow}>
+        <label className={styles.rulerField}>
+          <span>{copy.rulerKindLabel}</span>
+          <select
+            value={kind}
+            onChange={(e) => pick(e.currentTarget.value as RulerKind, 0, custom)}
+          >
+            {RULER_KINDS.map((k) => (
+              <option key={k} value={k}>
+                {copy.rulerKind[k]}
+              </option>
+            ))}
+          </select>
+        </label>
+        {kind !== 'custom' ? (
+          <label className={styles.rulerField}>
+            <span>{copy.rulerSizeLabel}</span>
+            <select
+              value={String(index)}
+              onChange={(e) => pick(kind, Number(e.currentTarget.value), custom)}
+            >
+              {sizes.map((z, i) => (
+                <option key={`${z.widthIn}x${z.heightIn}`} value={String(i)}>
+                  {rulerSizeLabel(z.widthIn, z.heightIn, kind)}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <>
+            <Field
+              label={copy.rulerCustomWidth}
+              inputMode="numeric"
+              value={custom.w}
+              onChange={(e) => pick('custom', 0, { ...custom, w: e.currentTarget.value }, false)}
+              onBlur={() => pick('custom', 0, custom)}
+            />
+            <Field
+              label={copy.rulerCustomHeight}
+              inputMode="numeric"
+              value={custom.h}
+              onChange={(e) => pick('custom', 0, { ...custom, h: e.currentTarget.value }, false)}
+              onBlur={() => pick('custom', 0, custom)}
+            />
+          </>
+        )}
+      </div>
+      <div className={styles.markRow}>
+        <Button
+          aria-pressed={marking}
+          disabled={chosen === null}
+          onClick={() => {
+            if (chosen !== null) onChange(chosen);
+            onMark(!marking);
+          }}
+          data-ruler-size={chosen === null ? undefined : `${chosen.widthIn}x${chosen.heightIn}`}>
+          {marking ? copy.rulerMarkStop : ruler !== null ? copy.rulerMarkAgain : copy.rulerMark}
+        </Button>
+        {ruler !== null ? (
+          <Button variant="ghost" onClick={onRemove}>
+            {copy.rulerRemove}
+          </Button>
+        ) : null}
+      </div>
+      {marking ? <p className={frame.hint}>{copy.rulerOn}</p> : null}
+      {ruler !== null && (applied == null || applied.widthIn !== ruler.widthIn || applied.heightIn !== ruler.heightIn || applied.photoId !== ruler.photoId) ? (
+        <p className={frame.hint} role="status">
+          {copy.rulerPending}
+        </p>
+      ) : null}
+      {applied != null && words !== null ? (
+        <div className={styles.rulerResult} role="status" data-agreement={applied.agreement}>
+          <strong>{copy.rulerUsed(words.kind, words.size)}</strong>
+          <span>{copy.rulerAssumption(applied.rangeM.before, applied.rangeM.after)}</span>
+          {applied.agreement === 'check' ? <span className={styles.rulerWarn}>{copy.rulerCheck}</span> : null}
+          {applied.kind === 'front-door' ? <span>{copy.rulerFrontDoorNote}</span> : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
 
 function quoteOptions(quotes: WindowQuote[]): TierOption[] {
   return quotes.map((q) => ({
@@ -107,6 +249,9 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
   const [history, setHistory] = useState<Snapshot[]>([]);
   const [editing, setEditing] = useState(false);
   const [marking, setMarking] = useState(false);
+  const [rulerMarking, setRulerMarking] = useState(false);
+  // The ruler size picked in the panel, used when the door is marked
+  const rulerSize = useRef<Pick<DoorRuler, 'kind' | 'widthIn' | 'heightIn'>>(adj.ruler ?? { kind: 'garage-door', ...RULER_SIZES['garage-door'][0]! });
   const [selected, setSelected] = useState<string | null>(null);
   const [photoIndex, setPhotoIndex] = useState(0);
 
@@ -132,7 +277,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
 
   /** A change to the marks or the wall's corners: kept for Undo, shown at once, saved after the pause. */
   const changeDrawing = (next: Partial<Snapshot>) => {
-    setHistory((h) => [...h.slice(-UNDO_LIMIT + 1), { marked: adj.marked, wallCorners: adj.wallCorners }]);
+    setHistory((h) => [...h.slice(-UNDO_LIMIT + 1), { marked: adj.marked, wallCorners: adj.wallCorners, ruler: adj.ruler }]);
     setAdj((a) => ({ ...a, ...next }));
     save(next);
   };
@@ -142,7 +287,11 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
     setHistory((h) => h.slice(0, -1));
     setAdj((a) => ({ ...a, ...last }));
     setSelected(null);
-    save({ ...(last.marked !== adj.marked && { marked: last.marked }), ...(last.wallCorners !== adj.wallCorners && { wallCorners: last.wallCorners }) });
+    save({
+      ...(last.marked !== adj.marked && { marked: last.marked }),
+      ...(last.wallCorners !== adj.wallCorners && { wallCorners: last.wallCorners }),
+      ...(last.ruler !== adj.ruler && { ruler: last.ruler }),
+    });
   };
 
   const photos = v.photos;
@@ -226,6 +375,11 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
       setSelected(null);
     },
     moveCorners: (photoId, next) => changeDrawing({ wallCorners: { photoId, corners: next } }),
+    rulerMarking,
+    drawRuler: (photoId: string, box: Box) => {
+      changeDrawing({ ruler: { photoId, box, ...rulerSize.current } });
+      setRulerMarking(false);
+    },
   };
 
   // Keyboard: Escape stops marking or clears the selection; Ctrl/Cmd+Z undoes
@@ -293,7 +447,13 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
           </h3>
           <p className={frame.hint}>{copy.markHint}</p>
           <div className={styles.markRow}>
-            <Button aria-pressed={marking} onClick={() => setMarking((m) => !m)}>
+            <Button
+              aria-pressed={marking}
+              onClick={() => {
+                setMarking((m) => !m);
+                setRulerMarking(false);
+              }}
+            >
               {marking ? copy.markStop : copy.markStart}
             </Button>
             <Button id={`undo-${v.id}`} variant="ghost" disabled={history.length === 0} onClick={undo}>
@@ -301,7 +461,32 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
             </Button>
           </div>
           {marking ? <p className={frame.hint}>{copy.keysHint}</p> : null}
+          <p className={frame.hint}>{copy.zoomHint}</p>
         </section>
+      ) : null}
+      {photo !== null ? (
+        <RulerPanel
+          id={v.id}
+          ruler={adj.ruler}
+          applied={v.ruler ?? null}
+          marking={rulerMarking}
+          onMark={(next) => {
+            setRulerMarking(next);
+            if (next) {
+              setMarking(false);
+              setSelected(null);
+            }
+          }}
+          onChange={(size) => {
+            rulerSize.current = size;
+            const r = adj.ruler;
+            if (r !== null && (r.kind !== size.kind || r.widthIn !== size.widthIn || r.heightIn !== size.heightIn)) changeDrawing({ ruler: { ...r, ...size } });
+          }}
+          onRemove={() => {
+            setRulerMarking(false);
+            changeDrawing({ ruler: null });
+          }}
+        />
       ) : null}
       {measuredShown.length > 0 ? (
         <section className={frame.panel} aria-labelledby={`front-${v.id}`}>
@@ -313,7 +498,11 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
             {measuredShown.map((w) => (
               <li key={w.id}>
                 <Checkbox
-                  label={`${copy.includeWindow(numbers.get(w.id) ?? 0)} · ${w.sized !== null ? copy.size(w.sized.widthIn, w.sized.heightIn) : copy.sizing}`}
+                  label={[
+                    copy.includeWindow(numbers.get(w.id) ?? 0),
+                    w.sized !== null ? copy.size(w.sized.widthIn, w.sized.heightIn) : copy.sizing,
+                    ...(w.sized?.beforeRuler !== undefined ? [copy.wasSize(w.sized.beforeRuler.widthIn, w.sized.beforeRuler.heightIn)] : []),
+                  ].join(' · ')}
                   checked={!excluded.has(w.id)}
                   onChange={() => toggle(w.id)}
                 />
@@ -369,6 +558,11 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
                 {scan.phase === 'scanning' ? copy.measuringChip : captured !== null ? copy.imageryCaptured(captured) : copy.imageryPlain}
               </span>
               {fitChip}
+              {v.ruler != null && done ? (
+                <span className={styles.chip} data-ruler-chip="" role="status">
+                  {copy.rulerUsed(rulerWords(v.ruler).kind, rulerWords(v.ruler).size)}
+                </span>
+              ) : null}
               {photos.length > 1 ? (
                 <div className={styles.photoPick} role="group" aria-label={copy.photoPick}>
                   {photos.map((ph, i) => (
@@ -418,6 +612,8 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
               corners={corners}
               scan={scan}
               edit={edit}
+              ruler={adj.ruler !== null && adj.ruler.photoId === photo.id ? adj.ruler : null}
+              rulerLabel={adj.ruler !== null ? copy.rulerBoxLabel(rulerWords(adj.ruler).kind, rulerWords(adj.ruler).size) : null}
             />
           ) : (
             <div className={styles.photoArea}>
@@ -442,6 +638,7 @@ function Loaded({ v, onQuoteReady }: { v: WindowMeasurementView; onQuoteReady: (
                 setEditing(next);
                 if (!next) {
                   setMarking(false);
+                  setRulerMarking(false);
                   setSelected(null);
                 }
               }}

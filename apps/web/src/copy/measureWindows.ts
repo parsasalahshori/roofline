@@ -47,7 +47,7 @@ export const measureWindows = {
   wallFit: {
     good: 'Walls line up with the photo',
     off: 'Walls don\u2019t line up: drag the corners onto the house',
-    unknown: 'Can\u2019t check the walls in this photo',
+    unknown: 'Can\u2019t confirm the walls in this photo',
   },
   wallHeights: (fromHeights: number, fromPhoto: number) => `Wall height ${fromHeights.toFixed(1)} ft from heights, ${fromPhoto.toFixed(1)} ft from photo`,
   wallOutlineLabel: 'The front wall from the outline, drawn on the photo',
@@ -58,6 +58,37 @@ export const measureWindows = {
   wallEdit: 'Move wall corners',
   wallEditStop: 'Done moving corners',
   wallReset: 'Put the corners back',
+
+  // Adjust's view of the photo: the whole photo, zoom and pan
+  zoomLabel: 'Zoom',
+  zoomIn: 'Zoom in',
+  zoomOut: 'Zoom out',
+  zoomWall: 'Zoom to the wall',
+  zoomWhole: 'Whole photo',
+  zoomHint: 'Pinch, scroll or use + and \u2212 to zoom. Drag the photo to move it, or with two fingers while marking.',
+
+  // A door as a ruler
+  rulerTitle: 'Door as a ruler',
+  rulerHint:
+    'Mark a door of known size and every window you mark on this photo is sized to match it. Use the garage door when the house has one: it sits flush with its wall. A front door is often set back in a porch or entry, which makes the windows come out too big.',
+  rulerKindLabel: 'Door',
+  rulerKind: { 'garage-door': 'Garage door', 'front-door': 'Front door', custom: 'Other size' },
+  rulerSizeLabel: 'Size',
+  rulerCustomWidth: 'Width (in)',
+  rulerCustomHeight: 'Height (in)',
+  rulerMark: 'Mark the door',
+  rulerMarkAgain: 'Mark the door again',
+  rulerMarkStop: 'Stop marking the door',
+  rulerOn: 'Drag round the door, from its frame\u2019s edges',
+  rulerRemove: 'Stop using the ruler',
+  rulerBoxLabel: (kind: string, size: string) => `Ruler: ${kind.toLowerCase()}, ${size}`,
+  rulerUsed: (kind: string, size: string) => `Sized using the ${kind.toLowerCase()} as a ruler (${size})`,
+  rulerAssumption: (before: number, after: number) =>
+    `Taken as flush with the wall: the camera is ${after.toFixed(1)} m from the door, not ${before.toFixed(1)} m as drawn from the outline.`,
+  rulerCheck: 'The door\u2019s width and height disagree. Check the box sits on the door\u2019s edges and the size is right.',
+  rulerFrontDoorNote: 'A front door set back in a porch reads too big. If the house has a garage door, use it instead.',
+  rulerPending: 'Sizing with the ruler\u2026',
+  wasSize: (w: number, h: number) => `was ${inches(w)} × ${inches(h)} in`,
 
   // The scan
   scanIntroName: 'Estimator',
@@ -154,7 +185,8 @@ export const measureWindows = {
     'old-imagery': 'The street-level photo is more than 5 years old.',
     'partly-hidden': 'Part of the front is hidden on the photo.',
     'estimated-from-size': 'Estimated from the house’s size. Mark the front windows on the photo for real sizes.',
-    'walls-unconfirmed': 'The front wall drawn from the outline does not line up with the house on the photo. Drag its corners onto the house under Adjust, or check the wall length and height.',
+    'walls-unconfirmed':
+      'We can\u2019t confirm the front wall drawn from the outline sits on the house in the photo, so sizes from it may be off. Under Adjust, drag its corners onto the house, or mark a door as a ruler.',
   },
   standIn: 'Demo detector: these windows are made up. Add a detector key for real windows.',
 

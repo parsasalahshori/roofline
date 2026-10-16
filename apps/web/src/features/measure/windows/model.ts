@@ -181,3 +181,66 @@ export function focusLayout(aw: number, ah: number, ratio: number, focus: Box, m
     height: Math.round(height),
   };
 }
+
+/** Adjust's view of the photo: how far it is zoomed in (1 = the whole photo) and the photo point (0..1) at the middle. */
+export type Zoom = { z: number; cx: number; cy: number };
+export const WHOLE_PHOTO: Zoom = { z: 1, cx: 0.5, cy: 0.5 };
+export const MAX_ZOOM = 6;
+/** Each zoom button press, and a wheel notch (about 100 deltaY), zooms by this factor. */
+export const ZOOM_STEP = 1.5;
+
+/**
+ * Where the photo sits in Adjust: the whole photo contained in the area at zoom 1, `z` times larger zoomed in, with
+ * (cx, cy) as near the middle as the photo allows (it never leaves a gap it could fill).
+ */
+export function zoomLayout(aw: number, ah: number, ratio: number, zoom: Zoom): { left: number; top: number; width: number; height: number } {
+  const width = Math.min(aw, ah * ratio) * Math.min(MAX_ZOOM, Math.max(1, zoom.z));
+  const height = width / ratio;
+  return {
+    left: Math.round(place(aw, width, aw / 2 - zoom.cx * width)),
+    top: Math.round(place(ah, height, ah / 2 - zoom.cy * height)),
+    width: Math.round(width),
+    height: Math.round(height),
+  };
+}
+
+/** The zoom as it can be shown: z within 1..MAX_ZOOM and the middle where the layout really puts it. */
+export function clampZoom(aw: number, ah: number, ratio: number, zoom: Zoom): Zoom {
+  const z = Math.min(MAX_ZOOM, Math.max(1, zoom.z));
+  if (z === 1) return WHOLE_PHOTO;
+  const l = zoomLayout(aw, ah, ratio, { ...zoom, z });
+  return { z, cx: (aw / 2 - l.left) / l.width, cy: (ah / 2 - l.top) / l.height };
+}
+
+/** Zoomed by `factor` keeping the photo point under (ax, ay) (px in the area) where it is: a wheel or a pinch. */
+export function zoomAt(aw: number, ah: number, ratio: number, zoom: Zoom, factor: number, ax: number, ay: number): Zoom {
+  const l = zoomLayout(aw, ah, ratio, zoom);
+  if (l.width <= 0 || l.height <= 0) return zoom;
+  const px = (ax - l.left) / l.width;
+  const py = (ay - l.top) / l.height;
+  const z = Math.min(MAX_ZOOM, Math.max(1, zoom.z * factor));
+  const width = Math.min(aw, ah * ratio) * z;
+  const height = width / ratio;
+  return clampZoom(aw, ah, ratio, { z, cx: (aw / 2 - (ax - px * width)) / width, cy: (ah / 2 - (ay - py * height)) / height });
+}
+
+/** Moved by (dx, dy) px in the area (a pan drag). */
+export function panBy(aw: number, ah: number, ratio: number, zoom: Zoom, dx: number, dy: number): Zoom {
+  const l = zoomLayout(aw, ah, ratio, zoom);
+  if (l.width <= 0 || l.height <= 0) return zoom;
+  return clampZoom(aw, ah, ratio, { ...zoom, cx: zoom.cx - dx / l.width, cy: zoom.cy - dy / l.height });
+}
+
+/** The zoom that frames `focus` (0..1 of the photo, e.g. the front wall and its windows) with a margin. */
+export function zoomTo(aw: number, ah: number, ratio: number, focus: Box, margin = 0.06): Zoom {
+  const l = focusLayout(aw, ah, ratio, focus, margin);
+  const base = Math.min(aw, ah * ratio);
+  if (base <= 0) return WHOLE_PHOTO;
+  return clampZoom(aw, ah, ratio, { z: l.width / base, cx: focus.x + focus.w / 2, cy: focus.y + focus.h / 2 });
+}
+
+/** The door sizes to pick from for a ruler, as the person reads them (garage doors in feet, front doors in inches). */
+export function rulerSizeLabel(widthIn: number, heightIn: number, kind: 'garage-door' | 'front-door' | 'custom'): string {
+  if (kind === 'garage-door' && widthIn % 12 === 0 && heightIn % 12 === 0) return `${widthIn / 12} × ${heightIn / 12} ft`;
+  return `${Math.round(widthIn)} × ${Math.round(heightIn)} in`;
+}

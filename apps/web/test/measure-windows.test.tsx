@@ -18,7 +18,23 @@ import { liftMeasure } from '../src/copy/liftMeasure.ts';
 import { measureWindows as copy } from '../src/copy/measureWindows.ts';
 import { wholeDollars } from '../src/features/measure/lift/proposalLines.ts';
 import { forgetRevealed } from '../src/features/measure/lift/scan.ts';
-import { boxFromDrag, dragBox, focusLayout, MIN_BOX, moveCorner, photoLayout, shownWindows, tiersFromQuotes, type Corners } from '../src/features/measure/windows/model.ts';
+import {
+  boxFromDrag,
+  dragBox,
+  focusLayout,
+  MIN_BOX,
+  moveCorner,
+  panBy,
+  photoLayout,
+  rulerSizeLabel,
+  shownWindows,
+  tiersFromQuotes,
+  WHOLE_PHOTO,
+  zoomAt,
+  zoomLayout,
+  zoomTo,
+  type Corners,
+} from '../src/features/measure/windows/model.ts';
 import { sizeShownAt, windowShownAt } from '../src/features/measure/windows/PhotoStage.tsx';
 import { WindowsWindow } from '../src/features/measure/windows/WindowsWindow.tsx';
 
@@ -92,7 +108,19 @@ function serverPatch(before: WindowMeasurementView, body: Record<string, unknown
     ];
     if (marks.length > 0 && estimated !== null) estimated = { ...estimated, covers: 'sides-and-back' };
   }
-  return { ...before, adjustments, windows, estimated };
+  let ruler = before.ruler ?? null;
+  if ('ruler' in body) {
+    const r = body.ruler as NonNullable<WindowMeasurementView['adjustments']['ruler']> | null;
+    // The fake server: every ruler says things were coming out 30% small
+    ruler = r === null ? null : { photoId: r.photoId, kind: r.kind, widthIn: r.widthIn, heightIn: r.heightIn, measuredWidthIn: Math.round(r.widthIn / 1.3), measuredHeightIn: Math.round(r.heightIn / 1.3), scale: 1.3, rangeM: { before: 16, after: 20.8 }, agreement: 'good' };
+    if (r === null) delete adjustments.ruler;
+  }
+  if (ruler !== null) {
+    windows = windows.map((w) =>
+      w.source === 'marked' && w.photoId === ruler.photoId ? { ...w, beforeRuler: { widthIn: w.widthIn, heightIn: w.heightIn }, widthIn: Math.round(w.widthIn * 1.3), heightIn: Math.round(w.heightIn * 1.3) } : w,
+    );
+  }
+  return { ...before, adjustments, windows, estimated, ruler };
 }
 
 function render_(path: string) {
@@ -471,6 +499,208 @@ describe('Measure windows: Adjust', () => {
     fireEvent.keyDown(marked, { key: 'ArrowRight' });
     await waitFor(() => expect(sent('PATCH /api/window-measurements/w1')).toHaveLength(1));
     expect((sent('PATCH /api/window-measurements/w1')[0]!.marked as { box: unknown }[])[0]!.box).toEqual({ x: 0.305, y: 0.45, w: 0.07, h: 0.11 });
+  });
+});
+
+describe('Measure windows: Adjust shows the whole photo, with zoom and pan', () => {
+  /** The photo area measures 800 x 400 px (jsdom has no layout): the photo, 1:1, contains at 400 x 400. */
+  function withArea() {
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get(this: HTMLElement) { return this.dataset.fit !== undefined ? 800 : 0; } });
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get(this: HTMLElement) { return this.dataset.fit !== undefined ? 400 : 0; } });
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(private cb: () => void) {}
+        observe() {
+          this.cb();
+        }
+        disconnect() {}
+      },
+    );
+    // The originals live on Element.prototype: taking these away restores them
+    return () => {
+      delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+      delete (HTMLElement.prototype as { clientHeight?: number }).clientHeight;
+    };
+  }
+  const area = () => frame().parentElement as HTMLElement;
+  const box = () => ({ left: parseFloat(frame().style.left), top: parseFloat(frame().style.top), width: parseFloat(frame().style.width) });
+
+  it('pure: zoom 1 is the whole photo; zoom keeps the point under the pointer; pan stops at the edges; zoom to a box frames it', () => {
+    expect(zoomLayout(800, 400, 1, WHOLE_PHOTO)).toEqual({ left: 200, top: 0, width: 400, height: 400 });
+    const z = zoomAt(800, 400, 1, WHOLE_PHOTO, 3, 300, 100);
+    const l = zoomLayout(800, 400, 1, z);
+    expect(l.width).toBe(1200);
+    // The photo point that was under (300, 100) is still there: (300-200)/400 = 0.25 across, 0.25 down
+    expect(l.left + 0.25 * l.width).toBeCloseTo(300, 0);
+    expect(l.top + 0.25 * l.height).toBeCloseTo(100, 0);
+    const far = panBy(800, 400, 1, z, 5000, 5000);
+    expect(zoomLayout(800, 400, 1, far)).toMatchObject({ left: 0, top: 0 });
+    expect(zoomAt(800, 400, 1, WHOLE_PHOTO, 0.2, 400, 200)).toEqual(WHOLE_PHOTO);
+    const wall = zoomTo(800, 400, 1, { x: 0.2, y: 0.4, w: 0.3, h: 0.2 });
+    expect(wall.z).toBeGreaterThan(1.5);
+    const wl = zoomLayout(800, 400, 1, wall);
+    expect(wl.left + 0.2 * wl.width).toBeGreaterThanOrEqual(0);
+    expect(wl.left + 0.5 * wl.width).toBeLessThanOrEqual(800);
+  });
+
+  it('Adjust opens on the whole photo (not cropped to the wall); +, wheel, pinch, zoom to the wall and Whole photo', async () => {
+    const restore = withArea();
+    try {
+      // A window outside the drawn wall: Adjust must still show it
+      await open({ windows: [win('d1', 0.85, 36, 60)] });
+      expect(area().dataset.fit).toBe('cover');
+      adjust();
+      expect(area().dataset.fit).toBe('zoom');
+      expect(box()).toEqual({ left: 200, top: 0, width: 400 });
+      const bar = screen.getByRole('toolbar', { name: copy.zoomLabel });
+      expect(within(bar).getByRole('button', { name: copy.zoomOut }).hasAttribute('disabled')).toBe(true);
+      fireEvent.click(within(bar).getByRole('button', { name: copy.zoomIn }));
+      expect(box().width).toBe(600);
+      expect(area().dataset.zoom).toBe('1.5');
+      fireEvent.click(within(bar).getByRole('button', { name: copy.zoomWhole }));
+      expect(box()).toEqual({ left: 200, top: 0, width: 400 });
+      // The wheel zooms round the pointer, and the page does not scroll
+      const wheel = new WheelEvent('wheel', { deltaY: -100, clientX: 400, clientY: 200, bubbles: true, cancelable: true });
+      act(() => {
+        area().dispatchEvent(wheel);
+      });
+      expect(wheel.defaultPrevented).toBe(true);
+      expect(box().width).toBe(600);
+      // Not marking: a drag pans the zoomed photo
+      stubRect(frame());
+      // (600 px wide in an 800 px area it stays centred across; 600 px tall in 400 it moves up and down)
+      const before = box();
+      fireEvent.pointerDown(frame(), { clientX: 300, clientY: 200, pointerId: 1, button: 0 });
+      fireEvent.pointerMove(frame(), { clientX: 360, clientY: 260, pointerId: 1 });
+      fireEvent.pointerUp(frame(), { clientX: 360, clientY: 260, pointerId: 1 });
+      expect(box()).toEqual({ ...before, top: before.top + 60 });
+      // Two fingers: a pinch zooms
+      fireEvent.click(within(bar).getByRole('button', { name: copy.zoomWhole }));
+      fireEvent.pointerDown(frame(), { clientX: 350, clientY: 200, pointerId: 11, pointerType: 'touch' });
+      fireEvent.pointerDown(frame(), { clientX: 450, clientY: 200, pointerId: 12, pointerType: 'touch' });
+      fireEvent.pointerMove(frame(), { clientX: 300, clientY: 200, pointerId: 11, pointerType: 'touch' });
+      fireEvent.pointerMove(frame(), { clientX: 500, clientY: 200, pointerId: 12, pointerType: 'touch' });
+      fireEvent.pointerUp(frame(), { pointerId: 11, pointerType: 'touch' });
+      fireEvent.pointerUp(frame(), { pointerId: 12, pointerType: 'touch' });
+      expect(box().width).toBe(800);
+      expect(sent('PATCH /api/window-measurements/w1')).toHaveLength(0);
+      fireEvent.click(within(bar).getByRole('button', { name: copy.zoomWall }));
+      expect(box().width).toBeGreaterThan(400);
+      // Done, then Adjust again: the whole photo again
+      fireEvent.click(within(card()).getByRole('button', { name: copy.done }));
+      adjust();
+      expect(box()).toEqual({ left: 200, top: 0, width: 400 });
+    } finally {
+      restore();
+    }
+  });
+
+  it('marking while zoomed: the box is where the drag was on the photo, and two fingers do not draw', async () => {
+    const restore = withArea();
+    try {
+      await open();
+      adjust();
+      fireEvent.click(within(screen.getByRole('toolbar', { name: copy.zoomLabel })).getByRole('button', { name: copy.zoomIn }));
+      fireEvent.click(within(screen.getByRole('toolbar', { name: copy.zoomLabel })).getByRole('button', { name: copy.zoomIn }));
+      fireEvent.click(screen.getByRole('button', { name: copy.markStart }));
+      // Zoomed: the frame is 900 px wide, its left edge off the area to the left
+      frame().getBoundingClientRect = () => ({ left: -50, top: -250, right: 850, bottom: 650, width: 900, height: 900, x: -50, y: -250, toJSON: () => ({}) });
+      fireEvent.pointerDown(frame(), { clientX: 130, clientY: 110, pointerId: 1, button: 0 });
+      fireEvent.pointerMove(frame(), { clientX: 220, clientY: 200, pointerId: 1 });
+      fireEvent.pointerUp(frame(), { clientX: 220, clientY: 200, pointerId: 1 });
+      await waitFor(() => expect(sent('PATCH /api/window-measurements/w1')).toHaveLength(1));
+      expect(sent('PATCH /api/window-measurements/w1')[0]!.marked).toEqual([{ id: expect.any(String), photoId: 'ph1', box: { x: 0.2, y: 0.4, w: 0.1, h: 0.1 } }]);
+      // Two fingers while marking pinch, they never draw a window
+      fireEvent.pointerDown(frame(), { clientX: 300, clientY: 200, pointerId: 21, pointerType: 'touch' });
+      fireEvent.pointerDown(frame(), { clientX: 400, clientY: 200, pointerId: 22, pointerType: 'touch' });
+      fireEvent.pointerMove(frame(), { clientX: 250, clientY: 200, pointerId: 21, pointerType: 'touch' });
+      fireEvent.pointerUp(frame(), { pointerId: 21, pointerType: 'touch' });
+      fireEvent.pointerUp(frame(), { pointerId: 22, pointerType: 'touch' });
+      expect(document.querySelectorAll('[data-window]')).toHaveLength(1);
+      // The corners still drag while zoomed
+      const corner = document.querySelector('[data-wall-corner="tr"]') as HTMLElement;
+      fireEvent.pointerDown(corner, { clientX: 0, clientY: 0, pointerId: 3 });
+      fireEvent.pointerMove(frame(), { clientX: 625, clientY: 110, pointerId: 3 });
+      fireEvent.pointerUp(frame(), { clientX: 625, clientY: 110, pointerId: 3 });
+      await waitFor(() => expect(sent('PATCH /api/window-measurements/w1')).toHaveLength(2));
+      expect((sent('PATCH /api/window-measurements/w1')[1]!.wallCorners as { corners: Corners }).corners[2]).toEqual([0.75, 0.4]);
+    } finally {
+      restore();
+    }
+  });
+
+  it('the photo takes touches while Adjust is open (no page pan or zoom under a pinch or a drag)', () => {
+    const css = readFileSync([resolve(process.cwd(), 'src/features/measure/windows/WindowsWindow.module.css'), resolve(process.cwd(), 'apps/web/src/features/measure/windows/WindowsWindow.module.css')].find((p) => existsSync(p))!, 'utf8');
+    expect(css).toMatch(/\.photoFrame\[data-adjusting="true"\] \{[^}]*touch-action: none;/);
+    expect(css).toMatch(/\.photoFrame\[data-dragging\] \{[^}]*touch-action: none;/);
+  });
+});
+
+describe('Measure windows: a door as a ruler', () => {
+  const panel = () => document.querySelector('[data-ruler-panel]') as HTMLElement;
+
+  it('garage door first (16 × 7 ft); the reliability note says why; Mark the door, drag, and every window is re-sized', async () => {
+    const box = { x: 0.3, y: 0.45, w: 0.05, h: 0.08 };
+    await open({ windows: [win('m1', 0.3, 28, 46, { source: 'marked' })], adjustments: { excludedWindowIds: [], manualCounts: {}, marked: [{ id: 'm1', photoId: 'ph1', box }] } });
+    adjust();
+    expect(within(panel()).getByText(copy.rulerHint)).toBeTruthy();
+    expect(copy.rulerHint).toMatch(/garage door[^.]*flush/i);
+    expect(copy.rulerHint).toMatch(/front door[^.]*set back/i);
+    const kind = within(panel()).getByLabelText(copy.rulerKindLabel) as HTMLSelectElement;
+    expect(kind.value).toBe('garage-door');
+    const size = within(panel()).getByLabelText(copy.rulerSizeLabel) as HTMLSelectElement;
+    expect([...size.options].map((o) => o.textContent)).toEqual(['16 × 7 ft', '9 × 7 ft', '18 × 7 ft', '16 × 8 ft']);
+    fireEvent.change(kind, { target: { value: 'front-door' } });
+    expect([...(within(panel()).getByLabelText(copy.rulerSizeLabel) as HTMLSelectElement).options].map((o) => o.textContent)).toEqual(['36 × 80 in', '32 × 80 in', '72 × 80 in']);
+    fireEvent.click(within(panel()).getByRole('button', { name: copy.rulerMark }));
+    expect(frame().dataset.rulerMarking).toBe('true');
+    stubRect(frame());
+    fireEvent.pointerDown(frame(), { clientX: 320, clientY: 320, pointerId: 1, button: 0 });
+    fireEvent.pointerMove(frame(), { clientX: 352, clientY: 384, pointerId: 1 });
+    fireEvent.pointerUp(frame(), { clientX: 352, clientY: 384, pointerId: 1 });
+    // The ruler is drawn at once, not as a window
+    expect(document.querySelector('[data-ruler="front-door"]')?.getAttribute('aria-label')).toBe(copy.rulerBoxLabel('Front door', '36 × 80 in'));
+    expect(document.querySelectorAll('[data-window]')).toHaveLength(1);
+    await waitFor(() => expect(sent('PATCH /api/window-measurements/w1')).toHaveLength(1));
+    expect(sent('PATCH /api/window-measurements/w1')[0]).toEqual({ ruler: { photoId: 'ph1', box: { x: 0.5, y: 0.5, w: 0.05, h: 0.1 }, kind: 'front-door', widthIn: 36, heightIn: 80 } });
+    // The server's answer: the windows re-sized, what was used, and how
+    await waitFor(() => expect(document.querySelector('[data-ruler-chip]')?.textContent).toBe(copy.rulerUsed('Front door', '36 × 80 in')));
+    expect(copy.rulerUsed('Front door', '36 × 80 in')).toBe('Sized using the front door as a ruler (36 × 80 in)');
+    expect(within(panel()).getByText(copy.rulerAssumption(16, 20.8))).toBeTruthy();
+    expect(within(panel()).getByText(copy.rulerFrontDoorNote)).toBeTruthy();
+    expect(screen.getByRole('checkbox', { name: `${copy.includeWindow(1)} · ${copy.size(36, 60)} · ${copy.wasSize(28, 46)}` })).toBeTruthy();
+    expect(document.querySelector('[data-window="m1"]')?.textContent).toContain(copy.size(36, 60));
+  });
+
+  it('a custom size, a size change after marking, and taking the ruler away', async () => {
+    await open({ adjustments: { excludedWindowIds: [], manualCounts: {}, marked: [], ruler: { photoId: 'ph1', box: { x: 0.2, y: 0.5, w: 0.3, h: 0.1 }, kind: 'garage-door', widthIn: 192, heightIn: 84 } } });
+    adjust();
+    expect(within(panel()).getByRole('button', { name: copy.rulerMarkAgain })).toBeTruthy();
+    fireEvent.change(within(panel()).getByLabelText(copy.rulerSizeLabel), { target: { value: '3' } });
+    await waitFor(() => expect(sent('PATCH /api/window-measurements/w1')).toHaveLength(1));
+    expect(sent('PATCH /api/window-measurements/w1')[0]).toMatchObject({ ruler: { kind: 'garage-door', widthIn: 192, heightIn: 96 } });
+    fireEvent.change(within(panel()).getByLabelText(copy.rulerKindLabel), { target: { value: 'custom' } });
+    await waitFor(() => expect(sent('PATCH /api/window-measurements/w1')).toHaveLength(2));
+    expect(sent('PATCH /api/window-measurements/w1')[1]).toMatchObject({ ruler: { kind: 'custom', widthIn: 36, heightIn: 80 } });
+    const width = within(panel()).getByLabelText(copy.rulerCustomWidth);
+    fireEvent.change(width, { target: { value: '400' } });
+    expect(within(panel()).getByRole('button', { name: copy.rulerMarkAgain }).hasAttribute('disabled')).toBe(true);
+    fireEvent.change(width, { target: { value: '42' } });
+    fireEvent.blur(width);
+    await waitFor(() => expect(sent('PATCH /api/window-measurements/w1')).toHaveLength(3));
+    expect(sent('PATCH /api/window-measurements/w1')[2]).toMatchObject({ ruler: { kind: 'custom', widthIn: 42, heightIn: 80 } });
+    fireEvent.click(within(panel()).getByRole('button', { name: copy.rulerRemove }));
+    expect(document.querySelector('[data-ruler="custom"]')).toBeNull();
+    await waitFor(() => expect(sent('PATCH /api/window-measurements/w1')).toHaveLength(4));
+    expect(sent('PATCH /api/window-measurements/w1')[3]).toEqual({ ruler: null });
+    expect(rulerSizeLabel(192, 84, 'garage-door')).toBe('16 × 7 ft');
+  });
+
+  it("the walls can't be confirmed: says so, and the review note points at the corners and the ruler", async () => {
+    await open({ photos: [photo({ wallOverlay: { corners: CORNERS, fit: 'unknown', fitScore: 0.43, headingCorrectionDeg: 0, wallHeightFromPhotoFt: null } })], needsReview: { reasons: ['walls-unconfirmed'] } });
+    expect(document.querySelector('[data-fit="unknown"]')?.textContent).toContain("Can\u2019t confirm the walls in this photo");
+    expect(document.querySelector('[data-reason="walls-unconfirmed"]')?.textContent).toMatch(/ruler/);
   });
 });
 
