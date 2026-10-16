@@ -9,10 +9,11 @@ import { E2E_POLICY_DOMAIN, resetScenario } from './fixtures.ts';
 /*
  * The end-to-end stack, run by Playwright's webServer (`npx tsx e2e/stack.ts`, cwd apps/web). It
  * starts a throwaway PostGIS, seeds the scenario, then runs the API and the worker against it on
- * port 4410 and stays in the foreground until either child exits or the process is signalled.
+ * port 4410 (E2E_PORT overrides it) and stays in the foreground until either child exits or the process is signalled.
  */
 
-const BASE_URL = 'http://127.0.0.1:4410';
+const PORT = Number(process.env.E2E_PORT?.trim() || 4410);
+const BASE_URL = `http://127.0.0.1:${PORT}`;
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const STACK_FILE = fileURLToPath(new URL('.stack.json', import.meta.url));
 const SHUTDOWN_WAIT_MS = 10_000;
@@ -27,7 +28,7 @@ const TEST_CALLER_NUMBER = '+14025550100';
 const env: NodeJS.ProcessEnv = {
   ...process.env,
   NODE_ENV: 'test',
-  PORT: '4410',
+  PORT: String(PORT),
   HOST: '127.0.0.1',
   APP_ORIGIN: BASE_URL,
   PUBLIC_BASE_URL: BASE_URL,

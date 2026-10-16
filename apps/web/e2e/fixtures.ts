@@ -38,7 +38,7 @@ export const E2E_POLICY_DOMAIN = 'roofline.test';
 
 /** A URL on Acme Roofing's company host; the browser maps `*.roofline.test` to the stack (playwright.config.ts). */
 export function companyHostUrl(path: string): string {
-  return `http://acme-roofing.${E2E_POLICY_DOMAIN}:4410${path}`;
+  return `http://acme-roofing.${E2E_POLICY_DOMAIN}:${process.env.E2E_PORT?.trim() || 4410}${path}`;
 }
 
 export type Who = 'owner' | 'office' | 'rep';

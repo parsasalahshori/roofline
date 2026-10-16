@@ -3,8 +3,11 @@ import { defineConfig, devices } from '@playwright/test';
 /*
  * End-to-end tests. `npx tsx e2e/stack.ts` starts the whole stack (PostGIS, API, worker) on port
  * 4410 and serves the built web app from it; `npm run e2e -w @roofline/web` builds first.
+ * E2E_PORT moves the stack to another port, so two checkouts can run their suites at the same time.
  * The swiftshader flags give headless Chromium WebGL, so MapLibre draws the pins.
  */
+const PORT = Number(process.env.E2E_PORT?.trim() || 4410);
+
 /** Chromium flags: software WebGL for the map, and `*.roofline.test` (company hosts) mapped to the stack. */
 const LAUNCH_ARGS = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--host-resolver-rules=MAP *.roofline.test 127.0.0.1'];
 
@@ -16,7 +19,7 @@ export default defineConfig({
   retries: 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
-    baseURL: 'http://127.0.0.1:4410',
+    baseURL: `http://127.0.0.1:${PORT}`,
     trace: 'retain-on-failure',
     launchOptions: {
       args: LAUNCH_ARGS,
@@ -25,7 +28,7 @@ export default defineConfig({
   },
   webServer: {
     command: 'npx tsx e2e/stack.ts',
-    url: 'http://127.0.0.1:4410/health',
+    url: `http://127.0.0.1:${PORT}/health`,
     timeout: 300_000,
     reuseExistingServer: false,
     stdout: 'pipe',
