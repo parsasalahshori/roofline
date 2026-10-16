@@ -83,3 +83,85 @@
   border-radius: 2px;
   background: var(--rung);
 }
+
+/*
+ * The strip: three columns under a drawing or a table. Each rung is its dot, name and count on one line, the bar under
+ * them and the note under that. The text wrapper goes (display: contents) so the name and the note place themselves.
+ */
+.ladder[data-layout="strip"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+}
+
+.ladder[data-layout="strip"] .rung {
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  grid-template-areas:
+    "dot name count"
+    "track track track"
+    "note note note";
+  gap: 6px 8px;
+  padding: 10px 14px;
+  border-right: 1px solid var(--line);
+}
+
+.ladder[data-layout="strip"] .rung:last-child {
+  border-right: 0;
+}
+
+.ladder[data-layout="strip"] .text {
+  display: contents;
+}
+
+.ladder[data-layout="strip"] .name {
+  grid-area: name;
+}
+
+.ladder[data-layout="strip"] .note {
+  grid-area: note;
+  font: 400 var(--font-size-min)/1.3 var(--f-ui);
+}
+
+/* A phone: three small tiles, the name over the count; the grade a factory can build from is outlined in green */
+@media (max-width: 767.98px) {
+  .ladder[data-layout="strip"] {
+    gap: 6px;
+  }
+
+  .ladder[data-layout="strip"] .rung {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "name"
+      "count";
+    align-content: start;
+    gap: 4px;
+    padding: 8px 10px;
+    border-right: 0;
+    border-radius: var(--r-2);
+    background: var(--surface);
+    box-shadow: var(--e-1);
+  }
+
+  .ladder[data-layout="strip"] .rung[data-rung="order"][data-filled="true"] {
+    box-shadow: inset 0 0 0 1.5px var(--ok);
+  }
+
+  .ladder[data-layout="strip"] .rung[data-rung="order"][data-filled="true"] .count {
+    color: var(--ok-text);
+  }
+
+  .ladder[data-layout="strip"] .dot,
+  .ladder[data-layout="strip"] .track,
+  .ladder[data-layout="strip"] .note {
+    display: none;
+  }
+
+  .ladder[data-layout="strip"] .name {
+    color: var(--ink-3);
+    font-size: var(--font-size-min);
+    font-weight: 400;
+  }
+
+  .ladder[data-layout="strip"] .count {
+    font-size: 15px;
+  }
+}
