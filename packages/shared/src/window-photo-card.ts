@@ -17,7 +17,7 @@
 // The size is quote-grade: the card's tap noise is a share of a percent to a couple of percent of the window's size, and
 // the uncertainty (first-order propagation, window-photo-sheet.ts style) says so. See docs/windows/card-method.md.
 import type { Pt, Quad } from './window-photo-math.ts';
-import { SHEET_FOCAL_SIGMA, STEEP_CHECK_DEG, ULTRA_WIDE_FOCAL_35MM } from './window-photo-sheet.ts';
+import { SHEET_FOCAL_SIGMA, STEEP_CHECK_DEG, STEEP_WARN_DEG, ULTRA_WIDE_FOCAL_35MM } from './window-photo-sheet.ts';
 
 /** An ID-1 card (ISO/IEC 7810), millimetres: a credit, debit or driver licence card. Landscape: widthMm is the long side. */
 export const ID1_CARD_MM = { widthMm: 85.6, heightMm: 53.98 } as const;
@@ -65,8 +65,6 @@ export const CARD_SHAPE_TOLERANCE = 0.3;
 const MIN_WINDOW_SIDE_PX = 20;
 /** An interior angle closer than this to straight (or to folded flat), degrees, is not a corner. */
 const MIN_CORNER_DEG = 10;
-/** Above this angle off square (degrees) the reason says to stand square on, as well as to come closer. */
-const STEEP_ADVICE_DEG = 35;
 /** The step of the central differences, photo pixels. */
 const TAP_STEP_PX = 0.5;
 
@@ -388,7 +386,7 @@ export function sizeFromCard(input: CardSizeInput): CardSize | null {
   if (worst > CARD_CHECK_UNCERTAINTY_IN) {
     const off = `could be off by about ${inchesInWords(worst)}`;
     reasons.push(
-      viewAngleDeg > STEEP_ADVICE_DEG
+      viewAngleDeg > STEEP_WARN_DEG
         ? `The size ${off}. Stand straight in front of the window, hold the card flat in the middle of the glass and step a little closer.`
         : `The card is small next to this window, so the size ${off}. Hold the card flat in the middle of the glass and step a little closer.`,
     );
