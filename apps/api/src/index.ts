@@ -92,6 +92,16 @@ export {
   type DemoWorld,
   type DemoWorldOptions,
 } from './scripts/demo-world.ts';
+export {
+  DEMO_WINCHOICE_BRAND_COLOR,
+  DEMO_WINCHOICE_LOGIN,
+  DEMO_WINCHOICE_NAME,
+  DEMO_WINCHOICE_NUMBER,
+  DEMO_WINCHOICE_QUOTE_SLUG,
+  DEMO_WINCHOICE_SLUG,
+  DEMO_WINCHOICE_USERS,
+  seedWinChoiceWorld,
+} from './scripts/demo-winchoice.ts';
 export { seedStormFixture } from './scripts/storm-fixture.ts';
 export { unsubscribeKey } from './public/unsubscribe-key.ts';
 export { signUnsubscribeToken } from './public/unsubscribe-token.ts';

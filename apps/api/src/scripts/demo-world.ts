@@ -555,7 +555,7 @@ const DASH_AGENTS = ['front_desk', 'storm_scout', 'estimator', 'follow_up', 'cla
 /** Finished tasks per hour for the last 12 hours, oldest first: a quiet night, a busy morning. */
 const DASH_HOURLY = [1, 1, 2, 3, 5, 6, 5, 4, 3, 4, 5, 6] as const;
 
-async function seedAgentsDashboardActivity(q: Query, companyId: string, now: Date): Promise<void> {
+export async function seedAgentsDashboardActivity(q: Query, companyId: string, now: Date): Promise<void> {
   const where = await q(
     `select j.id, p.address_line from jobs j join properties p on p.company_id = j.company_id and p.id = j.property_id
       where j.company_id = $1 and j.archived_at is null order by j.created_at, j.id limit 12`,
