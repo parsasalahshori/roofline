@@ -4,7 +4,7 @@
   min-width: 0;
 }
 
-.card {
+.stack {
   display: flex;
   flex-direction: column;
   gap: 20px;
