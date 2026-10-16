@@ -1,131 +1,42 @@
-/*
- * Home: the greeting over the map, and a column of cards beside them. The map is a panel that takes the room the
- * greeting leaves; the column scrolls on its own. On a phone Home is My day (the map has its own tab).
- */
-.home {
+/* The body of Home: the map at the left takes what is left, a 404px column at the right holds the cards */
+.grid {
   display: grid;
   flex: 1 1 auto;
-  grid-template-columns: minmax(0, 1fr) 360px;
-  grid-template-rows: auto minmax(320px, 1fr);
-  gap: 16px;
-  min-height: 0;
-  font-family: var(--f-ui);
-}
-
-.greeting {
-  grid-column: 1;
-  grid-row: 1;
-  padding: 20px;
-  border-radius: var(--r-3);
-  background: var(--surface);
-  box-shadow: var(--e-1);
-  color: var(--ink);
+  grid-template-columns: minmax(0, 1fr) 404px;
+  gap: 14px;
+  min-height: 520px;
 }
 
 .map {
   display: flex;
-  grid-column: 1;
-  grid-row: 2;
   min-width: 0;
-  min-height: 320px;
-}
-
-.side {
-  display: flex;
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  flex-direction: column;
-  gap: 16px;
   min-height: 0;
-  overflow-y: auto;
-  padding-bottom: 4px;
 }
 
-.side > * {
-  flex: none;
-}
-
-.date {
-  margin: 0;
-  color: var(--ink-3);
-  font: 600 var(--font-size-min)/1 var(--f-mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.heading {
-  margin: 8px 0 0;
-  font: 750 28px/1.05 var(--f-display);
-  font-stretch: 118%;
-  letter-spacing: -0.01em;
-}
-
-.briefing {
-  margin: 12px 0 0;
-  color: var(--ink-2);
-  font-size: var(--font-size-body);
-  line-height: 1.5;
-}
-
-.briefing b {
-  color: var(--ink);
-  font-weight: 600;
-}
-
-.actions {
+/* The column scrolls by itself, so the map keeps its place; the 1px keeps the cards' hairlines from being cut */
+.column {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 16px;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  margin: -1px;
+  padding: 1px;
+  overflow-y: auto;
 }
 
-.primary,
-.secondary {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  height: 36px;
-  padding: 0 14px;
-  border-radius: var(--r-2);
-  font-size: 13px;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.primary {
-  background: var(--brand);
-  color: var(--brand-ink);
-}
-
-.primary:hover {
-  background: var(--brand-hover);
-}
-
-.secondary {
-  background: var(--surface);
-  color: var(--ink);
-  box-shadow: inset 0 0 0 1px var(--line-ctl);
-}
-
-.secondary:hover {
-  background: var(--surface-2);
-}
-
-@media (max-width: 1099.98px) {
-  .home {
+/* A narrower desktop: the map first, at a good height, then the cards under it; the page scrolls */
+@media (max-width: 1180px) {
+  .grid {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: none;
+    min-height: 0;
   }
 
-  .greeting,
-  .map,
-  .side {
-    grid-column: 1;
-    grid-row: auto;
+  .map {
+    height: 460px;
   }
 
-  .side {
+  .column {
     overflow: visible;
   }
 }

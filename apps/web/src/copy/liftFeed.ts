@@ -20,29 +20,35 @@ export const liftFeed = {
   dayShort: (date: string) => weekday(date, 'short'),
   dayLong: (date: string) => weekday(date, 'long'),
   /** The day's own words for a screen reader, e.g. "Monday, high 68 degrees, 80 percent chance of rain". */
-  dayLabel: (date: string, highF: number | null, rainPct: number | null) =>
+  dayLabel: (date: string, highF: number | null, rainPct: number | null, risky = false) =>
     [
       weekday(date, 'long'),
       highF === null ? '' : `high ${Math.round(highF)} degrees`,
       rainPct === null ? '' : `${rainPct} percent chance of rain`,
+      risky ? 'rain puts installs at risk' : '',
     ]
       .filter((part) => part !== '')
       .join(', '),
   high: (highF: number | null) => (highF === null ? '—' : `${Math.round(highF)}°`),
   rain: (pct: number | null) => (pct === null ? '—' : `${Math.round(pct)}%`),
   atRisk: (jobs: number) => (jobs === 1 ? '1 job at risk' : `${jobs} jobs at risk`),
+  fixRainDay: 'Fix the rain day',
   schedulerCanMove: (tearOffs: number, day: string) =>
     `Scheduler can move ${tearOffs} ${tearOffs === 1 ? 'tear-off' : 'tear-offs'} off ${day} and text each homeowner.`,
 
   // What your AI just did
-  feedTitle: 'What your AI just did',
+  feedTitle: 'What your AI did',
   feedLoading: 'Loading what your agents did',
   feedListLabel: 'The latest things your agents did',
   feedEmpty: 'Nothing yet. What your agents do will show up here.',
   feedLoadError: 'Could not load what your agents did.',
   working: (count: number) => `${count} working`,
-  /** "Front Desk, 3 hr ago" */
-  byline: (agent: string, when: string) => `${agent}, ${when}`,
+  /** "Front Desk · 3 hr ago" */
+  byline: (agent: string, when: string) => `${agent} · ${when}`,
+  /** A flag beside the byline on the rows that did not go to plan. */
+  flagExpired: 'Expired',
+  flagLook: 'Needs a look',
+  agentsLink: 'Agents',
   /** How long ago, from the row's instant and now: "just now", "12 min ago", "3 hr ago", "2 days ago". */
   ago: (iso: string, now: number): string => {
     const at = Date.parse(iso);

@@ -27,8 +27,16 @@ export const ACCOUNT_TWO: Account = {
 };
 
 export type Reply = { status?: number; body?: unknown };
-/** `'METHOD /path?query'` (exactly as fetch is called) to what the server answers. `body` is the parsed JSON the request sent. */
+/** `'METHOD /path?query'` (exactly as fetch is called, or ending in `*` for any query) to what the server answers. `body` is the parsed JSON the request sent. */
 export type Routes = Record<string, (request: { body: unknown; url: string }) => Reply>;
+
+/**
+ * The answer for a request key: the route with exactly that key, else the first route whose key ends in `*` and starts
+ * the same way (a read whose query holds today's date).
+ */
+export function routeFor<T>(routes: Record<string, T>, key: string): T | undefined {
+  return routes[key] ?? Object.entries(routes).find(([pattern]) => pattern.endsWith('*') && key.startsWith(pattern.slice(0, -1)))?.[1];
+}
 
 /**
  * Stands in for fetch: answers `METHOD /path` from `routes` and records every call. A request
@@ -45,7 +53,7 @@ export function stubApi(routes: Routes) {
       const key = `${init?.method ?? 'GET'} ${url}`;
       const body: unknown = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
       calls.push({ key, url, body });
-      const handler = routes[key];
+      const handler = routeFor(routes, key);
       if (!handler) unexpected.push(key);
       const { status = 200, body: replyBody } = handler
         ? handler({ body, url })
@@ -85,6 +93,11 @@ export const SHELL_ROUTES: Record<string, () => Reply> = {
   'GET /api/storms': () => ({ body: { storms: [] } }),
   // The map home page's cards (features/today/Home): each answered with "nothing yet"
   'GET /api/home/signed': () => ({ body: { monthTotalCents: 0, goalCents: null, weekly: [], openPipelineCents: 0 } }),
+  'GET /api/jobs/board': () => ({ body: { columns: [], lost: { count: 0 } } }),
+  'GET /api/front-desk/stats': () => ({
+    body: { weekStart: '2026-10-12', answered: 0, booked: 0, transferred: 0, messages: 0, spam: 0, firstReplyMsP50: null, guardBlocks: 0, aiMinutesUsed: 0, aiMinutesIncluded: null },
+  }),
+  'GET /api/appointments?*': () => ({ body: { appointments: [], busy: [] } }),
   'GET /api/weather/outlook': () => ({ body: { outlook: null } }),
   'GET /api/agents/feed': () => ({ body: { items: [], nextCursor: null } }),
   'GET /api/company': () => ({ body: { id: 'c1', name: 'Summit Roofing', timezone: 'America/Chicago' } }),

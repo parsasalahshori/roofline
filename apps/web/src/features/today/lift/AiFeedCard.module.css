@@ -1,90 +1,46 @@
-/* What your AI just did, as the reference draws it: a green "working" label, then rows with a colored dot and a hairline between. */
-.card {
-  composes: card from './glass.module.css';
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.head {
-  composes: head from './glass.module.css';
-}
-
-.title {
-  composes: title from './glass.module.css';
-}
-
-.chip {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  color: var(--ok-text);
-  font-size: var(--font-size-min);
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.live {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--ok);
+/* What the agents did: a panel of rows, a glyph, the sentence, and who and when beneath it */
+.panel {
+  min-width: 0;
 }
 
 .list {
-  display: flex;
-  flex-direction: column;
-  margin: 8px 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.row {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  min-width: 0;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--line-2);
-  --agent-color: var(--ink-3);
+.item {
+  border-bottom: 1px solid var(--line);
 }
 
-.row:last-child {
+.item:last-child {
   border-bottom: 0;
 }
 
-.row[data-agent="storm_scout"] {
-  --agent-color: #6b3fa0;
+.row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px 16px;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1.35;
+  text-decoration: none;
 }
 
-.row[data-agent="estimator"] {
-  --agent-color: #d99e00;
+a.row:hover {
+  background: var(--surface-2);
 }
 
-.row[data-agent="front_desk"] {
-  --agent-color: #1f8a8a;
-}
-
-.row[data-agent="claims"] {
-  --agent-color: #2e7d5b;
-}
-
-.row[data-agent="scheduler"] {
-  --agent-color: #b8662f;
-}
-
-.row[data-agent="follow_up"] {
-  --agent-color: #2f6fde;
-}
-
-.dot {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  margin-top: 5px;
-  border-radius: 50%;
-  background: var(--agent-color);
+.glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-1);
+  background: var(--sunken);
+  color: var(--ink-2);
 }
 
 .body {
@@ -96,17 +52,28 @@
 
 .text {
   color: var(--ink);
-  font-size: 13.5px;
-  line-height: 1.375;
-  overflow-wrap: anywhere;
 }
 
 .byline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
   color: var(--ink-3);
   font-size: var(--font-size-min);
 }
 
+.flag {
+  height: 18px;
+}
+
+.loading,
 .empty {
-  margin: 8px 0 0;
+  margin: 0;
+  padding: 16px;
+}
+
+.empty {
   color: var(--ink-3);
+  font-size: 13px;
 }

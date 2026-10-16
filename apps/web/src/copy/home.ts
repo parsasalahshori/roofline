@@ -1,64 +1,106 @@
-/** The map home page: the greeting card, its briefing and buttons, and the storm toast. */
-
-/** One run of the briefing: `bold` runs carry the numbers the reader should catch first. */
-export type BriefingPart = { text: string; bold?: boolean };
+/** The Home page: the greeting, the numbers strip, the storm callout on the map, the approval card, today's visits and what the agents did. */
 
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
 
+/** Whole dollars with cents, as a cost reads on an approval card: $18.00. */
+const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+
 export const home = {
-  /** "Good morning, Dale." */
+  /** "Good morning, Dana." */
   greeting: (part: 'morning' | 'afternoon' | 'evening', firstName: string) =>
     firstName ? `Good ${part}, ${firstName}.` : `Good ${part}.`,
+  measureAddress: 'Measure an address',
+  newJob: 'New job',
+
+  // The numbers strip
+  kpisLabel: 'Your numbers',
+  kpiLoadFailed: 'Could not load this',
+  signed: 'Signed this month',
+  /** The line under the signed total when the company has a goal: "62% of the $25,000 goal". */
+  signedGoal: (percent: number, goal: string) => `${percent}% of the ${goal} goal`,
+  /** Under the signed total, beside the weekly bars. */
+  signedMeta: 'Weekly, last 12 weeks',
+  signedNothing: 'Nothing signed yet this month',
+  signedWeeks: 'Signed each week, last 12 weeks',
+  pipeline: 'Open pipeline',
+  pipelineMeta: (openJobs: number, atProposal: number) =>
+    `${openJobs} open ${plural(openJobs, 'job', 'jobs')} · ${atProposal} at proposal`,
+  /** "Hail · Monday", or just "Hail" when the company has had none. */
+  hail: (day: string | null) => (day === null ? 'Hail' : `Hail · ${day}`),
+  hailUnit: 'in',
+  hailNone: 'None',
+  hailNoneMeta: 'No hail in the last 30 days',
+  /** The words after the bold count: "34 customers inside the swath". */
+  hailInside: (customers: number) => `${plural(customers, 'customer', 'customers')} inside the swath`,
+  desk: 'Front Desk · this week',
+  deskUnit: 'calls',
+  deskMeta: (booked: number, passedOn: number) =>
+    `${booked} ${plural(booked, 'inspection', 'inspections')} booked${passedOn > 0 ? ` · ${passedOn} passed to your team` : ''}`,
+
+  // The storm callout over the map
+  stormRegion: 'The latest storm',
+  /** The weekday slot of "Hail · Monday" when the storm was yesterday (today reads "Today", from the forecast copy). */
+  yesterday: 'Yesterday',
+  /** "today", "yesterday", "on Monday" or "on Oct 9": when the storm crossed. */
+  stormWhen: (kind: 'today' | 'yesterday' | 'day', label: string) =>
+    kind === 'today' ? 'today' : kind === 'yesterday' ? 'yesterday' : `on ${label}`,
+  stormTitle: (inches: string, place: string | null, when: string) => `Hail up to ${inches} in crossed ${place ?? 'your area'} ${when}`,
+  stormBody: (customers: number, homes: number, plan: string) =>
+    `${customers} ${plural(customers, 'customer', 'customers')} and ${homes.toLocaleString('en-US')} ${plural(homes, 'home', 'homes')} inside. ${plan}`,
+  /** The plan's state, as the last sentence of the callout. Keyed by the plan's status; none is "No plan yet". */
+  stormPlan: {
+    draft: 'Storm Scout drafted a plan.',
+    awaiting_owner: 'Storm Scout drafted a plan.',
+    approved: 'The plan is on its way.',
+    running: 'The plan is running.',
+    done: 'The plan finished.',
+    partly_done: 'The plan partly finished.',
+    needs_attention: 'The plan needs a look.',
+    declined: 'The plan was set aside.',
+    expired: 'The plan expired.',
+  } as Record<string, string>,
+  stormNoPlan: 'No plan yet.',
   openStormReport: 'Open storm report',
-  fixRainDay: 'Fix the rain day',
-  reviewApprovals: (count: number) => `Review ${count} ${plural(count, 'approval', 'approvals')}`,
-  allQuiet: 'Nothing needs you right now. Your agents are keeping watch.',
-  loading: 'Loading your briefing',
+  stormDismiss: 'Dismiss the storm note',
 
-  /**
-   * The briefing, from what the company really has: the latest storm (inches, homes in the path), the
-   * inspections its plan booked, and the installs the coming forecast puts at risk. A sentence is left out
-   * when its number is not there. `when` is "overnight" for a storm from today, else "on Tuesday".
-   */
-  briefing: (facts: {
-    storm: { maxIn: number; homesHit: number; when: string } | null;
-    inspectionsBooked: number;
-    atRisk: number;
-    riskDay: string | null;
-  }): BriefingPart[] => {
-    const parts: BriefingPart[] = [];
-    const { storm } = facts;
-    if (storm) {
-      parts.push({ text: `Hail up to ${Number(storm.maxIn.toFixed(2))} inches crossed the county ${storm.when}. ` });
-      if (storm.homesHit > 0) {
-        parts.push({ text: `${storm.homesHit} ${plural(storm.homesHit, 'home', 'homes')}`, bold: true });
-        parts.push({ text: ` ${plural(storm.homesHit, 'was', 'were')} in the path. ` });
-      }
-    }
-    if (facts.inspectionsBooked > 0) {
-      parts.push({ text: 'Front Desk has booked ' });
-      parts.push({ text: `${facts.inspectionsBooked} ${plural(facts.inspectionsBooked, 'inspection', 'inspections')}`, bold: true });
-      parts.push({ text: '. ' });
-    }
-    if (facts.atRisk > 0 && facts.riskDay) {
-      parts.push({ text: `${facts.riskDay}'s storms put ` });
-      parts.push({ text: `${facts.atRisk} ${plural(facts.atRisk, 'tear-off', 'tear-offs')}`, bold: true });
-      parts.push({ text: ' at risk.' });
-    }
-    const last = parts[parts.length - 1];
-    if (last) last.text = last.text.trimEnd();
-    return parts;
-  },
+  // The approval card
+  approvalDrafted: (agent: string, when: string) => `${agent} drafted · ${when}`,
+  approvalTag: 'Needs your OK',
+  approvalLocked: 'The plan fixes this',
+  factSteps: 'Steps',
+  factCost: 'Cost',
+  factSends: 'Sends',
+  /** "Up to $270.00": the most the plan may spend. */
+  costUpTo: (cents: number) => `Up to ${money.format(cents / 100)}`,
+  approve: 'Approve',
+  /** The toast after a one-tap approval. */
+  approved: (agent: string) => `Approved. ${agent} is on it.`,
+  review: 'Review',
+  edit: 'Edit',
+  notNow: 'Not now',
+  expires: (day: string) => `Expires ${day}`,
+  moreWaiting: (count: number) => `${count} more ${plural(count, 'plan needs', 'plans need')} your OK`,
+  seeAll: 'See all',
 
-  /** The storm's own day against today: "overnight" or "on Monday". */
-  stormWhen: (sameDay: boolean, weekday: string) => (sameDay ? 'overnight' : `on ${weekday}`),
+  // Today's visits
+  todayTitle: 'Today',
+  visits: (count: number) => `${count} ${plural(count, 'visit', 'visits')}`,
+  calendar: 'Calendar',
+  visitsLabel: "Today's visits",
+  allDay: 'All day',
+  /** "Roof install · Richard Jackson" */
+  visitTitle: (kind: string, who: string) => `${kind} · ${who}`,
+  /** Address and the like, side by side: "4265 Harney St · from Front Desk" */
+  visitDetail: (parts: readonly string[]) => parts.join(' · '),
+  fromFrontDesk: 'from Front Desk',
+  noVisits: 'No visits today',
+  noVisitsLeads: (leads: number) =>
+    `${leads} ${plural(leads, 'lead has', 'leads have')} no inspection yet. A visit booked now shows up here.`,
+  noVisitsHelp: 'A visit you book shows up here, with the time, the address and who goes.',
+  bookVisit: 'Book a visit',
+  visitsFailed: 'Could not load today’s visits.',
 
-  // The storm toast
-  toastApp: 'Storm Scout',
-  toastNow: 'now',
-  toastTitle: 'Hail report is ready',
-  toastBody: (homes: number, when: string) =>
-    `${homes} ${plural(homes, 'roof was', 'roofs were')} in ${when === 'overnight' ? "last night's" : 'the'} hail path.`,
-  toastReview: 'Review the storm',
-  toastDismiss: 'Dismiss',
+  // What your AI did
+  aiTitle: 'What your AI did',
+  agentsLink: 'Agents',
 } as const;

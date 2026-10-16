@@ -1,0 +1,69 @@
+/* The storm note over the map: a floating card with the weather glyph, two lines of words and a button */
+.callout {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 8px 10px 12px;
+  border-radius: var(--r-2);
+  background: var(--surface);
+  box-shadow: var(--e-2);
+}
+
+.icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--tape-tint);
+  color: var(--tape-ink);
+}
+
+.text {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font: 650 14px/1.25 var(--f-ui);
+}
+
+.body {
+  margin: 2px 0 0;
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  align-self: flex-start;
+}
+
+.dismiss {
+  margin-top: -2px;
+}
+
+/* Phone: the words take the width, the button goes under them, and the second line is left to the report */
+@media (max-width: 767.98px) {
+  .callout {
+    flex-wrap: wrap;
+    padding-right: 12px;
+  }
+
+  .body {
+    display: none;
+  }
+
+  .actions {
+    flex: 1 1 100%;
+    align-self: stretch;
+    justify-content: space-between;
+  }
+}

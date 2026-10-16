@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import type { ProposalView, TodayView } from '@roofline/shared';
+import type { FrontDeskWeekStats, ProposalView, TodayView } from '@roofline/shared';
 import { apiFetch } from '../../api/client.ts';
 
 /*
@@ -31,5 +31,15 @@ export function useSignedToday(dateKey: string) {
         '/api/proposals?status=signed&signedOn=' + encodeURIComponent(dateKey),
         { signal },
       ),
+  });
+}
+
+/** The Front Desk's counts for this week. Owner and office only: a rep is refused, so the caller passes `enabled` false for one. */
+export function useFrontDeskWeek(enabled: boolean) {
+  return useQuery({
+    enabled,
+    // The same key as the Front Desk inbox's week stats, so the two share one answer
+    queryKey: ['front-desk', 'stats', 'current'],
+    queryFn: ({ signal }) => apiFetch<FrontDeskWeekStats>('/api/front-desk/stats', { signal }),
   });
 }
