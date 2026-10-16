@@ -420,7 +420,7 @@ describe('on-site window photos', () => {
     expect(Math.abs(patched.body.photoWindows[0].heightIn - 60) / 60).toBeLessThan(0.02);
   });
 
-  it('refuses other files, HEIC, a photo over 12 MB, and a 41st photo', async () => {
+  it('refuses other files, HEIC, a photo over 12 MB, and a 151st photo', async () => {
     const { owner, view } = await measuredHouse();
     const text = await upload(owner, view.id, Buffer.from('<html>hello</html>'));
     expect(text.status).toBe(415);
@@ -433,7 +433,7 @@ describe('on-site window photos', () => {
     expect((await upload(owner, view.id, big)).status).toBe(413);
     expect((await owner.post(`/api/window-measurements/${view.id}/uploads`).field('note', 'x')).status).toBe(400);
     const dummy = { id: NO_UUID, widthPx: 10, heightPx: 10, focal35mm: null, takenAt: null, key: 'k', kind: 'jpeg', orientation: 1, bytes: 1, uploadedAt: NOW.toISOString() };
-    await ownerSql(`update window_measurements set uploads = $1::jsonb where id = $2`, [JSON.stringify(Array.from({ length: 40 }, () => dummy)), view.id]);
+    await ownerSql(`update window_measurements set uploads = $1::jsonb where id = $2`, [JSON.stringify(Array.from({ length: 150 }, () => dummy)), view.id]);
     expect((await upload(owner, view.id, windowPhoto({ widthPx: 100, heightPx: 100 }).bytes)).status).toBe(409);
   });
 
@@ -539,8 +539,9 @@ describe('on-site window photos', () => {
     expect(Math.abs(w.widthIn - 36)).toBeLessThan(0.01);
     expect(Math.abs(w.heightIn - 60)).toBeLessThan(0.01);
     expect(w.quality).toBe('good');
-    expect(w.uncertaintyIn!.width).toBeGreaterThan(0.1);
-    expect(w.uncertaintyIn!.width).toBeLessThan(0.2);
+    // WebXR (no device given): 6 mm a point and 1% of the 36 in side, in quadrature: about 0.43 in
+    expect(w.uncertaintyIn!.width).toBeGreaterThan(0.4);
+    expect(w.uncertaintyIn!.width).toBeLessThan(0.5);
     expect(w.scale).toEqual(scale);
     expect((await owner.get(url)).body.adjustments.photoWindows[0].scale.kind).toBe('ar');
 
@@ -567,6 +568,112 @@ describe('on-site window photos', () => {
     const skew = await send({ pointsM: [at(-10, 30), at(26, 30), at(18, -30), at(-18, -30)] });
     expect(skew.status).toBe(200);
     expect(skew.body.photoWindows[0].quality).toBe('check');
+  });
+
+  describe('the iPhone app: one window at a time, the latest measurement of a job, room scans', () => {
+    const m = 0.0254;
+    const at = (x: number, y: number): [number, number, number] => [x * m, 1.2 + y * m, -2];
+    const arScale = (w: number, h: number) => ({ kind: 'ar', pointsM: [at(-w / 2, h / 2), at(w / 2, h / 2), at(w / 2, -h / 2), at(-w / 2, -h / 2)], trackingLostCount: 0, device: 'arkit-lidar', cornerSpreadM: [0.001, 0.002, 0.002, 0.001] });
+    const room = { kind: 'roomplan', widthM: 0.9144, heightM: 1.524, confidence: 'high' };
+
+    it('GET ?propertyId= gives the newest measurement of the property; none, another company or a hidden one is a 404', async () => {
+      const { owner, view } = await measuredHouse();
+      t.clock.set(new Date(NOW.getTime() + 60_000));
+      const newer = await measure(owner, { propertyId: view.propertyId });
+      const got = await owner.get(`/api/window-measurements?propertyId=${view.propertyId.toUpperCase()}`);
+      expect(got.status).toBe(200);
+      expect(got.body.id).toBe(newer.id);
+      expect((await owner.get('/api/window-measurements?propertyId=nope')).status).toBe(400);
+      expect((await owner.get('/api/window-measurements')).status).toBe(400);
+      const bare = await homeAt(2, INSIDE);
+      expect((await owner.get(`/api/window-measurements?propertyId=${bare}`)).status).toBe(404);
+      expect((await (await who.as('owner', 'b')).get(`/api/window-measurements?propertyId=${view.propertyId}`)).status).toBe(404);
+      expect((await (await who.as('rep')).get(`/api/window-measurements?propertyId=${view.propertyId}`)).status).toBe(404);
+    });
+
+    it('POST /:id/photo-windows adds one window (sized like PATCH); the same window again is a 200; a different one with its id is a 409', async () => {
+      const { owner, view } = await measuredHouse();
+      const photo = windowPhoto();
+      const id = (await upload(owner, view.id, photo.bytes)).body.id as string;
+      const url = `/api/window-measurements/${view.id}/photo-windows`;
+      const a1 = { id: 'a1', uploadId: id.toUpperCase(), label: 'Den', windowKey: 'den', corners: photo.window, scale: arScale(36, 60) };
+      // A native app sends no Origin header: it passes the cross-site check (a browser on another site does not)
+      expect((await owner.post(url).set('Origin', 'https://evil.example').send(a1)).status).toBe(403);
+      const added = await owner.post(url).send(a1);
+      expect(added.status, JSON.stringify(added.body)).toBe(201);
+      const w = (added.body as WindowMeasurementView).photoWindows![0]!;
+      expect(w).toMatchObject({ id: 'a1', uploadId: id, widthIn: 36, heightIn: 60, quality: 'good' });
+      // LiDAR: 2.5 mm a point (0.098 in) and 1% of 36 in
+      expect(w.uncertaintyIn!.width).toBe(0.37);
+      expect((await owner.post(url).send(a1)).status).toBe(200);
+      const taken = await owner.post(url).send({ ...a1, label: 'Kitchen' });
+      expect(taken.status).toBe(409);
+      const second = await owner.post(url).send({ ...a1, id: 'a2', label: 'Den 2' });
+      expect(second.status).toBe(201);
+      expect((second.body as WindowMeasurementView).photoWindows!.map((x) => x.id)).toEqual(['a1', 'a2']);
+      // Priced as measured (the same recompute as PATCH)
+      expect((await owner.get(`/api/window-measurements/${view.id}/preview`)).body.quotes[0].windows).toBe(total(view) + 1);
+
+      // Checked exactly like PATCH: 400 for bad input, 422 naming a window the math cannot size
+      expect((await owner.post(url).send({ ...a1, id: 'b1', uploadId: NO_UUID })).status).toBe(400);
+      expect((await owner.post(url).send({ ...a1, id: 'b1', scale: { ...arScale(36, 60), device: 'hololens' } })).status).toBe(400);
+      expect((await owner.post(url).send({ ...a1, id: 'b1', scale: { ...arScale(36, 60), cornerSpreadM: [0.2, 0, 0, 0] } })).status).toBe(400);
+      expect((await owner.post(url).send({ ...a1, id: 'b1', corners: undefined })).status).toBe(400);
+      expect((await owner.post(url).send({ id: 'b1', corners: photo.window, scale: room })).status).toBe(400);
+      expect((await owner.post(url).send({ ...a1, id: 'b c' })).status).toBe(400);
+      const tiny = await owner.post(url).send({ ...a1, id: 'b1', label: 'Attic', scale: arScale(4, 4) });
+      expect(tiny.status).toBe(422);
+      expect(tiny.body.error).toContain('"Attic"');
+      // 60 windows at most
+      const many = Array.from({ length: 58 }, (_, i) => ({ ...a1, id: `m${i}` }));
+      const have = (await owner.get(`/api/window-measurements/${view.id}`)).body.adjustments.photoWindows as unknown[];
+      expect((await owner.patch(`/api/window-measurements/${view.id}`).send({ photoWindows: [...have, ...many] })).status).toBe(200);
+      expect((await owner.post(url).send({ ...a1, id: 'full' })).status).toBe(409);
+      // Another company or a rep who cannot see the house: 404
+      expect((await (await who.as('owner', 'b')).post(url).send({ ...a1, id: 'x' })).status).toBe(404);
+      expect((await (await who.as('rep')).post(url).send({ ...a1, id: 'x' })).status).toBe(404);
+    });
+
+    it('DELETE /:id/photo-windows/:windowId takes one window off (and out of the left-out ids); again is harmless', async () => {
+      const { owner, view } = await measuredHouse();
+      const photo = windowPhoto();
+      const id = (await upload(owner, view.id, photo.bytes)).body.id as string;
+      const url = `/api/window-measurements/${view.id}/photo-windows`;
+      const a1 = { id: 'a1', uploadId: id, corners: photo.window, scale: arScale(36, 60) };
+      await owner.post(url).send(a1);
+      await owner.post(url).send({ ...a1, id: 'a2' });
+      await owner.patch(`/api/window-measurements/${view.id}`).send({ excludedWindowIds: ['a1'] });
+      expect((await (await who.as('owner', 'b')).delete(`${url}/a1`)).status).toBe(404);
+      const gone = await owner.delete(`${url}/a1`);
+      expect(gone.status).toBe(200);
+      expect((gone.body as WindowMeasurementView).photoWindows!.map((w) => w.id)).toEqual(['a2']);
+      expect((gone.body as WindowMeasurementView).adjustments.excludedWindowIds).toEqual([]);
+      expect((await owner.delete(`${url}/a1`)).status).toBe(200);
+      expect((await owner.delete(`${url}/not%20an%20id`)).status).toBe(404);
+      expect((await owner.delete(`/api/window-measurements/${NO_UUID}/photo-windows/a2`)).status).toBe(404);
+    });
+
+    it('a room-scan window needs no photo: always check, ± at least 1 in, kept through the web app\'s PATCH of the whole list', async () => {
+      const { owner, view } = await measuredHouse();
+      const url = `/api/window-measurements/${view.id}`;
+      const res = await owner.post(`${url}/photo-windows`).send({ id: 'r1', label: 'Living', scale: room });
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      const w = (res.body as WindowMeasurementView).photoWindows![0]!;
+      expect(w).toMatchObject({ id: 'r1', widthIn: 36, heightIn: 60, quality: 'check', uncertaintyIn: { width: 1, height: 1 }, sizeClass: 'standard' });
+      expect(w.uploadId).toBeUndefined();
+      expect(w.corners).toBeUndefined();
+      // Out of range: 422 naming it; bad confidence: 400
+      const tiny = await owner.post(`${url}/photo-windows`).send({ id: 'r2', label: 'Vent', scale: { ...room, widthM: 0.1 } });
+      expect(tiny.status).toBe(422);
+      expect(tiny.body.error).toContain('"Vent"');
+      expect((await owner.post(`${url}/photo-windows`).send({ id: 'r2', scale: { ...room, confidence: 'sure' } })).status).toBe(400);
+      // The web app sends the whole list back (as it read it): the room-scan window stays
+      const listed = (await owner.get(url)).body.adjustments.photoWindows;
+      const again = await owner.patch(url).send({ photoWindows: listed, photosCoverAllWindows: true });
+      expect(again.status, JSON.stringify(again.body)).toBe(200);
+      expect((again.body as WindowMeasurementView).photoWindows!.map((x) => x.id)).toEqual(['r1']);
+      expect((await owner.get(`${url}/preview`)).body.quotes[0].windows).toBe(1);
+    });
   });
 
   it('another company cannot see, fetch or add photos', async () => {

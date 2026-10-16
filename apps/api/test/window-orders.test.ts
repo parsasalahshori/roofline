@@ -206,6 +206,32 @@ describe('ready, roles and the lock', () => {
     expect((reopened.body as WindowOrderView).checked[0]!.order!.widthIn).toBeLessThan(v.lines[0]!.lockedSize!.widthIn);
   });
 
+  it('a room-scan window (iPhone RoomPlan, no photo) is a line with no thumbnail that can never be marked ready, even confirmed', async () => {
+    const owner = await who.as('owner');
+    const m = await houseWithPhotoWindows(owner, 1);
+    const added = await owner.post(`/api/window-measurements/${m.id}/photo-windows`).send({ id: 'r1', label: 'Living', scale: { kind: 'roomplan', widthM: 0.9144, heightM: 1.524, confidence: 'high' } });
+    expect(added.status, JSON.stringify(added.body)).toBe(201);
+    const order = await draft(owner, m.id);
+    const scan = order.lines.find((l) => l.id === 'r1')!;
+    expect(scan).toMatchObject({ uploadId: null, location: 'Living', measured: [expect.objectContaining({ quoteOnly: true, quality: 'check' })] });
+    const url = `/api/window-orders/${order.id}`;
+    const patched = await owner.patch(url).send({ lines: order.lines.map((l) => ({ id: l.id, style: 'double-hung', confirmed: true })) });
+    expect(patched.status).toBe(200);
+    const c = (patched.body as WindowOrderView).checked.find((x) => x.id === 'r1')!;
+    expect(c.status).toBe('error');
+    expect(c.orderable).toBe(false);
+    expect(c.reasons[0]!.message).toMatch(/room scan only/);
+    expect((patched.body as WindowOrderView).canMarkReady).toBe(false);
+    expect((await owner.post(`${url}/ready`)).status).toBe(409);
+    // The draft's sheet still renders with a line that has no photo
+    const pdf = await owner.get(`${url}/sheet.pdf`).buffer(true);
+    expect(pdf.status).toBe(200);
+    // Taken off (or measured again in AR), the order can be marked ready
+    await owner.delete(`/api/window-measurements/${m.id}/photo-windows/r1`);
+    await owner.post(`/api/window-measurements/${m.id}/order`);
+    expect((await owner.post(`${url}/ready`)).status).toBe(200);
+  });
+
   it('office may mark ready; a rep may draft and edit but not mark ready', async () => {
     const rep = await who.as('rep');
     const customer = await mustCreate(rep, '/api/customers', { displayName: 'Rep Customer' });

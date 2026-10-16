@@ -5,7 +5,7 @@
 // optional detector can find the front windows instead (source 'detector'); it is off by default.
 // Estimated windows are never shown or priced as measured.
 import type { Tier } from './proposals.ts';
-import type { ArQuad, Quad } from './window-photo-math.ts';
+import type { ArDevice, ArQuad, Quad } from './window-photo-math.ts';
 
 type LngLat = [number, number];
 
@@ -213,22 +213,48 @@ export type WindowPhotoScale =
     }
   | {
       /**
-       * AR on an Android phone (WebXR hit-test): the person tapped the window FRAME's four corners. No scale prop: the
-       * size is the distance between the points (window-photo-math sizeFromArPoints). The PhotoWindowInput's corners are
-       * the same four points drawn into the one photo kept with it (or that photo inset 15% when they could not be).
+       * AR on a phone (Android WebXR hit-test, or the iPhone app's ARKit): the person tapped the window FRAME's four
+       * corners. No scale prop: the size is the distance between the points (window-photo-math sizeFromArPoints). The
+       * PhotoWindowInput's corners are the same four points drawn into the one photo kept with it (or that photo inset
+       * 15% when they could not be).
        */
       kind: 'ar';
-      /** TL, TR, BR, BL frame corners, metres, AR world space. */
+      /** The frame's four corners, metres, AR world space (+Y up). Meant as TL, TR, BR, BL, but ordered by gravity on use. */
       pointsM: ArQuad;
       /** How many times AR lost the wall while the corners were being tapped. */
       trackingLostCount: number;
+      /** Which AR measured them; sets the per-point noise in the ±. Absent: 'webxr' (the Android web app). */
+      device?: ArDevice;
+      /** Each corner's measured spread, metres, 1 sigma, in the order of pointsM (the iPhone averages ~15 raycasts). */
+      cornerSpreadM?: [number, number, number, number];
+    }
+  | {
+      /**
+       * Apple RoomPlan on a LiDAR iPhone: the room scan found the window and gives its size directly. Quote-grade only:
+       * always 'check', at least ROOMPLAN_MIN_UNCERTAINTY_IN of ±, and never order-grade (the order sheet refuses a
+       * window measured only this way). The PhotoWindowInput may have no photo (no uploadId, no corners).
+       */
+      kind: 'roomplan';
+      widthM: number;
+      heightM: number;
+      /** RoomPlan's own confidence in the surface. */
+      confidence: RoomPlanConfidence;
     };
+
+export const ROOMPLAN_CONFIDENCES = ['low', 'medium', 'high'] as const;
+export type RoomPlanConfidence = (typeof ROOMPLAN_CONFIDENCES)[number];
+/** The least ± a RoomPlan size carries, inches (RoomPlan is a quote-grade scan, not a frame-corner measure). */
+export const ROOMPLAN_MIN_UNCERTAINTY_IN = 1;
+/** RoomPlan's ± by its confidence, inches (UNCALIBRATED until the field test; never under the 1 in floor). */
+export const ROOMPLAN_UNCERTAINTY_IN: Readonly<Record<RoomPlanConfidence, number>> = { high: 1, medium: 1.5, low: 2 };
 
 /**
  * What the person enters for one photographed window: corners in photo pixels (TL, TR, BR, BL). Several photos of the
  * same window share a `windowKey` (one PhotoWindowInput per photo); absent means the photo is its own window.
+ * `uploadId` and `corners` are always there except for a RoomPlan window (scale kind 'roomplan'), which may have no
+ * photo; the API refuses them missing for any other kind.
  */
-export type PhotoWindowInput = { id: string; uploadId: string; label?: string; windowKey?: string; corners: Quad; scale: WindowPhotoScale };
+export type PhotoWindowInput = { id: string; uploadId?: string; label?: string; windowKey?: string; corners?: Quad; scale: WindowPhotoScale };
 
 /** The window a photographed window belongs to: its shared key, else its own id (one photo, one window). */
 export function photoWindowKey(w: Pick<PhotoWindowInput, 'id' | 'windowKey'>): string {
