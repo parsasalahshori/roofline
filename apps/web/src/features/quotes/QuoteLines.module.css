@@ -1,0 +1,7 @@
+/* On a phone: what the line is made of, under its name */
+.detail {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-3);
+  font: 500 var(--font-size-min)/1.4 var(--f-mono);
+}

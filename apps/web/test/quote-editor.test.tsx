@@ -275,6 +275,36 @@ describe('quote page', () => {
     expect(await screen.findByRole('heading', { level: 1, name: quotes.title('Q-0001') })).toBeInTheDocument();
   });
 
+  it('on a phone the lines keep two columns: the quantity and the rate go under the name', async () => {
+    phoneMode.phone = true;
+    const quote = makeQuote();
+    stubQuote(quote);
+    renderQuote();
+
+    const table = within(await screen.findByRole('table', { name: quotes.linesLabel }));
+    expect(table.getAllByRole('columnheader').map((header) => header.textContent)).toEqual([quotes.colName, quotes.colAmount]);
+    const first = quote.calculation.lines[0]!;
+    expect(table.getByText(quotes.lineDetail(quotes.quantityWithUnit(first.quantity, first.unit), money(first.unitCents)))).toBeInTheDocument();
+    expect(table.getByText(money(first.totalCents))).toBeInTheDocument();
+  });
+
+  it('a desktop keeps four columns', async () => {
+    stubQuote(makeQuote());
+    renderQuote();
+
+    const table = within(await screen.findByRole('table', { name: quotes.linesLabel }));
+    expect(table.getAllByRole('columnheader').map((header) => header.textContent)).toEqual([quotes.colName, quotes.colQuantity, quotes.colRate, quotes.colAmount]);
+  });
+
+  it('a quote that is not there says so in place, with a way back to the jobs', async () => {
+    stubQuote(makeQuote(), { 'GET /api/quotes/q1': () => ({ status: 404, body: { error: 'Not found' } }) });
+    renderQuote();
+
+    expect(await screen.findByText(quotes.notFound)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: quotes.pageTitle })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: quotes.backToJobs })).toHaveAttribute('href', '/jobs');
+  });
+
   it('while it loads, a status names the wait and the page is already titled Quote', async () => {
     api = stubApi({
       'GET /api/company': () => ({ body: company }),

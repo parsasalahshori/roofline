@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { useBlocker, useNavigate, useParams } from 'react-router';
 import { calculateQuote, isTimeZone, money, type Calculation, type Pricebook, type QuoteView, type Scope } from '@roofline/shared';
 import { Banner, Button, Icon, KpiTile, Panel, Sheet, Skeleton } from '@roofline/ui';
+import { ApiError } from '../../api/client.ts';
 import { quotes } from '../../copy/quotes.ts';
 import { WINDOW_COPY } from '../../copy/rail.ts';
 import { useIsPhone } from '../../shell/useIsPhone.ts';
 import { DetailPage } from '../jobs/DetailPage.tsx';
-import { LoadError } from '../jobs/states.tsx';
+import { EmptyPanel, LoadError } from '../jobs/states.tsx';
 import { useJobView } from '../job/api.ts';
 import { useCompany } from '../settings/api.ts';
 import { quotePdfHref, useCopyQuote, useFinalizeQuote, useQuote, useSaveQuote } from './api.ts';
@@ -92,7 +93,17 @@ export function QuoteWindow() {
   if (query.data !== undefined) return <QuoteBody key={quoteId} quote={query.data} />;
   return (
     <DetailPage app="jobs" title={quotes.pageTitle} crumbs={crumbs}>
-      {query.isError ? (
+      {query.error instanceof ApiError && query.error.status === 404 ? (
+        <EmptyPanel
+          title={quotes.notFound}
+          ghost="none"
+          action={
+            <Button variant="default" href="/jobs">
+              {quotes.backToJobs}
+            </Button>
+          }
+        />
+      ) : query.isError ? (
         <LoadError tag={quotes.errorTag} title={quotes.loadFailed} retry={quotes.retry} busy={query.isFetching} onRetry={() => void query.refetch()} />
       ) : (
         <QuoteSkeleton />

@@ -2,11 +2,12 @@ import { useId, useState } from 'react';
 import { useParams } from 'react-router';
 import type { ProposalView } from '@roofline/shared';
 import { Banner, Button, Field, Icon, Panel, Segmented, Skeleton } from '@roofline/ui';
+import { ApiError } from '../../api/client.ts';
 import { proposals } from '../../copy/proposals.ts';
 import { WINDOW_COPY } from '../../copy/rail.ts';
 import { useIsPhone } from '../../shell/useIsPhone.ts';
 import { DetailPage } from '../jobs/DetailPage.tsx';
-import { LoadError } from '../jobs/states.tsx';
+import { EmptyPanel, LoadError } from '../jobs/states.tsx';
 import { useCompany } from '../settings/api.ts';
 import {
   proposalPdfUrl,
@@ -240,7 +241,17 @@ export function ProposalWindow() {
   const crumbs = [JOBS_CRUMB, { label: proposals.pageTitle }];
   return (
     <DetailPage app="estimator" title={proposals.pageTitle} crumbs={crumbs}>
-      {query.isError ? (
+      {query.error instanceof ApiError && query.error.status === 404 ? (
+        <EmptyPanel
+          title={proposals.notFound}
+          ghost="none"
+          action={
+            <Button variant="default" href="/jobs">
+              {proposals.backToJobs}
+            </Button>
+          }
+        />
+      ) : query.isError ? (
         <LoadError tag={proposals.errorTag} title={proposals.loadFailed} retry={proposals.retry} busy={query.isFetching} onRetry={() => void query.refetch()} />
       ) : (
         <ProposalSkeleton />

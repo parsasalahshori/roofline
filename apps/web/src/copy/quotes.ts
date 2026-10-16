@@ -4,6 +4,8 @@ import type { Scope } from '@roofline/shared';
 export const quotes = {
   loading: 'Loading the quote',
   loadFailed: 'We could not load this quote.',
+  notFound: "We couldn't find this quote.",
+  backToJobs: 'Back to jobs',
   errorTag: "Couldn't load",
   retry: 'Try again',
   /** The page's name while the quote loads, and the last step of the trail. */
@@ -12,11 +14,12 @@ export const quotes = {
   crumbJob: 'Job',
   estimateLabel: 'Estimate',
 
-  statNumber: 'Quote',
   statStatus: 'Status',
   statTotal: 'Total',
   statValid: 'Good until',
   priceLinesHeading: 'Price lines',
+  /** Under a line's name on a phone: how much, at what rate. */
+  lineDetail: (quantity: string, rate: string): string => `${quantity} × ${rate}`,
   status: { draft: 'Draft', final: 'Final' } as Record<string, string>,
 
   editorLabel: 'Quote details',
@@ -59,7 +62,6 @@ export const quotes = {
   total: 'Total',
 
   save: 'Save',
-  saving: 'Saving',
   saved: 'Quote saved.',
   saveFailed: 'We could not save the quote.',
   markFinal: 'Mark final',

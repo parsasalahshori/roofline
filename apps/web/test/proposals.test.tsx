@@ -271,4 +271,27 @@ describe('proposal window', () => {
     await user.click(await screen.findByRole('button', { name: proposals.send }));
     expect(await screen.findByText('This proposal was already sent.')).toBeInTheDocument();
   });
+
+  it('a proposal that is not there says so in place, with a way back to the jobs', async () => {
+    open(makeProposal(), { 'GET /api/proposals/p1': () => ({ status: 404, body: { error: 'Not found' } }) });
+
+    expect(await screen.findByText(proposals.notFound)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: proposals.pageTitle })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: proposals.backToJobs })).toHaveAttribute('href', '/jobs');
+  });
+
+  it('a proposal that will not load says so in place, and Try again loads it', async () => {
+    let calls = 0;
+    const { user } = open(makeProposal(), {
+      'GET /api/proposals/p1': () => {
+        calls += 1;
+        return calls === 1 ? { status: 500, body: { error: 'x' } } : { body: makeProposal() };
+      },
+    });
+
+    const alert = (await screen.findByText(proposals.loadFailed)).closest('[role="alert"]');
+    expect(alert).not.toBeNull();
+    await user.click(within(alert as HTMLElement).getByRole('button', { name: proposals.retry }));
+    expect(await screen.findByRole('heading', { level: 1, name: proposals.title('P-0001') })).toBeInTheDocument();
+  });
 });

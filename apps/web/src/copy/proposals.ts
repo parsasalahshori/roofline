@@ -1,4 +1,4 @@
-import type { AddOnUnit, ProposalEventKind, ProposalStatus, Tier } from '@roofline/shared';
+import type { AddOnUnit, ProposalStatus, Tier } from '@roofline/shared';
 
 /** Whole dollars, as the screen shows every amount. */
 const dollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -13,6 +13,7 @@ export const proposals = {
   loadFailed: "We couldn't open this proposal. Try again.",
   retry: 'Try again',
   notFound: "We couldn't find this proposal.",
+  backToJobs: 'Back to jobs',
 
   // --- header ---
   title: (number: string): string => `Proposal ${number}`,
@@ -69,15 +70,6 @@ export const proposals = {
   /** "Opened 3 times · last today 7:12 PM". `last` comes from formatLastOpened in features/proposals/format.ts. */
   eventsLine: (count: number, last: string): string => `Opened ${count} ${count === 1 ? 'time' : 'times'} · last ${last}`,
   sentOn: (when: string): string => `Sent ${when}`,
-  eventKind: {
-    sent: 'Sent',
-    viewed: 'Opened',
-    option_viewed: 'Looked at an option',
-    signed: 'Signed',
-    declined: 'Declined',
-    link_resent: 'Link sent again',
-    link_copied: 'Link copied',
-  } satisfies Record<ProposalEventKind, string>,
   /** Words for a date label. `today` and `yesterday` are followed by a clock time. */
   today: 'today',
   yesterday: 'yesterday',
@@ -97,7 +89,6 @@ export const proposals = {
   makeRevised: 'Make a revised proposal',
   reviseFailed: "We couldn't make a revised proposal. Try again.",
   saveFailed: "We couldn't save your change. Try again.",
-  saving: 'Saving',
 
   // --- the options as rows and, on a phone, tabs ---
   tiersLabel: 'Options',
