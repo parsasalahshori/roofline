@@ -293,6 +293,23 @@ export const buildingFootprintTiles = pgTable(
 );
 
 /**
+ * One run of the google-retention job (docs/compliance/google-data-retention.md): when it ran, whether it finished, and
+ * how many of each kind of Google content it deleted. Counts only, never keys or content. Global (one run covers every
+ * company); written by app_system.
+ */
+export const googleRetentionRuns = pgTable('google_retention_runs', {
+  id: pk(),
+  startedAt: tstz('started_at').notNull(),
+  finishedAt: tstz('finished_at'),
+  /** The GOOGLE_CONTENT_RETENTION_DAYS the run used. */
+  retentionDays: integer('retention_days').notNull(),
+  /** GoogleRetentionCounts. */
+  counts: jsonb('counts').$type<Record<string, number>>().notNull().default({}),
+  /** A plain description of why the run stopped early (never provider text or content). */
+  errorPlain: text('error_plain'),
+});
+
+/**
  * Cache of Twilio Lookup line types (global: a number's line type does not depend on the company).
  * Read and written by the system role only.
  */

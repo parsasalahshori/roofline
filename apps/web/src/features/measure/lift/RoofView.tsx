@@ -398,15 +398,21 @@ function Legend({ model }: { model: RoofModel }) {
   );
 }
 
-type NoticeState = Pick<RoofSession, 'mapFailed' | 'locked' | 'problem' | 'saveFailed' | 'drawMode' | 'finishDrawing' | 'clearDrawing'>;
+type NoticeState = Pick<RoofSession, 'mapFailed' | 'locked' | 'problem' | 'saveFailed' | 'drawMode' | 'finishDrawing' | 'clearDrawing'> & { roofPhotoExpired?: boolean };
 
-function Notices({ roof }: { roof: NoticeState }) {
+export function Notices({ roof }: { roof: NoticeState }) {
   // A sent (locked) roof says so in the measure card, off the photo
-  const any = roof.mapFailed || roof.problem !== null || roof.saveFailed || roof.drawMode;
+  const photoExpired = roof.roofPhotoExpired === true && !roof.mapFailed;
+  const any = roof.mapFailed || roof.problem !== null || roof.saveFailed || roof.drawMode || photoExpired;
   if (!any) return null;
   return (
     <div className={styles.notices} data-notices="">
       {roof.mapFailed ? <Banner tone="warning">{measure.mapFailed}</Banner> : null}
+      {photoExpired ? (
+        <div data-roof-photo-expired="">
+          <Banner tone="warning">{legal.googlePhotoExpired}</Banner>
+        </div>
+      ) : null}
       {roof.problem !== null ? (
         <div role="alert">
           <Banner tone="danger">{measure.problems[roof.problem]}</Banner>
@@ -438,7 +444,7 @@ export function footprintsShown(m: MeasurementView, editing: boolean): boolean {
 /** The roof as MeasureWindow's one editor draws it: this view places the map's container and what goes over it. */
 function Stage({ m, slots, roof, scan, captured }: { m: MeasurementView; slots: MeasureSlots; roof: RoofSession; scan: ScanSession; captured: Date | null }) {
   const { model, editing, quote } = slots;
-  const { containerRef, drawMode, saving, map, ring, zoom, mapFailed, locked, problem, saveFailed, finishDrawing, clearDrawing } = roof;
+  const { containerRef, drawMode, saving, map, ring, zoom, mapFailed, roofPhotoExpired, locked, problem, saveFailed, finishDrawing, clearDrawing } = roof;
   const done = scan.phase === 'done';
   const roofDrawn = done || (scan.phase === 'scanning' && scan.progress >= ROOF_DRAWN_AT);
   const [popover, setPopover] = useState<PopoverAt | null>(null);
@@ -474,7 +480,7 @@ function Stage({ m, slots, roof, scan, captured }: { m: MeasurementView; slots: 
         </p>
         {/* The notices at the top and the card at the bottom share one column, so they can never overlap */}
         <div className={styles.overlay}>
-          <Notices roof={{ mapFailed, locked, problem, saveFailed, drawMode, finishDrawing, clearDrawing }} />
+          <Notices roof={{ mapFailed, roofPhotoExpired, locked, problem, saveFailed, drawMode, finishDrawing, clearDrawing }} />
           <div className={styles.overlaySpacer} />
           {scan.phase === 'idle' ? null : (
             <MeasureCard

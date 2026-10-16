@@ -367,6 +367,11 @@ export type Roof3dSnapshot = {
   none?: Roof3dNoneReason;
   photo?: Roof3dPhoto | null;
   /**
+   * When the google-retention job deleted the photo (Google's 30 days; `photo` is then null). The reconstruction is
+   * ours and stays. Absent while the photo is kept, or when there never was one.
+   */
+  photoDeletedAt?: string;
+  /**
    * ROOF_3D_MODE=shadow: the roof that was reconstructed but not measured from (roof is then null and none 'shadow').
    * Kept so the comparison can be made later, and so turning the mode on reuses it instead of buying the layers again.
    */

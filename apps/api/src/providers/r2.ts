@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { AwsClient } from 'aws4fetch';
 import type { Config } from '../config.ts';
-import type { ObjectStore } from './object-store.ts';
+import type { ObjectStore, StoredObject } from './object-store.ts';
 
 export interface R2Options {
   accountId: string;
@@ -77,6 +77,46 @@ export class R2ObjectStore implements ObjectStore {
     if (res.status === 404) return;
     if (!res.ok) throw unavailable(res.status);
   }
+
+  /** ListObjectsV2 over `prefix`, every page (at most 1000 keys each). */
+  async list(prefix: string): Promise<StoredObject[]> {
+    const out: StoredObject[] = [];
+    let token: string | null = null;
+    for (let page = 0; page < 10_000; page++) {
+      const url = new URL(this.base);
+      url.searchParams.set('list-type', '2');
+      url.searchParams.set('prefix', prefix);
+      if (token !== null) url.searchParams.set('continuation-token', token);
+      const signed = await this.client.sign(url.toString(), { method: 'GET' });
+      const res = await this.doFetch(signed);
+      if (!res.ok) throw unavailable(res.status);
+      const parsed = parseListObjects(await res.text());
+      out.push(...parsed.objects);
+      if (!parsed.truncated || parsed.next === null) break;
+      token = parsed.next;
+    }
+    return out;
+  }
+}
+
+function xmlText(v: string): string {
+  return v.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+}
+
+/** The keys and times of one ListObjectsV2 page (S3's XML), and whether more pages follow. */
+export function parseListObjects(xml: string): { objects: StoredObject[]; truncated: boolean; next: string | null } {
+  const objects: StoredObject[] = [];
+  for (const m of xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)) {
+    const body = m[1] ?? '';
+    const key = /<Key>([\s\S]*?)<\/Key>/.exec(body)?.[1];
+    const modified = /<LastModified>([\s\S]*?)<\/LastModified>/.exec(body)?.[1];
+    const at = Date.parse(modified ?? '');
+    if (key === undefined || !Number.isFinite(at)) continue;
+    objects.push({ key: xmlText(key), lastModified: new Date(at) });
+  }
+  const truncated = /<IsTruncated>true<\/IsTruncated>/.test(xml);
+  const next = /<NextContinuationToken>([\s\S]*?)<\/NextContinuationToken>/.exec(xml)?.[1];
+  return { objects, truncated, next: next === undefined ? null : xmlText(next) };
 }
 
 export function r2For(config: Config): ObjectStore | null {

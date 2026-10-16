@@ -208,7 +208,7 @@ function personFitFor(row: { geometry: Parameters<typeof planOf>[0] | null }, ph
  * - POST { address | propertyId } -> 201 WindowMeasurementView (the walls estimate, front photos with the wall drawn).
  * - GET /:id -> the view. PATCH /:id (WindowMeasurementPatch: excludedWindowIds, manualCounts, marked, wallCorners;
  *   each key given replaces what was there) -> the view, with marked windows sized and the estimate redone.
- * - GET /:id/photos/:photoId -> the JPEG (kept 30 days, Google's terms; 404 after).
+ * - GET /:id/photos/:photoId -> the JPEG (kept 30 days, Google's terms; 410 after).
  * - GET /:id/preview -> { quotes }: Good/Better/Best priced from the counted windows (null for members who do not see money).
  * Rep visibility and company isolation come from the repository: a measurement the caller may not see is a 404.
  */
@@ -316,14 +316,16 @@ export function windowMeasurementRoutes(deps: AppDeps): Router {
     const photoId = idParam(req.params.photoId);
     const row = await withTenant(pools, ctx, (tx) => getWindowMeasurement(tx, ctx, id));
     const photo = row?.photos.find((p) => p.id === photoId);
-    if (photo === undefined || photo.key === null) throw new AppError(404, MESSAGES.notFound);
+    if (photo === undefined) throw new AppError(404, MESSAGES.notFound);
+    // Deleted by the google-retention job: 410, so the photo area can say it expired.
+    if (photo.key === null) throw new AppError(photo.deletedAt !== undefined ? 410 : 404, photo.deletedAt !== undefined ? MESSAGES.googlePhotoExpired : MESSAGES.notFound);
     if (Date.parse(photo.deleteBy) <= clock.now().getTime()) {
       // Past Google's 30 days: gone (the bytes are removed now if a sweep has not done it yet).
       await deps.objectStore.delete(photo.key).catch((err: unknown) => deps.logError?.(err, 'window-photo-delete'));
-      throw new AppError(404, MESSAGES.notFound);
+      throw new AppError(410, MESSAGES.googlePhotoExpired);
     }
     const bytes = await deps.objectStore.get(photo.key);
-    if (bytes === null) throw new AppError(404, MESSAGES.notFound);
+    if (bytes === null) throw new AppError(410, MESSAGES.googlePhotoExpired);
     res.set('Content-Type', 'image/jpeg');
     res.set('Cache-Control', 'private, max-age=86400');
     res.send(Buffer.from(bytes));

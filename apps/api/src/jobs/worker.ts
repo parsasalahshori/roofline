@@ -18,6 +18,7 @@ import { expireDrafts } from './scheduler/expire-drafts.ts';
 import { hailHealth } from './scheduler/hail-health.ts';
 import { fdHealth } from './scheduler/fd-health.ts';
 import { fdRetention } from './scheduler/fd-retention.ts';
+import { googleRetention } from './scheduler/google-retention.ts';
 import { pollTexting } from './scheduler/poll-texting.ts';
 import { pruneEarlyReports } from './scheduler/prune-early-reports.ts';
 import { provisionTexting } from './scheduler/provision-texting.ts';
@@ -43,13 +44,15 @@ export type ScheduledJob = {
   /** A cron expression, evaluated in UTC. */
   cron: string;
   run: (deps: AppDeps, now: Date) => Promise<unknown>;
+  /** Also run once each time a worker starts (besides its cron): a deploy or restart never waits a day for it. */
+  runAtStart?: boolean;
 };
 
 /**
  * The worker's recurring jobs: draft expiry, the queued-step sweeper, the import sweeper (imports
  * stranded queued or processing), the scheduled-text
  * dispatcher (texts waiting out quiet hours, and the batch steps they belong to), then the trial
- * end, usage reporting, texting provisioning and polling, the monthly fees, calendar pulls, the footprints top-up, the exact-report poll, the signed-PDF sweep, Storm Scout's Spotter sync, storm matching, ad-spend sync and hail-feed health check, and Front Desk's retention and health checks. The G1 agents' schedules come last. A schedule dropped
+ * end, usage reporting, texting provisioning and polling, the monthly fees, calendar pulls, the footprints top-up, the exact-report poll, the signed-PDF sweep, Storm Scout's Spotter sync, storm matching, ad-spend sync and hail-feed health check, and Front Desk's retention and health checks, the G1 agents' schedules, and Google content retention (also run at start). A schedule dropped
  * from this list is unscheduled the next time a worker starts.
  */
 export const SCHEDULES: readonly ScheduledJob[] = [
@@ -80,6 +83,8 @@ export const SCHEDULES: readonly ScheduledJob[] = [
   { name: 'scheduler-agenda-schedule', cron: '*/15 * * * *', run: agentJobSchedule('scheduler-agenda') },
   { name: 'scheduler-weather-schedule', cron: '*/15 * * * *', run: agentJobSchedule('scheduler-weather') },
   { name: 'followup-daily-schedule', cron: '*/15 * * * *', run: agentJobSchedule('followup-daily') },
+  // Google content retention: Solar answers, the roof photo and Street View photos past their days (at most 30)
+  { name: 'google-retention', cron: '23 4 * * *', run: googleRetention, runAtStart: true },
 ];
 
 /** How many steps one worker process runs at once. */
@@ -193,5 +198,8 @@ export async function startWorker(boss: PgBoss, deps: AppDeps, options: WorkerOp
     // Demo mode polls exact reports every minute, so an ordered report comes back while the audience watches.
     const cron = deps.config.DEMO_MODE && job.name === 'exact-report-poll' ? '* * * * *' : job.cron;
     await boss.schedule(job.name, cron);
+    // One run now as well; the queue's 'short' policy keeps at most one waiting, so several workers starting together
+    // queue one run, not one each.
+    if (job.runAtStart === true) await boss.send(job.name, {});
   }
 }

@@ -52,3 +52,5 @@ export * from './instant-quote.ts';
 export * from './window-order.ts';
 export * from './window-photo-sheet.ts';
 export * from './window-photo-cv.ts';
+// Google content retention (docs/compliance/google-data-retention.md)
+export * from './google-retention.ts';

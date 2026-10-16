@@ -77,6 +77,11 @@ export type MeasurementView = {
    */
   roofPhoto?: { url: string; corners: [LngLat, LngLat, LngLat, LngLat] } | null;
   /**
+   * The 3D roof had Google's photo, but it is past the days Google's terms let it be kept (and is deleted, or about to
+   * be): the roof view says so instead of showing it. The measured roof itself is kept. Absent or false otherwise.
+   */
+  roofPhotoExpired?: boolean;
+  /**
    * The 3D roof falls short of the quality targets (see RoofQuality): a person should check it before pricing it.
    * Null or absent when it does not (or the roof is not a 3D one).
    */

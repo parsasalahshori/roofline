@@ -8,6 +8,8 @@ export const legal = {
   maptilerImageryAttribution: 'Imagery © MapTiler',
   /** On the map, wherever the Google satellite photos are drawn (a Google key is set). */
   googleImageryAttribution: 'Imagery © Google',
+  /** A Google photo (the roof's, or a Street View photo of the front) past the 30 days Google's terms allow: deleted. */
+  googlePhotoExpired: "Photo expired (Google's 30-day limit). Re-measure to see it again.",
   /** On a measured roof whose pitch is Google Solar's (Google's attribution rule: "Includes solar data from Google"). */
   solarPitchAttribution: 'Pitch from Google Solar (includes solar data from Google)',
   /** On a roof measured in 3D from Google Solar's height map. */

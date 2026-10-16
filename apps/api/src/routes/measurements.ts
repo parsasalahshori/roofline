@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getMeasurement, gutterInputs, measurementRoof3d, setGutterAdjustments, updateMeasurement, withTenant, type GutterInputs, type MeasurementPatch, type TenantContext } from '@roofline/db';
+import { getMeasurement, gutterInputs, measurementRoof3d, roofPhotoGone, setGutterAdjustments, updateMeasurement, withTenant, type GutterInputs, type MeasurementPatch, type TenantContext } from '@roofline/db';
 import { eaveHeight, gutterRuns, gutterView, MAX_DOWNSPOUTS_PER_RUN, MAX_EXCLUDED_FACETS, MAX_GUTTER_RUNS, type GutterMeasurementView, type MeasurementView, outlineProblem, solarDataCurrent, type LngLat, type Outline, type Ring } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { aerialMeasure } from '../estimator/aerial.ts';
@@ -199,7 +199,8 @@ function seesRoofPhoto(ctx: TenantContext): boolean {
 
 /** The view as this member may have it: without the roof photo unless they may see it. */
 function forViewer(view: MeasurementView, ctx: TenantContext): MeasurementView {
-  return seesRoofPhoto(ctx) || view.roofPhoto == null ? view : { ...view, roofPhoto: null };
+  if (seesRoofPhoto(ctx) || (view.roofPhoto == null && view.roofPhotoExpired !== true)) return view;
+  return { ...view, roofPhoto: null, roofPhotoExpired: undefined };
 }
 
 export function measurementRoutes(deps: AppDeps): Router {
@@ -238,16 +239,19 @@ export function measurementRoutes(deps: AppDeps): Router {
   });
 
   // Google's true-ortho photo of a roof measured in 3D (owner and office), a PNG kept with the measurement's 3D roof
-  // for the 30 days the Solar API terms allow; 404 when there is none (or no longer).
+  // for the 30 days the Solar API terms allow (the google-retention job deletes it then); 410 once it is past them
+  // (deleted, or about to be), 404 when there never was one.
   router.get('/:id/roof-photo', async (req, res) => {
     const { ctx } = req;
     const id = idParam(req.params.id);
     if (!seesRoofPhoto(ctx)) throw new AppError(403, MESSAGES.roleCannot);
     const snapshot = await withTenant(pools, ctx, (tx) => measurementRoof3d(tx, ctx, id));
+    if (roofPhotoGone(snapshot ?? null, clock.now())) throw new AppError(410, MESSAGES.googlePhotoExpired);
     const photo = snapshot?.photo ?? null;
     if (photo === null || !solarDataCurrent(snapshot, clock.now())) throw new AppError(404, MESSAGES.notFound);
     const bytes = await deps.objectStore.get(photo.key);
-    if (bytes === null) throw new AppError(404, MESSAGES.notFound);
+    // Named but no longer in the store: the sweep took it (its row is cleared on the same run).
+    if (bytes === null) throw new AppError(410, MESSAGES.googlePhotoExpired);
     res.set('Content-Type', 'image/png');
     res.set('Cache-Control', 'private, max-age=86400');
     res.send(Buffer.from(bytes));

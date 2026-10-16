@@ -79,6 +79,13 @@ describe('loadConfig', () => {
     });
   });
 
+  test('GOOGLE_CONTENT_RETENTION_DAYS is a whole number from 1 to 30 (never longer than Google allows)', () => {
+    expect(loadConfig({ ...VALID, GOOGLE_CONTENT_RETENTION_DAYS: '7' }).GOOGLE_CONTENT_RETENTION_DAYS).toBe(7);
+    for (const bad of ['0', '31', '90', '2.5', 'month']) {
+      expect(problem({ ...VALID, GOOGLE_CONTENT_RETENTION_DAYS: bad })).toMatch(/GOOGLE_CONTENT_RETENTION_DAYS/);
+    }
+  });
+
   test('HOST defaults to every interface in production (a host health check must reach it), loopback otherwise', () => {
     expect(loadConfig(VALID).HOST).toBe('0.0.0.0');
     expect(loadConfig({ ...VALID, NODE_ENV: 'development' }).HOST).toBe('127.0.0.1');

@@ -1,0 +1,16 @@
+-- Custom migration (drizzle-kit generate --custom): grants for google_retention_runs, which
+-- 0038_google_retention_schema.sql added with measurements.google_delete_by. Run by the migration owner.
+--
+-- A table a later migration adds gets no grants by default (see 0002): every grant below is deliberate, and
+-- test/rls.test.ts lists them.
+--
+-- google_retention_runs is global (one run of the google-retention job covers every company), holds counts only (no
+-- company data, no Google content) and has no company_id, so no row-level security. app_system writes a row when a run
+-- starts and updates it when the run ends; it reads them for the latest run. app_tenant gets nothing. Never ALL.
+--
+-- measurements.google_delete_by needs no grant of its own: app_tenant's table-level SELECT, INSERT and UPDATE on
+-- measurements (0016) cover every column, the new one included. Existing rows are not backfilled here: the table forces
+-- row-level security, so an UPDATE run by a non-superuser owner sees no rows. The google-retention job backfills
+-- google_delete_by (and window_measurements.photos_delete_by) per company, through its tenant transaction, on its first
+-- run after deploy (the worker runs it at start).
+GRANT SELECT, INSERT, UPDATE ON google_retention_runs TO app_system;

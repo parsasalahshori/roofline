@@ -1099,7 +1099,14 @@ describe('SCHEDULES', () => {
       ['scheduler-agenda-schedule', '*/15 * * * *'],
       ['scheduler-weather-schedule', '*/15 * * * *'],
       ['followup-daily-schedule', '*/15 * * * *'],
+      ['google-retention', '23 4 * * *'],
     ]);
+  });
+
+  test('google-retention runs daily and once at worker start', () => {
+    const job = SCHEDULES.find((s) => s.name === 'google-retention');
+    expect(job).toMatchObject({ cron: '23 4 * * *', runAtStart: true });
+    expect(SCHEDULES.filter((s) => s.runAtStart === true).map((s) => s.name)).toEqual(['google-retention']);
   });
 
   test('the calendar-push job queue is registered', () => {

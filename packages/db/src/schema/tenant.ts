@@ -1094,6 +1094,12 @@ export const measurements = pgTable(
      * its real outline and the roof drawn is its faces and lines.
      */
     roof3d: jsonb('roof_3d').$type<Roof3dSnapshot>(),
+    /**
+     * When the Google content this row holds (the Solar answer in `solar`, the roof photo named by `roof_3d`) must be
+     * gone: its download + 30 days (measurementGoogleDeleteBy). The google-retention job clears that content then and
+     * sets this to null; our own numbers (outline, faces, pitch, totals) stay. Null: nothing of Google's to delete.
+     */
+    googleDeleteBy: tstz('google_delete_by'),
     /** Measure gutters: runs left out, downspouts typed in per run, and a size chosen by hand (see GutterAdjustments). */
     gutterAdjustments: jsonb('gutter_adjustments').$type<GutterAdjustments>().notNull().default({ excludedRunIds: [], downspouts: {}, size: null }),
     createdByUserId: userRef('created_by_user_id'),
@@ -1112,6 +1118,7 @@ export const measurements = pgTable(
       foreignColumns: [jobs.companyId, jobs.id],
     }),
     index('measurements_property_idx').on(t.propertyId),
+    index('measurements_google_delete_by_idx').on(t.googleDeleteBy),
     enumCheck('measurements', 'kind', t.kind, MEASUREMENT_KINDS),
     enumCheck('measurements', 'method', t.method, MEASUREMENT_METHODS),
     enumCheck('measurements', 'pitch_source', t.pitchSource, PITCH_SOURCES),
@@ -2098,6 +2105,8 @@ export type StoredFacadePhoto = FacadePhoto & {
   key: string | null;
   fetchedAt: string;
   deleteBy: string;
+  /** When the google-retention job deleted the photo's bytes (key is then null). Absent while the photo is kept. */
+  deletedAt?: string;
   pitch: number;
   /** Windows are counted on this photo (a whole-front shot of a wide front is shown, not counted on). */
   measure: boolean;

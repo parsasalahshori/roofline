@@ -22,6 +22,8 @@ export type RoofSession = {
   conflict: boolean;
   problem: OutlineProblem | null;
   mapFailed: boolean;
+  /** Google's roof photo is past its 30 days (deleted): the roof view says so instead of showing it. */
+  roofPhotoExpired: boolean;
   saving: boolean;
   saveFailed: boolean;
   finishDrawing: () => void;

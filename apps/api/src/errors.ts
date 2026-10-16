@@ -8,6 +8,8 @@ import { findPgError, ForbiddenError } from '@roofline/db';
  */
 export const MESSAGES = {
   notFound: "We couldn't find that.",
+  /** 410 for Google content past the days Google's terms let it be kept (the photo is deleted; re-measuring fetches it again). */
+  googlePhotoExpired: "Photo expired (Google's 30-day limit). Re-measure to see it again.",
   stormScoutPaused: 'Storm Scout is paused. Turn it back on in Agents to draft a plan.',
   crossSite: 'This request came from another site and was blocked.',
   tooLarge: 'That request was too large.',
