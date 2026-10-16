@@ -122,18 +122,6 @@
   background: var(--surface-2);
 }
 
-.glyph {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: var(--r-1);
-  background: var(--sunken);
-  color: var(--ink);
-}
-
 .expiredText {
   display: flex;
   flex: 1 1 auto;

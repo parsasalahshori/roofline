@@ -12,18 +12,8 @@ export const AGENT_ICON: Record<Agent, IconName> = {
   system: 'bolt',
 };
 
-/** The order the dashboard lays the agents out, left to right along the roof. */
+/** The order the dashboard lays the agents out. */
 export const DASH_ORDER: readonly ScreenAgent[] = ['storm_scout', 'front_desk', 'estimator', 'claims', 'scheduler', 'follow_up'];
-
-/** Each agent's own color (node ring, card tab, handoff dot). Colour tokens, so each follows the theme. */
-export const AGENT_COLOR: Record<ScreenAgent, string> = {
-  storm_scout: 'var(--hail-5)',
-  front_desk: 'var(--st-insp)',
-  estimator: 'var(--tape)',
-  claims: 'var(--st-won)',
-  scheduler: 'var(--st-prop)',
-  follow_up: 'var(--st-inst)',
-};
 
 /** Whole hours from minutes, never below zero. */
 export const wholeHours = (minutes: number): number => Math.max(0, Math.round(minutes / 60));

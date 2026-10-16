@@ -1,5 +1,5 @@
 import { CLAIM_STATUSES, isTimeZone, type ClaimBoardRow, type ClaimStatus } from '@roofline/shared';
-import { Banner, EmptyState, Skeleton, UiLink } from '@roofline/ui';
+import { Banner, EmptyState, Panel, Skeleton, UiLink } from '@roofline/ui';
 import { claims } from '../../copy/claims.ts';
 import { useClaimsBoard } from '../claims/api.ts';
 import { useCompany } from '../settings/api.ts';
@@ -25,7 +25,7 @@ function ClaimCard({ row, zone }: { row: ClaimBoardRow; zone: string }) {
         <strong className={styles.name}>{row.customerName}</strong>
         <span className={styles.meta}>{row.address ?? claims.noAddress}</span>
         <span className={styles.meta}>{row.insurer ?? claims.noInsurer}</span>
-        {row.claimNumber !== null && <span className={styles.meta}>{claims.claimNumberLine(row.claimNumber)}</span>}
+        {row.claimNumber !== null && <span className={styles.number}>{claims.claimNumberLine(row.claimNumber)}</span>}
         <span className={styles.meta}>{claims.since(dayLabel(row.statusChangedAt, zone))}</span>
       </UiLink>
     </li>
@@ -36,9 +36,12 @@ function Column({ status, rows, zone }: { status: ClaimStatus; rows: ClaimBoardR
   const headingId = `claims-column-${status}`;
   return (
     <section className={styles.column} aria-labelledby={headingId} data-status={status}>
-      <h4 id={headingId} className={styles.columnHeading}>
-        {claims.status[status]}
-      </h4>
+      <div className={styles.columnHead}>
+        <h3 id={headingId} className={styles.columnHeading}>
+          {claims.status[status]}
+        </h3>
+        <span className={styles.count}>{rows.length}</span>
+      </div>
       {rows.length === 0 ? (
         <p className={styles.empty}>{claims.columnEmpty}</p>
       ) : (
@@ -59,8 +62,7 @@ export function ClaimsBoard() {
   const rows = board.data;
 
   return (
-    <section className={styles.section}>
-      <h3 className={styles.heading}>{claims.boardTitle}</h3>
+    <Panel title={claims.boardTitle}>
       {board.isPending ? (
         <div role="status" aria-label={claims.boardLoading}>
           <Skeleton lines={4} />
@@ -76,6 +78,6 @@ export function ClaimsBoard() {
           ))}
         </div>
       )}
-    </section>
+    </Panel>
   );
 }

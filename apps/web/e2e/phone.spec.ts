@@ -242,6 +242,25 @@ test('agents screens fit the phone', async ({ page, loginAs, markTodaySeen, agen
   }
 });
 
+test('on a phone an agent card is the way to its page, and the page has the way back', async ({ page, loginAs, markTodaySeen, agentsSeed }) => {
+  void agentsSeed;
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+
+  await page.goto('/agents');
+  await expect(page.getByRole('heading', { name: 'Your agents' })).toBeVisible({ timeout: 20_000 });
+  // The panel for the picked agent has no room beside the cards: each card links to its own page instead
+  await expect(page.getByRole('complementary')).toHaveCount(0);
+  await noSideScroll(page);
+
+  await page.getByRole('link', { name: 'Open Storm Scout' }).click();
+  await expect(page).toHaveURL(/\/agents\/storm-scout$/);
+  await expect(page.getByRole('heading', { level: 1, name: 'Storm Scout' })).toBeVisible({ timeout: 20_000 });
+  // The way back to Agents is above the title
+  await expect(page.getByRole('link', { name: 'Agents', exact: true }).first()).toHaveAttribute('href', '/agents');
+  await noSideScroll(page);
+});
+
 test('S1 pages do not scroll sideways', async ({ page, loginAs, markTodaySeen, scenario, db }) => {
   test.setTimeout(90_000);
   await loginAs(page, 'owner');

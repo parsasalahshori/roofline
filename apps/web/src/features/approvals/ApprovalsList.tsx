@@ -1,4 +1,4 @@
-import { Button, EmptyState, Icon, Panel, Skeleton, Tag, UiLink } from '@roofline/ui';
+import { Button, EmptyState, Panel, Skeleton, Tag, UiLink } from '@roofline/ui';
 import { useRef } from 'react';
 import { ApiError } from '../../api/client.ts';
 import { useApprovals, useMe } from '../../api/hooks.ts';
@@ -6,7 +6,7 @@ import type { TaskView } from '../../api/types.ts';
 import { approvals } from '../../copy/approvals.ts';
 import { errors } from '../../copy/errors.ts';
 import { AGENT_LABEL } from '../../copy/status.ts';
-import { AGENT_ICON } from '../agents/agentTheme.ts';
+import { AgentGlyph } from '../agents/AgentGlyph.tsx';
 import styles from './ApprovalsList.module.css';
 import { InlineError } from './InlineError.tsx';
 import { newestFirst } from './queue.ts';
@@ -66,9 +66,7 @@ function ExpiredPlans({ tasks, now }: { tasks: TaskView[]; now: number }) {
         {tasks.map((task) => (
           <li key={task.id}>
             <UiLink href={reviewHref(task.id)} className={styles.expiredRow}>
-              <span className={styles.glyph} aria-hidden="true">
-                <Icon name={AGENT_ICON[task.agent]} size={16} />
-              </span>
+              <AgentGlyph agent={task.agent} />
               <span className={styles.expiredText}>
                 <strong className={styles.expiredTitle}>{task.title}</strong>
                 <span className={styles.expiredMeta}>{approvals.drafted(AGENT_LABEL[task.agent], approvals.ago(task.createdAt, now))}</span>
