@@ -264,7 +264,7 @@
 }
 
 .delete {
-  color: var(--bad);
+  color: var(--bad-text);
 }
 
 /* The measuring sheet: the page scrolls (more to read and choose), the photo keeps a phone-sized area */
@@ -300,7 +300,7 @@
 }
 
 .found {
-  color: var(--ok);
+  color: var(--ok-text);
   font-weight: 700;
 }
 
@@ -308,7 +308,7 @@
   flex-basis: 100%;
   margin: 2px 0 0;
   padding-left: 18px;
-  color: var(--warn);
+  color: var(--warn-text);
   font-weight: 600;
 }
 

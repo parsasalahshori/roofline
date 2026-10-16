@@ -19,7 +19,7 @@
   flex: none;
   align-items: center;
   gap: 6px;
-  color: var(--ok);
+  color: var(--ok-text);
   font-size: var(--font-size-min);
   font-weight: 600;
   white-space: nowrap;

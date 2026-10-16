@@ -64,7 +64,7 @@
 }
 
 .day[data-risky="true"] .icon {
-  color: var(--info);
+  color: var(--info-text);
 }
 
 .high {
@@ -107,7 +107,7 @@
   height: 18px;
   place-items: center;
   border-radius: 5px;
-  background: var(--brand);
+  background: var(--sunken);
   box-shadow: inset 0 0 0 1px rgba(217, 158, 0, 0.6);
   color: var(--ink);
 }

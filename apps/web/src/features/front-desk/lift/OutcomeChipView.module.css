@@ -29,12 +29,12 @@
 
 .chip[data-tone="good"] {
   background: var(--ok-tint);
-  color: var(--ok);
+  color: var(--ok-text);
 }
 
 .chip[data-tone="warn"] {
   background: var(--bad-tint);
-  color: var(--bad);
+  color: var(--bad-text);
 }
 
 /* a claim chip reads as plain grey, as the other neutral outcomes do */

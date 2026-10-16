@@ -147,7 +147,7 @@
 }
 
 .measured {
-  color: var(--ok);
+  color: var(--ok-text);
   font-weight: 600;
 }
 
@@ -241,14 +241,14 @@
   padding: 0 6px;
   border-radius: 6px;
   background: var(--info-tint);
-  color: var(--info);
+  color: var(--info-text);
   font-size: 12px;
   font-weight: 600;
 }
 
 .rowDelete {
   min-height: 44px;
-  color: var(--bad);
+  color: var(--bad-text);
 }
 
 

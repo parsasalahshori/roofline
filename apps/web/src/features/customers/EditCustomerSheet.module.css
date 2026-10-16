@@ -73,7 +73,7 @@
   display: inline-flex;
   align-items: center;
   min-height: 40px;
-  color: var(--bad);
+  color: var(--bad-text);
   font-size: var(--font-size-body);
 }
 

@@ -20,7 +20,7 @@
 .chip {
   composes: chip from './glass.module.css';
   background: var(--ok-tint);
-  color: var(--ok);
+  color: var(--ok-text);
 }
 
 .total {

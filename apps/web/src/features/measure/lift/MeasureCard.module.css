@@ -113,7 +113,7 @@
   margin-left: -8px;
   padding: 0 8px;
   border-radius: var(--r-2);
-  color: var(--info);
+  color: var(--info-text);
   font-size: 12.5px;
 }
 
@@ -298,7 +298,7 @@
 
 .note[data-tone="reset"] {
   flex: none;
-  color: var(--info);
+  color: var(--info-text);
 }
 
 .adjust {
@@ -346,7 +346,7 @@
   min-height: 26px;
   padding: 0 8px;
   border-radius: var(--r-2);
-  color: var(--info);
+  color: var(--info-text);
   font-size: 12.5px;
   font-weight: 600;
 }

@@ -106,7 +106,7 @@
 .status {
   font-size: 13px;
   font-weight: 600;
-  color: var(--ok);
+  color: var(--ok-text);
 }
 
 .status[data-status='waiting'] {

@@ -18,5 +18,5 @@
 }
 
 .counter[data-over] {
-  color: var(--bad);
+  color: var(--bad-text);
 }

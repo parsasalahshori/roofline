@@ -60,7 +60,7 @@
 
 .avatar[data-unknown="true"] {
   background: var(--bad-tint);
-  color: var(--bad);
+  color: var(--bad-text);
 }
 
 .avatarIcon {

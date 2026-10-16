@@ -86,13 +86,13 @@
 .statusPill[data-status="ready"] {
   border-color: var(--ok);
   background: var(--ok-tint);
-  color: var(--ok);
+  color: var(--ok-text);
 }
 
 .statusPill[data-status="sent"] {
   border-color: var(--info);
   background: var(--info-tint);
-  color: var(--info);
+  color: var(--info-text);
 }
 
 .saveState {
@@ -102,7 +102,7 @@
 }
 
 .saveState[data-save="error"] {
-  color: var(--bad);
+  color: var(--bad-text);
   font-weight: 600;
 }
 
@@ -287,7 +287,7 @@
   padding: 2px 8px;
   border-radius: var(--r-pill);
   background: var(--info-tint);
-  color: var(--info);
+  color: var(--info-text);
   font-size: 12px;
   font-weight: 700;
 }
@@ -309,7 +309,7 @@
 
 .lineStatus[data-status="ready"] {
   background: var(--ok-tint);
-  color: var(--ok);
+  color: var(--ok-text);
 }
 
 .lineStatus[data-status="check"] {
@@ -319,7 +319,7 @@
 
 .lineStatus[data-status="error"] {
   background: var(--bad-tint);
-  color: var(--bad);
+  color: var(--bad-text);
 }
 
 .reasons {
@@ -330,7 +330,7 @@
 }
 
 .reasons li[data-level="error"] {
-  color: var(--bad);
+  color: var(--bad-text);
 }
 
 .reasons li[data-level="check"] {

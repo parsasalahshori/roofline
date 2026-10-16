@@ -258,7 +258,7 @@
   min-height: 44px;
   border-radius: var(--r-2);
   background: var(--ok-tint);
-  color: var(--ok);
+  color: var(--ok-text);
   font-size: 15px;
 }
 

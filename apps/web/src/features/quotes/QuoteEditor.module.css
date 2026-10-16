@@ -48,7 +48,7 @@
 .hint {
   margin: 0;
   font-size: var(--font-size-min);
-  color: var(--bad);
+  color: var(--bad-text);
 }
 
 @media (min-width: 640px) {

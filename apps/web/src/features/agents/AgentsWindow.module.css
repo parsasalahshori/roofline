@@ -64,7 +64,11 @@
   height: 22px;
   padding: 0 6px;
   border-radius: 999px;
-  background: var(--brand);
+  background: var(--sunken);
+  color: var(--ink);
+  font-family: var(--f-mono);
+  font-size: var(--font-size-min);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 

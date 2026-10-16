@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { contrastRatio, mixRgb, parseColor, type Rgb } from '../src/brand.ts';
+import { contrastRatio, mixRgb, parseColor, toHex, type Rgb } from '../src/brand.ts';
 import { darkTokens, tokens, tokensFor } from '../src/tokens.ts';
 
 const CSS = readFileSync(fileURLToPath(new URL('../src/tokens.css', import.meta.url)), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
@@ -124,8 +124,8 @@ const rgb = (hex: string): Rgb => {
   return parsed;
 };
 
-/** What a tag's text is: the status colour mixed 20% toward the ink, so it stays AA on its own tint. */
-const TAG_MIX = 0.2;
+/** What status words are: the status colour mixed 20% toward the ink, so they stay AA on their own tint. */
+const TEXT_MIX = 0.2;
 
 describe.each([
   ['light', tokensFor('light')],
@@ -149,12 +149,24 @@ describe.each([
     expect(on(t['bad-ink'], t.bad)).toBeGreaterThanOrEqual(4.5);
   });
 
-  it('status text (mixed toward the ink) is 4.5:1 on its tint', () => {
+  it('status text is the status colour mixed 20% toward the ink, to the nearest value', () => {
     for (const status of ['ok', 'warn', 'bad', 'info'] as const) {
-      const text = mixRgb(rgb(t[status]), rgb(t.ink), TAG_MIX);
-      const tint = rgb(t[`${status}-tint`]);
-      expect(contrastRatio(text, tint), status).toBeGreaterThanOrEqual(4.5);
+      expect(t[`${status}-text`], status).toBe(toHex(mixRgb(rgb(t[status]), rgb(t.ink), TEXT_MIX)));
     }
+  });
+
+  it('status text is 4.5:1 on its own tint and on every ground it sits on', () => {
+    for (const status of ['ok', 'warn', 'bad', 'info'] as const) {
+      const text = rgb(t[`${status}-text`]);
+      for (const ground of [t[`${status}-tint`], t.surface, t['surface-2'], t.ground, t.raised]) {
+        expect(contrastRatio(text, rgb(ground)), `${status} on ${ground}`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
+  it('a toast reads white on graphite, and its accent is the tape colour at 7:1', () => {
+    expect(on(t['toast-ink'], t.toast)).toBeGreaterThanOrEqual(7);
+    expect(on(t.tape, t.toast)).toBeGreaterThanOrEqual(7);
   });
 
   it('the edge of a form control is 3:1 against the surface, and the focus ring too', () => {

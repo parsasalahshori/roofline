@@ -94,7 +94,7 @@
 
 .status[data-status='error'] {
   border-color: var(--bad);
-  color: var(--bad);
+  color: var(--bad-text);
 }
 
 .reason {

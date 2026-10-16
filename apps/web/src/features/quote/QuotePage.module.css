@@ -334,7 +334,7 @@
 
 .error {
   margin: 0;
-  color: var(--bad);
+  color: var(--bad-text);
   font-size: 0.875rem;
 }
 
@@ -369,7 +369,7 @@
   height: 52px;
   border-radius: 50%;
   background: var(--ok-tint);
-  color: var(--ok);
+  color: var(--ok-text);
 }
 
 @media (min-width: 768px) {

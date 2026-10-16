@@ -42,6 +42,10 @@
   --brand-text: #1a43c4;
   --ring: #1a43c4;
 
+  /* Toasts and other inverse surfaces: graphite with white text in both themes (the accent on them is --tape) */
+  --toast: #0d1724;
+  --toast-ink: #ffffff;
+
   /* Tape yellow: measuring guides, dimension lines and "needs your OK" */
   --tape: #ffc21f;
   --tape-tint: #fff3cf;
@@ -58,6 +62,11 @@
   --bad-ink: #ffffff;
   --info: #2563c9;
   --info-tint: #e3ecfa;
+  /* Status as text: the status colour mixed 20% toward --ink, 4.5:1 on its own tint and on every ground. Use these, not --ok and friends, for words. */
+  --ok-text: #156b42;
+  --warn-text: #855107;
+  --bad-text: #a32f29;
+  --info-text: #2054a8;
 
   /* Job stages. Paid is plain ink. */
   --st-lead: #5a6b85;
@@ -139,6 +148,8 @@
     --brand-line: #3550a8;
     --brand-text: #8fa8ff;
     --ring: #8fa8ff;
+    --toast: #243142;
+    --toast-ink: #e9eef4;
     --tape: #ffcb3d;
     --tape-tint: #3a2e0b;
     --tape-ink: #ffe08a;
@@ -152,6 +163,10 @@
     --bad-ink: #2a0a07;
     --info: #6fa2ff;
     --info-tint: #11223f;
+    --ok-text: #68cb96;
+    --warn-text: #efb45f;
+    --bad-text: #fb887e;
+    --info-text: #87b1fd;
     --st-lead: #8c9ab3;
     --st-insp: #3fb8c2;
     --st-prop: #f0a63a;
@@ -192,6 +207,8 @@
   --brand-line: #3550a8;
   --brand-text: #8fa8ff;
   --ring: #8fa8ff;
+  --toast: #243142;
+  --toast-ink: #e9eef4;
   --tape: #ffcb3d;
   --tape-tint: #3a2e0b;
   --tape-ink: #ffe08a;
@@ -205,6 +222,10 @@
   --bad-ink: #2a0a07;
   --info: #6fa2ff;
   --info-tint: #11223f;
+  --ok-text: #68cb96;
+  --warn-text: #efb45f;
+  --bad-text: #fb887e;
+  --info-text: #87b1fd;
   --st-lead: #8c9ab3;
   --st-insp: #3fb8c2;
   --st-prop: #f0a63a;

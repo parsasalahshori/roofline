@@ -147,7 +147,7 @@
 }
 
 .tier[data-checked="true"] .tierName {
-  color: var(--info);
+  color: var(--info-text);
 }
 
 .tierMaterial,

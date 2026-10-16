@@ -100,6 +100,18 @@ describe('WinChoice red', () => {
     expect(css).toContain('--bad:#9f251b');
   });
 
+  it('moves the words of a hold with it: --bad-text follows the shifted --bad in both themes', () => {
+    const css = brandCss(WINCHOICE_RED)!;
+    const light = /--bad:#9f251b;--bad-text:(#[0-9a-f]{6})/.exec(css);
+    expect(light).not.toBeNull();
+    expect(contrastRatio(rgb(light![1]!), rgb('#fbe5e2'))).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(rgb(light![1]!), rgb('#ffffff'))).toBeGreaterThanOrEqual(4.5);
+    const dark = /--bad:(#[0-9a-f]{6});--bad-text:(#[0-9a-f]{6})/.exec(css.slice(css.indexOf('@media')));
+    expect(dark).not.toBeNull();
+    expect(contrastRatio(rgb(dark![2]!), rgb('#3a1512'))).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(rgb(dark![2]!), rgb('#111822'))).toBeGreaterThanOrEqual(4.5);
+  });
+
   it('the shifted --bad is clear of the brand and still readable on the bad tint', () => {
     const shifted = rgb(badShift(WINCHOICE_RED, 'light')!);
     expect(deltaE(rgb(deriveBrand(WINCHOICE_RED, 'light')!.brand), shifted)).toBeGreaterThanOrEqual(10);
@@ -121,6 +133,7 @@ describe('the light yellow', () => {
   it('does not touch --bad', () => {
     expect(badShift(YELLOW, 'light')).toBeNull();
     expect(brandCss(YELLOW)).not.toContain('--bad');
+    expect(brandCss(YELLOW)).not.toContain('--bad-text');
   });
 });
 

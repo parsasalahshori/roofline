@@ -68,7 +68,7 @@
   padding: 0 14px;
   border-radius: var(--r-2);
   background: var(--brand);
-  color: var(--ink);
+  color: var(--brand-ink);
   font-size: 13px;
 }
 
@@ -128,7 +128,7 @@
 }
 
 .chip[data-on='true'] svg {
-  color: var(--ok);
+  color: var(--ok-text);
 }
 
 .chip[data-on='false'] {
@@ -148,7 +148,7 @@
 .open {
   font-size: 14px;
   font-weight: 600;
-  color: var(--info);
+  color: var(--info-text);
 }
 
 .feed {

@@ -52,6 +52,6 @@
 
 .error {
   margin: 0;
-  color: var(--bad);
+  color: var(--bad-text);
   font-size: var(--font-size-min);
 }

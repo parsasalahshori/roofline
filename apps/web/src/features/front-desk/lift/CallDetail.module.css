@@ -149,8 +149,7 @@
   height: 20px;
   margin-top: 8px;
   border-radius: 5px;
-  background: var(--brand);
-  box-shadow: inset 0 0 0 1px rgb(217 158 0 / 60%);
+  background: var(--sunken);
   color: var(--ink);
 }
 
@@ -328,7 +327,7 @@
 .failed {
   flex-basis: 100%;
   margin: 0;
-  color: var(--bad);
+  color: var(--bad-text);
   font-size: 12px;
   font-weight: 600;
 }
@@ -452,7 +451,7 @@
 }
 
 .chip[data-ok="false"] {
-  color: var(--bad);
+  color: var(--bad-text);
   font-weight: 600;
 }
 
@@ -465,8 +464,7 @@
   height: 22px;
   margin-bottom: 7px;
   border-radius: 5px;
-  background: var(--brand);
-  box-shadow: inset 0 0 0 1px rgb(217 158 0 / 60%);
+  background: var(--sunken);
   color: var(--ink);
 }
 

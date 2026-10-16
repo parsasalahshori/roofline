@@ -41,6 +41,10 @@ const BAD: Record<BrandScheme, { fill: Rgb; tint: Rgb }> = {
   light: { fill: [200, 53, 42], tint: [251, 229, 226] },
   dark: { fill: [255, 111, 97], tint: [58, 21, 18] },
 };
+/** The ink of each theme: the status text colours are the status colour mixed 20% toward it (tokens.css). */
+const INK: Record<BrandScheme, Rgb> = { light: [13, 23, 36], dark: [233, 238, 244] };
+/** How far a status colour is mixed toward the ink to make words in that colour. */
+const STATUS_TEXT_MIX = 0.2;
 /** Where --bad may move when the brand is too close to it, in order of preference. */
 const BAD_CANDIDATES: Record<BrandScheme, readonly string[]> = {
   light: ['#9f251b', '#7a1c14'],
@@ -271,11 +275,13 @@ export function badShift(color: string, scheme: BrandScheme): string | null {
   return BAD_CANDIDATES[scheme][0]!;
 }
 
-function declarations(palette: BrandPalette, bad: string | null): string {
+function declarations(palette: BrandPalette, bad: string | null, scheme: BrandScheme): string {
+  const badRgb = bad ? parseColor(bad) : null;
   return (
     `--brand:${palette.brand};--brand-hover:${palette.brandHover};--brand-ink:${palette.brandInk};` +
     `--brand-tint:${palette.brandTint};--brand-line:${palette.brandLine};--brand-text:${palette.brandText};--ring:${palette.ring};` +
-    (bad ? `--bad:${bad};` : '')
+    // A moved --bad takes its words with it
+    (bad && badRgb ? `--bad:${bad};--bad-text:${toHex(mixRgb(badRgb, INK[scheme], STATUS_TEXT_MIX))};` : '')
   );
 }
 
@@ -289,8 +295,8 @@ export function brandCss(color: string | null | undefined): string | null {
   const light = deriveBrand(color, 'light');
   const dark = deriveBrand(color, 'dark');
   if (!light || !dark) return null;
-  const lightBlock = declarations(light, badShift(color, 'light'));
-  const darkBlock = declarations(dark, badShift(color, 'dark'));
+  const lightBlock = declarations(light, badShift(color, 'light'), 'light');
+  const darkBlock = declarations(dark, badShift(color, 'dark'), 'dark');
   return (
     `:root{${lightBlock}}` +
     `@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){${darkBlock}}}` +

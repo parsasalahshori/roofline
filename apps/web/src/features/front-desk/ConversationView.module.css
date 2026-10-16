@@ -135,7 +135,7 @@
 
 .actionFailed {
   margin: 0;
-  color: var(--bad);
+  color: var(--bad-text);
   font-weight: 600;
   font-size: var(--font-size-min);
 }
