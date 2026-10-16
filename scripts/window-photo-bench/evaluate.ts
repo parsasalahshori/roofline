@@ -27,6 +27,8 @@ export type PhotoResult = {
   /** Rank (1-based) of the first candidate on the right boundary (all corners within 3 px), 0 = none; 4% and 1% clicks. */
   rank4: number;
   rank1: number;
+  /** The window's measured outline is wholly in the photo (else no outline can be right: the scene left the frame). */
+  inFrame: boolean;
   sheets: number;
   rivals: number[] | null;
   ms: { render: number; detect: number; snap: number };
@@ -78,9 +80,12 @@ export function evaluatePhoto(windowId: number, photoIdx: number, bp: BenchPhoto
     const a = 2 * Math.PI * rnd();
     return [x + r * Math.cos(a), y + r * Math.sin(a)] as Pt;
   }) as Quad;
+  // The 1% clicks draw from their own stream: drawing them from rnd would shift every later draw (the typed offset's
+  // noise below) and silently change the earlier methods' numbers for the same seed.
+  const rnd1 = mulberry32(bp.seed ^ 0x1c11c5);
   const rough1 = truthQ.map(([x, y]) => {
-    const r = 0.01 * sidePx * Math.sqrt(rnd());
-    const a = 2 * Math.PI * rnd();
+    const r = 0.01 * sidePx * Math.sqrt(rnd1());
+    const a = 2 * Math.PI * rnd1();
     return [x + r * Math.cos(a), y + r * Math.sin(a)] as Pt;
   }) as Quad;
   const sheetOpt = det === null ? undefined : { imagePoints: det.imagePoints, sheetPointsIn: det.sheetPointsIn, sheetIndex: det.sheetIndex };
@@ -128,6 +133,7 @@ export function evaluatePhoto(windowId: number, photoIdx: number, bp: BenchPhoto
     rmsPx: det?.rmsErrorPx ?? null,
     snapCornerErrPx: snap.quad.map((p, k) => Math.hypot(p[0] - truthQ[k]![0], p[1] - truthQ[k]![1])),
     rank4: rankOf(snap),
+    inFrame: truthQ.every(([x, y]) => x >= 2 && y >= 2 && x <= W - 2 && y <= H - 2),
     rank1: rankOf(snap1),
     sheets: det?.sheets ?? (det === null ? 0 : 1),
     rivals: snap.rivals,

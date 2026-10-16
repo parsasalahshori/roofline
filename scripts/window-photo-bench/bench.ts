@@ -132,7 +132,8 @@ async function main() {
     const pct = (k: number) => ((100 * sel.filter((r) => r[key] >= 1 && r[key] <= k).length) / Math.max(1, sel.length)).toFixed(0);
     return `top 1 ${pct(1)}%, top 2 ${pct(2)}%, top 3 ${pct(3)}% (n ${sel.length})`;
   };
-  md += `\n### Right boundary among the ranked outlines\n\n- 4% clicks: all ${rk('rank4', () => true)}; target zone ${rk('rank4', near)}.\n- 1% clicks: all ${rk('rank1', () => true)}; target zone ${rk('rank1', near)}.\n`;
+  const inFrame = (r: PhotoResult) => r.inFrame;
+  md += `\n### Right boundary among the ranked outlines\n\n- 4% clicks: all ${rk('rank4', () => true)}; target zone ${rk('rank4', near)}; window wholly in the photo ${rk('rank4', inFrame)}.\n- 1% clicks: all ${rk('rank1', () => true)}; target zone ${rk('rank1', near)}; window wholly in the photo ${rk('rank1', inFrame)}.\n- Photos whose window runs off the photo (no outline can be right): ${rs.filter((r) => r.detected && !r.inFrame).length}.\n`;
   // Sigma calibration: the factor that makes 68% of normalized errors fall inside 1 sigma (target zone, end-to-end 1%).
   const z = rs
     .filter((r) => near(r) && r.results.snap1Picked !== null)
