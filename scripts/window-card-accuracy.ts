@@ -292,7 +292,7 @@ if (args.includes('--fit')) {
   const row = (cells: string[]) => `| ${cells.join(' | ')} |`;
   const line = (n: number) => row(Array.from({ length: n }, () => '---'));
 
-  console.log(`### Typical shot: ${SHOTS[0]!.label}, ${TRIALS} trials per row`);
+  console.log(`### Typical shot: yaw 15°, camera 1.5 m from the glass (farther back when the window would not fit), ${TRIALS} trials per row`);
   console.log('');
   console.log(row(header));
   console.log(line(header.length));
