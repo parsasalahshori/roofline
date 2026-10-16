@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Scope } from '@roofline/shared';
-import { Field, Select } from '@roofline/ui';
+import { Field, Listbox, Panel } from '@roofline/ui';
 import { quotes } from '../../copy/quotes.ts';
 import type { QuoteDraft } from './draft.ts';
 import styles from './QuoteEditor.module.css';
@@ -143,32 +143,30 @@ export function QuoteEditor({ draft, readOnly, onChange, onValidityChange }: Quo
 
   return (
     <section aria-label={quotes.editorLabel} className={styles.editor}>
-      <fieldset className={styles.group}>
-        <legend className={styles.heading}>{quotes.measurementHeading}</legend>
+      <Panel title={quotes.measurementHeading}>
         <div className={styles.grid}>
           {numberField('areaSqFt', quotes.area, 'decimal')}
-          <Select
+          <Listbox
             className={styles.cell}
             label={quotes.areaType}
             value={scope.areaType}
             options={AREA_TYPES.map((value) => ({ value, label: quotes.areaTypeOptions[value] }))}
             disabled={readOnly}
-            onChange={(value) => update({ areaType: value as Scope['areaType'] })}
+            onChange={(value) => update({ areaType: value })}
           />
           {numberField('pitch', quotes.pitch, 'decimal')}
         </div>
-      </fieldset>
+      </Panel>
 
-      <fieldset className={styles.group}>
-        <legend className={styles.heading}>{quotes.scopeHeading}</legend>
+      <Panel title={quotes.scopeHeading}>
         <div className={styles.grid}>
-          <Select
-            className={styles.cell}
+          <Listbox
+            className={`${styles.cell} ${styles.material}`}
             label={quotes.material}
             value={scope.material}
             options={MATERIALS.map((value) => ({ value, label: quotes.materialOptions[value] }))}
             disabled={readOnly}
-            onChange={(value) => update({ material: value as Scope['material'] })}
+            onChange={(value) => update({ material: value })}
           />
           {numberField('wastePercent', quotes.waste, 'decimal')}
           {numberField('stories', quotes.stories, 'numeric')}
@@ -189,7 +187,7 @@ export function QuoteEditor({ draft, readOnly, onChange, onValidityChange }: Quo
             onChange={(event) => onChange({ ...draft, notes: event.currentTarget.value })}
           />
         </div>
-      </fieldset>
+      </Panel>
 
       {anyInvalid ? <p className={styles.hint}>{quotes.fixInputs}</p> : null}
     </section>

@@ -8,6 +8,7 @@ import { DEFAULT_TIER_TEMPLATES } from '@roofline/shared';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { create } from '../src/copy/create.ts';
+import { quotes } from '../src/copy/quotes.ts';
 import { WINDOW_COPY } from '../src/copy/rail.ts';
 import { job } from '../src/copy/job.ts';
 import { jobs } from '../src/copy/jobs.ts';
@@ -100,7 +101,7 @@ describe('C1 windows', () => {
     expect(await within(dialog).findByText(copy)).toBeInTheDocument();
   });
 
-  it('/jobs/j1/quotes/q1 shows the quote in the Jobs window', async () => {
+  it('/jobs/j1/quotes/q1 is the quote page, titled for the quote', async () => {
     const quote: QuoteView = {
       id: 'q1',
       jobId: 'j1',
@@ -122,8 +123,8 @@ describe('C1 windows', () => {
     });
     renderApp('/jobs/j1/quotes/q1');
 
-    const dialog = await screen.findByRole('main', { name: WINDOW_COPY.jobs.title });
-    expect(await within(dialog).findByText('Q-0001')).toBeInTheDocument();
+    const page = await screen.findByRole('main', { name: quotes.title('Q-0001') });
+    expect(await within(page).findByRole('region', { name: quotes.statsLabel })).toBeInTheDocument();
   });
 
   it('shows the Jobs tabs on the pipeline, with Pipeline marked as the current page', async () => {

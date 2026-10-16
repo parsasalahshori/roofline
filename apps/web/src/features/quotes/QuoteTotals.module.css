@@ -1,57 +1,54 @@
-/* The totals sit at the end of the quote: a narrow block on desktop, full width on a phone */
+/* Under the lines: a tinted foot with the sums in mono and the total, the line the eye ends on, in Archivo */
 .totals {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 100%;
-  max-width: 360px;
-  margin: 0 0 0 auto;
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 14px 16px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+  border-radius: 0 0 var(--r-3) var(--r-3);
   font-size: var(--font-size-body);
 }
 
-/* Each label and its value share a line; a long label wraps before the value does */
 .row {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
   align-items: baseline;
-  gap: 4px 16px;
-  padding: 6px 0;
-  border-bottom: 1px solid var(--line);
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.totals dt {
-  color: var(--ink-3);
-  overflow-wrap: anywhere;
+.row dt {
+  color: var(--ink-2);
 }
 
-.totals dd {
+.row dd {
   margin: 0;
 }
 
 .num {
+  font: 500 13px/1.2 var(--f-mono);
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
-/* The total is the one number people read: bigger, bolder, and a rule above it */
 .grand {
-  padding-top: 10px;
-  border-bottom: none;
-  border-top: 2px solid var(--ink);
-  font-weight: 600;
+  align-items: center;
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-2);
+}
+
+.grand dt {
+  color: var(--ink);
+  font-weight: 650;
 }
 
 .grandValue {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  font-size: var(--font-size-stat);
+  align-items: center;
+  gap: 10px;
 }
 
-/* The "Estimate" caption under the total: never smaller than the minimum type size */
-.caption {
-  font-size: var(--font-size-min);
-  font-weight: 400;
-  color: var(--ink-3);
+.total {
+  font: 750 26px/1 var(--f-display);
+  font-variant-numeric: tabular-nums;
 }

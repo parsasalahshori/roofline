@@ -1,37 +1,31 @@
 import { money, type QuoteLine } from '@roofline/shared';
+import { Table, Td, Th, Tr } from '@roofline/ui';
 import { quotes } from '../../copy/quotes.ts';
-import styles from './QuoteLines.module.css';
 
 export type QuoteLinesProps = { lines: QuoteLine[] };
 
-/** The priced lines of a quote: item, quantity with its unit, rate and amount, numbers right-aligned. */
+/** The priced lines of a quote: item, quantity with its unit, rate and amount, in a table with the numbers in mono at the right. */
 export function QuoteLines({ lines }: QuoteLinesProps) {
   return (
-    <table className={styles.table} aria-label={quotes.linesLabel}>
+    <Table aria-label={quotes.linesLabel}>
       <thead>
         <tr>
-          <th scope="col">{quotes.colName}</th>
-          <th scope="col" className={styles.num}>
-            {quotes.colQuantity}
-          </th>
-          <th scope="col" className={styles.num}>
-            {quotes.colRate}
-          </th>
-          <th scope="col" className={styles.num}>
-            {quotes.colAmount}
-          </th>
+          <Th>{quotes.colName}</Th>
+          <Th numeric>{quotes.colQuantity}</Th>
+          <Th numeric>{quotes.colRate}</Th>
+          <Th numeric>{quotes.colAmount}</Th>
         </tr>
       </thead>
       <tbody>
         {lines.map((line) => (
-          <tr key={line.code}>
-            <td className={styles.name}>{line.name}</td>
-            <td className={styles.num}>{quotes.quantityWithUnit(line.quantity, line.unit)}</td>
-            <td className={styles.num}>{money(line.unitCents)}</td>
-            <td className={styles.num}>{money(line.totalCents)}</td>
-          </tr>
+          <Tr key={line.code}>
+            <Td>{line.name}</Td>
+            <Td numeric>{quotes.quantityWithUnit(line.quantity, line.unit)}</Td>
+            <Td numeric>{money(line.unitCents)}</Td>
+            <Td numeric>{money(line.totalCents)}</Td>
+          </Tr>
         ))}
       </tbody>
-    </table>
+    </Table>
   );
 }

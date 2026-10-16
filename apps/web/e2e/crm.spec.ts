@@ -150,8 +150,9 @@ test('a quote prices, goes final and downloads a PDF', async ({ page, loginAs, m
 
   // The price is an estimate, not a promise
   await expect(page.getByLabel('Quote totals').getByText('Estimate')).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Quote summary' })).toContainText('Q-0001');
+  await expect(page.getByRole('heading', { level: 1, name: 'Quote Q-0001' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Quote summary' })).toContainText('Draft');
+  await expect(page.getByRole('region', { name: 'Quote summary' })).toContainText('Not final yet');
 
   // Mark final asks first, then freezes the quote
   await page.getByRole('group', { name: 'Quote actions' }).getByRole('button', { name: 'Mark final', exact: true }).click();

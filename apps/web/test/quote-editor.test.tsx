@@ -10,10 +10,17 @@ import { quotes } from '../src/copy/quotes.ts';
 import { QuoteWindow } from '../src/features/quotes/QuoteWindow.tsx';
 import { type Reply, stubApi } from './helpers.tsx';
 
+const phoneMode = vi.hoisted(() => ({ phone: false }));
+vi.mock('../src/shell/useIsPhone.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/shell/useIsPhone.ts')>()),
+  useIsPhone: () => phoneMode.phone,
+}));
+
 let api: ReturnType<typeof stubApi>;
 
 afterEach(() => {
   cleanup();
+  phoneMode.phone = false;
   vi.unstubAllGlobals();
   expect(api?.unexpected ?? []).toEqual([]);
 });
@@ -48,10 +55,14 @@ const finalQuote = (overrides: Partial<QuoteView> = {}) =>
 
 const company: Partial<CompanyBody> = { timezone: 'America/Chicago' };
 
+/** The part of the job's view the quote page reads: the customer, whose name is on the way back to the job. */
+const jobView = { customer: { id: 'cu1', displayName: 'Dana Whitfield', phone: null, email: null } };
+
 /** Stubs the reads the window makes, plus whatever the test adds. */
 function stubQuote(quote: QuoteView, routes: Record<string, () => Reply> = {}) {
   api = stubApi({
     'GET /api/company': () => ({ body: company }),
+    'GET /api/jobs/j1/view': () => ({ body: jobView }),
     'GET /api/quotes/q1': () => ({ body: quote }),
     ...routes,
   });
@@ -190,5 +201,109 @@ describe('quote editor', () => {
     renderQuote();
 
     expect(await screen.findByRole('link', { name: quotes.downloadPdf })).toHaveAttribute('href', '/api/quotes/q1/pdf');
+  });
+});
+
+describe('quote page', () => {
+  it('the number is the title; Jobs and the job, named for its customer, are in the trail', async () => {
+    stubQuote(makeQuote());
+    renderQuote();
+
+    expect(await screen.findByRole('heading', { level: 1, name: quotes.title('Q-0001') })).toBeInTheDocument();
+    const trail = within(screen.getByRole('navigation', { name: 'Breadcrumb' }));
+    expect(trail.getByRole('link', { name: 'Jobs' })).toHaveAttribute('href', '/jobs');
+    expect(await trail.findByRole('link', { name: 'Dana Whitfield' })).toHaveAttribute('href', '/jobs/j1');
+  });
+
+  it('until the job is known the trail says Job, and a job that will not load does not break the page', async () => {
+    stubQuote(makeQuote(), { 'GET /api/jobs/j1/view': () => ({ status: 500, body: { error: 'x' } }) });
+    renderQuote();
+
+    expect(await screen.findByRole('heading', { level: 1, name: quotes.title('Q-0001') })).toBeInTheDocument();
+    const trail = within(screen.getByRole('navigation', { name: 'Breadcrumb' }));
+    expect(trail.getByRole('link', { name: quotes.crumbJob })).toHaveAttribute('href', '/jobs/j1');
+  });
+
+  it('the summary strip: status, the total as an estimate, and until when the price is good and when it was made', async () => {
+    stubQuote(makeQuote());
+    renderQuote();
+
+    const strip = within(await screen.findByRole('region', { name: quotes.statsLabel }));
+    expect(strip.getByText(quotes.status.draft)).toBeInTheDocument();
+    expect(strip.getByText(quotes.notFinal)).toBeInTheDocument();
+    expect(strip.getByText(money(calculateQuote(defaultScope, defaultPricebook).totalCents))).toBeInTheDocument();
+    expect(strip.getByText(quotes.estimateLabel)).toBeInTheDocument();
+    // 00:00 UTC on the 12th is still the evening of the 11th in Chicago
+    expect(strip.getByText('Nov 11')).toBeInTheDocument();
+    expect(strip.getByText(quotes.madeOn('Oct 10, 2026'))).toBeInTheDocument();
+  });
+
+  it('a final quote says Final in the strip, and when', async () => {
+    stubQuote(finalQuote());
+    renderQuote();
+
+    const strip = within(await screen.findByRole('region', { name: quotes.statsLabel }));
+    expect(strip.getByText(quotes.status.final)).toBeInTheDocument();
+    expect(strip.getByText(quotes.finalizedOn('Oct 11, 2026'))).toBeInTheDocument();
+    expect(strip.queryByText(quotes.notFinal)).toBeNull();
+  });
+
+  it('the price lines are a table in a panel, with the totals under them', async () => {
+    stubQuote(makeQuote());
+    renderQuote();
+
+    const panel = within(await screen.findByRole('region', { name: quotes.priceLinesHeading }));
+    const table = panel.getByRole('table', { name: quotes.linesLabel });
+    expect(within(table).getAllByRole('row').length).toBeGreaterThan(2);
+    expect(within(table).getByRole('columnheader', { name: quotes.colAmount })).toHaveAttribute('data-numeric', 'true');
+    expect(panel.getByLabelText(quotes.totalsLabel)).toBeInTheDocument();
+  });
+
+  it('a quote that does not load says so, in place, and can be tried again', async () => {
+    let calls = 0;
+    stubQuote(makeQuote(), {
+      'GET /api/quotes/q1': () => {
+        calls += 1;
+        return calls === 1 ? { status: 500, body: { error: 'x' } } : { body: makeQuote() };
+      },
+    });
+    const { user } = renderQuote();
+
+    const alert = (await screen.findByText(quotes.loadFailed)).closest('[role="alert"]');
+    expect(alert).not.toBeNull();
+    await user.click(within(alert as HTMLElement).getByRole('button', { name: quotes.retry }));
+    expect(await screen.findByRole('heading', { level: 1, name: quotes.title('Q-0001') })).toBeInTheDocument();
+  });
+
+  it('while it loads, a status names the wait and the page is already titled Quote', async () => {
+    api = stubApi({
+      'GET /api/company': () => ({ body: company }),
+      'GET /api/jobs/j1/view': () => ({ body: jobView }),
+      'GET /api/quotes/q1': () => new Promise(() => undefined) as never,
+    });
+    renderQuote();
+
+    expect(await screen.findByRole('status', { name: quotes.loading })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: quotes.pageTitle })).toBeInTheDocument();
+  });
+
+  it('on a phone the total is pinned at the foot of the screen', async () => {
+    phoneMode.phone = true;
+    stubQuote(makeQuote());
+    renderQuote();
+
+    await screen.findByRole('heading', { level: 1, name: quotes.title('Q-0001') });
+    const total = money(calculateQuote(defaultScope, defaultPricebook).totalCents);
+    // The totals under the lines and the pinned bar; the strip keeps to the status and the date
+    expect(screen.getAllByText(total)).toHaveLength(2);
+    expect(within(screen.getByRole('region', { name: quotes.statsLabel })).queryByText(total)).toBeNull();
+  });
+
+  it('a desktop has no pinned total', async () => {
+    stubQuote(makeQuote());
+    renderQuote();
+
+    await screen.findByRole('heading', { level: 1, name: quotes.title('Q-0001') });
+    expect(screen.getAllByText(money(calculateQuote(defaultScope, defaultPricebook).totalCents))).toHaveLength(2);
   });
 });
