@@ -1,7 +1,7 @@
 import { APPOINTMENT_KINDS, DEFAULT_DURATION_MINUTES, type AppointmentKind } from '@roofline/shared';
 import { useQuery } from '@tanstack/react-query';
 import { Avatar, Banner, Button, Field, Listbox, Panel, Skeleton, useToast } from '@roofline/ui';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { ApiError, apiFetch } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
@@ -206,6 +206,16 @@ function FormBody({ existing, onDone, onCancel, account, zone }: FormBodyProps) 
   const endKey = endDate === '' ? date : endDate;
   const isInstall = kind === 'install';
   const canSave = isInstall ? date !== '' && endKey >= date : date !== '' && time !== '';
+  // What Save is waiting for, in a line beside it (nothing when the form is complete)
+  const waitingFor = canSave
+    ? null
+    : isInstall
+      ? date === ''
+        ? appointments.saveWaiting.start
+        : appointments.saveWaiting.end
+      : date === ''
+        ? appointments.saveWaiting.day
+        : appointments.saveWaiting.time;
 
   // How long a timed visit is: what the person chose, else the length of the one being moved (same kind), else the kind's own
   const [chosenMinutes, setChosenMinutes] = useState<number | null>(null);
@@ -301,6 +311,7 @@ function FormBody({ existing, onDone, onCancel, account, zone }: FormBodyProps) 
   // A message about the save (a warning to decide on, or a failure) is brought into view: on a long form or a phone it is below the fold
   const showingMessage = warned !== null || saveFailed;
   const messageRef = useRef<HTMLDivElement>(null);
+  const saveHintId = useId();
   useEffect(() => {
     if (showingMessage) messageRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
   }, [showingMessage]);
@@ -431,6 +442,11 @@ function FormBody({ existing, onDone, onCancel, account, zone }: FormBodyProps) 
 
       {warned === null ? (
         <div className={styles.actions}>
+          {waitingFor !== null ? (
+            <p id={saveHintId} className={styles.hint}>
+              {waitingFor}
+            </p>
+          ) : null}
           {onCancel !== undefined ? (
             <Button type="button" variant="ghost" onClick={onCancel}>
               {appointments.leaveForm}
@@ -440,7 +456,7 @@ function FormBody({ existing, onDone, onCancel, account, zone }: FormBodyProps) 
               {appointments.leaveForm}
             </Button>
           )}
-          <Button type="button" disabled={!canSave || saving} onClick={() => void save()}>
+          <Button type="button" disabled={!canSave || saving} aria-describedby={waitingFor !== null ? saveHintId : undefined} onClick={() => void save()}>
             {saving ? appointments.saving : appointments.save}
           </Button>
         </div>

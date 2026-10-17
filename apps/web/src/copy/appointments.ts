@@ -33,6 +33,8 @@ export const appointments = {
   notesLabel: 'Notes',
   save: 'Save',
   saving: 'Saving',
+  /** Beside Save while it is waiting: what is missing. */
+  saveWaiting: { day: 'Pick a day to save.', time: 'Pick a time to save.', start: 'Pick a start date to save.', end: 'The end date is before the start.' },
   leaveForm: 'Cancel',
   saveError: 'We could not save this appointment.',
   loadError: 'We could not open this appointment.',
