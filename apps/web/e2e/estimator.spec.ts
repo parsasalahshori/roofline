@@ -38,7 +38,7 @@ test('exact report: owner approves the spend', async ({ page, loginAs, markToday
   await page.getByRole('button', { name: 'Request EagleView report' }).click();
   await page.getByRole('link', { name: 'Waiting for your OK' }).click();
 
-  // The owner sees the most it can cost (to the cent: a report costs $74.40, and "up to $74" would understate it) and approves it.
+  // The owner sees the most it can cost and approves it.
   await expect(page).toHaveURL(/\/approvals\//);
   await expect(page.getByText(/^Up to \$[\d,]+(\.\d{2})?$/)).toBeVisible();
   await page.getByRole('button', { name: /^Approve 1 step · up to \$[\d,]+(\.\d{2})?$/ }).click();
