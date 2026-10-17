@@ -1,25 +1,15 @@
-/** The longest side a re-sized photo gets (a 12 megapixel phone photo is about 4000 px). */
-const RESIZED_SIDE = 3200;
+import { preparePhoto as prepare } from '../../measure/windows/preparePhoto.ts';
+
+export type CardPhoto = { ok: true; blob: Blob } | { ok: false; reason: 'type' | 'heic' | 'too-big' };
 
 /**
- * The photo to send. Sent as it came (the camera's JPEG, with its EXIF: the server reads the lens from it) unless it is
- * over the server's size limit; then it is drawn smaller (upright) and sent as a new JPEG. Null when it cannot be read.
+ * The card photo to send: the measuring page's own preparation (windows/preparePhoto.ts). A JPEG or PNG under the limit
+ * goes as the camera made it, EXIF and all; a bigger one is drawn smaller with the camera's focal length copied into the
+ * new file (the server reads the lens from it, and the sizes depend on it); a HEIC is turned into a JPEG where the browser
+ * can open it, and refused where it cannot. `maxBytes` is the company's limit: a result over it is "too big".
  */
-export async function preparePhoto(file: File, maxBytes: number): Promise<Blob | null> {
-  if (file.size <= maxBytes) return file;
-  try {
-    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
-    const scale = Math.min(1, RESIZED_SIDE / Math.max(bitmap.width, bitmap.height));
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(bitmap.width * scale);
-    canvas.height = Math.round(bitmap.height * scale);
-    const ctx = canvas.getContext('2d');
-    if (ctx === null) return null;
-    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    bitmap.close();
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.88));
-    return blob !== null && blob.size <= maxBytes ? blob : null;
-  } catch {
-    return null;
-  }
+export async function preparePhoto(file: File, maxBytes: number): Promise<CardPhoto> {
+  const p = await prepare(file);
+  if (!p.ok) return p;
+  return p.file.size <= maxBytes ? { ok: true, blob: p.file } : { ok: false, reason: 'too-big' };
 }

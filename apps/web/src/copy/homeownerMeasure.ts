@@ -64,6 +64,8 @@ export const homeownerMeasure = {
   cardUploading: 'Sending your photo',
   cardUploadFailed: "We couldn't send that photo. Please try again.",
   cardTooBig: 'That photo is too large. Please take it again with a normal camera setting.',
+  cardHeic: "This browser can't open that photo format. Set your camera to save JPEG (iPhone: Settings > Camera > Formats > Most Compatible), then take it again.",
+  cardWrongType: 'Please use a JPEG or PNG photo.',
   cardCornerNames: ['top left', 'top right', 'bottom right', 'bottom left'] as const,
   cardFind: 'Tap the middle of the card. We zoom in so you can mark its corners.',
   cardZoomIn: 'Zoom in',

@@ -59,11 +59,12 @@ export function CardCapture({
     setBusy(true);
     setError(null);
     try {
-      const blob = await preparePhoto(file, maxPhotoBytes);
-      if (blob === null) {
-        setError(copy.cardTooBig);
+      const prepared = await preparePhoto(file, maxPhotoBytes);
+      if (!prepared.ok) {
+        setError(prepared.reason === 'heic' ? copy.cardHeic : prepared.reason === 'type' ? copy.cardWrongType : copy.cardTooBig);
         return;
       }
+      const blob = prepared.blob;
       const up = await upload(blob);
       if (url.current !== null) URL.revokeObjectURL(url.current);
       url.current = URL.createObjectURL(blob);
