@@ -113,7 +113,7 @@ export function JobCardView({ job, today: todayProp, dragging = false, onDragSta
         <span className={styles.footer}>
           {job.valueCents !== null ? <span className={styles.value}>{formatDollars(job.valueCents)}</span> : null}
           {job.assigned !== null ? (
-            <span className={styles.rep}>
+            <span className={styles.rep} title={job.assigned.name}>
               <Avatar name={job.assigned.name} size={24} />
               <span className={job.valueCents === null ? styles.repName : 'visually-hidden'}>{job.assigned.name}</span>
             </span>

@@ -810,6 +810,8 @@ describe('board cards and lanes', () => {
     expect(link).not.toHaveTextContent('Call about financing ·');
     expect(link).toHaveTextContent('$11,000');
     expect(link).toHaveTextContent('Casey Moreno');
+    // A narrow lane may end the name in an ellipsis: the whole name is the hover text
+    expect(within(link).getByText('Casey Moreno').closest('[title]')).toHaveAttribute('title', 'Casey Moreno');
     // The aging reads in words for a screen reader and as "4d" on the card
     expect(link).toHaveTextContent(jobs.daysInStage(4));
     expect(link).toHaveTextContent(jobs.daysShort(4));
