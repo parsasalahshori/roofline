@@ -90,7 +90,9 @@ function buildSteps(
   const emailFields: Record<string, Record<string, string>> = {};
   for (const id of recipients.emailIds) {
     const f = recipients.fields[id];
-    if (f) emailFields[id] = { hail_size: f.hail_size, street: f.street };
+    // The day is only for the review's sample (the send works it out again when the email goes): it keeps the email's
+    // sample saying the same "today" or "yesterday" as the text's
+    if (f) emailFields[id] = { hail_size: f.hail_size, street: f.street, day };
   }
 
   const smsPayload = {
