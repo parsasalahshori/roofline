@@ -14,6 +14,8 @@ function sampleView(overrides: Partial<PublicProposalView> = {}): PublicProposal
   return {
     companyName: 'Acme Roofing',
     companyPhone: null,
+    accentColor: null,
+    logoUrl: null,
     firstName: 'Dana',
     address: '12 Oak St',
     validUntil: '2026-11-12',
@@ -144,4 +146,12 @@ test('parseSignedDocument reads back a stored signed document with the same hash
   expect(parseSignedDocument(undefined)).toBeNull();
   expect(parseSignedDocument({ optionId: 'o1' })).toBeNull();
   expect(parseSignedDocument({ ...doc, option: { ...doc.option, totalCents: 'lots' } })).toBeNull();
+});
+
+test('signedDocument ignores the brand colour and the logo: what is signed is what the company says, not how the page looks', () => {
+  const plain = signedDocument(sampleView(), 'o1', true);
+  const branded = signedDocument(sampleView({ accentColor: '#ED3A2B', logoUrl: 'https://cdn.example.test/logo.png' }), 'o1', true);
+  expect(branded).toEqual(plain);
+  expect(canonicalJson(branded)).toBe(canonicalJson(plain));
+  expect(JSON.stringify(branded)).not.toMatch(/ED3A2B|logo/i);
 });

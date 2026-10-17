@@ -53,6 +53,7 @@ async function settingsFor(tx: Tx, ctx: TenantContext) {
       apr: companySettings.financingAprBps,
       months: companySettings.financingTermMonths,
       clause: companySettings.estimateChangeClause,
+      accent: companySettings.quoteAccentColor,
     })
     .from(companySettings)
     .where(eq(companySettings.companyId, ctx.companyId))
@@ -148,7 +149,11 @@ export async function publicProposalView(tx: Tx, ctx: TenantContext, proposalId:
     .limit(1);
   if (!row) throw new Error('The proposal was not found.');
   const p = row.proposal;
-  const [company] = await tx.select({ name: companies.name, phone: companies.phoneE164 }).from(companies).where(eq(companies.id, ctx.companyId)).limit(1);
+  const [company] = await tx
+    .select({ name: companies.name, phone: companies.phoneE164, logoUrl: companies.logoUrl })
+    .from(companies)
+    .where(eq(companies.id, ctx.companyId))
+    .limit(1);
   const settings = await settingsFor(tx, ctx);
   const optionRows = await tx
     .select()
@@ -175,6 +180,9 @@ export async function publicProposalView(tx: Tx, ctx: TenantContext, proposalId:
   return {
     companyName: company?.name ?? '',
     companyPhone: company?.phone ?? null,
+    // The page wears the company's colour and logo like its instant quote page does: read-only, and not part of what is signed
+    accentColor: settings?.accent ?? null,
+    logoUrl: company?.logoUrl ?? null,
     firstName: first === '' ? null : first,
     address: `${row.addressLine}, ${row.city}, ${row.state} ${row.zip}`,
     validUntil: p.validUntil,

@@ -40,6 +40,8 @@ function fixture(overrides: Partial<PublicProposalView> = {}): PublicProposalVie
   return {
     companyName: 'Acme Roofing',
     companyPhone: '+15555550100',
+    accentColor: null,
+    logoUrl: null,
     firstName: 'Maria',
     address: '12 Oak Lane, Springfield',
     validUntil: '2026-11-30',

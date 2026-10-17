@@ -37,7 +37,8 @@ export function HomeownerPage() {
   const token = params.token ?? '';
   const query = usePublicProposal(token);
   useRecordView(token, query.isSuccess);
-  // The company's one colour, when its payload has one (the API does not send it yet; the default blue stays until it does).
+  // The company's one colour (null: the default blue stays). It is set on the document root, so the sheets, which are
+  // portaled to the body, wear it too.
   usePublicBrand(query.data ? (query.data as HomeownerView).accentColor : null);
 
   const [pickedId, setPickedId] = useState<string | null>(null);

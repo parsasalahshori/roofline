@@ -15,13 +15,11 @@ export type RoofFacts = {
 };
 
 /**
- * The public proposal as the page reads it: the API's view, plus fields the company payload may carry. The API does not
- * send the extra ones yet, so until it does the page shows the company's name as its wordmark, the default colour and no
- * roof card; nothing is made up in their place.
+ * The public proposal as the page reads it: the API's view (which carries the company's name, phone, one colour and logo),
+ * plus the roof facts the company payload may carry. The API does not send the roof yet, so until it does the page shows no
+ * roof card; nothing is made up in its place. A payload without the colour or the logo reads as the default blue and the
+ * company's name as the wordmark.
  */
 export type HomeownerView = PublicProposalView & {
-  logoUrl?: string | null;
-  /** The company's one colour, a hex such as "#ED3A2B". */
-  accentColor?: string | null;
   roof?: RoofFacts | null;
 };
