@@ -65,6 +65,8 @@ export type StepPreview = {
   recipientCount?: number;
   sendTime?: string;
   maxSpendCents?: number;
+  /** A move_appointment step's new time (ISO), so a list of plans can say when the install goes without the step's payload. */
+  moves?: { start: string; end: string };
 };
 
 /** What a step reports when it has run: counts such as `{ sent: 31, blocked: 2 }`, or counts by name. */
@@ -834,7 +836,7 @@ const moveAppointment: StepTypeDef<MoveAppointmentPayload> = {
   approvalClass: 'internal',
   userCreatable: false,
   payload: moveAppointmentPayload,
-  preview: (p) => ({ title: 'Move an install', lines: [p.reason, `${p.start} to ${p.end}`] }),
+  preview: (p) => ({ title: 'Move an install', lines: [p.reason, `${p.start} to ${p.end}`], moves: { start: p.start, end: p.end } }),
   baseline: () => 'install_moved',
   units: (_p, result) => countOf(result.moved),
 };

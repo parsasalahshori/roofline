@@ -85,6 +85,13 @@ export const approvals = {
   factSteps: 'Steps',
   factRecipients: 'Recipients',
   factSends: 'Sends',
+  /** What a plan that moves one install says: "Moves to  Mon, Oct 19 · 10:00 AM to 2:00 PM". */
+  factMoves: 'Moves to',
+  /** What a plan that moves several installs says: "Moves  3 installs". */
+  factMovesMany: 'Moves',
+  installsValue: (n: number): string => plural(n, 'install', 'installs'),
+  /** The new day and hours of a move that has them: "Mon, Oct 19 · 10:00 AM to 2:00 PM". */
+  moveWhenAt: (day: string, from: string, to: string): string => `${day} · ${from} to ${to}`,
   factCost: 'Cost',
   stepsValue: (n: number): string => `${n}`,
   textsValue: (n: number): string => plural(n, 'text', 'texts'),

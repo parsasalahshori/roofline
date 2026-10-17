@@ -51,6 +51,9 @@ function renderCard(task: TaskView, href: string | undefined, routes: Routes = {
 
 const card = (title: string): HTMLElement => screen.getByRole('article', { name: title });
 
+/** The company the card asks for when a plan moves an install: its zone says which day a time falls on. */
+const COMPANY = { 'GET /api/company': () => ({ body: { id: 'c1', name: 'Summit Roofing', timezone: 'America/Chicago' } }) };
+
 describe('where a card sends the person to see its plan', () => {
   it('is the plan’s review screen under /approvals unless the page says otherwise', async () => {
     renderCard(bigPlan('big'), undefined);
@@ -110,6 +113,60 @@ describe('where a card sends the person to see its plan', () => {
     await user.click(screen.getByRole('button', { name: approvals.seeProgress }));
 
     await waitFor(() => expect(where(router)).toBe('/approvals/one'));
+  });
+});
+
+describe('a plan that moves an install', () => {
+  const move = (id: string, start: string, end: string, overrides: Partial<StepView> = {}) =>
+    step(id, 1, 'Move an install', {
+      type: 'move_appointment',
+      preview: { title: 'Move an install', lines: ['Rain on the day', `${start} to ${end}`], moves: { start, end } },
+      ...overrides,
+    });
+
+  it('says when it moves to, in the company\'s zone, with the hours', async () => {
+    // Mon Oct 19, 10:00 to 14:00 in Chicago (UTC-5)
+    const plan = makeTask({ id: 'm1', title: 'Rain: move 1 install?', steps: [move('m1-s1', '2026-10-19T15:00:00.000Z', '2026-10-19T19:00:00.000Z')] });
+    renderCard(plan, undefined, COMPANY);
+
+    const facts = within(card('Rain: move 1 install?')).getByText(approvals.factMoves).closest('div')!;
+    await waitFor(() => expect(facts).toHaveTextContent('Mon, Oct 19 · 10:00 AM to 2:00 PM'));
+  });
+
+  it('says just the day for a move of the whole day', async () => {
+    // Zone midnight to the next midnight: Tue Oct 20, all day
+    const plan = makeTask({ id: 'm2', title: 'Rain: move 1 install?', steps: [move('m2-s1', '2026-10-20T05:00:00.000Z', '2026-10-21T05:00:00.000Z')] });
+    renderCard(plan, undefined, COMPANY);
+
+    const facts = within(card('Rain: move 1 install?')).getByText(approvals.factMoves).closest('div')!;
+    await waitFor(() => expect(facts).toHaveTextContent('Tue, Oct 20'));
+    expect(facts).not.toHaveTextContent('AM');
+  });
+
+  it('counts the installs when several move, and asks for no company', () => {
+    const plan = makeTask({
+      id: 'm3',
+      title: 'Rain: move 2 installs?',
+      steps: [
+        move('m3-s1', '2026-10-19T15:00:00.000Z', '2026-10-19T19:00:00.000Z'),
+        move('m3-s2', '2026-10-20T15:00:00.000Z', '2026-10-20T19:00:00.000Z'),
+      ],
+    });
+    renderCard(plan, undefined);
+
+    const facts = within(card('Rain: move 2 installs?')).getByText(approvals.factMovesMany).closest('div')!;
+    expect(facts).toHaveTextContent(approvals.installsValue(2));
+  });
+
+  it('leaves the move out when the plan was made before its preview carried the time', () => {
+    const plan = makeTask({
+      id: 'm4',
+      title: 'Rain: move 1 install?',
+      steps: [step('m4-s1', 1, 'Move an install', { type: 'move_appointment', preview: { title: 'Move an install', lines: [] } })],
+    });
+    renderCard(plan, undefined);
+
+    expect(within(card('Rain: move 1 install?')).queryByText(approvals.factMoves)).toBeNull();
   });
 });
 
