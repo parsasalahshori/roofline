@@ -69,7 +69,7 @@ function ApprovalsSection() {
   );
 }
 
-/** Today's visits, earliest first: the time and kind, who and where, and a button for directions. The next one is marked. */
+/** Today's visits, earliest first: the time and kind, who and where, and a button for directions. The one under way or coming next is marked. */
 function VisitsSection({ zone, seesEveryone }: { zone: string; seesEveryone: boolean }) {
   const id = useId();
   const query = useToday();
@@ -80,7 +80,10 @@ function VisitsSection({ zone, seesEveryone }: { zone: string; seesEveryone: boo
   const view = query.data;
   const visits = view ? liveVisits(view.appointments) : undefined;
   // The next visit: the first one still to come (or on now) that is not done
-  const nextId = visits?.find((visit) => !visit.allDay && visit.status === 'scheduled' && Date.parse(visit.endsAt) > now)?.id;
+  const nextVisit = visits?.find((visit) => !visit.allDay && visit.status === 'scheduled' && Date.parse(visit.endsAt) > now);
+  const nextId = nextVisit?.id;
+  // Already started by the clock: it reads "Now", not "Next"
+  const underway = nextVisit !== undefined && Date.parse(nextVisit.startsAt) <= now;
 
   let body: ReactNode;
   if (visits === undefined) {
@@ -118,7 +121,7 @@ function VisitsSection({ zone, seesEveryone }: { zone: string; seesEveryone: boo
         {visits.map((visit) => {
           const clock = visit.allDay ? null : visitTime(visit.startsAt, zone);
           const who = visit.customerName ?? visit.title;
-          const detail = [visit.addressLine, visit.source === 'front_desk' ? today.fromFrontDesk : null].filter(
+          const detail = [visit.addressLine, visit.source === 'front_desk' ? home.fromFrontDesk : null].filter(
             (part): part is string => part !== null && part !== '',
           );
           const isNext = visit.id === nextId;
@@ -149,7 +152,9 @@ function VisitsSection({ zone, seesEveryone }: { zone: string; seesEveryone: boo
                     {today.done}
                   </Tag>
                 ) : isNext ? (
-                  <Tag tone="brand">{today.next}</Tag>
+                  <Tag tone="brand" icon="clock">
+                    {underway ? today.now : today.next}
+                  </Tag>
                 ) : null}
                 {visit.addressLine !== null && visit.addressLine !== '' ? (
                   <IconButton
@@ -280,7 +285,7 @@ export function Today() {
         <section aria-labelledby={monthId} className={styles.section}>
           <SectionHead id={monthId} title={today.thisMonth} />
           <div className={styles.tiles}>
-            <SignedTile bars={!phone} />
+            <SignedTile bars={!phone} label={today.signed} />
             <PipelineTile />
           </div>
         </section>

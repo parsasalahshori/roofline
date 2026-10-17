@@ -8,7 +8,8 @@ export const storm = {
   /** Storm window. */
   loading: 'Loading your storms',
   listHeading: 'Storms in your area',
-  empty: 'No hail in your area in the last 30 days. We check every 30 minutes.',
+  empty: 'No hail in your area in the last 30 days',
+  emptyHelp: 'We check every 30 minutes.',
   loadFailed: 'We could not load your storms. Try again in a minute.',
   staleBanner: 'Hail data is a little behind',
   radarEstimated: 'Radar-estimated',
@@ -21,8 +22,9 @@ export const storm = {
   seePlan: 'See plan',
   viewStorm: 'See this storm',
   planStatus: {
-    draft: 'Plan waiting for your OK',
-    awaiting_owner: 'Plan waiting for your OK',
+    // The same words as the plan's card, so one plan is never called two things on one screen
+    draft: 'Needs your OK',
+    awaiting_owner: 'Waiting for owner',
     approved: 'Plan approved',
     declined: 'Plan declined',
     expired: 'Plan expired',

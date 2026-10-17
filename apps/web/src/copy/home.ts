@@ -22,6 +22,8 @@ export const home = {
   pipeline: 'Open pipeline',
   pipelineMeta: (openJobs: number, atProposal: number) =>
     `${openJobs} open ${plural(openJobs, 'job', 'jobs')} · ${atProposal} at proposal`,
+  /** Under a dash when there are open jobs but no proposal has a price yet: a $0 would say the pipeline is empty. */
+  pipelineUnpriced: (openJobs: number) => `${openJobs} open ${plural(openJobs, 'job', 'jobs')} · none priced yet`,
   /** "Hail · Monday", or just "Hail" when the company has had none. */
   hail: (day: string | null) => (day === null ? 'Hail' : `Hail · ${day}`),
   hailUnit: 'in',

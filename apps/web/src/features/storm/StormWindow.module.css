@@ -1,7 +1,16 @@
-/* The Storm page: the map and the plan side by side, the storms underneath. The page scrolls. */
+/* The Storm page: the map and the plan side by side, the storms underneath, 16px between each. The page scrolls. */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* The row is as tall as the taller of the map and the plan, so no part of it is a blank block beside the other */
 .top {
   display: grid;
   grid-template-columns: minmax(0, 1fr) clamp(340px, 28vw, 404px);
+  align-items: stretch;
   gap: 14px;
   min-width: 0;
 }
@@ -9,7 +18,7 @@
 .map {
   display: flex;
   min-width: 0;
-  height: 380px;
+  min-height: 340px;
 }
 
 .side {
@@ -29,8 +38,9 @@
   font-size: var(--font-size-body);
 }
 
+/* With no plan waiting the panel takes the height of the row, so the map has a neighbour of its own size */
 .noPlan {
-  align-self: stretch;
+  flex: 1 1 auto;
 }
 
 /* Where the storm was, and when */

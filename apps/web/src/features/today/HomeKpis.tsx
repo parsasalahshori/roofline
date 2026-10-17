@@ -16,16 +16,16 @@ const waiting = <Skeleton width="6rem" height="28px" />;
 
 
 /** The signed total of this month, with the twelve weeks behind it as bars (left out where `bars` is false). */
-export function SignedTile({ bars = true }: { bars?: boolean }) {
+export function SignedTile({ bars = true, label = home.signed }: { bars?: boolean; label?: string }) {
   const signed = useSignedSummary();
   const data = signed.data;
   const percent = data?.goalCents ? Math.round((data.monthTotalCents / data.goalCents) * 100) : null;
-  // The weekly bars only when some week has something in it
-  const spark = bars && data?.weekly.some((week) => week.totalCents > 0) ? data.weekly.map((week) => week.totalCents) : undefined;
+  // The weekly bars only once three weeks have something in them: one tall bar among empty dashes reads as a stray line
+  const spark = bars && data !== undefined && data.weekly.filter((week) => week.totalCents > 0).length >= 3 ? data.weekly.map((week) => week.totalCents) : undefined;
 
   return (
     <KpiTile
-      label={home.signed}
+      label={label}
       value={data ? signedMoney(data.monthTotalCents) : signed.isError ? '—' : waiting}
       meta={
         data
@@ -33,7 +33,9 @@ export function SignedTile({ bars = true }: { bars?: boolean }) {
             ? home.signedNothing
             : percent !== null && data.goalCents
               ? home.signedGoal(percent, signedMoney(data.goalCents))
-              : home.signedMeta
+              : spark !== undefined
+                ? home.signedMeta
+                : undefined
           : signed.isError
             ? home.kpiLoadFailed
             : undefined
@@ -49,11 +51,21 @@ export function PipelineTile() {
   const signed = useSignedSummary();
   const board = useBoard({});
   const counts = pipelineCounts(board.data);
+  // Open jobs and not a dollar of proposals out: a $0 would read as an empty pipeline beside a list of jobs
+  const unpriced = signed.data !== undefined && signed.data.openPipelineCents === 0 && counts !== null && counts.openJobs > 0;
   return (
     <KpiTile
       label={home.pipeline}
-      value={signed.data ? signedMoney(signed.data.openPipelineCents) : signed.isError ? '—' : waiting}
-      meta={counts ? home.pipelineMeta(counts.openJobs, counts.atProposal) : board.isError ? home.kpiLoadFailed : undefined}
+      value={signed.data ? (unpriced ? '—' : signedMoney(signed.data.openPipelineCents)) : signed.isError ? '—' : waiting}
+      meta={
+        counts
+          ? unpriced
+            ? home.pipelineUnpriced(counts.openJobs)
+            : home.pipelineMeta(counts.openJobs, counts.atProposal)
+          : board.isError
+            ? home.kpiLoadFailed
+            : undefined
+      }
     />
   );
 }

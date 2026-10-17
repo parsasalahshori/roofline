@@ -14,6 +14,7 @@ import { HomeToday } from './HomeToday.tsx';
 import { AiFeedCard } from './lift/AiFeedCard.tsx';
 import { CrewWeatherCard } from './lift/CrewWeatherCard.tsx';
 import { StormCallout } from './StormCallout.tsx';
+import { useMoreBelow } from './useMoreBelow.ts';
 
 /**
  * Home on a desktop: the greeting and the two things to start (measure an address, a new job), the strip of four
@@ -27,6 +28,7 @@ export function Home() {
   const canDecide = me.data?.role === 'owner' || me.data?.role === 'office';
   const drafts = canDecide ? newestFirst(countedDrafts(approvals.data)) : [];
   const [newest] = drafts;
+  const [columnRef, moreBelow] = useMoreBelow<HTMLDivElement>();
 
   const now = new Date();
   const zone = company.data?.timezone;
@@ -61,7 +63,7 @@ export function Home() {
             <StormCallout />
           </MapPanel>
         </div>
-        <div className={styles.column}>
+        <div ref={columnRef} className={styles.column} data-more={moreBelow ? 'true' : undefined}>
           {newest ? <HomeApproval key={newest.id} task={newest} more={drafts.length - 1} /> : null}
           <HomeToday />
           <CrewWeatherCard />

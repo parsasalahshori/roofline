@@ -39,8 +39,7 @@
   background: var(--surface-2);
 }
 
-.sampleLabel,
-.caption {
+.sampleLabel {
   margin: 0;
   color: var(--ink-3);
   font-size: var(--font-size-min);

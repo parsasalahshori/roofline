@@ -19,7 +19,8 @@ export const today = {
   /** "4265 Harney St · from Front Desk" */
   detail: (parts: readonly string[]) => parts.join(' · '),
   fromFrontDesk: 'From Front Desk',
-  /** The visit that is on now or comes next, and one that is over. */
+  /** The visit that is under way, the one that comes next, and one that is over. */
+  now: 'Now',
   next: 'Next',
   done: 'Done',
   /** The name of the button that opens driving directions to a visit. */
@@ -27,6 +28,8 @@ export const today = {
   /** One follow-up line: the job's next step, with its date when it has one. */
   nextStep: (text: string | null) => (text === null ? 'No next step set' : text),
   thisMonth: 'This month',
+  /** The signed tile's name under the "This month" heading, which already says the month. */
+  signed: 'Signed',
   signedToday: 'Signed today',
   signedLabel: 'Proposals signed today',
   signedBy: (name: string) => `Signed by ${name}`,

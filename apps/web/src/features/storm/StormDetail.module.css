@@ -12,18 +12,19 @@
   min-width: 0;
 }
 
+/* The plan panel is as tall as the map beside it, so neither leaves a blank block next to the other */
 .top {
   display: grid;
   grid-template-columns: minmax(0, 1fr) clamp(340px, 28vw, 404px);
   gap: 14px;
-  align-items: start;
+  align-items: stretch;
   min-width: 0;
 }
 
 .map {
   display: flex;
   min-width: 0;
-  height: 440px;
+  min-height: 400px;
 }
 
 .plan {
@@ -60,6 +61,7 @@
 
   .map {
     height: 380px;
+    min-height: 0;
   }
 }
 
@@ -87,5 +89,6 @@
   .map {
     order: 2;
     height: 300px;
+    min-height: 0;
   }
 }

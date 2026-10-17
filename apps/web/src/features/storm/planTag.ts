@@ -12,8 +12,9 @@ export type PlanTag = { label: string; tone: TagTone; icon: IconName };
 export function planTag(status: string | null): PlanTag {
   switch (status) {
     case 'draft':
-    case 'awaiting_owner':
       return { label: storm.planStatus.draft, tone: 'tape', icon: 'alert' };
+    case 'awaiting_owner':
+      return { label: storm.planStatus.awaiting_owner, tone: 'tape', icon: 'alert' };
     case 'approved':
       return { label: storm.planStatus.approved, tone: 'info', icon: 'check' };
     case 'running':

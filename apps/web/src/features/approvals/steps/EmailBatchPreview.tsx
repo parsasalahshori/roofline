@@ -14,7 +14,8 @@ function customerCount(value: unknown): number {
 export function EmailBatchPreview({ step }: StepPreviewProps) {
   const payload = payloadOf(step);
   const preview = step.preview;
-  const subject = textOf(payload.subject) || preview?.title || '';
+  // The subject as the first customer reads it: its fill-in words are filled in (the raw template stays in the editor)
+  const subject = preview?.subjectSample ?? (textOf(payload.subject) || preview?.title || '');
   const sample = preview?.messageSample ?? '';
   const count = preview?.recipientCount ?? customerCount(payload.customerIds);
   const lines = preview?.lines ?? [];
@@ -32,8 +33,12 @@ export function EmailBatchPreview({ step }: StepPreviewProps) {
       ) : null}
       {sample !== '' ? (
         <div className={styles.sample}>
-          <p className={styles.sampleLabel}>{stepEmail.sampleLabel}</p>
-          <p className={styles.caption}>{stepEmail.hailCaption}</p>
+          {/* One quiet line, not two stacked captions */}
+          <p className={styles.sampleLabel}>
+            <span>{stepEmail.sampleLabel}</span>
+            <span aria-hidden="true"> · </span>
+            <span>{stepEmail.hailCaption}</span>
+          </p>
           <p className={styles.sampleBody}>{sample}</p>
         </div>
       ) : null}

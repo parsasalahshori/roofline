@@ -1,8 +1,14 @@
-/* The storm note over the map: a floating card with the weather glyph, two lines of words and a button */
+/*
+ * The storm note over the map: a floating card with the weather glyph, the headline beside the button into the report,
+ * and the facts under both across the card's whole width (the words used to be squeezed into a narrow column between
+ * the glyph and the button, four lines tall with one word alone on the last).
+ */
 .callout {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: 12px;
+  row-gap: 4px;
   padding: 10px 8px 10px 12px;
   border-radius: var(--r-2);
   background: var(--surface);
@@ -11,7 +17,7 @@
 
 .icon {
   display: inline-flex;
-  flex: none;
+  grid-row: 1 / span 2;
   align-items: center;
   justify-content: center;
   width: 34px;
@@ -21,18 +27,24 @@
   color: var(--tape-ink);
 }
 
+/* The two lines of words are the card's own grid items, so the facts can run under the button */
 .text {
-  flex: 1 1 0;
-  min-width: 0;
+  display: contents;
 }
 
 .title {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
   margin: 0;
   font: 650 14px/1.25 var(--f-ui);
 }
 
 .body {
-  margin: 2px 0 0;
+  grid-column: 2 / 4;
+  grid-row: 2;
+  margin: 0;
+  padding-right: 4px;
   color: var(--ink-3);
   font-size: 13px;
   line-height: 1.35;
@@ -40,22 +52,27 @@
 
 .actions {
   display: flex;
-  flex: none;
+  grid-column: 3;
+  grid-row: 1;
   align-items: center;
   gap: 2px;
-  align-self: flex-start;
 }
 
 .dismiss {
   margin-top: -2px;
 }
 
-/* A narrow map (a phone, or a laptop with the side column open): the words take the width, the button goes under them,
-   and the second line is left to the report */
+/* A narrow map (a phone, or a laptop with the side column open): the headline takes the width, the button goes under it,
+   and the facts are left to the report */
 @container mappanel (max-width: 640px) {
   .callout {
-    flex-wrap: wrap;
+    grid-template-columns: auto minmax(0, 1fr);
     padding-right: 12px;
+  }
+
+  /* The glyph stays beside the headline: its row span would run into the buttons' row and push it to a column of its own */
+  .icon {
+    grid-row: 1;
   }
 
   .body {
@@ -63,8 +80,8 @@
   }
 
   .actions {
-    flex: 1 1 100%;
-    align-self: stretch;
+    grid-column: 1 / -1;
+    grid-row: 2;
     justify-content: space-between;
   }
 }

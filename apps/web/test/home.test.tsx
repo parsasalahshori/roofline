@@ -135,7 +135,7 @@ describe('Home: the numbers strip', () => {
         body: {
           monthTotalCents: 1555300,
           goalCents: null,
-          weekly: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 500000, 1055300].map((cents, i) => ({ weekStart: `2026-08-${String(i + 10).padStart(2, '0')}`, totalCents: cents })),
+          weekly: [0, 0, 0, 0, 0, 0, 0, 0, 200000, 300000, 500000, 555300].map((cents, i) => ({ weekStart: `2026-08-${String(i + 10).padStart(2, '0')}`, totalCents: cents })),
           openPipelineCents: 3292200,
         },
       }),
@@ -180,6 +180,22 @@ describe('Home: the numbers strip', () => {
     expect(await within(desk).findByText(home.deskMeta(6, 1))).toBeInTheDocument();
     expect(within(desk).getByText('7')).toBeInTheDocument();
     expect(api.unexpected).toEqual([]);
+  });
+
+  it('draws no weekly bars until three weeks have something in them', async () => {
+    mountHome({
+      'GET /api/home/signed': () => ({
+        body: {
+          monthTotalCents: 1055300,
+          goalCents: null,
+          weekly: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 500000, 555300].map((cents, i) => ({ weekStart: `2026-08-${String(i + 10).padStart(2, '0')}`, totalCents: cents })),
+          openPipelineCents: 0,
+        },
+      }),
+    });
+    const strip = await screen.findByRole('region', { name: home.kpisLabel });
+    expect(await within(strip).findByText('$10,553')).toBeInTheDocument();
+    expect(within(strip).queryByRole('img', { name: 'Signed each week, last 12 weeks' })).toBeNull();
   });
 
   it('says so, and does not invent a number, when there is no hail and nothing signed', async () => {

@@ -156,46 +156,48 @@ export function StormWindow() {
         </Button>
       }
     >
-      {layer.data?.stale === true ? <Banner tone="warning">{storm.staleBanner}</Banner> : null}
-      <div className={styles.top}>
-        <div className={styles.map}>
-          <MapPanel pins={false} />
+      <div className={styles.stack}>
+        {layer.data?.stale === true ? <Banner tone="warning">{storm.staleBanner}</Banner> : null}
+        <div className={styles.top}>
+          <div className={styles.map}>
+            <MapPanel pins={false} />
+          </div>
+          <div className={styles.side}>
+            {newest ? (
+              <section aria-label={storm.planHeading} className={styles.plan}>
+                <HomeApproval
+                  key={newest.id}
+                  task={newest}
+                  more={plans.length - 1}
+                  href={'/storm/plans/' + encodeURIComponent(newest.id)}
+                />
+              </section>
+            ) : (
+              <Panel as="aside" title={storm.noPlanWaiting} className={styles.noPlan}>
+                <p className={styles.help}>{storm.noPlanWaitingHelp}</p>
+              </Panel>
+            )}
+          </div>
         </div>
-        <div className={styles.side}>
-          {newest ? (
-            <section aria-label={storm.planHeading} className={styles.plan}>
-              <HomeApproval
-                key={newest.id}
-                task={newest}
-                more={plans.length - 1}
-                href={'/storm/plans/' + encodeURIComponent(newest.id)}
-              />
-            </section>
-          ) : (
-            <Panel as="aside" title={storm.noPlanWaiting} className={styles.noPlan}>
-              <p className={styles.help}>{storm.noPlanWaitingHelp}</p>
-            </Panel>
-          )}
-        </div>
+        {storms.isPending ? (
+          <div role="status" aria-label={storm.loading}>
+            <Skeleton lines={3} />
+          </div>
+        ) : null}
+        {storms.isError ? <p role="alert">{storm.loadFailed}</p> : null}
+        {storms.data ? (
+          <Panel title={storm.listHeading} tag={rows.length > 0 ? storm.count(rows.length) : undefined} padded={false}>
+            {rows.length === 0 ? (
+              <EmptyState title={storm.empty} body={storm.emptyHelp} />
+            ) : phone ? (
+              <StormsList rows={rows} />
+            ) : (
+              <StormsTable rows={rows} />
+            )}
+            {rows.length > 0 ? <p className={styles.note}>{storm.radarNote}</p> : null}
+          </Panel>
+        ) : null}
       </div>
-      {storms.isPending ? (
-        <div role="status" aria-label={storm.loading}>
-          <Skeleton lines={3} />
-        </div>
-      ) : null}
-      {storms.isError ? <p role="alert">{storm.loadFailed}</p> : null}
-      {storms.data ? (
-        <Panel title={storm.listHeading} tag={rows.length > 0 ? storm.count(rows.length) : undefined} padded={false}>
-          {rows.length === 0 ? (
-            <EmptyState title={storm.empty} />
-          ) : phone ? (
-            <StormsList rows={rows} />
-          ) : (
-            <StormsTable rows={rows} />
-          )}
-          {rows.length > 0 ? <p className={styles.note}>{storm.radarNote}</p> : null}
-        </Panel>
-      ) : null}
     </AppPage>
   );
 }

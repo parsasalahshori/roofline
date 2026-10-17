@@ -44,9 +44,9 @@ describe('hail size', () => {
 });
 
 describe('the plan tag', () => {
-  it('is yellow with an alert for a plan waiting on a yes, and the same for both waiting states', () => {
+  it('is yellow with an alert for a plan waiting on a yes, in the words of the plan card for each waiting state', () => {
     expect(planTag('draft')).toEqual({ label: storm.planStatus.draft, tone: 'tape', icon: 'alert' });
-    expect(planTag('awaiting_owner')).toEqual(planTag('draft'));
+    expect(planTag('awaiting_owner')).toEqual({ label: storm.planStatus.awaiting_owner, tone: 'tape', icon: 'alert' });
   });
 
   it('is blue once it has gone out, green when it finished and amber when it needs a look', () => {

@@ -25,6 +25,11 @@
   overflow-y: auto;
 }
 
+/* While there is more to scroll to, the column fades at its bottom edge: a card cut there reads as "scroll", not as a fault */
+.column[data-more="true"] {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent);
+}
+
 /* A narrower desktop: the map first, at a good height, then the cards under it; the page scrolls */
 @media (max-width: 1180px) {
   .grid {
@@ -38,5 +43,6 @@
 
   .column {
     overflow: visible;
+    mask-image: none;
   }
 }
