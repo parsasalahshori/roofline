@@ -15,6 +15,20 @@ describe('the customer page and the new customer form', () => {
     expect(label).not.toMatch(/padding-top/);
   });
 
+  it('lets a customer tag wrap inside its column: a 40-character tag has no break in it and used to run out of the panel', () => {
+    const css = read('customers/CustomerTag.module.css');
+    const tag = /(?:^|\n)\.tag\[data-tone\]\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(tag).toMatch(/white-space:\s*normal/);
+    expect(tag).toMatch(/overflow-wrap:\s*anywhere/);
+    expect(tag).toMatch(/height:\s*auto/);
+    expect(tag).toMatch(/max-width:\s*100%/);
+    // The lists that hold tags let their items shrink
+    const tagItem = /(?:^|\n)\.tagItem\s*\{([^}]*)\}/.exec(read('customers/CustomerWindow.module.css'))?.[1] ?? '';
+    expect(tagItem).toMatch(/min-width:\s*0/);
+    const tags = /(?:^|\n)\.tags\s*\{([^}]*)\}/.exec(read('customers/CustomersPage.module.css'))?.[1] ?? '';
+    expect(tags).toMatch(/min-width:\s*0/);
+  });
+
   it('lets an address block put city, state and ZIP on one row when it is wide, and only then', () => {
     const css = read('create/Create.module.css');
     // The block measures itself, so a narrow sheet keeps two columns whatever the window

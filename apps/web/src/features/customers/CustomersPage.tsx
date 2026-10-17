@@ -11,6 +11,7 @@ import { JobsTabs } from '../jobs/JobsTabs.tsx';
 import { SearchBox } from '../jobs/SearchBox.tsx';
 import { EmptyPanel, LoadError, RowsSkeleton } from '../jobs/states.tsx';
 import { ConsentChip } from './ConsentChip.tsx';
+import { CustomerTag } from './CustomerTag.tsx';
 import { type CustomerListItem, PAGE_SIZE, useCustomers } from './api.ts';
 import styles from './CustomersPage.module.css';
 
@@ -51,7 +52,7 @@ function TagList({ tags }: { tags: string[] }) {
   return (
     <span className={styles.tags}>
       {tags.map((tag) => (
-        <Tag key={tag}>{tag}</Tag>
+        <CustomerTag key={tag}>{tag}</CustomerTag>
       ))}
     </span>
   );

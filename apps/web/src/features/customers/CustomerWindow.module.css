@@ -119,6 +119,12 @@
   gap: 4px;
 }
 
+/* A tag item may be narrower than its words, so a long tag wraps in the panel */
+.tagItem {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .phoneRow {
   display: flex;
   flex-wrap: wrap;
