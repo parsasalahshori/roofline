@@ -777,3 +777,11 @@
   font-size: 1rem;
   font-weight: 700;
 }
+
+/* The thanks screen's next step: measure the windows (app on iPhone, camera on Android, QR on a computer) */
+.nextTitle {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  text-wrap: balance;
+}

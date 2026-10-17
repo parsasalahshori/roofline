@@ -36,7 +36,7 @@ type Step =
   | { kind: 'address'; error?: AddressError }
   | { kind: 'measuring'; startedAt: number; answer: EstimateAnswer | null }
   | { kind: 'results'; answer: EstimateAnswer; showForm: boolean }
-  | { kind: 'done'; firstName: string; booked: { start: string; end: string } | null; slotTaken: boolean; timeZone: string };
+  | { kind: 'done'; firstName: string; booked: { start: string; end: string } | null; slotTaken: boolean; timeZone: string; answer: EstimateAnswer };
 
 const TICK_MS = 80;
 
@@ -156,12 +156,20 @@ export function QuotePage({ slug }: { slug: string }) {
                 config={c}
                 services={services}
                 answer={step.answer}
-                onDone={(firstName, booked, slotTaken, timeZone) => setStep({ kind: 'done', firstName, booked, slotTaken, timeZone })}
+                onDone={(firstName, booked, slotTaken, timeZone) => setStep({ kind: 'done', firstName, booked, slotTaken, timeZone, answer: step.answer })}
               />
             ) : null}
           </>
         ) : null}
-        {step.kind === 'done' ? <Done config={c} firstName={step.firstName} booked={step.booked} slotTaken={step.slotTaken} timeZone={step.timeZone} /> : null}
+        {step.kind === 'done' ? (
+          <>
+            <Done config={c} firstName={step.firstName} booked={step.booked} slotTaken={step.slotTaken} timeZone={step.timeZone} />
+            {/* Windows asked for: the way to measure them stays after the request is sent (app on iPhone, camera on Android) */}
+            {services !== null && services.includes('windows') ? (
+              <MeasureWindows slug={slug} quoteId={step.answer.quoteId} address={step.answer.address} services={services} app={c.homeownerApp} device={detectDevice()} next />
+            ) : null}
+          </>
+        ) : null}
         {step.kind === 'address' ? (
           <div className={styles.bottom}>
             <TrustRow facts={c} />
@@ -521,6 +529,7 @@ function MeasureWindows({
   services,
   app,
   device,
+  next = false,
 }: {
   slug: string;
   quoteId: string;
@@ -528,11 +537,14 @@ function MeasureWindows({
   services: readonly QuoteProduct[];
   app: PublicQuoteConfig['homeownerApp'];
   device: Device;
+  /** On the thanks screen: a heading says this is the next step. */
+  next?: boolean;
 }) {
   if (app === null) return null;
   const link = measureLink(slug, quoteId);
   return (
     <div className={styles.appOffer} data-app-offer={device}>
+      {next ? <h2 className={styles.nextTitle}>{quote.nextMeasureTitle}</h2> : null}
       {device === 'iphone' ? (
         <>
           <Button href={app.url} size="lg" className={`${styles.primary} ${styles.wrap}`} target="_blank" rel="noopener noreferrer">
