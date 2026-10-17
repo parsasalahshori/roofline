@@ -19,6 +19,9 @@ function isCurrent(href: string, pathname: string): boolean {
   return pathname.split('/')[1] === href.split('/')[1];
 }
 
+/** The pages that have a tab of their own; any other page is one of More's, so More is the tab to light. */
+const TABBED = new Set(['', 'today', 'estimator', 'jobs']);
+
 /**
  * The phone's bottom tab bar: My day, Map, Measure (a raised ink button: measuring is what a rep does most), Jobs and More.
  * Counts are on My day. The shell wraps it in a fixed bar at the bottom of the screen, so this nav sets no position and
@@ -26,6 +29,8 @@ function isCurrent(href: string, pathname: string): boolean {
  */
 export function BottomTabs({ onMore, moreOpen, waiting }: { onMore: () => void; moreOpen?: boolean; waiting: number }) {
   const { pathname } = useLocation();
+  // A page that lives under More (Calendar, Customers, Settings, ...) lights More, so the bar always says where you are
+  const moreCurrent = !TABBED.has(pathname.split('/')[1] ?? '');
 
   function tab(item: Tab, extra?: { count?: number }) {
     const current = isCurrent(item.href, pathname);
@@ -65,6 +70,7 @@ export function BottomTabs({ onMore, moreOpen, waiting }: { onMore: () => void; 
         aria-expanded={moreOpen ?? false}
         onClick={onMore}
         data-tab="more"
+        data-current={moreCurrent ? 'true' : undefined}
       >
         <span className={styles.glyph}>
           <Icon name="dots" size={22} />

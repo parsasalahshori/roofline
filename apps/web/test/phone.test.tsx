@@ -109,6 +109,23 @@ it('marks the current tab', async () => {
   expect(within(mainAtMap).getByRole('link', { name: shell.tabJobs })).not.toHaveAttribute('aria-current');
 });
 
+it('lights More on a page that lives under it, and no other tab then', async () => {
+  stubPhone(true);
+  signedInApi();
+  renderApp('/settings/company');
+
+  const main = await MAIN();
+  expect(within(main).getByRole('button', { name: shell.tabMore })).toHaveAttribute('data-current', 'true');
+  for (const label of [shell.tabMyDay, shell.tabMap, shell.tabMeasure, shell.tabJobs]) {
+    expect(within(main).getByRole('link', { name: label })).not.toHaveAttribute('aria-current');
+  }
+
+  // On a page with a tab of its own, More stays quiet
+  cleanup();
+  renderApp('/jobs');
+  expect(within(await MAIN()).getByRole('button', { name: shell.tabMore })).not.toHaveAttribute('data-current');
+});
+
 it('More opens a sheet with the nine pages the tab bar does not hold', async () => {
   stubPhone(true);
   signedInApi();
