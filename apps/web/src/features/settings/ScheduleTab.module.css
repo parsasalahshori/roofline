@@ -10,10 +10,10 @@
   border-top: 1px solid var(--line);
 }
 
-/* The three numbers, side by side on a desktop and one under another on a phone */
+/* The three numbers on the two-column grid every Settings form uses, and one under another on a phone */
 .numbers {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px 20px;
   margin-top: 12px;
 }
