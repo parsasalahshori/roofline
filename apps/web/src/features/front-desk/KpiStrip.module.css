@@ -1,6 +1,6 @@
 /*
  * Today's numbers: five tiles across on a wide screen, three and two on a narrower one (never an orphan), and on a
- * phone one row the thumb slides sideways. Grid and flex children get min-width: 0 so a long meta line wraps.
+ * phone two across, the odd one out the full width. Nothing slides sideways. Grid children get min-width: 0 so a long meta line wraps.
  */
 .strip {
   min-width: 0;
@@ -52,25 +52,13 @@
   }
 }
 
-/* A phone: one row that slides sideways, the next tile peeking in; it bleeds to the screen edge */
+/* A phone: two tiles across and the fifth the full width under them, so every number is on the screen with no sideways swipe */
 @media (max-width: 767.98px) {
   .tiles {
-    display: flex;
-    margin: 0 -16px;
-    padding: 2px 16px 4px;
-    overflow-x: auto;
-    scroll-padding: 0 16px;
-    scroll-snap-type: x proximity;
-    scrollbar-width: none;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .tiles::-webkit-scrollbar {
-    display: none;
-  }
-
-  .tiles > *,
-  .placeholder {
-    flex: 0 0 208px;
-    scroll-snap-align: start;
+  .tiles > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
   }
 }

@@ -68,6 +68,15 @@
   box-shadow: var(--e-1);
 }
 
+/* The panes scroll inside themselves: the last lines fade out at the bottom edge instead of being cut mid-line, and the end of the page clears the fade */
+@media (min-width: 768px) {
+  .scroll {
+    padding-bottom: 26px;
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+  }
+}
+
 @media (max-width: 767.98px) {
   .scroll {
     flex: none;

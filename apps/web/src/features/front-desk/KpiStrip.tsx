@@ -1,6 +1,5 @@
 import { Button, Icon, KpiTile, Skeleton } from '@roofline/ui';
 import { frontDeskInbox } from '../../copy/front-desk-inbox.ts';
-import { useIsPhone } from '../../shell/useIsPhone.ts';
 import { useDayStats } from './inbox-api.ts';
 import { secondsText } from './format.ts';
 import styles from './KpiStrip.module.css';
@@ -14,8 +13,6 @@ const copy = frontDeskInbox;
  */
 export function KpiStrip() {
   const { data, isPending, isError, refetch } = useDayStats();
-  // On a phone the row slides sideways, so it must be reachable from the keyboard too
-  const phone = useIsPhone();
 
   if (isError) {
     return (
@@ -50,7 +47,7 @@ export function KpiStrip() {
   const quiet = data.callsToday === 0;
   return (
     <section className={styles.strip} aria-label={copy.kpisLabel}>
-      <div className={styles.tiles} tabIndex={phone ? 0 : undefined}>
+      <div className={styles.tiles}>
         <KpiTile label={copy.callsToday} value={data.callsToday} meta={quiet ? copy.noCallsYet : copy.callsTodayHint} />
         <KpiTile
           label={copy.answered}
