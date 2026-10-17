@@ -8,6 +8,7 @@ import { common } from '../src/copy/common.ts';
 import { AddHomeSheet } from '../src/features/create/AddHomeSheet.tsx';
 import { AddressFields, EMPTY_ADDRESS, type AddressValue } from '../src/features/create/AddressFields.tsx';
 import { CustomerPicker } from '../src/features/create/CustomerPicker.tsx';
+import { FormActions } from '../src/features/create/FormActions.tsx';
 import type { CustomerRecord } from '../src/features/create/api.ts';
 import { stubApi } from './helpers.tsx';
 import { chooseFromListbox } from './crm-helpers.ts';
@@ -187,5 +188,36 @@ describe('add home sheet', () => {
     await user.click(screen.getByRole('button', { name: common.close }));
 
     expect(onDone).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the buttons at the foot of a create form', () => {
+  /** matchMedia that answers the phone query with `phone` and everything else with no match. */
+  function stubViewport(phone: boolean) {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: phone && query === '(max-width: 767.98px)',
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(() => false),
+    }));
+  }
+
+  const parts = <FormActions className="bar" save={<button type="submit">Save it</button>} cancel={<a href="/back">Cancel it</a>} />;
+  const order = () => Array.from(document.querySelector('.bar')?.children ?? []).map((child) => child.textContent);
+
+  it('puts the main action first where there is room beside it', () => {
+    stubViewport(false);
+    render(parts);
+    expect(order()).toEqual(['Save it', 'Cancel it']);
+  });
+
+  it('puts the way out first and the main action last on a phone, where the bar sits under the thumb', () => {
+    stubViewport(true);
+    render(parts);
+    expect(order()).toEqual(['Cancel it', 'Save it']);
   });
 });

@@ -11,6 +11,7 @@ import { WINDOW_COPY } from '../../copy/rail.ts';
 import { DetailPage } from '../jobs/DetailPage.tsx';
 import { AddressFields, EMPTY_ADDRESS, type AddressValue } from './AddressFields.tsx';
 import { CustomerPicker } from './CustomerPicker.tsx';
+import { FormActions } from './FormActions.tsx';
 import { useCreateCustomer, useCreateJob, useCreateProperty, useCustomerHomes, type CustomerInput, type CustomerRecord } from './api.ts';
 import styles from './NewJob.module.css';
 
@@ -308,14 +309,19 @@ export function NewJob() {
         ) : null}
 
         {showDetails ? (
-          <div className={styles.actions}>
-            <Button type="submit" variant="primary" busy={busy} disabled={!ready} className={styles.submit}>
-              {create.newJob.submit}
-            </Button>
-            <Button href="/jobs" variant="quiet" className={styles.cancel}>
-              {create.newJob.cancel}
-            </Button>
-          </div>
+          <FormActions
+            className={styles.actions}
+            save={
+              <Button type="submit" variant="primary" busy={busy} disabled={!ready} className={styles.submit}>
+                {create.newJob.submit}
+              </Button>
+            }
+            cancel={
+              <Button href="/jobs" variant="ghost">
+                {create.newJob.cancel}
+              </Button>
+            }
+          />
         ) : null}
       </form>
     </DetailPage>
