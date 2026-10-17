@@ -59,9 +59,13 @@ export const quote = {
   resultsTitle: 'Your estimate',
   forAddress: (address: string): string => `For ${address}`,
   roofLine: (squares: number): string => `About ${squares.toLocaleString('en-US')} squares`,
+  /**
+   * The count is a range when the floors or the outline are guessed ("About 15\u201330 windows"): the likely number can sit at
+   * the range's low end (one floor assumed, a second possible), so the range is what is said, never "15 (15\u201330)".
+   */
   windowsLine: (count: number, range?: { low: number; high: number }): string => {
-    const base = `About ${count} ${count === 1 ? 'window' : 'windows'}`;
-    return range !== undefined && (range.low !== count || range.high !== count) ? `${base} (${range.low}\u2013${range.high})` : base;
+    if (range !== undefined && range.low !== range.high) return `About ${range.low}\u2013${range.high} windows`;
+    return `About ${count} ${count === 1 ? 'window' : 'windows'}`;
   },
   windowsEstimate: 'Counted from above, so it may be a little off.',
   range: (low: number, high: number): string => `from ${quoteMoney(low)} to ${quoteMoney(high)}`,

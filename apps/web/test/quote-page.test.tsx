@@ -119,7 +119,7 @@ describe('QuotePage', () => {
     expect(screen.getByText(quote.roofLine(24.5))).toBeInTheDocument();
     expect(screen.getByText(quote.range(1_250_000, 1_980_000))).toBeInTheDocument();
     // The windows are a count with its range, never a price.
-    expect(screen.getByText('About 14 windows (12\u201316)')).toBeInTheDocument();
+    expect(screen.getByText('About 12\u201316 windows')).toBeInTheDocument();
     expect(screen.queryByText(quote.range(950_000, 2_400_000))).toBeNull();
     expect(screen.getByText(quote.finalNote)).toBeInTheDocument();
     expect(screen.getByRole('img', { name: quote.outlineAlt })).toBeInTheDocument();
@@ -506,7 +506,7 @@ describe('the satellite pictures cannot be trusted for the roof', () => {
     setup({ [`POST ${BASE}/estimate`]: () => ({ body: { ...READY, roof: null, notice: 'satellite-unusable' } }) });
     await getEstimate(user, ['windows', 'roof']);
     expect(await screen.findByRole('heading', { name: quote.resultsTitle })).toBeInTheDocument();
-    expect(screen.getByText('About 14 windows (12\u201316)')).toBeInTheDocument();
+    expect(screen.getByText('About 12\u201316 windows')).toBeInTheDocument();
     expect(screen.getByText(SENTENCE)).toBeInTheDocument();
     expect(screen.queryByText(quote.roofLine(24.5))).not.toBeInTheDocument();
     expect(toForm()).toBeInTheDocument();
@@ -710,5 +710,19 @@ describe('quote helpers', () => {
   it('the estimate\'s button names the next step, not a price the visit has yet to settle', () => {
     expect(quote.continueButton).toBe('Next: your details');
     expect(quote.continueButton).not.toMatch(/price/i);
+  });
+});
+
+describe('the window count line', () => {
+  it('says the range when there is one, even with the likely number at its low end', () => {
+    expect(quote.windowsLine(15, { low: 15, high: 30 })).toBe('About 15\u201330 windows');
+    expect(quote.windowsLine(14, { low: 12, high: 16 })).toBe('About 12\u201316 windows');
+    expect(quote.windowsLine(15, { low: 15, high: 30 })).not.toMatch(/\(/);
+  });
+
+  it('says the number when it is firm', () => {
+    expect(quote.windowsLine(15, { low: 15, high: 15 })).toBe('About 15 windows');
+    expect(quote.windowsLine(15)).toBe('About 15 windows');
+    expect(quote.windowsLine(1)).toBe('About 1 window');
   });
 });
