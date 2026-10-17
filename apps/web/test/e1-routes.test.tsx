@@ -1,4 +1,4 @@
-import { instantEstimate, DEFAULT_WINDOW_ORDER_SETTINGS } from '@roofline/shared';
+import { instantEstimate, DEFAULT_WINDOW_ORDER_SETTINGS, resolveCatalog } from '@roofline/shared';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
@@ -129,6 +129,7 @@ describe('E1 windows', () => {
       ...proposalListRoutes(),
       'GET /api/window-measurements/w1': () => ({ body: windowsView }),
       'GET /api/window-measurements/w1/preview': () => ({ body: { quotes: [] } }),
+      'GET /api/window-catalog': () => ({ body: { catalog: resolveCatalog(null) } }),
     });
     renderApp('/estimator/windows/w1');
     expect(await screen.findByRole('button', { name: measureWindows.scanButton })).toBeInTheDocument();
@@ -204,6 +205,7 @@ describe('E1 windows', () => {
       'GET /api/estimator/settings': () => ({ body: settingsBody }),
       'GET /api/instant-quote/settings': () => ({ body: { enabled: false, slug: null, products: ['windows', 'roof'], rangePct: 12, dailyCap: 50, embedOrigins: [], booking: false, accentColor: null, pageUrl: null } }),
       'GET /api/window-order-settings': () => ({ body: DEFAULT_WINDOW_ORDER_SETTINGS }),
+      'GET /api/window-catalog': () => ({ body: { catalog: resolveCatalog(null) } }),
       'GET /api/pricebook': () => ({ body: { prices: defaultPricebook, defaults: { wastePercent: 12, markupPercent: 25, taxPercent: 0, material: 'architectural' }, isExample: false } }),
     });
     renderApp('/settings/prices');

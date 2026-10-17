@@ -1,4 +1,4 @@
-import { calculateQuote, DEFAULT_WORK_HOURS, defaultPricebook, defaultScope, type QuoteView, DEFAULT_WINDOW_ORDER_SETTINGS } from '@roofline/shared';
+import { calculateQuote, DEFAULT_WORK_HOURS, defaultPricebook, defaultScope, type QuoteView, DEFAULT_WINDOW_ORDER_SETTINGS, resolveCatalog } from '@roofline/shared';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
@@ -59,6 +59,7 @@ const PRICES_ROUTES: Routes = {
   'GET /api/estimator/settings': () => ({ body: { defaultPitchX12: 6, overhangFt: 1, proposalValidDays: 30, aerialMeasure: false, aerialConfigured: false, estimateChangeClause: true, financingAprBps: null, financingTermMonths: null } }),
   'GET /api/instant-quote/settings': () => ({ body: { enabled: false, slug: null, products: ['windows', 'roof'], rangePct: 12, dailyCap: 50, embedOrigins: [], booking: false, accentColor: null, pageUrl: null } }),
   'GET /api/window-order-settings': () => ({ body: DEFAULT_WINDOW_ORDER_SETTINGS }),
+  'GET /api/window-catalog': () => ({ body: { catalog: resolveCatalog(null) } }),
 };
 
 function renderApp(path: string) {

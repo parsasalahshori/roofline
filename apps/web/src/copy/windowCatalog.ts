@@ -50,7 +50,7 @@ export const windowCatalog = {
   ratingCount: 'Out of how many',
   ratingPlus: 'Show as "2,400+"',
   ratingSource: 'Who rated you',
-  ratingSourceHelp: 'The words after the count: homeowners, or Google reviews.',
+  ratingSourceHelp: 'The words after the count: homeowners, or customer reviews.',
   sinceYear: 'In business since (year)',
   licenseState: 'License state (2 letters)',
   licenseNumber: 'License number',
