@@ -271,6 +271,13 @@ export async function seedRidgewayWindows(
       }
     }
     void sheetCount;
+    // Each window keeps the style it was given, and the bathroom one is frosted (the staff table names both)
+    for (const pw of photoWindows) {
+      const seed = WINDOWS.find((w) => w.key === pw.windowKey);
+      if (seed === undefined) continue;
+      pw.style = seed.style;
+      if (seed.obscure) pw.frosted = true;
+    }
     // Three windows are still counted from the walls: the estimate adds three standard windows to the four measured ones.
     const row = await updateWindowMeasurement(
       tx,

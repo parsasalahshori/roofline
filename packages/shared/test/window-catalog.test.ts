@@ -90,3 +90,12 @@ describe('window catalog', () => {
     expect(WindowCatalogSchema.safeParse(catalog({ trust: { rating: { value: 4.9, count: 2400, plus: true, source: 'homeowners' }, sinceYear: 2012, license: null, badges: ['A+ BBB'] } })).success).toBe(true);
   });
 });
+
+describe('a homeowner bathroom window on the factory order', () => {
+  it('starts as an obscure (frosted) line, and a clear one does not', async () => {
+    const { linesFromPhotoWindows } = await import('../src/index.ts');
+    const win = (id: string, frosted?: boolean) => ({ id, widthIn: 30, heightIn: 40, quality: 'good' as const, source: 'homeowner-app', ...(frosted && { frosted }) });
+    const lines = linesFromPhotoWindows([win('a', true), win('b')], new Set());
+    expect(lines.map((l) => l.obscure)).toEqual([true, false]);
+  });
+});

@@ -423,6 +423,8 @@ export const windowPhotos = {
   coverAllHint: 'The estimate then counts nothing; the quote is the photographed windows (and any counts you typed).',
   fromPhotos: 'counted from photos',
   photosOfWindow: (n: number) => (n === 1 ? '1 photo' : `${n} photos`),
+  /** Under a window's name: the homeowner's plain style choice, and frosted glass when it is a bathroom window. */
+  styleLine: (choice: string, frosted: boolean) => (frosted ? `${choice} · Frosted glass` : choice),
   groupSpread: (n: number, spread: string) => `${n} photos agree within ${spread} in`,
   anotherPhoto: (name: string) => `Add another photo of ${name}`,
 

@@ -150,6 +150,17 @@ describe('the rows the table lists', () => {
   });
 });
 
+describe("a homeowner's window row", () => {
+  it('carries the style the homeowner picked and whether it is frosted (bathroom) glass; a window with neither carries nothing', () => {
+    const bath = { ...input('a', 'Bathroom', LIDAR), style: 'double-hung' as const, frosted: true };
+    const plain = input('b', 'Kitchen', LIDAR);
+    const rows = buildRows(base({ inputs: [bath, plain], live: [sized(bath, 36, 48), sized(plain, 36, 48)] }));
+    expect(rows[0]).toMatchObject({ style: 'double-hung', frosted: true });
+    expect(rows[1]!.style).toBeUndefined();
+    expect(rows[1]!.frosted).toBeUndefined();
+  });
+});
+
 describe('the three grades', () => {
   it('counts windows by grade: a window to measure again is not order-grade yet, and one left out is not counted', () => {
     const a = input('a', 'A', SHEET);

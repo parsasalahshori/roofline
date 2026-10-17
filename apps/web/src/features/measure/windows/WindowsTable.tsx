@@ -1,5 +1,5 @@
 import { Button, Checkbox, Icon, Size, Table, Tag, Td, Th, Tr, type IconName, type TagTone } from '@roofline/ui';
-import { fractionInches, WINDOW_SIZE_CLASSES, type WindowSizeClass } from '@roofline/shared';
+import { DEFAULT_STYLE_TILES, fractionInches, tileOfStyle, WINDOW_SIZE_CLASSES, type StyleTile, type WindowSizeClass } from '@roofline/shared';
 import { Fragment, useId, type ReactNode } from 'react';
 import { measureWindows as copy, sizeCopy, windowPhotos } from '../../../copy/measureWindows.ts';
 import { toEighth, toSixteenthUp, type RowMethod, type RowReason, type RowStatus, type WindowRow } from './rows.ts';
@@ -74,6 +74,7 @@ export function WindowsTable({
   countsOpen,
   onCountsOpen,
   footNote,
+  styleTiles = DEFAULT_STYLE_TILES,
 }: {
   rows: readonly WindowRow[];
   selectedKey: string | null;
@@ -86,6 +87,8 @@ export function WindowsTable({
   countsOpen: boolean;
   onCountsOpen: (open: boolean) => void;
   footNote?: ReactNode;
+  /** The company's plain window choices, to name a window's style the way the homeowner saw it. */
+  styleTiles?: readonly StyleTile[];
 }) {
   const countsId = useId();
   return (
@@ -147,6 +150,11 @@ export function WindowsTable({
                   <Td className={styles.location}>
                     <span className={styles.name}>{name}</span>
                     {row.photos > 1 ? <span className={styles.sub}>{windowPhotos.photosOfWindow(row.photos)}</span> : null}
+                    {row.style !== undefined ? (
+                      <span className={styles.sub} data-window-style="">
+                        {windowPhotos.styleLine(tileOfStyle(styleTiles, row.style).label, row.frosted === true)}
+                      </span>
+                    ) : null}
                   </Td>
                   <Td className={styles.classCol}>{copy.sizeClass[row.sizeClass]}</Td>
                   <Td className={styles.sizeCell}>

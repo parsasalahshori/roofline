@@ -518,6 +518,8 @@ export type OrderSourceWindow = {
   /** 'homeowner-app': the homeowner measured it themselves in the phone app: quote-grade whatever the method. */
   source?: string;
   label?: string;
+  /** A homeowner's "Bathroom window?" answered yes: the line starts with obscure (frosted) glass. */
+  frosted?: boolean;
   windowKey?: string;
   widthIn: number;
   heightIn: number;
@@ -551,7 +553,7 @@ export function linesFromPhotoWindows(windows: readonly OrderSourceWindow[], exc
     const uploadId = photos.find((p) => p.uploadId !== undefined)?.uploadId ?? null;
     const old = before.get(id);
     if (old) return { ...old, photoWindowIds: photos.map((p) => p.id), uploadId, measured, location: old.location !== '' ? old.location : label, lockedSize: null };
-    return { id, photoWindowIds: photos.map((p) => p.id), uploadId, location: label !== '' ? label : `Window ${i + 1}`, measured, ...defaultLineOptions() };
+    return { id, photoWindowIds: photos.map((p) => p.id), uploadId, location: label !== '' ? label : `Window ${i + 1}`, measured, ...defaultLineOptions(), ...(photos.some((p) => p.frosted === true) && { obscure: true }) };
   });
 }
 

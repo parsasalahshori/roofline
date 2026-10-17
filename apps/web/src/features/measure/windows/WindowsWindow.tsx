@@ -31,6 +31,7 @@ import { pickedOption, TierPanel, type TierOption } from '../lift/ProposalPanel.
 import { wholeDollars } from '../lift/proposalLines.ts';
 import panelStyles from '../lift/ProposalPanel.module.css';
 import { useCompany } from '../../settings/api.ts';
+import { useWindowCatalog } from '../../settings/window-catalog-api.ts';
 import { photoSrc, useCreateWindowMeasurement, usePatchWindowMeasurement, useWindowMeasurement, useWindowPreview } from './api.ts';
 import { ElevationDrawing } from './ElevationDrawing.tsx';
 import { liveCounts, newMarkId, readAdjustments, rulerSizeLabel, shownWindows, tiersFromQuotes, totalOf, type Box, type Corners } from './model.ts';
@@ -241,6 +242,8 @@ function QuotePlaceholder() {
 function Loaded({ v }: { v: WindowMeasurementView }) {
   const { phone } = useContext(PageSlotsContext);
   const handoff = readHandoff(useLocation().state);
+  // The company's plain window choices, to name each window's style the way the homeowner saw it
+  const styleTiles = useWindowCatalog().data?.styleTiles;
   // A house with windows measured on site (photos) shows its work at once: the scan is the reveal of Estimator's own
   // reading, for a house that has nothing else yet. Opening a measured house must not hide the table and the order behind a button.
   const scan = useScan(`windows:${v.id}`, (v.photoWindows ?? []).length === 0);
@@ -815,6 +818,7 @@ function Loaded({ v }: { v: WindowMeasurementView }) {
                       covers={covers}
                       countsOpen={countsOpen}
                       onCountsOpen={setCountsOpen}
+                      styleTiles={styleTiles}
                       actions={{
                         onMeasureAgain: (row) => (row.open?.uploadId !== undefined ? setFlowAt({ step: 'measure', uploadId: row.open.uploadId, windowId: row.open.id }) : undefined),
                         onToggle: toggleMany,

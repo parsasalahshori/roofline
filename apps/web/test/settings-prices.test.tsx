@@ -1,5 +1,5 @@
 import { cleanup, screen, within } from '@testing-library/react';
-import { DEFAULT_TIER_TEMPLATES, defaultPricebook, type PricebookView, DEFAULT_WINDOW_ORDER_SETTINGS } from '@roofline/shared';
+import { DEFAULT_TIER_TEMPLATES, defaultPricebook, type PricebookView, DEFAULT_WINDOW_ORDER_SETTINGS, resolveCatalog } from '@roofline/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { prices } from '../src/copy/prices.ts';
 import { settings } from '../src/copy/settings.ts';
@@ -12,6 +12,7 @@ const ESTIMATOR_ROUTES = {
   'GET /api/estimator/settings': () => ({ body: { defaultPitchX12: 6, overhangFt: 1, proposalValidDays: 30, aerialMeasure: false, aerialConfigured: false, estimateChangeClause: true, financingAprBps: null, financingTermMonths: null } }),
   'GET /api/instant-quote/settings': () => ({ body: { enabled: false, slug: null, products: ['windows', 'roof'], rangePct: 12, dailyCap: 50, embedOrigins: [], booking: false, accentColor: null, pageUrl: null } }),
   'GET /api/window-order-settings': () => ({ body: DEFAULT_WINDOW_ORDER_SETTINGS }),
+  'GET /api/window-catalog': () => ({ body: { catalog: resolveCatalog(null) } }),
 };
 
 const DEFAULTS = { wastePercent: 12, markupPercent: 25, taxPercent: 0, material: 'architectural' } as const;

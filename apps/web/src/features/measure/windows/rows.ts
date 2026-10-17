@@ -8,6 +8,7 @@ import {
   type WindowPhotoMeasurement,
   type WindowPhotoScale,
   type WindowSizeClass,
+  type WindowStyle,
 } from '@roofline/shared';
 import type { ShownWindow } from './model.ts';
 import { asMeasurement, RETAKE_UNCERTAINTY_IN } from './photoModel.ts';
@@ -51,6 +52,10 @@ export type WindowRow = {
   open: PhotoWindowInput | null;
   /** A street-photo window's size before a door ruler corrected it, or null. */
   was: { widthIn: number; heightIn: number } | null;
+  /** The style the window was given (the homeowner's pick, or a person's), when it has one. */
+  style?: WindowStyle;
+  /** Frosted (bathroom) glass: the homeowner answered "Bathroom window?" yes. */
+  frosted?: boolean;
 };
 
 /** The method, and the grade it gives, for a photographed window's scale. */
@@ -180,6 +185,8 @@ export function buildRows(src: RowSources): WindowRow[] {
       ids,
       open: g.members.find((m) => m.uploadId !== undefined) ?? null,
       was: null,
+      ...(g.members[0]!.style !== undefined && { style: g.members[0]!.style }),
+      ...(g.members.some((m) => m.frosted === true) && { frosted: true }),
     });
   }
 
