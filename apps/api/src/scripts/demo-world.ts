@@ -491,7 +491,10 @@ async function seedAgentsHistory(q: Query, companyId: string, ownerId: string, n
     const taskId = await insertTask({ agent: a.agent, kind: a.kind, title: a.title, status: 'done', at: a.finished, minutes: total, approved: true });
     await q(`update agent_tasks set created_at = $2 where id = $1`, [taskId, created]);
     await insertEvent(taskId, null, 'created', 'agent', created);
-    if (a.approvedEvent) await insertEvent(taskId, null, 'approved', 'user', before(a.finished, 5));
+    // The counts a real approval writes, so the feed says "approved 1 step" and not "approved the plan with every step switched off"
+    if (a.approvedEvent) {
+      await insertEvent(taskId, null, 'approved', 'user', before(a.finished, 5), { totalSteps: a.steps.length, approvedSteps: a.steps.length, forwardedSteps: 0 });
+    }
     for (const [i, step] of a.steps.entries()) {
       const stepId = await insertStep(taskId, i + 1, a.finished, { type: step.type, approvalClass: a.approvalClass, status: 'done', step });
       await insertEvent(taskId, stepId, 'step_done', 'agent', before(a.finished, 1), { units: step.units });
