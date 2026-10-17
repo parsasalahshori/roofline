@@ -19,6 +19,25 @@ const ALL: TrustFacts = {
 
 afterEach(cleanup);
 
+describe("a rating in the company's own words", () => {
+  it('reads "2,400+ homeowners" for a free-text source, and "212 Google reviews" when the source is only a name', () => {
+    expect(trustItems({ rating: { value: 4.9, count: 2400, plus: true, source: 'homeowners' } }, NOW)).toEqual([{ key: 'rating', value: '4.9', caption: '2,400+ homeowners' }]);
+    expect(trustItems({ rating: { value: 4.8, count: 150, source: 'Google reviews' } }, NOW)[0]!.caption).toBe('150 Google reviews');
+    expect(trustItems({ rating: { value: 4.8, count: 150, source: 'Google' } }, NOW)[0]!.caption).toBe('150 Google reviews');
+  });
+
+  it('shows up to three badges under the facts, and under the visit checklist when there are fewer than two facts', () => {
+    const { container, rerender } = render(<TrustRow facts={{ ...ALL, badges: ['A+ BBB', 'Made in USA', 'Lifetime warranty', 'A fourth'] }} now={NOW} />);
+    expect(within(screen.getByLabelText(publicCopy.badgesLabel)).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['A+ BBB', 'Made in USA', 'Lifetime warranty']);
+    expect(container.querySelector('[data-count="3"]')).not.toBeNull();
+    rerender(<TrustRow facts={{ badges: ['Made in USA'] }} now={NOW} />);
+    expect(screen.getByText(publicCopy.visitTitle)).toBeInTheDocument();
+    expect(screen.getByLabelText(publicCopy.badgesLabel)).toHaveTextContent('Made in USA');
+    rerender(<TrustRow facts={{}} now={NOW} />);
+    expect(screen.queryByLabelText(publicCopy.badgesLabel)).toBeNull();
+  });
+});
+
 describe('trustItems', () => {
   it('lists the rating, the year and the licence, in that order, each worded from what the company gave', () => {
     expect(trustItems(ALL, NOW)).toEqual([

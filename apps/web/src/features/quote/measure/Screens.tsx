@@ -10,6 +10,7 @@ import { HomeownerApiError, type HomeownerClient, type HomeownerSlots, type Sess
 import { CardCapture } from './CardCapture.tsx';
 import { checkContact, LABEL_MAX, ROOM_MAX, roomChoices, roomCounts, windowInput, zipOf, type ContactErrors, type ContactForm, type Draft } from './flow.ts';
 import q from '../QuotePage.module.css';
+import { FinancingLine, IncludedList, VisitNote } from '../../public/Catalog.tsx';
 import styles from './MeasureFlow.module.css';
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -166,6 +167,7 @@ export function Describe({
   const [other, setOther] = useState('');
   const [label, setLabel] = useState('');
   const [style, setStyle] = useState<WindowStyle | ''>('');
+  const [frosted, setFrosted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [roomError, setRoomError] = useState<string | null>(null);
@@ -182,7 +184,7 @@ export function Describe({
     setBusy(true);
     setError(null);
     try {
-      onSaved(await client.putWindow(session, windowInput(draft, chosenRoom, label, style)));
+      onSaved(await client.putWindow(session, windowInput(draft, chosenRoom, label, style, frosted)));
     } catch (err) {
       setError(messageOf(err));
       setRedo(err instanceof HomeownerApiError && (err.code === 'window_unsizable' || err.status === 400));
@@ -221,11 +223,14 @@ export function Describe({
         <Field label={copy.describeLabel} placeholder={copy.describeLabelPlaceholder} value={label} maxLength={LABEL_MAX} onChange={(e) => setLabel(e.target.value)} autoComplete="off" />
         <fieldset className={styles.fieldset}>
           <legend className={q.legend}>{copy.describeStyle}</legend>
-          <div className={styles.choices} role="radiogroup" aria-label={copy.describeStyle}>
+          <div className={styles.choices} role="radiogroup" aria-label={copy.describeStyle} data-style-tiles="">
             {company.windowStyles.map((s) => (
-              <label key={s.key} className={styles.choice} data-checked={style === s.key ? 'true' : undefined}>
+              <label key={s.tile} className={styles.choice} data-checked={style === s.key ? 'true' : undefined} data-tile={s.tile}>
                 <input type="radio" name="style" checked={style === s.key} onChange={() => setStyle(s.key)} />
-                <span>{s.label}</span>
+                <span className={styles.tileText}>
+                  <span>{s.label}</span>
+                  {s.hint !== '' ? <small className={styles.tileHint}>{s.hint}</small> : null}
+                </span>
               </label>
             ))}
           </div>
@@ -234,6 +239,20 @@ export function Describe({
               {styleError}
             </p>
           ) : null}
+        </fieldset>
+        <fieldset className={styles.fieldset} data-bathroom="">
+          <legend className={q.legend}>{copy.describeBath}</legend>
+          <p className={q.small}>{copy.describeBathHelp}</p>
+          <div className={styles.choices} role="radiogroup" aria-label={copy.describeBath}>
+            <label className={styles.choice} data-checked={!frosted ? 'true' : undefined}>
+              <input type="radio" name="bathroom" checked={!frosted} onChange={() => setFrosted(false)} />
+              <span>{copy.describeBathNo}</span>
+            </label>
+            <label className={styles.choice} data-checked={frosted ? 'true' : undefined}>
+              <input type="radio" name="bathroom" checked={frosted} onChange={() => setFrosted(true)} />
+              <span>{copy.describeBathYes}</span>
+            </label>
+          </div>
         </fieldset>
         {error !== null ? <Banner tone="danger">{error}</Banner> : null}
         {redo ? (
@@ -257,6 +276,10 @@ function WindowRow({ w, onRemove, busy }: { w: HomeownerWindow; onRemove: () => 
         <strong>{name}</strong>
         <span className={styles.size}>{copy.listSize(w.sizeLabel)}</span>
         <span className={q.small}>{w.uncertaintyLabel}</span>
+        <span className={q.small} data-window-style="">
+          {w.styleLabel}
+          {w.frosted === true ? ` · ${copy.listFrosted}` : ''}
+        </span>
         {w.quality === 'check' ? <span className={q.small}>{copy.listCheck}</span> : null}
       </div>
       <Button variant="ghost" busy={busy} aria-label={copy.listRemoveLabel(name)} onClick={onRemove}>
@@ -358,7 +381,7 @@ export function WindowsList({
   );
 }
 
-export function QuoteScreen({ view, onContinue, onMore }: { view: HomeownerRequestView; onContinue: () => void; onMore: () => void }) {
+export function QuoteScreen({ company, view, onContinue, onMore }: { company: HomeownerCompany; view: HomeownerRequestView; onContinue: () => void; onMore: () => void }) {
   const quote = view.quote;
   const priced = quote !== null && quote.tiers.some((t) => t.total > 0);
   return (
@@ -370,17 +393,25 @@ export function QuoteScreen({ view, onContinue, onMore }: { view: HomeownerReque
         <>
           <p className={q.text}>{copy.quoteIntro}</p>
           <ul className={styles.tiers} data-tiers="">
-            {quote.tiers.map((t) => (
-              <li key={t.key} className={styles.tier} data-tier={t.key}>
-                <span className={styles.tierLabel}>{t.label}</span>
-                <strong className={styles.tierName}>{t.name}</strong>
-                <span className={q.small}>{t.description}</span>
-                <span className={styles.tierTotal}>{copy.quoteTotal(money.format(t.total))}</span>
-              </li>
-            ))}
+            {quote.tiers.map((t) => {
+              // The company's own name for the level leads; Good, Better or Best sits above it as the rank
+              const named = t.label !== copy.quoteLevel[t.key];
+              return (
+                <li key={t.key} className={styles.tier} data-tier={t.key}>
+                  <span className={styles.tierLabel}>{named ? copy.quoteLevel[t.key] : t.label}</span>
+                  <strong className={styles.tierName}>{named ? t.label : t.name}</strong>
+                  <span className={q.small}>{t.note !== '' ? t.note : t.description}</span>
+                  <span className={styles.tierTotal}>{copy.quoteTotal(money.format(t.total))}</span>
+                </li>
+              );
+            })}
           </ul>
           <p className={q.small}>{copy.quoteMeasured(quote.measuredCount)}</p>
           {quote.estimatedCount > 0 ? <p className={q.small}>{copy.quoteEstimated(quote.estimatedCount)}</p> : null}
+          {quote.atVisitCount !== undefined ? <p className={q.small} data-at-visit="">{copy.quoteAtVisit(quote.atVisitCount)}</p> : null}
+          <IncludedList items={company.catalog.included} />
+          <VisitNote />
+          <FinancingLine financing={company.catalog.financing} />
           <p className={q.small}>{copy.quoteFinal}</p>
         </>
       )}

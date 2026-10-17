@@ -10,6 +10,7 @@ import { qrPath } from '../src/features/quote/QrCode.tsx';
 import { checkLead, hasRanges, QuotePage } from '../src/features/quote/QuotePage.tsx';
 import { thumbLayout } from '../src/features/quote/RoofThumb.tsx';
 import { type Reply, stubApi } from './helpers.tsx';
+import { EMPTY_CATALOG, WINCHOICE_CATALOG } from './homeowner-fixtures.ts';
 
 /*
  * The public instant quote page (/q/:slug): address -> scan -> ranges -> the request form -> thanks, with the
@@ -36,6 +37,7 @@ const CONFIG: PublicQuoteConfig = {
   },
   turnstileSiteKey: null,
   homeownerApp: null,
+  catalog: EMPTY_CATALOG,
 };
 
 const APP = { url: 'https://apps.apple.com/us/app/winchoice/id0000000000', name: 'WinChoice' };
@@ -325,7 +327,7 @@ describe('the company on the page', () => {
 
   it('under the address it shows the facts the company gave when it gave two or more', async () => {
     api = stubApi({
-      [`GET ${BASE}`]: () => ({ body: { ...CONFIG, rating: { value: 4.9, count: 212, source: 'Google' }, sinceYear: 2004, license: { state: 'NE', number: '48213' } } }),
+      [`GET ${BASE}`]: () => ({ body: { ...CONFIG, catalog: { ...EMPTY_CATALOG, trust: { rating: { value: 4.9, count: 212, plus: false, source: 'Google' }, sinceYear: 2004, license: { state: 'NE', number: '48213' }, badges: [] } } } }),
     });
     render(<QuotePage slug={SLUG} />);
     const row = await screen.findByRole('list', { name: publicCopy.trustLabel });
@@ -413,6 +415,50 @@ describe('the company on the page', () => {
     expect(screen.getAllByText(/10:00 AM/)).toHaveLength(1);
     expect(screen.getByText('OCT')).toBeInTheDocument();
     expect(screen.getByText('16')).toBeInTheDocument();
+  });
+});
+
+describe("the company's catalog on the page", () => {
+  it('shows the offer on every step, the rating and badges under the address, and the included list, level names and colors-and-grids line with the windows', async () => {
+    const user = userEvent.setup();
+    api = stubApi({
+      [`GET ${BASE}`]: () => ({ body: { ...CONFIG, catalog: WINCHOICE_CATALOG } }),
+      [`POST ${BASE}/estimate`]: () => ({ body: READY }),
+      [`POST ${BASE}/lead`]: () => ({ status: 201, body: { ok: true, booked: null } }),
+    });
+    render(<QuotePage slug={SLUG} />);
+    expect(await screen.findByRole('note', { name: publicCopy.offerLabel })).toHaveTextContent('October special on windows and roofing');
+    expect(screen.getByRole('link', { name: publicCopy.offerTerms })).toHaveAttribute('href', 'https://winchoice.com/promotional-terms-conditions/');
+    await pick(user);
+    await user.type(await screen.findByLabelText(quote.addressLabel), READY.address);
+    // Under the address: 4.9 over "2,400+ homeowners", the year, and the three badges
+    const facts = screen.getByRole('list', { name: publicCopy.trustLabel });
+    expect(facts).toHaveTextContent('4.9');
+    expect(facts).toHaveTextContent('2,400+ homeowners');
+    expect(facts).toHaveTextContent('2012');
+    expect(within(screen.getByLabelText(publicCopy.badgesLabel)).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['A+ BBB', 'Made in USA', 'Lifetime warranty']);
+    await user.click(screen.getByRole('button', { name: quote.measureButton }));
+    await screen.findByRole('heading', { name: quote.resultsTitle });
+    // The windows result: the three levels by their names, what every window includes, and the honest line about colors and grids
+    const tiers = within(document.querySelector('[data-tier-notes]') as HTMLElement).getAllByRole('listitem');
+    expect(tiers.map((t) => t.textContent)).toEqual(['Replenish1-year warranty', 'RefineLifetime warranty', 'RenewLifetime warranty']);
+    const included = within(document.querySelector('[data-included]') as HTMLElement);
+    for (const item of WINCHOICE_CATALOG.included) expect(included.getByText(item)).toBeInTheDocument();
+    expect(screen.getByText(publicCopy.colorsGrids)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: publicCopy.financingMore })).toHaveAttribute('href', 'https://winchoice.com/financing/');
+    // No prices anywhere in it
+    expect(document.querySelector('[data-catalog-facts]')!.textContent).not.toMatch(/\$/);
+  });
+
+  it('a company that entered nothing gets no offer, no list and no extra lines', async () => {
+    const user = userEvent.setup();
+    setup({ [`POST ${BASE}/estimate`]: () => ({ body: READY }) });
+    await getEstimate(user);
+    await screen.findByRole('heading', { name: quote.resultsTitle });
+    expect(screen.queryByRole('note', { name: publicCopy.offerLabel })).toBeNull();
+    expect(document.querySelector('[data-included]')).toBeNull();
+    expect(document.querySelector('[data-tier-notes]')).toBeNull();
+    expect(screen.queryByRole('link', { name: publicCopy.financingMore })).toBeNull();
   });
 });
 

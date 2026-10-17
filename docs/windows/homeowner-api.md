@@ -144,17 +144,27 @@ Public, no token. The words in `consent` are shown **verbatim** next to the two 
     "textingText": "Text me too: Summit Ridge Roofing may send text messages about my estimate and appointment to the phone number I provided, which may be sent using automated technology. Consent is not a condition of purchase. Message frequency varies. Message and data rates may apply. Reply STOP to stop texts or HELP for help."
   },
   "windowStyles": [
-    { "key": "double-hung", "label": "Double-hung" },
-    { "key": "single-hung", "label": "Single-hung" },
-    { "key": "slider-2", "label": "Slider, 2 panes" },
-    { "key": "slider-3", "label": "Slider, 3 panes" },
-    { "key": "picture", "label": "Picture (does not open)" },
-    { "key": "casement", "label": "Casement (cranks open)" },
-    { "key": "awning", "label": "Awning (tilts out)" },
-    { "key": "arch", "label": "Arch top" },
-    { "key": "circle", "label": "Round" }
+    { "key": "double-hung", "label": "Opens up and down", "hint": "Double-hung", "tile": "up-down", "atVisit": false },
+    { "key": "slider-2", "label": "Slides sideways", "hint": "Slider", "tile": "sideways", "atVisit": false },
+    { "key": "picture", "label": "Doesn't open", "hint": "Picture window", "tile": "fixed", "atVisit": false },
+    { "key": "arch", "label": "Bay, bow or odd shape", "hint": "We quote it at your visit", "tile": "special", "atVisit": true }
   ],
-  "trust": null,
+  "trust": {
+    "rating": { "value": 4.9, "count": 2400, "plus": true, "source": "homeowners" },
+    "sinceYear": 2012,
+    "license": null,
+    "badges": ["A+ BBB", "Made in USA", "Lifetime warranty"]
+  },
+  "catalog": {
+    "tiers": [
+      { "key": "good", "label": "Replenish", "note": "1-year warranty" },
+      { "key": "better", "label": "Refine", "note": "Lifetime warranty" },
+      { "key": "best", "label": "Renew", "note": "Lifetime warranty" }
+    ],
+    "included": ["Argon gas fill", "Low-E glass (Cardinal LoE366)", "ENERGY STAR® certified", "FlexScreen"],
+    "offer": { "title": "October special on windows and roofing. Ask about it at your visit.", "termsUrl": "https://winchoice.com/promotional-terms-conditions/" },
+    "financing": { "text": "Financing available through our partner Skeps. Optional, with no obligation.", "url": "https://winchoice.com/financing/" }
+  },
   "limits": { "maxWindows": 60, "maxPhotoBytes": 12582912, "maxRoomLength": 40, "maxLabelLength": 80, "tokenDays": 60 }
 }
 ```
@@ -163,8 +173,22 @@ Public, no token. The words in `consent` are shown **verbatim** next to the two 
 - `phone`: the company's number in E.164, or `null` when it has none (then hide "Call us").
 - `brandColor`: `#rrggbb` or `null` (use the app's own colour).
 - `booking`: false means there are no online visit times: offer only "Call me".
-- `trust`: always `null` for now (later: `{ reviews?, since?, license? }`).
-- `windowStyles`: the nine style keys with plain labels.
+- `windowStyles`: the company's plain window choices, in order: 3 or 4 tiles, WinChoice has four ("Opens up and down",
+  "Slides sideways", "Doesn't open", "Bay, bow or odd shape"). Show `label` with `hint` under it. When the homeowner picks
+  one, send its `key` as the window's `style` (a company can list more than one style per tile; the first is `key`).
+  `atVisit: true` means the window is counted but has **no instant price** (it is left out of the quote's totals): say
+  "we price it at your visit". Defaults for a company that set nothing: the four tiles above. Old clients that sent any of
+  the nine style keys (`double-hung`, `single-hung`, `slider-2`, `slider-3`, `picture`, `casement`, `awning`, `arch`,
+  `circle`) still work: the server files each under its tile.
+- `trust`: what the company says about itself, or `null` when it entered none. `rating` is a value from 1 to 5 over a
+  `count`, with `source` as free text after the count ("homeowners", "Google reviews"); show it as "4.9 from 2,400+
+  homeowners" (`plus: true` adds the "+"). `sinceYear` and `license` (`{ state, number }`) may be `null`. `badges` is up to
+  three short badges ("A+ BBB").
+- `catalog.tiers`: the company's own name and one-line note for Good, Better and Best (the quote's tiers carry the same
+  `label` and `note`; this is for screens before there is a quote). `catalog.included`: "Every window includes" (up to 8
+  short lines; may be empty). `catalog.offer`: a banner `{ title, termsUrl | null }` or `null`. `catalog.financing`: a line
+  `{ text, url | null }` or `null`. Colours and grids are not asked in the app: tell the homeowner "Colors and grids are
+  chosen at your visit". Prices are never in this answer.
 - The consent text names the company and is the exact sentence the server stores when the box is ticked. The version is
   the date the wording last changed; a stale one is refused with `409 consent_changed`.
 
@@ -281,7 +305,8 @@ Needs the token. The view of the whole request, and the answer to every change b
       "quality": "check",
       "reasons": ["The card is small next to this window, so the size could be off by about 1 inch. Hold the card flat in the middle of the glass and step a little closer."],
       "sizeLabel": "36 x 60",
-      "uncertaintyLabel": "about ±1 in"
+      "uncertaintyLabel": "about ±1 in",
+      "styleLabel": "Opens up and down"
     }
   ],
   "rooms": ["Kitchen", "Bedroom", "Living room"],
@@ -289,8 +314,9 @@ Needs the token. The view of the whole request, and the answer to every change b
     "tiers": [
       {
         "key": "good",
-        "label": "Good",
-        "name": "Vinyl double-hung",
+        "label": "Replenish",
+        "note": "1-year warranty",
+        "name": "Economy vinyl series",
         "description": "Double-pane, Low-E glass, standard install",
         "total": 8750,
         "perWindow": [{ "windowId": "w-kitchen-1", "price": 600 }, { "windowId": "w-bedroom-1", "price": 600 }, { "windowId": "w-living-1", "price": 750 }],
@@ -318,9 +344,14 @@ Needs the token. The view of the whole request, and the answer to every change b
 - `windows` are the homeowner's own, newest last. `rooms` lists the distinct rooms of the windows now on the request, in
   order of first appearance in `windows` (for the room picker's "recent" row); a room goes when its last window is deleted.
   Each window is sent back as it was saved plus the server's sizing.
-- `quote` is `null` when the request is not about windows or is `callback`. Otherwise `tiers` is always **Good, Better
-  and Best**, with the platform's standard names, descriptions and prices, the same for every company for now (a company's
-  own window prices are not behind this quote yet). For each tier `total = sum(perWindow.price) + estimatedTotal`.
+- `quote` is `null` when the request is not about windows or is `callback`. Otherwise `tiers` is **Good, Better and
+  Best** (a company may switch one off), with the company's own `label` ("Replenish"; "Good" when it set none), one-line
+  `note` ("Lifetime warranty"; empty when none), `name` and `description`, and its own window prices: a base price per
+  size class and tier, moved by the window's style choice (a slider or a window that does not open can cost more or
+  less), plus the company's frosted-glass adder for a bathroom window. Colours and grids are not priced here (the quote
+  is white, no grids; they are chosen at the visit). A window whose choice is `atVisit` has `price: 0` and
+  `atVisit: true` in `perWindow` and is left out of `total`; `quote.atVisitCount` says how many. A company with no
+  catalog gets the platform's standard names and prices. For each tier `total = sum(perWindow.price) + estimatedTotal`.
   **Measured** windows are priced at their own size class (small up to 72 united inches, standard to 101, large to 120,
   picture above); the windows not measured yet (`estimatedCount`) are priced from the address estimate (or from
   `estimatedTotalOverride`) and stay "estimated" in the app. `estimatedCount` is `max(0, expected windows - measured
@@ -373,6 +404,7 @@ Body `HomeownerWindowInput`:
   "room": "Kitchen",
   "label": "Over the sink",
   "style": "double-hung",
+  "frosted": false,
   "scale": { "kind": "card", "cardCorners": [[1437, 1968], [1587, 1969], [1587, 2063], [1437, 2064]], "card": { "widthMm": 85.6, "heightMm": 53.98 } },
   "uploadId": "33d44c23-1e91-42a6-bdb4-16c53aec0380",
   "corners": [[644, 532], [2312, 675], [2312, 3357], [644, 3500]]
@@ -384,7 +416,8 @@ Body `HomeownerWindowInput`:
   same id that differs in any field (room, label, style, scale, `uploadId`, corners) is `409 window_id_taken`. A new
   window is **201**. There is no call to edit a window: `DELETE` it and send it again (the id can be reused).
 - `room`: 1 to 40 characters (the picker's name or typed). `label`: optional, up to 80. `style`: one of the company's
-  `windowStyles` keys.
+  `windowStyles` keys (the tile the homeowner picked). `frosted`: optional boolean, default `false`: the answer to
+  "Bathroom window?" (frosted privacy glass, a price adder); only `true` is stored, and `false` and absent are the same.
 - `scale` (one of):
   - `{ "kind": "ar", "pointsM": [[x,y,z] x4], "trackingLostCount": 0, "device": "arkit" | "arkit-lidar" | "webxr", "cornerSpreadM"?: [n,n,n,n] }`
     the four frame corners in AR space, metres, each within -50 and 50 (any order: the server orders them by gravity);
@@ -562,6 +595,21 @@ config, `GET /api/public/quote/:slug`, carries `homeownerApp: { url, name } | nu
   it is the only way on, as the main button.
 
 The roof keeps its price range ("Final price after a free in-home visit"), or the satellite sentence above.
+
+`GET /api/public/quote/:slug` also carries `catalog` (the same words and facts as `/company`, in one object: `tiles`,
+`tiers`, `included`, `trust`, `offer`, `financing`; never prices), which the page uses for the trust row, the offer
+banner, the financing line and "Every window includes", and the browser measuring flow for the style tiles.
+
+## The company's catalog (staff settings)
+
+Everything above that is a company's own (the style tiles and their names, the tiers' names and notes, what every window
+includes, the trust facts and badges, the offer banner, the financing line) and the window price list is one record,
+`company_settings.window_catalog` (migration `0045_window_catalog`), edited at Settings -> Windows catalog in the web app
+(`GET`/`PUT /api/window-catalog`: owner and office read, the owner saves, every save is audited and expires the stored
+quote estimates). The price list is a base price per size class and tier, a move from that base per style tile and tier,
+and adders per window: frosted glass (asked in the app), exterior colour, wood-look interior and Colonial and Queen Anne
+grids (the last three are chosen at the visit and are not in the homeowner quote). A company that never saved a catalog
+gets the defaults in code: the four tiles, Good / Better / Best at the platform's standard prices, no extra facts.
 
 ## Trying it on this machine
 

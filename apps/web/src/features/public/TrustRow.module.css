@@ -1,3 +1,36 @@
+/* The facts and, under them, the badges */
+.wrap {
+  display: grid;
+  gap: 12px;
+}
+
+.wrap .facts {
+  /* the wrapper's gap spaces the badges; the hairline stays on the facts */
+  padding-bottom: 0;
+}
+
+/* Up to three short badges as quiet pills */
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.badge {
+  padding: 4px 10px;
+  border: 1px solid var(--line-ctl);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--font-size-min);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
 /* Facts the company gave: two or three columns under a hairline, the value in Archivo and the caption quiet. */
 .facts {
   display: grid;

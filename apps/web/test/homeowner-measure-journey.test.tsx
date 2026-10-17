@@ -3,13 +3,14 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HomeownerRequestView } from '@roofline/shared';
 import { homeownerMeasure as copy } from '../src/copy/homeownerMeasure.ts';
+import { publicCopy } from '../src/copy/public.ts';
 import { MeasurePage } from '../src/features/quote/MeasurePage.tsx';
 import { windowPhotos } from '../src/copy/measureWindows.ts';
 import { forgetArSupport } from '../src/features/measure/windows/ar/arSupport.ts';
 import { measurePath } from '../src/features/quote/paths.ts';
 import { writeSeed } from '../src/features/quote/measure/session.ts';
 import { stubApi } from './helpers.tsx';
-import { ADDRESS, BASE, COMPANY, CREATED, QUOTE_CONFIG, QUOTE_ID, REQ, SLUG, WINDOW, view } from './homeowner-fixtures.ts';
+import { ADDRESS, BASE, COMPANY, CREATED, QUOTE_CONFIG, QUOTE_ID, REQ, SLUG, WINCHOICE_COMPANY, WINDOW, view } from './homeowner-fixtures.ts';
 
 /*
  * The whole Android journey with the bank card (WebXR cannot run here): coaching, rooms, the photo, four card corners,
@@ -96,7 +97,12 @@ describe('the homeowner measures a window in the browser, with a bank card', () 
     await screen.findByRole('heading', { name: copy.describeTitle });
     await user.click(screen.getByRole('radio', { name: 'Kitchen' }));
     await user.type(screen.getByLabelText(copy.describeLabel), 'Over the sink');
-    await user.click(screen.getByRole('radio', { name: 'Double-hung' }));
+    // Four plain tiles with a few words under each; the bathroom question defaults to clear glass
+    const tiles = within(screen.getByRole('radiogroup', { name: copy.describeStyle })).getAllByRole('radio');
+    expect(tiles.map((t) => t.closest('label')!.textContent)).toEqual(['Opens up and downDouble-hung', 'Slides sidewaysSlider', "Doesn't openPicture window", 'Bay, bow or odd shapeWe quote it at your visit']);
+    expect(screen.getByRole('radio', { name: copy.describeBathNo })).toBeChecked();
+    await user.click(screen.getByRole('radio', { name: /Opens up and down/ }));
+    await user.click(screen.getByRole('radio', { name: copy.describeBathYes }));
     await user.click(screen.getByRole('button', { name: copy.describeSave }));
 
     // The photo went up as bytes; the window carries the card, its corners in photo pixels, the frame and the id
@@ -106,6 +112,7 @@ describe('the homeowner measures a window in the browser, with a bank card', () 
       room: 'Kitchen',
       label: 'Over the sink',
       style: 'double-hung',
+      frosted: true,
       uploadId: WINDOW.uploadId,
       corners: [[400, 400], [2600, 400], [2600, 3600], [400, 3600]],
       scale: { kind: 'card', cardCorners: [[1000, 1500], [1300, 1500], [1300, 1700], [1000, 1700]], card: { widthMm: 85.6, heightMm: 53.98 } },
@@ -179,6 +186,51 @@ describe('the homeowner measures a window in the browser, with a bank card', () 
     render(<MeasurePage slug={SLUG} />);
     await screen.findByRole('heading', { name: copy.bookedTitle });
     expect(api.count(`POST ${BASE}/requests`)).toBe(1);
+  });
+
+  it("shows the company's own level names, notes, included list, offer, financing and the colors-and-grids line", async () => {
+    current = {
+      ...view([WINDOW, { ...WINDOW, id: 'w-bay', style: 'arch', styleLabel: 'Bay, bow or odd shape', frosted: true }]),
+    };
+    current = {
+      ...current,
+      quote: {
+        ...current.quote!,
+        atVisitCount: 1,
+        tiers: current.quote!.tiers.map((t, i) => ({ ...t, label: ['Replenish', 'Refine', 'Renew'][i]!, note: ['1-year warranty', 'Lifetime warranty', 'Lifetime warranty'][i]! })),
+      },
+    };
+    stubApi({
+      [`GET /api/public/quote/${SLUG}`]: () => ({ body: QUOTE_CONFIG }),
+      [`GET ${BASE}/company`]: () => ({ body: WINCHOICE_COMPANY }),
+      [`POST ${BASE}/requests`]: () => ({ status: 201, body: CREATED }),
+      [`GET ${BASE}/requests/${REQ}`]: () => ({ body: current }),
+    });
+    writeSeed(SLUG, { quoteId: QUOTE_ID, address: ADDRESS, services: ['windows'] });
+    const user = userEvent.setup();
+    const { container } = render(<MeasurePage slug={SLUG} />);
+    // The offer banner and the trust line are on every screen
+    expect(await screen.findByRole('note', { name: publicCopy.offerLabel })).toHaveTextContent('October special');
+    expect(container.querySelector('[data-trust-row]')).toHaveTextContent('4.9 from 2,400+ homeowners');
+    expect(container.querySelector('[data-trust-row]')).toHaveTextContent('Since 2012');
+    expect(screen.getByLabelText(publicCopy.badgesLabel)).toHaveTextContent('A+ BBBMade in USALifetime warranty');
+    // The list says which choice each window is and that the bathroom one is frosted
+    const rows = container.querySelectorAll('[data-window-style]');
+    expect(rows[0]).toHaveTextContent('Opens up and down');
+    expect(rows[1]).toHaveTextContent(`Bay, bow or odd shape · ${copy.listFrosted}`);
+    await user.click(await screen.findByRole('button', { name: copy.listSeeQuote }));
+    await screen.findByRole('heading', { name: copy.quoteTitle });
+    const cards = within(container.querySelector('[data-tiers]') as HTMLElement).getAllByRole('listitem');
+    expect(cards.map((c) => c.textContent)).toEqual([
+      expect.stringContaining('GoodReplenish1-year warranty'),
+      expect.stringContaining('BetterRefineLifetime warranty'),
+      expect.stringContaining('BestRenewLifetime warranty'),
+    ]);
+    expect(container.querySelector('[data-at-visit]')).toHaveTextContent(copy.quoteAtVisit(1));
+    const included = container.querySelector('[data-included]') as HTMLElement;
+    for (const item of WINCHOICE_COMPANY.catalog.included) expect(within(included).getByText(item)).toBeInTheDocument();
+    expect(screen.getByText(publicCopy.colorsGrids)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: publicCopy.financingMore })).toHaveAttribute('href', 'https://winchoice.com/financing/');
   });
 
   it('measures in AR (device webxr) on a phone that supports it, with the card one tap away', async () => {

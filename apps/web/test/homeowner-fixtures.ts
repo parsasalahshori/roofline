@@ -1,4 +1,4 @@
-import type { HomeownerCompany, HomeownerRequestView, HomeownerWindow, PublicQuoteConfig } from '@roofline/shared';
+import type { HomeownerCompany, PublicCatalogFacts, HomeownerRequestView, HomeownerWindow, PublicQuoteConfig } from '@roofline/shared';
 
 export const SLUG = 'summit-ridge';
 export const BASE = `/api/public/homeowner/${SLUG}`;
@@ -7,6 +7,39 @@ export const TOKEN = 'Sb_kMSOnM2pD4CE7bykxE1EYltxTzm6CzaX9UZAnVmQ';
 export const QUOTE_ID = '11111111-1111-4111-8111-111111111111';
 export const ADDRESS = '4810 Underwood Ave, Omaha, NE 68132';
 export const APP = { url: 'https://apps.apple.com/us/app/winchoice/id0000000000', name: 'WinChoice' };
+
+/** The plain choices every company starts with, Good / Better / Best with no notes, and nothing else entered. */
+export const EMPTY_CATALOG: PublicCatalogFacts = {
+  tiles: [
+    { id: 'up-down', label: 'Opens up and down', hint: 'Double-hung', style: 'double-hung', atVisit: false },
+    { id: 'sideways', label: 'Slides sideways', hint: 'Slider', style: 'slider-2', atVisit: false },
+    { id: 'fixed', label: "Doesn't open", hint: 'Picture window', style: 'picture', atVisit: false },
+    { id: 'special', label: 'Bay, bow or odd shape', hint: 'We quote it at your visit', style: 'arch', atVisit: true },
+  ],
+  tiers: [
+    { key: 'good', label: 'Good', note: '' },
+    { key: 'better', label: 'Better', note: '' },
+    { key: 'best', label: 'Best', note: '' },
+  ],
+  included: [],
+  trust: { rating: null, sinceYear: null, license: null, badges: [] },
+  offer: null,
+  financing: null,
+};
+
+/** WinChoice's words (the prices are not in what a page is told). */
+export const WINCHOICE_CATALOG: PublicCatalogFacts = {
+  ...EMPTY_CATALOG,
+  tiers: [
+    { key: 'good', label: 'Replenish', note: '1-year warranty' },
+    { key: 'better', label: 'Refine', note: 'Lifetime warranty' },
+    { key: 'best', label: 'Renew', note: 'Lifetime warranty' },
+  ],
+  included: ['Argon gas fill', 'Low-E glass (Cardinal LoE366)', 'ENERGY STAR® certified', 'FlexScreen'],
+  trust: { rating: { value: 4.9, count: 2400, plus: true, source: 'homeowners' }, sinceYear: 2012, license: null, badges: ['A+ BBB', 'Made in USA', 'Lifetime warranty'] },
+  offer: { title: 'October special on windows and roofing. Ask about it at your visit.', termsUrl: 'https://winchoice.com/promotional-terms-conditions/' },
+  financing: { text: 'Financing available through our partner Skeps. Optional, with no obligation.', url: 'https://winchoice.com/financing/' },
+};
 
 export const QUOTE_CONFIG: PublicQuoteConfig = {
   slug: SLUG,
@@ -19,6 +52,7 @@ export const QUOTE_CONFIG: PublicQuoteConfig = {
   consent: { version: 'v', text: 't', textingText: 'x', privacyUrl: 'https://x.test/p', termsUrl: 'https://x.test/t' },
   turnstileSiteKey: null,
   homeownerApp: APP,
+  catalog: EMPTY_CATALOG,
 };
 
 export const COMPANY: HomeownerCompany = {
@@ -35,11 +69,9 @@ export const COMPANY: HomeownerCompany = {
     text: 'By checking this box and clicking "Send my request", I agree that Summit Ridge Roofing may contact me.',
     textingText: 'Text me too: Summit Ridge Roofing may send text messages.',
   },
-  windowStyles: [
-    { key: 'double-hung', label: 'Double-hung' },
-    { key: 'picture', label: 'Picture (does not open)' },
-  ],
+  windowStyles: EMPTY_CATALOG.tiles.map((t) => ({ key: t.style, label: t.label, hint: t.hint, tile: t.id, atVisit: t.atVisit })),
   trust: null,
+  catalog: { tiers: EMPTY_CATALOG.tiers, included: [], offer: null, financing: null },
   limits: { maxWindows: 60, maxPhotoBytes: 12_582_912, maxRoomLength: 40, maxLabelLength: 80, tokenDays: 60 },
 };
 
@@ -69,12 +101,14 @@ export const WINDOW: HomeownerWindow = {
   reasons: ['The card is small next to this window.'],
   sizeLabel: '35 7/8 x 60 1/8',
   uncertaintyLabel: 'about ±1 in',
+  styleLabel: 'Opens up and down',
 };
 
 const TIERS = (n: number) =>
   (['good', 'better', 'best'] as const).map((key, i) => ({
     key,
     label: ['Good', 'Better', 'Best'][i]!,
+    note: '',
     name: ['Vinyl double-hung', 'Fiberglass', 'Wood-clad'][i]!,
     description: 'Double-pane, Low-E glass',
     total: n === 0 ? 0 : 8750 + i * 2000,
@@ -107,3 +141,11 @@ export function view(windows: HomeownerWindow[] = [], extra: Partial<HomeownerRe
     ...extra,
   };
 }
+
+/** The company as WinChoice enters it. */
+export const WINCHOICE_COMPANY: HomeownerCompany = {
+  ...COMPANY,
+  name: 'WinChoice (demo)',
+  trust: WINCHOICE_CATALOG.trust,
+  catalog: { tiers: WINCHOICE_CATALOG.tiers, included: WINCHOICE_CATALOG.included, offer: WINCHOICE_CATALOG.offer, financing: WINCHOICE_CATALOG.financing },
+};

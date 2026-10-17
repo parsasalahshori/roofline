@@ -66,13 +66,14 @@ export const ROOM_MAX = 40;
 export const LABEL_MAX = 80;
 
 /** The body for POST .../windows. Optional keys are left out, never null. */
-export function windowInput(draft: Draft, room: string, label: string, style: WindowStyle): HomeownerWindowInput {
+export function windowInput(draft: Draft, room: string, label: string, style: WindowStyle, frosted = false): HomeownerWindowInput {
   const l = label.trim();
   return {
     id: draft.id,
     room: room.trim().slice(0, ROOM_MAX),
     ...(l !== '' && { label: l.slice(0, LABEL_MAX) }),
     style,
+    ...(frosted && { frosted: true }),
     scale: draft.scale,
     uploadId: draft.uploadId,
     corners: draft.corners,

@@ -1,0 +1,114 @@
+/* The company's offer, financing line, included list and level names on the homeowner pages. Chalk Line tokens only. */
+.offer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px 12px;
+  box-sizing: border-box;
+  max-width: 600px;
+  margin: 0 auto 8px;
+  padding: 10px 16px;
+  border: 1px solid var(--info);
+  border-radius: var(--r-2);
+  background: var(--info-tint);
+  color: var(--info-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: center;
+}
+
+.offerTitle {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.offerLink {
+  flex: none;
+  color: var(--info-text);
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.financing {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
+  line-height: 1.4;
+}
+
+.financing a {
+  color: var(--ink-2);
+  text-decoration: underline;
+}
+
+.facts {
+  display: grid;
+  gap: 16px;
+}
+
+.block {
+  display: grid;
+  gap: 8px;
+}
+
+.blockTitle {
+  margin: 0;
+  color: var(--ink-3);
+  font-family: var(--f-mono);
+  font-size: var(--font-size-min);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.checks,
+.tiers {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.check {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 8px;
+  color: var(--ink-2);
+  font-size: 0.875rem;
+  line-height: 1.35;
+}
+
+.check svg {
+  margin-top: 1px;
+  color: var(--ok-text);
+}
+
+.tier {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-ctl);
+  border-radius: var(--r-2);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 0.875rem;
+}
+
+.tier b {
+  color: var(--ink);
+  font-family: var(--f-display);
+  font-size: 1rem;
+}
+
+.visitNote {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
+  line-height: 1.4;
+}

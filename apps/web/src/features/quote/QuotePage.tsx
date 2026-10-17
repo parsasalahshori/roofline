@@ -12,7 +12,7 @@ import { ArrowIcon, CheckIcon, HomeIcon } from '../public/icons.tsx';
 import { PublicHeader } from '../public/PublicHeader.tsx';
 import { StepProgress } from '../public/StepProgress.tsx';
 import { TrustRow } from '../public/TrustRow.tsx';
-import type { TrustFacts } from '../public/trust.ts';
+import { CatalogFacts, FinancingLine, OfferBanner } from '../public/Catalog.tsx';
 import { usePublicBrand } from '../public/usePublicBrand.ts';
 import { type EstimateAnswer, QuoteApiError, quoteApi } from './api.ts';
 import { RoofThumb, RoofThumbPlaceholder } from './RoofThumb.tsx';
@@ -57,8 +57,8 @@ function useConfig(slug: string) {
   return { ...state, retry: () => setState((s) => ({ attempt: s.attempt + 1 })) };
 }
 
-/** What the page reads about the company: the public config, and the facts for the trust row when the company has given any. */
-type QuoteConfig = PublicQuoteConfig & TrustFacts;
+/** What the page reads about the company: the public config (its catalog holds the trust facts, offer and financing line). */
+type QuoteConfig = PublicQuoteConfig;
 
 /** Which of the three steps the person is on (the bars over the card), or null on the first screen and the last. */
 function progressOf(step: Step): number | null {
@@ -111,6 +111,7 @@ export function QuotePage({ slug }: { slug: string }) {
     <div className={styles.page}>
       <PublicHeader name={c.companyName} logoUrl={c.logoUrl} phone={c.phone} />
       <main className={styles.column}>
+        <OfferBanner offer={c.catalog.offer} />
         {services !== null && progress !== null ? <StepProgress step={progress} /> : null}
         {services === null ? (
           <ServicesStep
@@ -172,7 +173,7 @@ export function QuotePage({ slug }: { slug: string }) {
         ) : null}
         {step.kind === 'address' ? (
           <div className={styles.bottom}>
-            <TrustRow facts={c} />
+            <TrustRow facts={c.catalog.trust} />
           </div>
         ) : null}
       </main>
@@ -485,6 +486,7 @@ function Results({
         {answer.roof ? <p className={styles.fine}>{quote.finalNote}</p> : null}
         {answer.outline !== null ? <p className={styles.fine}>{quote.imagery}</p> : null}
       </div>
+      {windows ? <CatalogFacts catalog={config.catalog} /> : null}
       {showContinue && windows ? <MeasureWindows slug={slug} quoteId={answer.quoteId} address={answer.address} services={services} app={config.homeownerApp} device={device} /> : null}
       {showContinue ? (
         <div className={styles.dock}>
@@ -758,7 +760,7 @@ function LeadForm({
             )}
           </fieldset>
         ) : null}
-        <TrustRow facts={config} />
+        <TrustRow facts={config.catalog.trust} />
         <div className={styles.consent}>
           <Checkbox checked={form.consent} onChange={(on) => set('consent', on)} label={quote.consentLabel} description={config.consent.text} error={fieldError('consent')} />
           <Checkbox checked={form.textConsent} onChange={(on) => set('textConsent', on)} label={quote.textConsentLabel} description={config.consent.textingText} />
@@ -821,6 +823,7 @@ function Done({
         </div>
       ) : null}
       {when === null && slotTaken ? <p className={styles.lede}>{quote.doneSlotTaken}</p> : null}
+      <FinancingLine financing={config.catalog.financing} />
       {config.phone ? <p className={`${styles.fine} ${styles.foot}`}>{quote.doneCall(formatPhone(config.phone))}</p> : null}
     </section>
   );

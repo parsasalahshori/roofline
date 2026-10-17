@@ -173,6 +173,18 @@
   overflow-wrap: anywhere;
 }
 
+.tileText {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.tileHint {
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
+  font-weight: 400;
+}
+
 .choice input {
   flex: none;
   width: 20px;

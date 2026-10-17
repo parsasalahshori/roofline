@@ -13,7 +13,25 @@ export const publicCopy = {
 
   // The trust row (REDESIGN 7.2): each item is optional and comes from the company's own settings.
   trustLabel: 'About the company',
-  ratingCaption: (count: number, source: string): string => `${count.toLocaleString('en-US')} ${source} ${count === 1 ? 'review' : 'reviews'}`,
+  /**
+   * "2,400+ homeowners" or "2,400 Google reviews". The source is the company's own words after the count; one that does
+   * not already name the people or the reviews ("Google") gets "reviews" after it.
+   */
+  ratingCaption: (count: number, source: string, plus = false): string => {
+    const n = `${count.toLocaleString('en-US')}${plus ? '+' : ''}`;
+    return /\b(reviews?|ratings?|homeowners?|customers?|clients?|families)\b/i.test(source) ? `${n} ${source}` : `${n} ${source} ${count === 1 && !plus ? 'review' : 'reviews'}`;
+  },
+  /** "4.9 from 2,400+ homeowners": the rating as one line. */
+  ratingLine: (value: number, caption: string): string => `${value.toFixed(1)} from ${caption}`,
+  badgesLabel: 'Badges',
+
+  // What the company's window catalog adds to the homeowner pages: the offer, financing, what every window includes.
+  offerLabel: 'Current offer',
+  offerTerms: 'Terms',
+  financingMore: 'Financing details',
+  includedTitle: 'Every window includes',
+  tiersTitle: 'Three choices for every window',
+  colorsGrids: 'Colors and grids are chosen at your visit.',
   sinceCaption: 'In business since',
   licenseCaption: 'Licensed',
 

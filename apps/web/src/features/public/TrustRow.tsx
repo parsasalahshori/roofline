@@ -1,7 +1,7 @@
 import { useId } from 'react';
 import { publicCopy } from '../../copy/public.ts';
 import { CheckIcon } from './icons.tsx';
-import { trustItems, type TrustFacts } from './trust.ts';
+import { trustBadges, trustItems, type TrustFacts } from './trust.ts';
 import styles from './TrustRow.module.css';
 
 /**
@@ -11,17 +11,21 @@ import styles from './TrustRow.module.css';
  */
 export function TrustRow({ facts, now }: { facts?: TrustFacts | null; now?: Date }) {
   const items = trustItems(facts, now);
+  const badges = trustBadges(facts);
   const titleId = useId();
   if (items.length >= 2) {
     return (
-      <ul className={styles.facts} aria-label={publicCopy.trustLabel} data-count={items.length}>
-        {items.map((item) => (
-          <li key={item.key} className={styles.fact}>
-            <b className={styles.value}>{item.value}</b>
-            <span className={styles.caption}>{item.caption}</span>
-          </li>
-        ))}
-      </ul>
+      <div className={styles.wrap}>
+        <ul className={styles.facts} aria-label={publicCopy.trustLabel} data-count={items.length}>
+          {items.map((item) => (
+            <li key={item.key} className={styles.fact}>
+              <b className={styles.value}>{item.value}</b>
+              <span className={styles.caption}>{item.caption}</span>
+            </li>
+          ))}
+        </ul>
+        <Badges badges={badges} />
+      </div>
     );
   }
   return (
@@ -40,6 +44,21 @@ export function TrustRow({ facts, now }: { facts?: TrustFacts | null; now?: Date
           </li>
         ))}
       </ul>
+      <Badges badges={badges} />
     </section>
+  );
+}
+
+/** Up to three short badges as quiet pills ("A+ BBB", "Made in USA"). */
+export function Badges({ badges }: { badges: readonly string[] }) {
+  if (badges.length === 0) return null;
+  return (
+    <ul className={styles.badges} aria-label={publicCopy.badgesLabel} data-badges="">
+      {badges.map((b) => (
+        <li key={b} className={styles.badge}>
+          {b}
+        </li>
+      ))}
+    </ul>
   );
 }

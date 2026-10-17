@@ -1,19 +1,32 @@
+import type { HomeownerCompany } from '@roofline/shared';
 import { homeownerMeasure as copy } from '../../../copy/homeownerMeasure.ts';
+import { Badges } from '../../public/TrustRow.tsx';
+import { ratingLine, trustBadges } from '../../public/trust.ts';
 import q from '../QuotePage.module.css';
 
-/** Reviews, the year the company started and its licence, when the company has entered any (none yet: nothing is drawn). */
-export function TrustLine({ trust }: { trust: { reviews?: number; since?: number; license?: string } | null }) {
+/**
+ * What the company says about itself, in one quiet line (the rating with its source and count, the year it started, its
+ * licence) and its short badges, each only when the company entered it (none: nothing is drawn).
+ */
+export function TrustLine({ trust }: { trust: HomeownerCompany['trust'] }) {
+  const rating = ratingLine(trust);
   const items = [
-    trust?.reviews !== undefined ? copy.trustReviews(trust.reviews) : null,
-    trust?.since !== undefined ? copy.trustSince(trust.since) : null,
-    trust?.license !== undefined ? copy.trustLicense(trust.license) : null,
+    rating,
+    trust?.sinceYear != null ? copy.trustSince(trust.sinceYear) : null,
+    trust?.license != null ? copy.trustLicense(trust.license.state, trust.license.number) : null,
   ].filter((t): t is string => t !== null);
-  if (items.length === 0) return null;
+  const badges = trustBadges(trust);
+  if (items.length === 0 && badges.length === 0) return null;
   return (
-    <ul className={q.trustRow} data-trust-row="">
-      {items.map((t) => (
-        <li key={t}>{t}</li>
-      ))}
-    </ul>
+    <>
+      {items.length > 0 ? (
+        <ul className={q.trustRow} data-trust-row="">
+          {items.map((t) => (
+            <li key={t}>{t}</li>
+          ))}
+        </ul>
+      ) : null}
+      <Badges badges={badges} />
+    </>
   );
 }

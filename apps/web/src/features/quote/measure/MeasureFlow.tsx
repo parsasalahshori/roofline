@@ -2,6 +2,7 @@ import { Banner, Button, Field, Skeleton } from '@roofline/ui';
 import type { HomeownerCompany, HomeownerRequestView, QuoteProduct } from '@roofline/shared';
 import { useEffect, useMemo, useReducer, useRef, useState, type FormEvent } from 'react';
 import { homeownerMeasure as copy } from '../../../copy/homeownerMeasure.ts';
+import { OfferBanner } from '../../public/Catalog.tsx';
 import { TrustLine } from './TrustLine.tsx';
 import { HomeownerApiError, homeownerApi, type HomeownerClient, type Session } from './api.ts';
 import { Book, Booked, Coaching, Contact, Describe, MeasureWindow, QuoteScreen, Rooms, Title, WindowsList } from './Screens.tsx';
@@ -119,6 +120,7 @@ export function MeasureFlow({ slug, quoteId }: { slug: string; quoteId: string |
   if (boot.kind === 'address') {
     return (
       <div className={q.column}>
+        <OfferBanner offer={company.catalog.offer} />
         <TrustLine trust={company.trust} />
         <AddressForm
           error={boot.error}
@@ -202,6 +204,7 @@ function Journey({
   const screen = state.screen;
   return (
     <div className={q.column} data-flow-screen={screen}>
+      <OfferBanner offer={company.catalog.offer} />
       <TrustLine trust={company.trust} />
       <Progress step={stepOf(screen)} />
       {screen === 'coaching' ? <Coaching view={view} onStart={() => go('rooms')} onContact={() => go('contact')} /> : null}
@@ -220,7 +223,7 @@ function Journey({
         <Describe client={client} session={session} company={company} view={view} draft={state.draft} onSaved={(v) => dispatch({ type: 'saved', view: v })} onRedo={() => dispatch({ type: 'discard' })} />
       ) : null}
       {screen === 'windows' ? <WindowsList client={client} session={session} view={view} onView={guard} onMeasure={startWindow} onQuote={() => go('quote')} /> : null}
-      {screen === 'quote' ? <QuoteScreen view={view} onContinue={() => go(view.request.contactFiled ? (view.booking !== undefined ? 'booked' : 'book') : 'contact')} onMore={startWindow} /> : null}
+      {screen === 'quote' ? <QuoteScreen company={company} view={view} onContinue={() => go(view.request.contactFiled ? (view.booking !== undefined ? 'booked' : 'book') : 'contact')} onMore={startWindow} /> : null}
       {screen === 'contact' ? (
         <Contact
           client={client}
