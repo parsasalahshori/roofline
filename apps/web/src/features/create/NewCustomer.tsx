@@ -192,6 +192,7 @@ export function NewCustomer() {
             <Field
               className={styles.wide}
               label={create.newCustomer.displayName}
+              help={create.newCustomer.displayNameHelp}
               name="displayName"
               value={displayName}
               readOnly={locked}
@@ -207,11 +208,11 @@ export function NewCustomer() {
         <Panel title={create.newCustomer.stepContact}>
           <div className={styles.contacts}>
             <div className={styles.column}>
-              {phones.map((row) => (
+              {phones.map((row, index) => (
                 <Field
                   key={row.id}
                   className={styles.input}
-                  label={create.newCustomer.phone}
+                  label={index === 0 ? create.newCustomer.phone : create.newCustomer.anotherPhone}
                   name="phone"
                   type="tel"
                   value={row.value}
@@ -227,6 +228,7 @@ export function NewCustomer() {
                 type="button"
                 variant="ghost"
                 size="sm"
+                flush="start"
                 className={styles.addRow}
                 disabled={locked || phones.length >= MAX_ROWS}
                 onClick={() => setPhones(addRow)}
@@ -237,11 +239,11 @@ export function NewCustomer() {
             </div>
 
             <div className={styles.column}>
-              {emails.map((row) => (
+              {emails.map((row, index) => (
                 <Field
                   key={row.id}
                   className={styles.input}
-                  label={create.newCustomer.email}
+                  label={index === 0 ? create.newCustomer.email : create.newCustomer.anotherEmail}
                   name="email"
                   type="email"
                   value={row.value}
@@ -257,6 +259,7 @@ export function NewCustomer() {
                 type="button"
                 variant="ghost"
                 size="sm"
+                flush="start"
                 className={styles.addRow}
                 disabled={locked || emails.length >= MAX_ROWS}
                 onClick={() => setEmails(addRow)}
