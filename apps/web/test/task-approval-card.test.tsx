@@ -112,3 +112,24 @@ describe('where a card sends the person to see its plan', () => {
     await waitFor(() => expect(where(router)).toBe('/approvals/one'));
   });
 });
+
+describe('the tag on a phone', () => {
+  const tagOf = (title: string) => within(card(title)).getByText(approvals.tagNeedsOk);
+
+  it('is drawn on a phone unless the page asks for it to be left to screen readers', () => {
+    renderCard(onePlan('p1'), undefined);
+    expect(tagOf('Plan p1').closest('[data-tone]')).not.toHaveAttribute('data-phone');
+    cleanup();
+
+    api = stubApi({});
+    renderAt(<TaskApprovalCard task={onePlan('p2')} now={Date.now()} tagOnPhone={false} />, '/somewhere');
+    expect(tagOf('Plan p2').closest('[data-tone]')).toHaveAttribute('data-phone', 'sr-only');
+  });
+
+  it('keeps the tag of a plan that waits for the owner, which says what the page does not', () => {
+    api = stubApi({});
+    renderAt(<TaskApprovalCard task={{ ...onePlan('p3'), status: 'awaiting_owner' }} now={Date.now()} tagOnPhone={false} />, '/somewhere');
+    const tag = within(card('Plan p3')).getByText(approvals.tagWaitingOwner).closest('[data-tone]');
+    expect(tag).not.toHaveAttribute('data-phone');
+  });
+});

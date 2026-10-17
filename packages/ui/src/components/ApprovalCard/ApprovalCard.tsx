@@ -32,6 +32,12 @@ export type ApprovalCardProps = {
   drafted: string;
   /** "Needs your OK". */
   tag: string;
+  /**
+   * False draws the tag on a phone for a screen reader only: on the queue the page around the card already says it, and
+   * a narrow header cannot hold the agent's line and the tag side by side (the line broke after the agent's name).
+   * A desktop always draws it. Defaults to true.
+   */
+  tagOnPhone?: boolean;
   title: string;
   /** One sentence under the title: what the plan does. Three lines at most; the whole sentence is still read out. */
   summary?: string;
@@ -50,7 +56,21 @@ export type ApprovalCardProps = {
  * An agent's draft waiting for a yes: a 3px tape edge, who drafted it and when, the title, the facts that matter (cost in
  * mono, price, customer and recipient locked), then Approve, Edit and Not now. The keys 1, E and H do the same from the keyboard.
  */
-export function ApprovalCard({ agentIcon, drafted, tag, title, summary, facts, approve, edit, later, meta, lockedLabel, className }: ApprovalCardProps) {
+export function ApprovalCard({
+  agentIcon,
+  drafted,
+  tag,
+  tagOnPhone = true,
+  title,
+  summary,
+  facts,
+  approve,
+  edit,
+  later,
+  meta,
+  lockedLabel,
+  className,
+}: ApprovalCardProps) {
   const titleId = useId();
   return (
     <article className={cx(styles.card, className)} aria-labelledby={titleId}>
@@ -59,7 +79,7 @@ export function ApprovalCard({ agentIcon, drafted, tag, title, summary, facts, a
           <Icon name={agentIcon} size={16} />
         </span>
         <span className={styles.drafted}>{drafted}</span>
-        <Tag tone="tape" icon="alert">
+        <Tag tone="tape" icon="alert" className={styles.tag} data-phone={tagOnPhone ? undefined : 'sr-only'}>
           {tag}
         </Tag>
       </header>

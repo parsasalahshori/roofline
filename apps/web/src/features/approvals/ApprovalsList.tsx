@@ -136,7 +136,7 @@ export function ApprovalsList() {
           <ul ref={listRef} aria-label={approvals.listLabel} className={styles.grid}>
             {waiting.map((task) => (
               <li key={task.id} data-task-id={task.id} className={styles.item}>
-                <TaskApprovalCard task={task} now={now} />
+                <TaskApprovalCard task={task} now={now} tagOnPhone={false} />
               </li>
             ))}
           </ul>

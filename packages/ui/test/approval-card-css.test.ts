@@ -27,3 +27,25 @@ describe('the approval card in a narrow column', () => {
     expect(rule('.actions')).toMatch(/flex-wrap:\s*wrap/);
   });
 });
+
+describe('the approval card in a row of the queue', () => {
+  it('keeps its buttons on the bottom edge when the card is taller than its content', () => {
+    // The queue's grid stretches every card to the tallest of its row
+    expect(rule('.actions')).toMatch(/margin-top:\s*auto/);
+  });
+});
+
+describe('the tag a card gives up on a phone', () => {
+  const phone = /@media \(max-width: 767\.98px\) \{([\s\S]*)\n\}/.exec(css)?.[1] ?? '';
+
+  it('is clipped to a point, not taken away from a screen reader', () => {
+    expect(phone).toMatch(/\.card \.tag\[data-phone="sr-only"\]/);
+    expect(phone).toMatch(/clip:\s*rect\(0 0 0 0\)/);
+    expect(phone).not.toMatch(/display:\s*none/);
+  });
+
+  it('is only given up inside the phone rules: a desktop always draws the tag', () => {
+    expect(css.replace(phone, '')).not.toMatch(/data-phone/);
+  });
+});
+

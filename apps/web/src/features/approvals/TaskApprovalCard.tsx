@@ -26,8 +26,21 @@ export const reviewHref = (taskId: string): string => '/approvals/' + encodeURIC
  * `href` is where the plan's own screen is: the link a plan with several steps has instead of a yes, where Edit goes when no
  * single step can be edited right here, and where "See progress" goes after a yes. It is the review screen under
  * /approvals unless the page that shows the card keeps its plans elsewhere (Storm: /storm/plans/<id>).
+ *
+ * `tagOnPhone` false drops the "Needs your OK" tag from a phone's screen (a screen reader still hears it) where the page around
+ * the card already says it: the queue. A plan waiting for the owner keeps its tag, which says something the page does not.
  */
-export function TaskApprovalCard({ task, now, href }: { task: TaskView; now: number; href?: string }) {
+export function TaskApprovalCard({
+  task,
+  now,
+  href,
+  tagOnPhone = true,
+}: {
+  task: TaskView;
+  now: number;
+  href?: string;
+  tagOnPhone?: boolean;
+}) {
   const toast = useToast();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -103,6 +116,7 @@ export function TaskApprovalCard({ task, now, href }: { task: TaskView; now: num
         agentIcon={AGENT_ICON[task.agent]}
         drafted={approvals.drafted(AGENT_LABEL[task.agent], approvals.ago(task.createdAt, now))}
         tag={task.status === 'awaiting_owner' ? approvals.tagWaitingOwner : approvals.tagNeedsOk}
+        tagOnPhone={tagOnPhone || task.status === 'awaiting_owner'}
         title={task.title}
         summary={task.summary ?? undefined}
         facts={cardFacts(task)}
