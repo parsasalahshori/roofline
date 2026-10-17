@@ -244,7 +244,10 @@ function toCents(text: string): number | null {
   return cents > 100000 ? null : cents;
 }
 
-/** The owner's hourly rate for time saved. It has its own endpoint, so it has its own form. */
+/**
+ * The owner's hourly rate for time saved. It has its own endpoint, so it has its own form; it saves the way every other
+ * form in Settings does, with the bar that waits at the foot while the rate has a change.
+ */
 function HourlyRateForm() {
   const rate = useCompanySettings(true);
   const update = useUpdateHourlyRate();
@@ -256,7 +259,8 @@ function HourlyRateForm() {
     return <Skeleton lines={1} />;
   }
 
-  const saved = toDollars(rate.data.hourlyRateCents);
+  // The rate is money: the field shows it with its dollar sign ($28), and takes it typed with or without
+  const saved = `$${toDollars(rate.data.hourlyRateCents)}`;
   const text = draft ?? saved;
   const cents = toCents(text);
   const invalid = cents === null;
@@ -276,15 +280,8 @@ function HourlyRateForm() {
   }
 
   return (
-    <form onSubmit={submit} noValidate>
-      <Panel
-        title={settings.company.panels.rate}
-        actions={
-          <Button type="submit" variant="primary" size="sm" busy={update.isPending} disabled={invalid || unchanged}>
-            {settings.company.hourlyRate.save}
-          </Button>
-        }
-      >
+    <form className={form.form} onSubmit={submit} noValidate>
+      <Panel title={settings.company.panels.rate}>
         <div className={form.grid}>
           <Field
             label={settings.company.hourlyRate.label}
@@ -301,6 +298,16 @@ function HourlyRateForm() {
           />
         </div>
       </Panel>
+      <SaveBar
+        dirty={!unchanged}
+        saving={update.isPending}
+        saveLabel={settings.company.hourlyRate.save}
+        saveDisabled={invalid}
+        onDiscard={() => {
+          update.reset();
+          setDraft(null);
+        }}
+      />
     </form>
   );
 }
