@@ -1,7 +1,7 @@
 /*
  * The decision bar, pinned to the bottom of the scrolling column and running edge to edge across it. On a phone it sits on
  * the tab bar, with room under the buttons for the Measure tile that stands up out of the tab bar. Its layer is under the
- * tab bar's (2, in Shell.module.css), so that tile is drawn over the bar's foot and keeps its rounded top, as it does
+ * tab bar's (10, in Shell.module.css), so that tile is drawn over the bar's foot and keeps its rounded top, as it does
  * under every other sticky bar.
  */
 .bar {

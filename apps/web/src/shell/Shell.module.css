@@ -63,9 +63,12 @@
     flex: 1 1 auto;
   }
 
+  /* Over every layer a page uses (its sticky bars, headers and map controls go up to 7), so the tile that stands up out
+     of the bar is drawn over a bar sitting on it and keeps its rounded top. Sheets, menus and full-screen takeovers (40
+     and up) are still above it. */
   .tabs {
     position: relative;
-    z-index: 2;
+    z-index: 10;
     flex: none;
     padding-bottom: env(safe-area-inset-bottom, 0px);
     border-top: 1px solid var(--line);

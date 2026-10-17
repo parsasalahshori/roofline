@@ -811,6 +811,56 @@ describe('Page on a phone', () => {
     expect(within(main).queryByRole('navigation')).toBeNull();
   });
 
+  it('takes the eyebrow out of the title block on a phone, so the shell controls stay level with the title, and keeps it in on a desktop', () => {
+    const { unmount } = render(
+      <PageSlotsContext value={phone}>
+        <Page title="My day" eyebrow="Friday, Oct 16" subtitle="Two visits" crumbsLabel="Breadcrumb">
+          body
+        </Page>
+      </PageSlotsContext>,
+    );
+    const heading = screen.getByRole('heading', { name: 'My day' });
+    const titles = heading.parentElement as HTMLElement;
+    const head = titles.parentElement as HTMLElement;
+    // Phone: the eyebrow and the subtitle are rows of the head, the title block holds the title alone
+    expect(screen.getByText('Friday, Oct 16').parentElement).toBe(head);
+    expect(screen.getByText('Two visits').parentElement).toBe(head);
+    expect(titles.children).toHaveLength(1);
+    // The head says it has the shell's controls, which is what lets its subtitle tuck up under the centred title
+    expect(head).toHaveAttribute('data-trailing', 'true');
+    unmount();
+
+    render(
+      <PageSlotsContext value={{ crumbs: null, actions: null, phone: false, trailing: null }}>
+        <Page title="My day" eyebrow="Friday, Oct 16" subtitle="Two visits" crumbsLabel="Breadcrumb">
+          body
+        </Page>
+      </PageSlotsContext>,
+    );
+    const desktopTitles = screen.getByRole('heading', { name: 'My day' }).parentElement as HTMLElement;
+    expect(within(desktopTitles).getByText('Friday, Oct 16')).toBeInTheDocument();
+    expect(within(desktopTitles).getByText('Two visits')).toBeInTheDocument();
+    expect(desktopTitles.parentElement).not.toHaveAttribute('data-trailing');
+  });
+
+  it('does not mark a nested page head as having the shell controls: its title row is as tall as the title, so its subtitle keeps a gap', () => {
+    render(
+      <PageSlotsContext value={phone}>
+        <Page
+          title="Teresa Vaughn"
+          subtitle="Texts about their own jobs only"
+          crumbsLabel="Breadcrumb"
+          crumbs={[{ label: 'Customers', href: '/customers' }, { label: 'Teresa Vaughn' }]}
+        >
+          body
+        </Page>
+      </PageSlotsContext>,
+    );
+    const head = screen.getByRole('heading', { name: 'Teresa Vaughn' }).parentElement?.parentElement as HTMLElement;
+    expect(head).not.toHaveAttribute('data-trailing');
+    expect(within(head).getByText('Texts about their own jobs only')).toBeInTheDocument();
+  });
+
   it('shows the page controls without a way back when the trail has no parent', () => {
     render(
       <PageSlotsContext value={phone}>

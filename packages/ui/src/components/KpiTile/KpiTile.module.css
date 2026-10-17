@@ -1,7 +1,8 @@
 .tile {
   position: relative;
   display: flex;
-  align-items: flex-end;
+  /* The words start at the top, so every label in a strip sits on one line even when a tile has no note under its number */
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   min-width: 0;

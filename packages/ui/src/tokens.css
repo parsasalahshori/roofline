@@ -9,6 +9,11 @@
  * company's slot. They hold Roofline chalk blue here and are overwritten at run time from the company's
  * colour (src/brand.ts, applied by the web app's useBrand). Nothing else changes per company.
  *
+ * Hooks, unset by default. A page that keeps the company's colour for its main button (the homeowner's pages) sets
+ * these on itself, and a checkbox falls back to --brand and --brand-ink without them:
+ *   --checkbox-fill: the fill and the edge of a ticked checkbox
+ *   --checkbox-tick: the tick drawn on that fill
+ *
  * Rules: tape yellow is for measuring and "needs your OK" only; red (--bad) is for holds and errors only; a
  * status colour is never the only signal (every status is an icon plus a word); nothing is under 12px.
  */

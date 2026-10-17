@@ -1,14 +1,17 @@
 .tabs {
   min-width: 0;
   overflow-x: auto;
-  border-bottom: 1px solid var(--line);
 }
 
+/* The bar's hairline is the list's own bottom edge, inside the scroll area: the current tab's 2px rule overlaps it there
+   instead of being clipped to 1px at the edge of the scroll box. It is as wide as the tabs when they overflow. */
 .list {
   display: flex;
   gap: 4px;
+  min-width: max-content;
   margin: 0;
   padding: 0;
+  border-bottom: 1px solid var(--line);
   list-style: none;
 }
 

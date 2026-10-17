@@ -153,7 +153,14 @@
     margin: 0;
   }
 
-  /* The title takes the row with the shell's controls; the subtitle and the page's own buttons wrap under it */
+  /* The eyebrow takes a row over the title; the title takes the next row with the shell's controls; the subtitle and the
+     page's own buttons wrap under it */
+  .eyebrow {
+    order: 0;
+    flex: 1 1 100%;
+    margin: 0;
+  }
+
   .titles {
     order: 1;
     flex: 1 1 0;
@@ -163,12 +170,18 @@
     order: 2;
   }
 
-  /* The title is centred in the 44px row, so the subtitle tucks up under it */
+  /* A page with its own way back has a title row only as tall as the title, so the subtitle clears the descenders by a
+     few pixels of its own */
   .subtitle {
     order: 3;
     flex: 1 1 100%;
-    margin-top: -4px;
+    margin-top: 6px;
     text-wrap: pretty;
+  }
+
+  /* With the shell's controls the title is centred in a 44px row, which already leaves it room: the subtitle tucks up */
+  .head[data-trailing="true"] .subtitle {
+    margin-top: -4px;
   }
 
   .actions {

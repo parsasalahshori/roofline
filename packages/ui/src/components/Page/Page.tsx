@@ -66,9 +66,11 @@ export function Page({
   const parent = phone && crumbs && crumbs.length > 1 ? crumbs[crumbs.length - 2] : undefined;
   // Without a top bar to hold them (a test; a phone has its own row) the bar controls sit in the row under the head
   const inlineBarActions = barActions && !slots.actions && !phone ? barActions : null;
-  // On a phone the subtitle leaves the title's block and takes a row of its own under the title and the shell's
-  // controls, so those controls stay level with the title however long the subtitle runs
+  // On a phone the eyebrow and the subtitle leave the title's block and take rows of their own over and under the title
+  // and the shell's controls, so those controls stay level with the title however long the subtitle runs
+  const eyebrowNode = eyebrow && !titleHidden ? <p className={styles.eyebrow}>{eyebrow}</p> : null;
   const subtitleNode = subtitle && !titleHidden ? <p className={styles.subtitle}>{subtitle}</p> : null;
+  const trailing = phone && !parent && slots.trailing && !titleHidden ? slots.trailing : null;
 
   return (
     <main
@@ -98,16 +100,17 @@ export function Page({
         <div className={styles.inlineCrumb}>{trail}</div>
       )}
       {!phone && barActions && slots.actions ? createPortal(barActions, slots.actions) : null}
-      <div className={styles.head} data-hidden={titleHidden ? 'true' : undefined}>
+      <div className={styles.head} data-hidden={titleHidden ? 'true' : undefined} data-trailing={trailing ? 'true' : undefined}>
+        {phone ? eyebrowNode : null}
         <div className={styles.titles}>
-          {eyebrow && !titleHidden ? <p className={styles.eyebrow}>{eyebrow}</p> : null}
+          {phone ? null : eyebrowNode}
           <h1 id={titleId} className={cx(styles.title, titleHidden && 'visually-hidden')}>
             {heading ?? title}
           </h1>
           {phone ? null : subtitleNode}
         </div>
         {phone ? subtitleNode : null}
-        {phone && !parent && slots.trailing && !titleHidden ? <div className={styles.trailing}>{slots.trailing}</div> : null}
+        {trailing ? <div className={styles.trailing}>{trailing}</div> : null}
         {actions && !titleHidden ? <div className={styles.actions}>{actions}</div> : null}
       </div>
       {stats && !titleHidden ? <div className={styles.stats}>{stats}</div> : null}
