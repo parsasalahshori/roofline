@@ -14,6 +14,8 @@ export type HomeApprovalProps = {
   href?: string;
   /** Where the line under the card sends the rest. */
   seeAllHref?: string;
+  /** False where a heading above the card already says "Need your OK" (My day): a phone drops the tag then, so the header holds one line. */
+  tagOnPhone?: boolean;
 };
 
 /**
@@ -21,11 +23,11 @@ export type HomeApprovalProps = {
  * title and what it does, a few facts, then Approve or Review, Edit and Not now), with one quiet line under it that
  * points at the rest. The card does all the deciding; this only places it and counts what is left.
  */
-export function HomeApproval({ task, more, href, seeAllHref = '/approvals' }: HomeApprovalProps) {
+export function HomeApproval({ task, more, href, seeAllHref = '/approvals', tagOnPhone = true }: HomeApprovalProps) {
   const now = useNow();
   return (
     <div className={styles.wrap}>
-      <TaskApprovalCard task={task} now={now} {...(href !== undefined && { href })} />
+      <TaskApprovalCard task={task} now={now} tagOnPhone={tagOnPhone} {...(href !== undefined && { href })} />
       {more > 0 ? (
         <p className={styles.more}>
           <span>{home.moreWaiting(more)}</span>

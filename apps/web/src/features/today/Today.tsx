@@ -58,7 +58,7 @@ function ApprovalsSection() {
       </p>
     );
   } else {
-    body = <HomeApproval key={newest.id} task={newest} more={drafts.length - 1} />;
+    body = <HomeApproval key={newest.id} task={newest} more={drafts.length - 1} tagOnPhone={false} />;
   }
 
   return (

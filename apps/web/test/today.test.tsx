@@ -114,6 +114,8 @@ describe('the Today window', () => {
     const card = await within(section).findByRole('article', { name: 'Plan 5' });
     expect(within(section).getAllByRole('article')).toHaveLength(1);
     expect(within(card).getByRole('link', { name: approvals.reviewPlan })).toHaveAttribute('href', '/approvals/t5');
+    // The heading above already says "Need your OK": a phone keeps the card's tag for a screen reader only
+    expect(within(card).getByText(approvals.tagNeedsOk)).toHaveAttribute('data-phone', 'sr-only');
     // The other four wait behind it, one tap from the whole queue
     expect(within(section).getByText(home.moreWaiting(4))).toBeInTheDocument();
     expect(within(section).getByRole('link', { name: home.seeAll })).toHaveAttribute('href', '/approvals');
