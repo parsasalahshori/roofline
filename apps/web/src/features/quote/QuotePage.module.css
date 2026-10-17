@@ -455,7 +455,7 @@
   font-weight: 600;
 }
 
-/* "Measure with the app": the store button, and on a computer a QR code beside it */
+/* Measuring the windows: the store or browser button, or on a computer a QR code */
 .appOffer {
   display: flex;
   flex-direction: column;
@@ -465,44 +465,42 @@
   border-radius: var(--ds-r-ctl, 9px);
 }
 
-.appRow {
+.qr {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-
-.qr {
-  display: none;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
 }
 
 .qrImage {
   display: block;
-  width: 132px;
-  height: 132px;
+  width: 148px;
+  height: 148px;
   border: 1px solid var(--ds-hairline, rgba(21, 28, 34, 0.08));
   border-radius: 8px;
 }
 
-@media (min-width: 720px) {
-  .appRow {
-    flex-direction: row;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 16px;
-  }
+/* A long label wraps inside its button instead of running out of it */
+.appOffer .wrap {
+  height: auto;
+  min-height: 48px;
+  padding-block: 12px;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.25;
+}
 
-  .appRow .primary {
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-
-  .qr {
-    display: flex;
-    flex: none;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    max-width: 160px;
-    text-align: center;
-  }
+/* A quiet text link for the free visit under the main way to measure */
+.linkButton {
+  align-self: center;
+  padding: 8px 4px;
+  border: 0;
+  background: none;
+  color: var(--quote-accent, var(--ds-accent, #1f6feb));
+  font: inherit;
+  font-size: 0.9375rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
 }

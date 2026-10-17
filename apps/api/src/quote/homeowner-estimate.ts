@@ -2,22 +2,21 @@ import { getQuoteEstimate, type QuoteEstimateRow, type TenantContext, withTenant
 import type { HomeownerCallbackReason, InstantQuoteSettings, QuoteProduct } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError } from '../errors.ts';
-import { estimateForAddress, locate, type StoredEstimateResult } from './estimate.ts';
-import { lookupGate, type QuoteCallbackReason } from './gates.ts';
+import { estimateForAddress, type StoredEstimateResult } from './estimate.ts';
+import type { QuoteCallbackReason } from './gates.ts';
 
 /*
  * The homeowner app's first answer: the address looked up and, for roof and windows, measured from above exactly as
  * the instant quote page does (estimate.ts: the same 30-day cache, the same daily cap, the same gates that send an
  * apartment or a doubtful home to a call back). The measurement always runs with the company's own page settings, never
  * narrowed to what this homeowner asked about, so the stored row is complete and a later visitor of the address (the
- * page, or the app asking about something else) is answered from it. Gutters are never priced: with only gutters asked
- * for, nothing is measured and no estimate row is written; the address is only looked up (no Google) and checked.
+ * page, or the app asking about something else) is answered from it. Gutters are not offered to homeowners at all.
  */
 
 export type HomeownerEstimateOutcome = {
   status: 'ready' | 'callback';
   callbackReason: HomeownerCallbackReason | null;
-  /** The shared estimate row (roof and windows asked for), whose id the request keeps; null for gutters only. */
+  /** The shared estimate row whose id the request keeps; null when nothing could be measured. */
   estimate: QuoteEstimateRow | null;
   /** The company's saved address for the home, when the lookup found it. */
   propertyId: string | null;
@@ -62,22 +61,6 @@ export async function estimateForHomeowner(
   settings: InstantQuoteSettings,
   input: { address: string; services: readonly QuoteProduct[]; ipHash: string | null },
 ): Promise<HomeownerEstimateOutcome> {
-  const measured = input.services.includes('roof') || input.services.includes('windows');
-  if (!measured) {
-    // Gutters only: the home is found and checked; the price is given at the free visit.
-    let place;
-    try {
-      place = await locate(deps, ctx, input.address);
-    } catch (err) {
-      if (err instanceof AppError && err.status === 422) throw new AppError(422, err.message, 'address').coded('address_not_found');
-      throw err;
-    }
-    if (place.property === null || place.lookup === null) return { status: 'callback', callbackReason: 'busy', estimate: null, propertyId: null, address: place.address };
-    const gate = lookupGate(input.address, place.lookup);
-    if (gate !== null) return { status: 'callback', callbackReason: coarseReason(gate), estimate: null, propertyId: place.property.id, address: place.address };
-    return { status: 'ready', callbackReason: null, estimate: null, propertyId: place.property.id, address: place.address };
-  }
-
   let shown;
   try {
     shown = await estimateForAddress(deps, ctx, settings, { address: input.address, ipHash: input.ipHash });

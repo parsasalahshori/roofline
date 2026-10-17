@@ -22,11 +22,11 @@ export const quote = {
 
   // Service picker (the first step)
   servicesTitle: 'What are you looking for?',
-  servicesIntro: 'Pick one or more. Each one gets its own price.',
+  servicesIntro: 'Pick one or more.',
   servicesHint: {
-    windows: 'A price from your home\'s size. Measure your windows for a sharper one.',
+    windows: 'How many windows your home has, counted from above. Measure them for the exact price.',
     roof: 'Measured from above. A price range in seconds.',
-    gutters: 'Priced at your free visit.',
+    gutters: 'Priced at your free visit.', // staff-only service: never offered on the page
   } as Record<QuoteProduct, string>,
   servicesContinue: 'Continue',
   servicesLooking: (names: string): string => `Looking for: ${names}`,
@@ -34,7 +34,7 @@ export const quote = {
 
   // Address step
   heading: 'Get your free estimate in seconds',
-  intro: 'Enter your home address. We measure your home from above and show you a price range right away.',
+  intro: 'Enter your home address. We measure your home from above and show you your estimate right away.',
   addressLabel: 'Home address',
   addressPlaceholder: '123 Main St, City, ST 12345',
   addressHelp: 'Street, city, state and ZIP.',
@@ -56,29 +56,29 @@ export const quote = {
   resultsTitle: 'Your estimate',
   forAddress: (address: string): string => `For ${address}`,
   roofLine: (squares: number): string => `Roof: about ${squares.toLocaleString('en-US')} squares`,
-  windowsLine: (count: number): string => `About ${count} ${count === 1 ? 'window' : 'windows'}`,
-  windowsAdjust: 'We counted from above. Adjust if needed.',
-  windowsFewer: 'One window fewer',
-  windowsMore: 'One window more',
-  windowsUpdating: 'Updating the price',
-  windowsFailed: "We couldn't update the price. Please try again.",
-  guttersLine: 'Gutters',
-  guttersAtVisit: 'Priced at your free visit',
+  windowsLine: (count: number, range?: { low: number; high: number }): string => {
+    const base = `About ${count} ${count === 1 ? 'window' : 'windows'}`;
+    return range !== undefined && (range.low !== count || range.high !== count) ? `${base} (${range.low}\u2013${range.high})` : base;
+  },
+  windowsEstimate: 'Counted from above, so it may be a little off.',
   range: (low: number, high: number): string => `from ${quoteMoney(low)} to ${quoteMoney(high)}`,
   finalNote: 'Final price after a free in-home visit.',
   pickProducts: 'What would you like a price for?',
   productName: (p: QuoteProduct): string => PRODUCT_NAMES[p],
   continueButton: 'Get my exact price',
-  visitButton: 'Have us measure at a free visit',
   nothingShown: 'We need a closer look to give a fair price for this. Leave your details and we will call you.',
+  visitLink: "Book a free visit and we'll measure",
 
-  // The phone app that measures windows (only where the company has one)
-  appTitle: (app: string): string => `Measure with the ${app} app`,
-  appBody: 'Measure each window with your iPhone, room by room, and get a sharper price in minutes. You can book your free visit in the app too.',
-  appGet: (app: string): string => `Get the ${app} app`,
+  // Measuring the windows (only where the company has the app): the app on an iPhone, the browser on Android, a QR code on a computer
+  appDownload: (app: string): string => `Download the ${app} app to measure your windows`,
+  appLine: 'The app measures each window and gives you the exact price.',
+  browserMeasure: 'Measure your windows in your browser',
+  browserLine: 'Use your phone\'s camera to measure each window and get the exact price.',
+  qrCaption: 'Scan with your phone: iPhone opens the app, Android measures in the browser',
+  browserSoonTitle: 'Measuring in your browser is coming soon',
+  browserSoonBody: 'For now, book a free visit and we will measure your windows for you.',
+  browserSoonBack: 'Back to my estimate',
   appQrAlt: (app: string): string => `QR code that opens the ${app} app`,
-  appQrHint: 'On a computer? Scan this with your iPhone camera.',
-  appOr: 'Or let us do the measuring:',
   outlineAlt: 'Satellite photo of your home with the measured roof outline',
   imagery: 'Imagery: Esri, Maxar, Earthstar Geographics',
   startOver: 'Use a different address',

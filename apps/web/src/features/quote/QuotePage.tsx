@@ -1,21 +1,24 @@
 import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { visitTime } from './time.ts';
-import { Banner, Button, Checkbox, Field, IconButton, Skeleton } from '@roofline/ui';
-import { QUOTE_WINDOW_COUNT, type PublicQuoteConfig, type PublicQuoteSlot, type PublicQuoteWindows, type QuoteProduct } from '@roofline/shared';
+import { Banner, Button, Checkbox, Field, Skeleton } from '@roofline/ui';
+import { type PublicQuoteConfig, type PublicQuoteSlot, type QuoteProduct } from '@roofline/shared';
 import { quote } from '../../copy/quote.ts';
+import { detectDevice, type Device } from '../../lib/device.ts';
 import { formatPhone } from '../../lib/phone.ts';
 import { ScanOverlay } from '../measure/lift/ScanOverlay.tsx';
 import { readScanMs, stageAt, type ScanStage } from '../measure/lift/scan.ts';
 import { type EstimateAnswer, QuoteApiError, quoteApi } from './api.ts';
 import { RoofThumb } from './RoofThumb.tsx';
+import { measureLink } from './paths.ts';
 import { QrCode } from './QrCode.tsx';
 import { Turnstile } from './Turnstile.tsx';
 import styles from './QuotePage.module.css';
 
 /*
  * The public instant quote page (/q/:slug), signed out and without the app's shell: what are you looking for (roof,
- * windows, gutters: one or more; skipped when the company offers one) -> address -> the scan while the home is
- * measured -> price ranges for what was picked (with "Measure with the app" for windows, where the company has one) ->
+ * windows: one or more; skipped when the company offers one) -> address -> the scan while the home is
+ * measured -> the roof's price range and the windows count (with the way to measure them: the app on an iPhone, the
+ * browser on Android, a QR code on a computer, where the company has the app) ->
  * the request form -> thanks. Phone first; one column. The scan reuses the
  * Measure look (brackets and sweep, the same four stages and 4.8 s), over the home's satellite photo once the
  * answer is in. Nothing personal is ever put in the address bar.
@@ -24,7 +27,7 @@ import styles from './QuotePage.module.css';
 type Step =
   | { kind: 'address'; error?: AddressError }
   | { kind: 'measuring'; startedAt: number; answer: EstimateAnswer | null }
-  | { kind: 'results'; answer: EstimateAnswer; showForm: boolean; windows: PublicQuoteWindows | null }
+  | { kind: 'results'; answer: EstimateAnswer; showForm: boolean }
   | { kind: 'done'; firstName: string; booked: { start: string; end: string } | null; slotTaken: boolean; timeZone: string };
 
 const TICK_MS = 80;
@@ -124,7 +127,7 @@ export function QuotePage({ slug }: { slug: string }) {
           />
         ) : null}
         {services !== null && step.kind === 'measuring' ? (
-          <Measuring step={step} onDone={(answer) => setStep({ kind: 'results', answer, showForm: !hasRanges(answer, services), windows: answer.windows })} />
+          <Measuring step={step} onDone={(answer) => setStep({ kind: 'results', answer, showForm: !hasRanges(answer, services) })} />
         ) : null}
         {services !== null && step.kind === 'results' ? (
           <>
@@ -133,8 +136,6 @@ export function QuotePage({ slug }: { slug: string }) {
               config={c}
               services={services}
               answer={step.answer}
-              windows={step.windows}
-              onWindows={(windows) => setStep((s) => (s.kind === 'results' ? { ...s, windows } : s))}
               onContinue={() => setStep({ ...step, showForm: true })}
               showContinue={!step.showForm}
               onStartOver={() => setStep({ kind: 'address' })}
@@ -145,7 +146,6 @@ export function QuotePage({ slug }: { slug: string }) {
                 config={c}
                 services={services}
                 answer={step.answer}
-                windowCount={step.windows !== null && step.windows.count !== step.answer.windows?.count ? step.windows.count : null}
                 onDone={(firstName, booked, slotTaken, timeZone) => setStep({ kind: 'done', firstName, booked, slotTaken, timeZone })}
               />
             ) : null}
@@ -158,12 +158,12 @@ export function QuotePage({ slug }: { slug: string }) {
 }
 
 /**
- * Whether the answer shows something for what the homeowner picked: a roof or windows price they asked for, or gutters
- * (shown as "priced at your free visit"). A call back, or a home with nothing for their picks, goes straight to the form.
+ * Whether the answer shows something for what the homeowner picked: a roof price or a window count they asked for. A call
+ * back, or a home with nothing for their picks, goes straight to the form.
  */
 export function hasRanges(answer: EstimateAnswer, services: readonly QuoteProduct[]): boolean {
   if (answer.status === 'fallback') return false;
-  return (services.includes('roof') && answer.roof !== null) || (services.includes('windows') && answer.windows !== null) || services.includes('gutters');
+  return (services.includes('roof') && answer.roof !== null) || (services.includes('windows') && answer.windows !== null);
 }
 
 /** The first step: what are you looking for? One or more of what the company offers. */
@@ -350,8 +350,6 @@ function Results({
   config,
   services,
   answer,
-  windows,
-  onWindows,
   onContinue,
   showContinue,
   onStartOver,
@@ -361,13 +359,12 @@ function Results({
   /** What the homeowner picked: only these are shown. */
   services: readonly QuoteProduct[];
   answer: EstimateAnswer;
-  windows: PublicQuoteWindows | null;
-  onWindows: (w: PublicQuoteWindows) => void;
   onContinue: () => void;
   showContinue: boolean;
   onStartOver: () => void;
 }) {
   const headingId = useId();
+  const [device] = useState<Device>(() => detectDevice());
   // The roof was asked about but the satellite pictures cannot be trusted: no roof price, the free visit measures it.
   const satellite = services.includes('roof') && answer.notice === 'satellite-unusable';
   if (!hasRanges(answer, services)) {
@@ -381,8 +378,7 @@ function Results({
       </section>
     );
   }
-  // The phone app measures windows where the company has one: offered next to the free visit (until they choose the visit).
-  const app = showContinue && services.includes('windows') && windows !== null ? config.homeownerApp : null;
+  const windows = services.includes('windows') ? answer.windows : null;
   return (
     <section className={styles.card} aria-labelledby={headingId}>
       <h1 id={headingId} className={styles.title}>
@@ -396,7 +392,12 @@ function Results({
         </div>
       ) : null}
       <ul className={styles.ranges}>
-        {services.includes('windows') && windows ? <WindowsLine slug={slug} quoteId={answer.quoteId} windows={windows} onWindows={onWindows} /> : null}
+        {windows ? (
+          <li>
+            <span className={styles.rangeLabel}>{quote.windowsLine(windows.count, windows.countRange)}</span>
+            <span className={styles.small}>{quote.windowsEstimate}</span>
+          </li>
+        ) : null}
         {services.includes('roof') && answer.roof ? (
           <li>
             <span className={styles.rangeLabel}>{quote.roofLine(answer.roof.squares)}</span>
@@ -408,21 +409,20 @@ function Results({
             <span className={styles.rangeLabel}>{quote.satelliteBody}</span>
           </li>
         ) : null}
-        {services.includes('gutters') && config.products.includes('gutters') ? (
-          <li>
-            <span className={styles.rangeLabel}>{quote.guttersLine}</span>
-            <span className={styles.atVisit}>{quote.guttersAtVisit}</span>
-          </li>
-        ) : null}
       </ul>
-      <p className={styles.note}>{quote.finalNote}</p>
-      {app !== null ? <AppOffer app={app} /> : null}
+      {answer.roof ? <p className={styles.note}>{quote.finalNote}</p> : null}
+      {showContinue && windows ? <MeasureWindows slug={slug} quoteId={answer.quoteId} app={config.homeownerApp} device={device} /> : null}
       {showContinue ? (
         <div className={styles.actions}>
-          {app !== null ? <p className={styles.small}>{quote.appOr}</p> : null}
-          <Button size="lg" className={app !== null ? styles.secondary : styles.primary} variant={app !== null ? 'ghost' : 'primary'} onClick={onContinue}>
-            {app !== null ? quote.visitButton : quote.continueButton}
-          </Button>
+          {windows && config.homeownerApp !== null ? (
+            <Button variant="ghost" className={styles.linkButton} onClick={onContinue}>
+              {quote.visitLink}
+            </Button>
+          ) : (
+            <Button size="lg" className={styles.primary} onClick={onContinue}>
+              {windows ? quote.visitLink : quote.continueButton}
+            </Button>
+          )}
           <Button variant="ghost" onClick={onStartOver}>
             {quote.startOver}
           </Button>
@@ -433,95 +433,39 @@ function Results({
 }
 
 /**
- * "Measure with the app": the company's phone app measures each window for a sharper price. A button to the store link
- * everywhere, and a QR code beside it on a computer (hidden on a phone, where the button is the way).
+ * How to get the exact window price, by device (the web page shows the count only): an iPhone opens the app from the
+ * store; an Android phone measures in its browser; on a computer a QR code (one link for both) is scanned by the phone.
+ * Without the company's app link the page offers only the free visit (the caller's link under this).
  */
-function AppOffer({ app }: { app: NonNullable<PublicQuoteConfig['homeownerApp']> }) {
+function MeasureWindows({ slug, quoteId, app, device }: { slug: string; quoteId: string; app: PublicQuoteConfig['homeownerApp']; device: Device }) {
+  if (app === null) return null;
+  const link = measureLink(slug, quoteId);
   return (
-    <div className={styles.appOffer} data-app-offer="">
-      <h2 className={styles.subtitle}>{quote.appTitle(app.name)}</h2>
-      <p className={styles.text}>{quote.appBody}</p>
-      <div className={styles.appRow}>
-        <Button href={app.url} size="lg" className={styles.primary} target="_blank" rel="noopener noreferrer">
-          {quote.appGet(app.name)}
-        </Button>
-        <div className={styles.qr}>
-          <QrCode value={app.url} label={quote.appQrAlt(app.name)} className={styles.qrImage} />
-          <p className={styles.small}>{quote.appQrHint}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** How long a run of taps on the window count waits before the price is asked for again. */
-const REPRICE_MS = 350;
-
-/**
- * The window count as a stepper: the count is a guess from above, so the homeowner may set it (1 to 80). The price
- * comes from the server for each count (the page never prices on its own); while it is on its way the old range
- * stays, marked as updating.
- */
-function WindowsLine({ slug, quoteId, windows, onWindows }: { slug: string; quoteId: string; windows: PublicQuoteWindows; onWindows: (w: PublicQuoteWindows) => void }) {
-  const [count, setCount] = useState(windows.count);
-  const [failed, setFailed] = useState(false);
-  const pending = count !== windows.count;
-  const report = useRef(onWindows);
-  useEffect(() => {
-    report.current = onWindows;
-  }, [onWindows]);
-  useEffect(() => {
-    if (count === windows.count) return;
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => {
-      quoteApi.windows(slug, { quoteId, count }, controller.signal).then(
-        (w) => {
-          setFailed(false);
-          report.current(w);
-        },
-        (err: unknown) => {
-          if (err instanceof DOMException && err.name === 'AbortError') return;
-          setFailed(true);
-          setCount(windows.count);
-        },
-      );
-    }, REPRICE_MS);
-    return () => {
-      window.clearTimeout(timer);
-      controller.abort();
-    };
-  }, [count, windows.count, slug, quoteId]);
-  const step = (by: number) => setCount((n) => Math.min(QUOTE_WINDOW_COUNT.max, Math.max(QUOTE_WINDOW_COUNT.min, n + by)));
-  return (
-    <li>
-      <div className={styles.windowsRow}>
-        <span className={styles.rangeLabel} aria-live="polite">
-          {quote.windowsLine(count)}
-        </span>
-        <div className={styles.stepper}>
-          <IconButton label={quote.windowsFewer} icon={<StepIcon minus />} onClick={() => step(-1)} disabled={count <= QUOTE_WINDOW_COUNT.min} />
-          <IconButton label={quote.windowsMore} icon={<StepIcon />} onClick={() => step(1)} disabled={count >= QUOTE_WINDOW_COUNT.max} />
-        </div>
-      </div>
-      <span className={styles.small}>{quote.windowsAdjust}</span>
-      <span className={styles.rangeValue} data-pending={pending ? true : undefined} aria-busy={pending}>
-        {quote.range(windows.range.lowCents, windows.range.highCents)}
-      </span>
-      {pending ? <span className="visually-hidden">{quote.windowsUpdating}</span> : null}
-      {failed ? (
-        <span className={styles.error} role="alert">
-          {quote.windowsFailed}
-        </span>
+    <div className={styles.appOffer} data-app-offer={device}>
+      {device === 'iphone' ? (
+        <>
+          <Button href={app.url} size="lg" className={`${styles.primary} ${styles.wrap}`} target="_blank" rel="noopener noreferrer">
+            {quote.appDownload(app.name)}
+          </Button>
+          <p className={styles.small}>{quote.appLine}</p>
+        </>
       ) : null}
-    </li>
-  );
-}
-
-function StepIcon({ minus = false }: { minus?: boolean }) {
-  return (
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-      <path d={minus ? 'M5 12h14' : 'M5 12h14M12 5v14'} />
-    </svg>
+      {device === 'android' ? (
+        <>
+          <Button href={link} size="lg" className={`${styles.primary} ${styles.wrap}`}>
+            {quote.browserMeasure}
+          </Button>
+          <p className={styles.small}>{quote.browserLine}</p>
+        </>
+      ) : null}
+      {device === 'desktop' ? (
+        <div className={styles.qr} data-qr-block="">
+          <QrCode value={`${window.location.origin}${link}`} label={quote.appQrAlt(app.name)} className={styles.qrImage} />
+          <p className={styles.small}>{quote.qrCaption}</p>
+          <p className={styles.small}>{quote.appLine}</p>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -561,7 +505,6 @@ function LeadForm({
   config,
   services,
   answer,
-  windowCount,
   onDone,
 }: {
   slug: string;
@@ -570,7 +513,6 @@ function LeadForm({
   services: readonly QuoteProduct[];
   answer: EstimateAnswer;
   /** The window count the homeowner set, when it is not the estimated one. */
-  windowCount: number | null;
   onDone: (firstName: string, booked: { start: string; end: string } | null, slotTaken: boolean, timeZone: string) => void;
 }) {
   // What they picked is ticked (in the page's order).
@@ -628,7 +570,6 @@ function LeadForm({
         products: form.products,
         consent: true,
         textConsent: form.textConsent,
-        ...(windowCount !== null && { windowCount }),
         consentVersion: config.consent.version,
         formToken: answer.formToken,
         website: form.website,

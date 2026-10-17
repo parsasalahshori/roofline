@@ -13,7 +13,7 @@ import { turnstileOn } from '../quote/guards.ts';
  * allowed too. An unknown slug keeps the strict headers. Not indexed; web.ts sends it with no-cache like every page.
  */
 
-const PAGE = /^\/q\/([^/]+)\/?$/i;
+const PAGE = /^\/q\/([^/]+)(?:\/measure)?\/?$/i;
 const TURNSTILE_HOST = 'https://challenges.cloudflare.com';
 
 function addSource(policy: string, directive: string, source: string): string {

@@ -97,13 +97,19 @@ export type StoredEstimateResult = {
   windowCountRange?: { low: number; high: number } | null;
 };
 
+/** The windows as the page gets them: the count, its plausible range (never narrower than the likely count) and the price. */
+function windowsView(w: { count: number; range: PriceRange } | null, countRange: { low: number; high: number } | null): PublicQuoteEstimate['windows'] {
+  if (w === null) return null;
+  return { ...w, countRange: { low: Math.min(countRange?.low ?? w.count, w.count), high: Math.max(countRange?.high ?? w.count, w.count) } };
+}
+
 export type StoredSatellite = { problems: SatelliteProblem[]; quality: string | null; date: string | null; roofAsked: boolean };
 
 /** The public answer a stored row carries (its result plus its id). */
 export function estimateView(row: QuoteEstimateRow): PublicQuoteEstimate {
-  const r = row.result as Omit<PublicQuoteEstimate, 'quoteId'> & { satellite?: StoredSatellite };
+  const r = row.result as Omit<PublicQuoteEstimate, 'quoteId' | 'windows'> & { windows?: { count: number; range: PriceRange } | null; satellite?: StoredSatellite; windowCountRange?: { low: number; high: number } | null };
   const notice = r.satellite?.roofAsked === true ? ('satellite-unusable' as const) : null;
-  return { quoteId: row.id, status: row.status, address: row.address, roof: r.roof ?? null, windows: r.windows ?? null, gutters: r.gutters ?? null, outline: r.outline ?? null, ...(notice !== null && { notice }) };
+  return { quoteId: row.id, status: row.status, address: row.address, roof: r.roof ?? null, windows: windowsView(r.windows ?? null, r.windowCountRange ?? null), gutters: r.gutters ?? null, outline: r.outline ?? null, ...(notice !== null && { notice }) };
 }
 
 function lineOf(p: Pick<PropertyRow, 'addressLine' | 'city' | 'state' | 'zip'>): string {

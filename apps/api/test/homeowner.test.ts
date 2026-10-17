@@ -198,7 +198,7 @@ describe('GET /company', () => {
       name,
       brandColor: '#155eab',
       phone: expect.stringMatching(/^\+1\d{10}$/),
-      services: ['windows', 'roof', 'gutters'],
+      services: ['windows', 'roof'],
       booking: false,
       privacyUrl: expect.stringMatching(/\/privacy$/),
       termsUrl: expect.stringMatching(/\/terms$/),
@@ -237,7 +237,7 @@ describe('POST /requests', () => {
     expect(body.estimate.windows!.likely).toBeLessThanOrEqual(body.estimate.windows!.high);
     expect(body.estimate.roof!.low).toBeLessThan(body.estimate.roof!.high);
     expect(body.estimate.roof!.low % 100).toBe(0);
-    expect(body.estimate.gutters).toBeNull();
+    expect(JSON.stringify(body)).not.toMatch(/gutter/i);
     expect(body.home.outline!.ring.length).toBeGreaterThanOrEqual(3);
     // The house was measured once, for the roof and the windows together
     expect(t.solar.calls.length).toBeGreaterThanOrEqual(solarBefore);
@@ -265,21 +265,20 @@ describe('POST /requests', () => {
     expect(text).not.toContain(ip);
   });
 
-  test('a gutters-only request is only looked up and checked: ready, "at-visit", nothing measured, no estimate stored', async () => {
-    const estimatesBefore = await count('quote_estimates', t.seed.a.companyId);
-    const solarBefore = t.solar.calls.length;
-    const { body, id } = await start({ services: ['gutters'] });
-    expect(body).toMatchObject({ status: 'ready', services: ['gutters'], estimate: { windows: null, roof: null, gutters: 'at-visit' } });
-    expect(await count('quote_estimates', t.seed.a.companyId)).toBe(estimatesBefore);
-    expect(t.solar.calls.length).toBe(solarBefore);
-    const [row] = await q(`select quote_estimate_id, property_id from homeowner_requests where id = $1`, [id]);
-    expect(row!.quote_estimate_id).toBeNull();
-    expect(row!.property_id).not.toBeNull();
+  test('gutters are not offered to homeowners: not in the company\'s services, and a request for them is a 422 service_not_offered', async () => {
+    // The company has gutters switched on for staff (see enable()), yet the app never sees them.
+    expect((await get('/company')).body.services).toEqual(['windows', 'roof']);
+    for (const services of [['gutters'], ['windows', 'gutters']]) {
+      const res = await send('post', '/requests', { address: ADDRESS, services });
+      expect(res.status, services.join()).toBe(422);
+      expect(res.body).toMatchObject({ field: 'services', code: 'service_not_offered' });
+    }
+    expect(await count('homeowner_requests', t.seed.a.companyId)).toBe(0);
   });
 
   test('an apartment is the call-back path: nothing measured, a reason, and the windows calls are refused', async () => {
-    const { body, id, token } = await start({ address: FLAT, services: ['windows', 'gutters'] });
-    expect(body).toMatchObject({ status: 'callback', callbackReason: 'unit', estimate: { windows: null, roof: null, gutters: 'at-visit' } });
+    const { body, id, token } = await start({ address: FLAT, services: ['windows', 'roof'] });
+    expect(body).toMatchObject({ status: 'callback', callbackReason: 'unit', estimate: { windows: null, roof: null } });
     expect(body.home.floors).toBeNull();
     expect(t.solar.calls).toHaveLength(0);
     const v = await view({ id, token, body });
@@ -395,15 +394,15 @@ describe('POST /requests', () => {
   test('ten new requests an hour per IP address, then a 429 with Retry-After and a code', async () => {
     const ip = '203.0.113.9';
     for (let i = 0; i < HOMEOWNER_LIMITS.newRequestsPerIpPerHour; i++) {
-      expect((await send('post', '/requests', { address: ADDRESS, services: ['gutters'] }, { ip })).status, `call ${i}`).toBe(201);
+      expect((await send('post', '/requests', { address: ADDRESS, services: ['windows'] }, { ip })).status, `call ${i}`).toBe(201);
     }
-    const over = await send('post', '/requests', { address: ADDRESS, services: ['gutters'] }, { ip });
+    const over = await send('post', '/requests', { address: ADDRESS, services: ['windows'] }, { ip });
     expect(over.status).toBe(429);
     expect(over.body.code).toBe('rate_limited');
     expect(over.headers['retry-after']).toBe('3600');
     expect(over.headers['cache-control']).toBe('no-store');
     // Another address is not held back
-    expect((await send('post', '/requests', { address: ADDRESS, services: ['gutters'] }, { ip: '203.0.113.10' })).status).toBe(201);
+    expect((await send('post', '/requests', { address: ADDRESS, services: ['windows'] }, { ip: '203.0.113.10' })).status).toBe(201);
   });
 });
 
@@ -485,7 +484,7 @@ describe('the token', () => {
 
   test('a browser from another site is refused on a change; a native app (no Origin) and the app origin pass', async () => {
     const s = await start();
-    const evil = await send('post', '/requests', { address: ADDRESS, services: ['gutters'] }, { origin: 'https://evil.example' });
+    const evil = await send('post', '/requests', { address: ADDRESS, services: ['windows'] }, { origin: 'https://evil.example' });
     expect(evil.status).toBe(403);
     expect(evil.body.code).toBe('cross_site');
     expect(evil.headers['cache-control']).toBe('no-store');
@@ -503,7 +502,7 @@ describe('the token', () => {
       const answers = await Promise.all(Array.from({ length: 40 }, () => get('/company', { ip })));
       for (const a of answers) expect(a.status).toBe(200);
     }
-    const over = await send('post', '/requests', { address: ADDRESS, services: ['gutters'] }, { ip, origin: 'https://evil.example' });
+    const over = await send('post', '/requests', { address: ADDRESS, services: ['windows'] }, { ip, origin: 'https://evil.example' });
     expect(over.status).toBe(429);
     expect(over.body.code).toBe('rate_limited');
     expect(over.headers['retry-after']).toBe('60');

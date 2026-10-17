@@ -46,9 +46,8 @@ const ROOF_NOTE = { reason: 'satellite-unusable', message: SATELLITE_UNUSABLE_ME
 
 /** The estimates for the services asked about: null where not asked, not estimated, or the request is a call back. */
 export function estimateOf(request: HomeownerRequestRow, estimate: QuoteEstimateRow | null): HomeownerEstimate {
-  const gutters = request.services.includes('gutters') ? ('at-visit' as const) : null;
   const unusable = request.services.includes('roof') && request.callbackReason === 'satellite-unusable';
-  if (estimate === null || request.status === 'callback') return { windows: null, roof: null, gutters, ...(unusable && { roofNote: ROOF_NOTE }) };
+  if (estimate === null || request.status === 'callback') return { windows: null, roof: null, ...(unusable && { roofNote: ROOF_NOTE }) };
   const view = estimateView(estimate);
   const stored = estimate.result as StoredEstimateResult;
   const range = stored.windowCountRange ?? null;
@@ -58,7 +57,7 @@ export function estimateOf(request: HomeownerRequestRow, estimate: QuoteEstimate
       : null;
   const roof = request.services.includes('roof') && view.roof !== null ? { low: hundreds(view.roof.range.lowCents), high: hundreds(view.roof.range.highCents), squares: view.roof.squares } : null;
   const withheld = request.services.includes('roof') && roof === null && stored.satellite !== undefined;
-  return { windows, roof, gutters, ...(withheld && { roofNote: ROOF_NOTE }) };
+  return { windows, roof, ...(withheld && { roofNote: ROOF_NOTE }) };
 }
 
 /** The homeowner's windows on the request's measurement, sized from what is stored (quote-grade, source homeowner-app). */

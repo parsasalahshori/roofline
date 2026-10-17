@@ -136,8 +136,6 @@ export type HomeownerEstimate = {
   windows: { low: number; high: number; likely: number } | null;
   /** The roof's price range, whole dollars (rounded out to hundreds), and its size in squares. */
   roof: { low: number; high: number; squares: number } | null;
-  /** 'at-visit': gutters are priced at the free visit, never online. */
-  gutters: 'at-visit' | null;
   /**
    * Present when the roof was asked about but the satellite pictures cannot be trusted for this home: `roof` is then
    * null, no roof price is shown, and `message` is the sentence to show. The windows are not affected.

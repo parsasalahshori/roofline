@@ -151,7 +151,8 @@ describe('GET /api/public/quote/:slug', () => {
     expect(res.body).toMatchObject({
       slug: ACME,
       companyName: expect.any(String),
-      products: ['windows', 'roof', 'gutters'],
+      // Gutters are on for the company (enable()) but never offered to a homeowner.
+      products: ['windows', 'roof'],
       booking: false,
       consent: {
         version: QUOTE_CONSENT_VERSION,
@@ -194,7 +195,10 @@ describe('POST /api/public/quote/:slug/estimate', () => {
       expect(range.highCents).toBeGreaterThan(range.lowCents);
     }
     expect(Object.keys(e.roof!).sort()).toEqual(['range', 'squares']);
-    expect(Object.keys(e.windows!).sort()).toEqual(['count', 'range']);
+    expect(Object.keys(e.windows!).sort()).toEqual(['count', 'countRange', 'range']);
+    // The count's plausible range always holds the likely count (the page shows "About 14 windows (12-16)").
+    expect(e.windows!.countRange.low).toBeLessThanOrEqual(e.windows!.count);
+    expect(e.windows!.countRange.high).toBeGreaterThanOrEqual(e.windows!.count);
     expect(e.outline!.ring.length).toBeGreaterThanOrEqual(3);
     const text = JSON.stringify(e);
     expect(text).not.toMatch(/totalCents|unitCents|pricebook|calculation|tier|measurementId|propertyId|companyId|callback|lookup|windowMix|accuracy/);
@@ -424,6 +428,18 @@ describe('POST /api/public/quote/:slug/lead', () => {
     const b = await estimated(BOLT);
     expect(b.quoteId).not.toBe(e.quoteId);
     expect(await count('measurements', t.seed.b.companyId)).toBe(1);
+  });
+
+  test('gutters are not offered: a lead asking only for them is a 422, and they are dropped from a mixed one', async () => {
+    const e = await estimated();
+    t.clock.advance(8000);
+    const only = await lead(ACME, leadBody(e, { products: ['gutters'] }));
+    expect(only.status).toBe(422);
+    expect(only.body.field).toBe('products');
+    const mixed = await lead(ACME, leadBody(e, { products: ['windows', 'gutters'] }));
+    expect(mixed.status).toBe(201);
+    const [job] = await q(`select products from quote_requests where company_id = $1 order by created_at desc limit 1`, [t.seed.a.companyId]);
+    expect(job?.products).toEqual(['windows']);
   });
 
   test('products the page does not offer are dropped; none left is a 422', async () => {
