@@ -56,6 +56,13 @@
   gap: 6px;
 }
 
+/* The box grows with what is typed (where the browser knows field-sizing), so a longer text is never cut through a line */
+.facts textarea {
+  field-sizing: content;
+  min-height: 10rem;
+  max-height: 60vh;
+}
+
 .counter {
   margin: 0;
   color: var(--ink-3);

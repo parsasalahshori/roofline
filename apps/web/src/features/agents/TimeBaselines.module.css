@@ -87,9 +87,17 @@
   justify-items: start;
 }
 
+/* Numbers in a table are mono: the typed minutes and the standard under them */
+.edit input {
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
 .hint {
   color: var(--ink-3);
+  font-family: var(--f-mono);
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 .saveRow {

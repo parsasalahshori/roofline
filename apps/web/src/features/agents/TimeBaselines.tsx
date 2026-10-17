@@ -18,11 +18,10 @@ export function validateMinutes(text: string): string | null {
   return null;
 }
 
+/** "Answering the call yourself, plus 2 minutes of notes, plus the call's length. At most 120 minutes per batch." */
 function basisWords(row: TimeBaselineRow): string {
-  const parts = [row.basis];
-  if (row.perCallLength) parts.push(copy.plusCallLength);
-  if (row.capMinutes !== null) parts.push(`${copy.capPrefix} ${row.capMinutes} ${copy.capSuffix}`);
-  return parts.join('. ');
+  const counted = row.perCallLength ? `${row.basis}, ${copy.plusCallLength}` : row.basis;
+  return row.capMinutes === null ? counted : `${counted}. ${copy.capPrefix} ${row.capMinutes} ${copy.capSuffix}`;
 }
 
 export function TimeBaselines() {
