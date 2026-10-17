@@ -130,9 +130,10 @@ test('deep link opens the review directly', async ({ page, loginAs, scenario }) 
     if (r.url().includes('/api/me/today-shown')) asked.push(r.url());
   });
   await page.goto('/approvals/' + scenario.taskId);
-  const main = page.getByRole('main', { name: 'Need your OK' });
+  // The review is its own page: its landmark takes the plan's name, and the trail above it leads back to Need your OK
+  const main = page.getByRole('main', { name: 'Storm plan: hail on the north side' });
   await expect(main).toBeVisible();
-  await expect(main).toContainText('Storm plan: hail on the north side');
+  await expect(page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: 'Need your OK' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Approve 3 steps · up to $270' })).toBeVisible();
   // Give a stray Today question time to be sent before concluding there was none
   await page.waitForTimeout(1000);
