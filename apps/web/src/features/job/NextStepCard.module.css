@@ -1,4 +1,4 @@
-/* The next step: a card of its own, the clock in a tile, the step in Archivo, its day and the rep under it */
+/* The next step: a card of its own, the clock in an amber tile (as the mockups draw it, whatever the company's colour), the step in Archivo, its day and the rep under it */
 .card {
   display: flex;
   align-items: flex-start;
@@ -17,13 +17,14 @@
   width: 40px;
   height: 40px;
   border-radius: var(--r-2);
-  background: var(--brand-tint);
-  color: var(--brand-text);
-}
-
-.card[data-overdue='true'] .icon {
   background: var(--warn-tint);
   color: var(--warn-text);
+}
+
+/* Past its day, the tile is filled: the glyph is the surface colour on the status amber */
+.card[data-overdue='true'] .icon {
+  background: var(--warn);
+  color: var(--surface);
 }
 
 .text {

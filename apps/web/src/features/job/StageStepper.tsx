@@ -50,6 +50,8 @@ export function StageStepper({ job, canEdit }: StageStepperProps) {
           const current = stage === job.stage;
           const state = current ? 'current' : currentIndex > index ? 'done' : 'todo';
           const blocked = stage === 'installed' && job.stage !== 'won';
+          // On a phone Inspection is written short; the button is still named in full
+          const short = phone ? copy.stageShort[stage] : undefined;
           return (
             <div key={stage} className={styles.segment} data-state={state} data-step={stage}>
               <span className={styles.bar} aria-hidden="true" />
@@ -60,10 +62,11 @@ export function StageStepper({ job, canEdit }: StageStepperProps) {
                   data-stage={stage}
                   data-current={current ? 'true' : 'false'}
                   aria-current={current ? 'step' : undefined}
+                  aria-label={short !== undefined ? jobs.stage[stage] : undefined}
                   disabled={!canEdit || blocked || move.isPending}
                   onClick={() => void choose(stage)}
                 >
-                  {jobs.stage[stage]}
+                  {short ?? jobs.stage[stage]}
                 </Button>
                 {current ? <span className={styles.days}>{copy.daysInStage(job.daysInStage)}</span> : null}
               </div>

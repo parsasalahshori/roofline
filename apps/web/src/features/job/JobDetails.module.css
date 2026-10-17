@@ -2,14 +2,20 @@
 .facts {
   display: grid;
   grid-template-columns: 104px minmax(0, 1fr);
+  align-items: baseline;
   gap: 10px 12px;
   margin: 0;
   font-size: 13px;
 }
 
 .facts dt {
-  padding-top: 2px;
   color: var(--ink-3);
+}
+
+/* The rep's row holds an avatar, so it is centred, label and value together */
+.facts dt:has(+ dd.person),
+.facts dd.person {
+  align-self: center;
 }
 
 .facts dd {

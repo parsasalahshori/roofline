@@ -1,4 +1,4 @@
-import type { AppointmentKind, QuoteStatus } from '@roofline/shared';
+import type { AppointmentKind, JobStage, QuoteStatus } from '@roofline/shared';
 
 /** One job's window: header, stage stepper, edit sheet, sections. */
 export const job = {
@@ -15,6 +15,8 @@ export const job = {
   // The stage steps and the facts under them
   statValue: 'Value',
   daysInStage: (n: number) => (n === 0 ? 'Today' : n === 1 ? '1 day' : `${n} days`),
+  /** A stage's name where five of them share a phone's width: only Inspection is too long to sit beside the next one. */
+  stageShort: { inspection: 'Insp.' } as Partial<Record<JobStage, string>>,
 
   // Header
   addressLink: (address: string) => `${address} on the map`,

@@ -128,8 +128,9 @@
     gap: 0 6px;
   }
 
+  /* A stage's name is a button, so on a phone it is 44px tall like every other */
   .steps .step {
-    min-height: 40px;
+    min-height: 44px;
     margin-left: -4px;
     padding: 0 4px;
     font-size: 13px;
