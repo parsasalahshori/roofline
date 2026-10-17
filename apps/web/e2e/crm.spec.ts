@@ -40,6 +40,49 @@ test('the board shows the showcase pipeline', async ({ page, loginAs, markTodayS
   await expect(jobsWindow.getByRole('button', { name: 'Lost (1)', exact: true })).toBeVisible();
 });
 
+test('every card on the board stays inside its lane, and a lane with more cards than it shows fades at its foot', async ({
+  page,
+  loginAs,
+  markTodaySeen,
+}) => {
+  // Narrow enough that the lanes sit at their 200px floor, where a card's footer has the least room
+  await page.setViewportSize({ width: 1100, height: 900 });
+  // The first Inspection card is given what makes its footer widest: no value (so the rep's name shows), a long name
+  await page.route(/\/api\/jobs\/board(\?|$)/, async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { columns: { stage: string; jobs: Record<string, unknown>[] }[] };
+    const first = body.columns.find((column) => column.stage === 'inspection')?.jobs[0];
+    if (first !== undefined) {
+      first['valueCents'] = null;
+      first['assigned'] = { userId: '00000000-0000-4000-8000-000000000001', name: 'Maximilian Featherstonehaugh' };
+    }
+    await route.fulfill({ response, json: body });
+  });
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/jobs');
+  const board = page.getByRole('region', { name: 'Pipeline board' });
+  await expect(board.getByRole('heading', { name: 'Lead (8)', exact: true })).toBeVisible();
+
+  // A card's footer (avatar, rep, age) could once not shrink and pushed its card out over the lane's border
+  const outside = await page.evaluate(() =>
+    [...document.querySelectorAll('[data-card]')]
+      .filter((card) => {
+        const lane = card.closest('section')?.getBoundingClientRect();
+        const box = card.getBoundingClientRect();
+        // The lane keeps 8px each side of its cards; a card must leave at least half of that
+        return lane === undefined || box.left < lane.left + 4 || box.right > lane.right - 4;
+      })
+      .map((card) => card.querySelector('strong')?.textContent ?? ''),
+  );
+  expect(outside).toEqual([]);
+
+  // Eight leads do not fit a 900px window: that lane fades at its foot to say there is more; two installed jobs fit, so no fade
+  const cardsOf = (lane: string) => board.getByRole('region', { name: lane, exact: true }).locator(':scope > div').last();
+  await expect(cardsOf('Lead')).toHaveAttribute('data-more', 'true');
+  await expect(cardsOf('Installed')).not.toHaveAttribute('data-more');
+});
+
 test('drag a lead to Inspection, then Lost asks why', async ({ page, loginAs, markTodaySeen }) => {
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
