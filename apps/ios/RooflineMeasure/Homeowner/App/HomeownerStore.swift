@@ -214,7 +214,8 @@ final class HomeownerStore {
     var hasBooking: Bool { view?.booking != nil || progress.hasBooking }
     var windowEstimate: HomeownerWindowEstimate? { estimate?.windows ?? view?.request.estimate?.windows }
     var roofEstimate: HomeownerRoofEstimate? { estimate?.roof ?? view?.request.estimate?.roof }
-    var guttersAtVisit: Bool { (estimate?.gutters ?? view?.request.estimate?.gutters) != nil || services.contains(.gutters) }
+    /// The sentence shown in place of the roof price when the satellite pictures cannot be trusted, else nil.
+    var roofNote: HomeownerRoofNote? { estimate?.roofNote ?? view?.request.estimate?.roofNote }
     var quote: HomeownerQuote? { view?.quote }
     var nextWindowNumber: Int { windowCount + 1 }
 
@@ -355,7 +356,7 @@ final class HomeownerStore {
         progress.callbackReason = callbackReason
         progress.estimateWindows = windowEstimate
         progress.estimateRoof = roofEstimate
-        progress.estimateGutters = estimate?.gutters ?? view?.request.estimate?.gutters
+        progress.estimateRoofNote = roofNote
         progress.floors = home?.floors
         progressStore.save(progress, requestId: id)
     }
@@ -378,7 +379,7 @@ final class HomeownerStore {
         let target = ResumeRouter.target(saved: progress.step, hasSession: session != nil, snapshot: snapshot())
         go(to: target)
         if target == .status || target == .booked { Task { await self.loadStatus() } }
-        if let h = progress.estimateWindows, estimate?.windows == nil { estimate = HomeownerEstimate(windows: h, roof: progress.estimateRoof, gutters: progress.estimateGutters) }
+        if let h = progress.estimateWindows, estimate?.windows == nil { estimate = HomeownerEstimate(windows: h, roof: progress.estimateRoof, roofNote: progress.estimateRoofNote) }
     }
 
     /// Shows a step as if the homeowner had walked there: the back stack is the steps before it.

@@ -2,7 +2,7 @@ import RooflineCore
 import SwiftUI
 
 /// 03 Results (ios-hw-03): "Here's your home": the house from above, then one card per service the homeowner picked. Windows are
-/// next (blue); the roof is a price range from above; gutters are priced at the free visit. Roof or gutters only: straight on
+/// next (blue); the roof is a price range from above; a roof the satellite pictures cannot show says so instead of a price. Roof only: straight on
 /// to the contact form.
 struct ResultsScreen: View {
     @Environment(HomeownerStore.self) private var store
@@ -18,7 +18,6 @@ struct ResultsScreen: View {
                     homeCard
                     if store.services.contains(.windows) { windowsCard }
                     if store.services.contains(.roof) { roofCard }
-                    if store.services.contains(.gutters) { guttersCard }
                     if store.offline {
                         InfoPanel(icon: .info, text: "You're offline. We'll refresh this when you're back.", tint: Theme.warnTint, iconColor: Theme.warn)
                     }
@@ -144,31 +143,13 @@ struct ResultsScreen: View {
     }
 
     private var roofBody: String {
+        if let note = store.roofNote { return note.message }
         guard let r = store.roofEstimate else { return "We price your roof at your free visit." }
         if let sq = r.squares, sq > 0 { return "About \(Self.squares(sq)) squares, measured from above. Exact price at your free visit." }
         return "Measured from above. Exact price at your free visit."
     }
 
     private static func squares(_ s: Double) -> String { s == s.rounded() ? "\(Int(s))" : String(format: "%.1f", s) }
-
-    private var guttersCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
-                IconTile(icon: .gutter, size: 34, iconSize: 18)
-                Text("Gutters").wc(17, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
-                Spacer()
-                Text("Priced at your free visit").wc(14, .medium, relativeTo: .footnote).foregroundStyle(Theme.ink2)
-                    .padding(.horizontal, 12).padding(.vertical, 7)
-                    .background(Theme.surface2, in: Capsule())
-            }
-            Text("Add them now and we measure them at the same visit.").wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink2)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .wcCard(radius: 16)
-        .accessibilityElement(children: .combine)
-    }
 }
 
 /// Dollars as the mockups write them: "$9,800", and a range "$9,800–12,100".

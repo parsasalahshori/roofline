@@ -25,14 +25,14 @@ struct HomeownerProgress: Codable, Equatable {
     var callbackReason: String?
     var estimateWindows: HomeownerWindowEstimate?
     var estimateRoof: HomeownerRoofEstimate?
-    var estimateGutters: String?
+    var estimateRoofNote: HomeownerRoofNote?
     var floors: Double?
     var perimeterFt: Int?
 
     init() {}
 
     private enum Keys: String, CodingKey {
-        case step, rooms, tierKey, tierTotal, tierWindowCount, colors, bestTime, requestStatus, hasContact, hasBooking, windowCount, callbackReason, estimateWindows, estimateRoof, estimateGutters, floors, perimeterFt
+        case step, rooms, tierKey, tierTotal, tierWindowCount, colors, bestTime, requestStatus, hasContact, hasBooking, windowCount, callbackReason, estimateWindows, estimateRoof, estimateRoofNote, floors, perimeterFt
     }
 
     // Lenient: a progress record written by an older build still reads
@@ -52,7 +52,7 @@ struct HomeownerProgress: Codable, Equatable {
         callbackReason = try? c.decodeIfPresent(String.self, forKey: .callbackReason)
         estimateWindows = try? c.decodeIfPresent(HomeownerWindowEstimate.self, forKey: .estimateWindows)
         estimateRoof = try? c.decodeIfPresent(HomeownerRoofEstimate.self, forKey: .estimateRoof)
-        estimateGutters = try? c.decodeIfPresent(String.self, forKey: .estimateGutters)
+        estimateRoofNote = try? c.decodeIfPresent(HomeownerRoofNote.self, forKey: .estimateRoofNote)
         floors = try? c.decodeIfPresent(Double.self, forKey: .floors)
         perimeterFt = try? c.decodeIfPresent(Int.self, forKey: .perimeterFt)
     }

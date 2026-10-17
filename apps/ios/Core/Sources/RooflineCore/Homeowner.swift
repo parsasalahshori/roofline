@@ -39,10 +39,17 @@ extension KeyedDecodingContainer {
 public enum HomeownerService: String, Codable, CaseIterable, Sendable, Hashable, Comparable {
     case windows
     case roof
+    /// Staff-only: gutters are never offered to a homeowner (the server refuses them). The case stays so an older
+    /// server's or saved answer still reads.
     case gutters
 
     public static func < (a: HomeownerService, b: HomeownerService) -> Bool {
         (allCases.firstIndex(of: a) ?? 0) < (allCases.firstIndex(of: b) ?? 0)
+    }
+
+    /// What a homeowner can pick: windows and roof, whatever else a server lists.
+    public static func offered(_ services: [HomeownerService]) -> [HomeownerService] {
+        services.filter { $0 != .gutters }
     }
 }
 
@@ -302,26 +309,43 @@ public struct HomeownerRoofEstimate: Codable, Equatable, Sendable {
     }
 }
 
+/// Why the roof has no price: 'satellite-unusable', and the sentence for it (the server's own words).
+public struct HomeownerRoofNote: Codable, Equatable, Sendable {
+    public var reason: String
+    public var message: String
+
+    public init(reason: String = "satellite-unusable", message: String = SatelliteCopy.message) {
+        self.reason = reason
+        self.message = message
+    }
+}
+
+/// What a homeowner is told when the satellite pictures cannot be trusted to measure the roof.
+public enum SatelliteCopy {
+    public static let message = "We can't measure your roof from satellite images — the pictures of your home aren't clear or recent enough. We'll measure it at your free visit."
+}
+
 /// What was worked out from the address alone (no windows measured yet).
 public struct HomeownerEstimate: Codable, Equatable, Sendable {
     public var windows: HomeownerWindowEstimate?
     public var roof: HomeownerRoofEstimate?
-    /// 'at-visit' when gutters are priced at the free visit (they never get an automatic price), else absent.
-    public var gutters: String?
+    /// Present when the roof was asked about but the satellite pictures cannot be trusted: `roof` is nil and `message` is
+    /// the sentence to show in its place.
+    public var roofNote: HomeownerRoofNote?
 
-    public init(windows: HomeownerWindowEstimate? = nil, roof: HomeownerRoofEstimate? = nil, gutters: String? = nil) {
+    public init(windows: HomeownerWindowEstimate? = nil, roof: HomeownerRoofEstimate? = nil, roofNote: HomeownerRoofNote? = nil) {
         self.windows = windows
         self.roof = roof
-        self.gutters = gutters
+        self.roofNote = roofNote
     }
 
-    private enum Keys: String, CodingKey { case windows, roof, gutters }
+    private enum Keys: String, CodingKey { case windows, roof, roofNote }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         windows = c.soft(HomeownerWindowEstimate.self, .windows)
         roof = c.soft(HomeownerRoofEstimate.self, .roof)
-        gutters = c.soft(String.self, .gutters)
+        roofNote = c.soft(HomeownerRoofNote.self, .roofNote)
     }
 }
 

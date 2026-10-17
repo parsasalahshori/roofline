@@ -22,6 +22,10 @@ public enum CallbackCopy {
         case "home", "roof-review", "too-big", "flat-unmeasured":
             return Reason(lead: "This home needs a person to look at it.",
                           rest: "It looks large, flat or hard to see from above, and a phone could give the wrong price. A person will help you instead.")
+        case "satellite-unusable":
+            // One sentence, in two parts so the first can be bold: together they are SatelliteCopy.message
+            return Reason(lead: "We can't measure your roof from satellite images —",
+                          rest: "the pictures of your home aren't clear or recent enough. We'll measure it at your free visit.")
         case "busy":
             return Reason(lead: "We can't price this one from the app right now.",
                           rest: "A person will help you with it instead, usually the same day.")

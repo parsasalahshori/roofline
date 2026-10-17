@@ -8,10 +8,10 @@ import SwiftUI
 extension HomeownerStore {
     // MARK: Welcome (01)
 
-    /// The services the company offers, in its order (the brand's three until the company answers).
+    /// The services the company offers a homeowner, in its order (windows and roof until the company answers; never gutters).
     var offeredServices: [HomeownerService] {
         let offered = company.services.isEmpty ? HomeownerService.allCases : company.services
-        return offered
+        return HomeownerService.offered(offered)
     }
 
     func toggle(_ service: HomeownerService) {

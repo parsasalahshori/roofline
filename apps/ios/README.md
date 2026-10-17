@@ -15,11 +15,11 @@ device checks (`Shared/`). The homeowner app's design is `~/RooflineWork/design/
 
 ### The journey
 
-Welcome (what are you looking for) > Address (map pin) > Results (roof price, window count, gutters) > Tips > Rooms > Method >
+Welcome (what are you looking for) > Address (map pin) > Results (roof price, window count) > Tips > Rooms > Method >
 **Measure** > Label sheet (room and name) > Windows list ("Did we miss any?") > Style per window > Quote (Good / Better / Best) >
 Contact (consent) > Visit time (or "Call me to pick a time") > Booked (Add to Calendar) > My order (status, windows, messages).
 Branches: an apartment, duplex or address the server will not price goes to **Call-back** (03b: a phone number, then the contact
-form, then "We'll call you"); a roof / gutters only request skips the window screens. It resumes where the homeowner left off
+form, then "We'll call you"); a roof-only request skips the window screens. It resumes where the homeowner left off
 (the request id and bearer token are in the **Keychain**, the last screen and rooms in UserDefaults).
 
 Three ways to measure, each saved as one window:

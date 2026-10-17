@@ -95,7 +95,7 @@ struct ServiceOption: View {
         switch service {
         case .windows: return .win
         case .roof: return .roof
-        case .gutters: return .gutter
+        case .gutters: return .gutter // never listed: gutters are not offered to homeowners
         }
     }
 

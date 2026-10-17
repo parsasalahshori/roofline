@@ -175,7 +175,7 @@ private let homeownerApiChecks: [Check] = [
         ctx.equal(view.request.estimatedTotalOverride, nil)
         ctx.equal(view.request.estimate?.windows?.likely, 14)
         ctx.near(view.request.estimate?.roof?.low, 14000)
-        ctx.equal(view.request.estimate?.gutters, nil)
+        ctx.equal(view.request.estimate?.roofNote, nil)
         ctx.equal(view.request.home?.floors, 1.5)
         ctx.equal(view.request.home?.floorsText, "1 1/2 floors")
         ctx.equal(view.request.home?.outline?.points.count, 2)
@@ -225,14 +225,14 @@ private let homeownerApiChecks: [Check] = [
         let created = try JSONDecoder().decode(HomeownerCreated.self, from: Data("""
         { "requestId": "req-1", "token": "tok", "expiresAt": "2026-12-15T20:00:00.000Z", "status": "callback", "callbackReason": "unit",
           "home": { "address": "2210 Leavenworth St, Little Rock, AR", "floors": null, "outline": null },
-          "estimate": { "windows": null, "roof": null, "gutters": "at-visit" }, "services": ["gutters", "bogus"] }
+          "estimate": { "windows": null, "roof": null }, "services": ["windows", "bogus"] }
         """.utf8))
         ctx.equal(created.status, .callback)
         ctx.equal(created.callbackReason, "unit")
         ctx.equal(created.home.floors, nil)
         ctx.expect(created.estimate.windows == nil && created.estimate.roof == nil)
-        ctx.equal(created.estimate.gutters, "at-visit")
-        ctx.equal(created.services, [.gutters])
+        ctx.equal(created.estimate.roofNote, nil)
+        ctx.equal(created.services, [.windows])
         ctx.expect(created.expiresAt != nil)
         let body = try json(HomeownerCreateBody(address: "305 Ridgeway Dr", services: [.roof, .windows]))
         ctx.equal(body["services"] as? [String], ["windows", "roof"], "services are sent in the screen order")
@@ -245,7 +245,8 @@ private let homeownerApiChecks: [Check] = [
           "windowStyles": [ { "key": "double-hung", "label": "Double-hung" }, { "bad": 1 } ], "trust": { "reviews": 4.9, "since": 2004 },
           "limits": { "maxWindows": 60, "maxPhotoBytes": 12582912, "maxRoomLength": 40, "maxLabelLength": 80, "tokenDays": 60 } }
         """.utf8))
-        ctx.equal(company.services, [.roof, .windows, .gutters])
+        ctx.equal(company.services, [.roof, .windows, .gutters], "an older server may still list gutters; they decode")
+        ctx.equal(HomeownerService.offered(company.services), [.roof, .windows], "but a homeowner is never offered them")
         ctx.equal(company.booking, false)
         ctx.equal(company.consent?.version, "2026-10-16")
         ctx.expect(company.consent?.text.contains("\"Send my request\"") == true)
@@ -474,11 +475,21 @@ private let homeownerFlowChecks: [Check] = [
         ctx.equal(ResumeRouter.target(saved: .quote, hasSession: true, snapshot: ResumeSnapshot(windowCount: 3, unstyledCount: 2)), .styles, "windows without a style cannot be priced")
         ctx.equal(ResumeRouter.target(saved: .book, hasSession: true, snapshot: measured), .contact, "no booking before contact details")
         ctx.equal(ResumeRouter.target(saved: .book, hasSession: true, snapshot: ResumeSnapshot(windowCount: 3, hasContact: true)), .book)
-        // Roof and gutters only: results, then straight to contact and booking
+        // Roof only: results, then straight to contact and booking
         let roof = ResumeSnapshot(services: [.roof])
         ctx.equal(ResumeRouter.target(saved: .coaching, hasSession: true, snapshot: roof), .results, "no measuring tips without windows")
         ctx.equal(ResumeRouter.target(saved: .contact, hasSession: true, snapshot: roof), .contact)
-        ctx.equal(ResumeRouter.target(saved: .book, hasSession: true, snapshot: ResumeSnapshot(services: [.roof, .gutters], hasContact: true)), .book)
+        ctx.equal(ResumeRouter.target(saved: .book, hasSession: true, snapshot: ResumeSnapshot(services: [.roof], hasContact: true)), .book)
+    },
+    Check("Homeowner API: a roof the satellite pictures cannot show comes with its sentence and no price; windows are unaffected") { ctx in
+        let view = try decodeView(#"{ "request": { "id": "r", "status": "ready", "services": ["windows", "roof"], "estimate": { "windows": { "low": 12, "high": 16, "likely": 14 }, "roof": null, "roofNote": { "reason": "satellite-unusable", "message": "We can't measure your roof from satellite images — the pictures of your home aren't clear or recent enough. We'll measure it at your free visit." } } } }"#)
+        ctx.equal(view.request.estimate?.roof, nil)
+        ctx.equal(view.request.estimate?.windows?.likely, 14)
+        ctx.equal(view.request.estimate?.roofNote?.reason, "satellite-unusable")
+        ctx.equal(view.request.estimate?.roofNote?.message, SatelliteCopy.message)
+        let called = try JSONDecoder().decode(HomeownerCreated.self, from: Data(#"{ "requestId": "r", "token": "t", "status": "callback", "callbackReason": "satellite-unusable", "home": { "address": "x", "floors": null, "outline": null }, "estimate": { "windows": null, "roof": null, "roofNote": { "reason": "satellite-unusable", "message": "m" } }, "services": ["roof"] }"#.utf8))
+        ctx.equal(called.callbackReason, "satellite-unusable")
+        ctx.equal(called.estimate.roofNote?.message, "m")
     },
     Check("HomeownerFlow: the back stack that leads to a screen") { ctx in
         let w: Set<HomeownerService> = [.windows, .roof]
@@ -491,7 +502,7 @@ private let homeownerFlowChecks: [Check] = [
         ctx.equal(HomeownerFlow.path(to: .contact, services: [.roof]), [.address, .results, .contact], "roof only skips the measuring")
         ctx.equal(HomeownerFlow.path(to: .status, services: w), [], "My order has no back stack")
         ctx.equal(HomeownerFlow.afterResults(services: [.windows]), .coaching)
-        ctx.equal(HomeownerFlow.afterResults(services: [.roof, .gutters]), .contact)
+        ctx.equal(HomeownerFlow.afterResults(services: [.roof]), .contact)
         ctx.equal(HomeownerFlow.progressDots(.address), 1)
         ctx.equal(HomeownerFlow.progressDots(.results), 2)
         ctx.equal(HomeownerFlow.progressDots(.coaching), 2)
@@ -522,6 +533,11 @@ private let homeownerFlowChecks: [Check] = [
             ctx.expect(!r.lead.isEmpty && !r.rest.isEmpty)
             ctx.expect(!(r.lead + r.rest).lowercased().contains("error"), "a call-back is not an error")
         }
+        // The satellite reason is the owner's one sentence, in two parts (the first is bold), and no roof price comes with it
+        let sat = CallbackCopy.reason("satellite-unusable")
+        ctx.equal(sat.lead + " " + sat.rest, SatelliteCopy.message)
+        ctx.equal(SatelliteCopy.message, "We can't measure your roof from satellite images — the pictures of your home aren't clear or recent enough. We'll measure it at your free visit.")
+        ctx.expect(CallbackCopy.reason("satellite-unusable").lead != CallbackCopy.reason("home").lead)
         ctx.equal(CallbackCopy.button(bestTime: "afternoon"), "Call me this afternoon")
         ctx.equal(CallbackCopy.button(bestTime: nil), "Call me")
         ctx.equal(OrderTimeline.headline(.ordered), "Being built")

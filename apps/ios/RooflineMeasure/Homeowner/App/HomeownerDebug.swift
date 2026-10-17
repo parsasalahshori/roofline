@@ -10,7 +10,7 @@ import RooflineCore
 ///   -debugCaps lidar|corners|card|none   what this phone claims it can measure with (the simulator has no camera)
 ///   -debugLatency <seconds>     how long each fake call takes
 ///   -debugE2E                   with -debugServer: walk the whole journey with synthetic windows and print "E2E ..." lines to stderr
-///                               (-debugE2EAddress "<address>" and -debugE2EServices windows,roof,gutters pick what it asks for,
+///                               (-debugE2EAddress "<address>" and -debugE2EServices windows,roof pick what it asks for,
 ///                               -debugE2EPause <seconds> holds each main screen for a screenshot; run it with `xcrun simctl launch --console`)
 ///   -debugGo <step>             show a step of the saved request after opening (welcome address results coaching rooms list styles quote contact book booked status)
 ///   -debugOpen <name>           open a measuring screen over the scenario's: hud, hud-done, label, scan, needs-iphone, needs-pro,
@@ -28,8 +28,8 @@ enum HomeownerDebug {
         var e2eAddress = "4810 Underwood Ave, Omaha, NE 68132"
         /// `-debugGo <step>`: after opening, show this step of the saved request (live or fake).
         var go: String?
-        /// `-debugE2EServices windows,roof,gutters` (any of them).
-        var e2eServices: Set<HomeownerService> = [.windows, .roof, .gutters]
+        /// `-debugE2EServices windows,roof` (any of them).
+        var e2eServices: Set<HomeownerService> = [.windows, .roof]
         /// `-debugE2EPause <seconds>`: hold each main screen that long ("E2E show <screen>" is printed when it is up).
         var e2ePause = 0.0
 
@@ -83,7 +83,7 @@ enum HomeownerDebug {
             store.addressText = "305 Ridgeway Dr, Little Rock, AR"
             step = .address
         case "results": session = await api.seed(); step = .results
-        case "roofonly": session = await api.seed(services: [.roof, .gutters]); step = .results
+        case "roofonly": session = await api.seed(services: [.roof]); step = .results
         case "callback":
             session = await api.seed(address: "2210 Leavenworth St, Little Rock, AR", services: [.windows])
             // The mockup shows the number typed and "Afternoon" picked

@@ -14,7 +14,7 @@ actor FakeHomeownerAPI: HomeownerAPI {
         /// Seconds each call takes (a few tenths make the loading states visible; tests use 0).
         var latency: Double = 0
         /// Addresses that go to the call-back path: a substring and the reason.
-        var callbackRules: [(match: String, reason: String)] = [("leavenworth", "unit"), (" apt", "unit"), ("unit ", "unit"), ("#", "unit"), ("busy", "busy")]
+        var callbackRules: [(match: String, reason: String)] = [("leavenworth", "unit"), (" apt", "unit"), ("unit ", "unit"), ("#", "unit"), ("busy", "busy"), ("roof only faded photo", "satellite-unusable")]
         var pricePerWindow: [String: Double] = ["good": 600, "better": 800, "best": 1200]
         /// Today, for the open visit times (tests pin it).
         var now: @Sendable () -> Date = { Date() }
@@ -51,7 +51,7 @@ actor FakeHomeownerAPI: HomeownerAPI {
     }
 
     static let defaultCompany = HomeownerCompany(
-        name: "WinChoice", brandColor: "#ED3A2B", phone: "+15015550100", services: [.windows, .roof, .gutters], booking: true,
+        name: "WinChoice", brandColor: "#ED3A2B", phone: "+15015550100", services: [.windows, .roof], booking: true,
         privacyUrl: "https://winchoice.example/privacy", termsUrl: "https://winchoice.example/terms",
         consent: HomeownerConsent(
             version: "2026-10-16",
@@ -272,12 +272,14 @@ actor FakeHomeownerAPI: HomeownerAPI {
         if let rule = config.callbackRules.first(where: { lower.contains($0.match) }) {
             return Stored(id: id, token: "fake-token-\(id)", address: address, services: services, status: .callback, callbackReason: rule.reason,
                           home: HomeownerHome(address: address, floors: nil, outline: nil),
-                          estimate: HomeownerEstimate(windows: nil, roof: nil, gutters: services.contains(.gutters) ? "at-visit" : nil), createdAt: config.now())
+                          estimate: HomeownerEstimate(windows: nil, roof: nil, roofNote: rule.reason == "satellite-unusable" && services.contains(.roof) ? HomeownerRoofNote() : nil), createdAt: config.now())
         }
+        // A home whose satellite pictures are old: windows are counted, the roof gets the sentence and no price
+        let satellite = lower.contains("faded photo") && services.contains(.roof)
         let estimate = HomeownerEstimate(
             windows: services.contains(.windows) ? HomeownerWindowEstimate(low: 7, high: 9, likely: 7) : nil,
-            roof: services.contains(.roof) ? HomeownerRoofEstimate(low: 9800, high: 12100, squares: 23) : nil,
-            gutters: services.contains(.gutters) ? "at-visit" : nil
+            roof: services.contains(.roof) && !satellite ? HomeownerRoofEstimate(low: 9800, high: 12100, squares: 23) : nil,
+            roofNote: satellite ? HomeownerRoofNote() : nil
         )
         // A small house outline near the address (longitude, latitude), as the real server's roof ring would give
         let lon = -92.3926, lat = 34.7449

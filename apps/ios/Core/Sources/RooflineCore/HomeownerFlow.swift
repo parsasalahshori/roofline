@@ -112,7 +112,7 @@ public enum HomeownerFlow {
         }
     }
 
-    /// The first screen after the results: windows go on to the tips, roof and gutters straight to the contact form.
+    /// The first screen after the results: windows go on to the tips, roof straight to the contact form.
     public static func afterResults(services: Set<HomeownerService>) -> HomeownerStep {
         services.contains(.windows) ? .coaching : .contact
     }
