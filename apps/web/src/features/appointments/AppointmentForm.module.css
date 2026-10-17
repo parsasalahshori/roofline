@@ -81,6 +81,14 @@
   margin-bottom: 16px;
 }
 
+/* One line that says what Save is waiting for; it goes when the form is complete */
+.hint {
+  margin: 0;
+  min-width: 0;
+  color: var(--ink-2);
+  font-size: var(--font-size-min);
+}
+
 /* Two fields to a row; the customer line and anything that must be wide take both */
 .fields {
   display: grid;
@@ -98,6 +106,14 @@
 .wide {
   grid-column: 1 / -1;
   min-width: 0;
+}
+
+/* The browser's own date and time boxes come out two pixels taller than the other controls: one height down the row (a phone's 44px is the kit's) */
+@media (min-width: 768px) {
+  .fields input[type="date"],
+  .fields input[type="time"] {
+    height: calc(1.45em + 16px);
+  }
 }
 
 .typeahead {
@@ -224,14 +240,35 @@
     position: sticky;
     bottom: 0;
     z-index: 2;
+    flex-wrap: wrap;
     margin: 0 -16px;
-    padding: 8px 16px 12px;
+    /* Air below the bar for the raised Measure tab */
+    padding: 10px 16px 20px;
     background: var(--ground);
+  }
+
+  /* The rows scrolling under the bar fade into the page instead of being cut by a bare edge */
+  .actions::before {
+    content: "";
+    position: absolute;
+    right: 0;
+    bottom: 100%;
+    left: 0;
+    height: 18px;
+    background: linear-gradient(to bottom, color-mix(in srgb, var(--ground) 0%, transparent), var(--ground));
+    pointer-events: none;
   }
 
   .actions > button:last-child,
   .actions > a:last-child {
     flex: 1 1 0;
+  }
+
+  /* What is missing sits over the buttons, on a line of its own */
+  .hint {
+    flex: 1 1 100%;
+    order: -1;
+    text-align: left;
   }
 
   .title {

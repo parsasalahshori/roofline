@@ -84,7 +84,10 @@
 }
 
 .facts dt {
-  padding-top: 6px;
+  /* The label is centred in the same 32px as its value, so the two read on one line, whatever the value holds (text, an avatar, a link) */
+  display: flex;
+  align-items: center;
+  min-height: 32px;
   color: var(--ink-3);
   font: 500 var(--font-size-min)/1.2 var(--f-mono);
   letter-spacing: 0.08em;
@@ -182,9 +185,22 @@
     bottom: 0;
     z-index: 2;
     margin: 0 -16px;
-    padding: 8px 16px 12px;
+    /* Air below the bar for the raised Measure tab */
+    padding: 10px 16px 20px;
     background: var(--ground);
     justify-content: stretch;
+  }
+
+  /* What scrolls under the bar fades into the page instead of being cut by a bare edge (on a bare page the fade is the page's own colour: nothing shows) */
+  .actions::before {
+    content: "";
+    position: absolute;
+    right: 0;
+    bottom: 100%;
+    left: 0;
+    height: 18px;
+    background: linear-gradient(to bottom, color-mix(in srgb, var(--ground) 0%, transparent), var(--ground));
+    pointer-events: none;
   }
 
   .actions > button:nth-child(2) {

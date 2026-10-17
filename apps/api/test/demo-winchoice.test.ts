@@ -62,7 +62,8 @@ describe('the WinChoice demo company', () => {
 
     const c = first.counts;
     expect(c.members).toBe(4);
-    expect(c.customers).toBe(WINCHOICE_JOBS.length);
+    // A customer for each job, and two more: the callers Front Desk booked, who are new and have no job yet
+    expect(c.customers).toBe(WINCHOICE_JOBS.length + 2);
     expect(c.jobs).toBe(WINCHOICE_JOBS.length);
     expect([c['jobs.lead'], c['jobs.inspection'], c['jobs.proposal'], c['jobs.won'], c['jobs.installed'], c['jobs.lost']]).toEqual([3, 2, 3, 2, 1, 1]);
     expect(c.appointments).toBe(3);

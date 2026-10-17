@@ -16,6 +16,8 @@
 
 .lead {
   grid-area: lead;
+  /* The avatar is centred on the name and its tags, so it holds with a tag under the name as it does with none */
+  align-self: center;
 }
 
 .glyph {
@@ -35,7 +37,7 @@
   flex-direction: column;
   justify-content: center;
   gap: 6px;
-  /* With no tags the name sits level with the middle of the avatar */
+  /* With no tags the name sits level with the middle of the avatar; with tags the avatar sits level with the middle of both */
   min-height: 40px;
   min-width: 0;
 }

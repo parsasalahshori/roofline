@@ -387,13 +387,17 @@ describe('Front Desk on a phone', () => {
     expect(screen.getByRole('link', { name: WINDOW_COPY['front-desk'].title })).toHaveAttribute('href', '/front-desk');
   });
 
-  it('lets the row of tiles be reached from the keyboard, since it slides sideways', async () => {
+  it('does not slide the tiles sideways on a phone: they are plain content, not a box that scrolls', async () => {
     stubPhone(true);
     signedInApi();
     renderApp('/front-desk');
     const strip = await screen.findByRole('region', { name: copy.kpisLabel });
     await tile(copy.callsToday);
-    expect(strip.querySelector('[tabindex="0"]')).not.toBeNull();
+    // Nothing to reach with the keyboard: every tile is on the screen, two across (the layout is the stylesheet's, proved by the phone e2e)
+    expect(strip.querySelector('[tabindex]')).toBeNull();
+    for (const label of [copy.callsToday, copy.answered, copy.inspections, copy.afterHours, copy.answerTime]) {
+      expect(await tile(label)).toBeInTheDocument();
+    }
   });
 });
 

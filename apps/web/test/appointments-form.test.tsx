@@ -155,6 +155,33 @@ describe('Appointment form', () => {
     await waitFor(() => expect(screen.getByLabelText(appointments.personLabel)).toHaveTextContent('Lee Office'));
   });
 
+  it('says what Save is waiting for, and goes quiet once the form is complete', async () => {
+    setup();
+    renderAt(<AppointmentForm onDone={vi.fn()} />, '/appointments/new?jobId=j1&kind=inspection');
+    await screen.findByText('Dana Price');
+
+    const save = screen.getByRole('button', { name: appointments.save });
+    expect(save).toBeDisabled();
+    expect(screen.getByText(appointments.saveWaiting.time)).toBeInTheDocument();
+    expect(save).toHaveAccessibleDescription(appointments.saveWaiting.time);
+
+    fireEvent.change(screen.getByLabelText(appointments.timeLabel), { target: { value: '14:00' } });
+    await waitFor(() => expect(screen.queryByText(appointments.saveWaiting.time)).toBeNull());
+    expect(save).toBeEnabled();
+  });
+
+  it('names the missing start date of an install, and an end date before the start', async () => {
+    setup();
+    renderAt(<AppointmentForm onDone={vi.fn()} />, '/appointments/new?jobId=j1&kind=install');
+    await screen.findByText('Dana Price');
+
+    fireEvent.change(screen.getByLabelText(appointments.startDateLabel), { target: { value: '' } });
+    expect(await screen.findByText(appointments.saveWaiting.start)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(appointments.startDateLabel), { target: { value: '2026-10-20' } });
+    fireEvent.change(screen.getByLabelText(appointments.endDateLabel), { target: { value: '2026-10-19' } });
+    expect(await screen.findByText(appointments.saveWaiting.end)).toBeInTheDocument();
+  });
+
   it('shows the server message when a save fails with an ApiError', async () => {
     setup({ 'POST /api/appointments': () => ({ status: 422, body: { error: 'That time is outside the work week.' } }) });
     const { user } = renderAt(<AppointmentForm onDone={vi.fn()} />, '/appointments/new?jobId=j1&kind=inspection');
