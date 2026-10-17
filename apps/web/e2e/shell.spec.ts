@@ -169,7 +169,7 @@ test('pill shows the live draft count', async ({ page, loginAs, markTodaySeen, p
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   await page.goto('/');
-  await expect(page.getByRole('link', { name: '1 need your OK' })).toBeVisible();
+  await expect(page.getByRole('link', { name: '1 needs your OK' })).toBeVisible();
 
   await seedDemoTask(pools, 'acme-roofing', new Date());
   await page.reload();

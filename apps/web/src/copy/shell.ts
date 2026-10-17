@@ -1,6 +1,6 @@
 /** The top bar, the user menu, and the page for an address that leads nowhere. */
 export const shell = {
-  needYourOk: (count: number) => `${count} need your OK`,
+  needYourOk: (count: number) => (count === 1 ? '1 needs your OK' : `${count} need your OK`),
   agentsWorking: (working: number) =>
     working === 0 ? 'All quiet' : working === 1 ? '1 agent working' : `${working} agents working`,
   /** The date and time on the top bar: Fri, Sep 25, 1:31 PM. */

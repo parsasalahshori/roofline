@@ -17,7 +17,7 @@ test('one draft: pill to approved in 2 clicks', async ({ page, loginAs, markToda
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   await page.goto('/');
-  await click(page.getByRole('link', { name: '1 need your OK' }));
+  await click(page.getByRole('link', { name: '1 needs your OK' }));
   await click(page.getByRole('button', { name: 'Approve 3 steps · up to $270' }));
   // Scoped to the step list: once every step is done the task's own status in the stat strip also reads "Done".
   await expect(page.getByRole('main').getByRole('list').getByText('Done', { exact: true })).toHaveCount(3, {
@@ -72,7 +72,7 @@ test('office approves two, the ad waits for the owner', async ({ page, loginAs, 
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   await page.goto('/');
-  await page.getByRole('link', { name: '1 need your OK' }).click();
+  await page.getByRole('link', { name: '1 needs your OK' }).click();
   await expect(page.getByRole('button', { name: 'Approve 1 step · up to $270' })).toBeVisible();
 });
 
