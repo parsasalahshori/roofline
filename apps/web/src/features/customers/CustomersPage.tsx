@@ -79,6 +79,9 @@ function CustomerRows({ rows, phone }: { rows: CustomerListItem[]; phone: boolea
     );
   }
 
+  // A Tags column over blank cells reads as a broken one: it shows only while some customer in the list has a tag
+  const anyTags = rows.some((row) => row.tags.length > 0);
+
   return (
     <div className={styles.panel}>
       <Table aria-label={customers.list.tableLabel}>
@@ -87,7 +90,7 @@ function CustomerRows({ rows, phone }: { rows: CustomerListItem[]; phone: boolea
             <Th>{customers.list.columnName}</Th>
             <Th>{customers.list.columnPhone}</Th>
             <Th>{customers.list.columnTexting}</Th>
-            <Th>{customers.list.columnTags}</Th>
+            {anyTags ? <Th>{customers.list.columnTags}</Th> : null}
           </tr>
         </thead>
         <tbody>
@@ -100,9 +103,11 @@ function CustomerRows({ rows, phone }: { rows: CustomerListItem[]; phone: boolea
               <Td>
                 <ConsentChip status={row.smsConsent.status} />
               </Td>
-              <Td>
-                <TagList tags={row.tags} />
-              </Td>
+              {anyTags ? (
+                <Td>
+                  <TagList tags={row.tags} />
+                </Td>
+              ) : null}
             </Tr>
           ))}
         </tbody>

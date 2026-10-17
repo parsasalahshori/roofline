@@ -325,6 +325,26 @@ describe('customers list', () => {
     expect(within(row).getByText(customers.doNotContact)).toBeInTheDocument();
   });
 
+  it('shows the Tags column only while some customer in the list has a tag', async () => {
+    signedIn(ACCOUNT, {
+      [listKey('limit=50&offset=0')]: () => ({ body: page([customer({ id: 'c1', displayName: 'Pat Homeowner' })]) }),
+      [listKey('q=roof&limit=50&offset=0')]: () => ({
+        body: page([customer({ id: 'c2', displayName: 'Sam Gutter', tags: ['roof'] })]),
+      }),
+    });
+    const { user } = renderApp('/customers');
+
+    // No row has a tag: the column would be a header over blank cells
+    const table = within(await tableFor());
+    expect(table.queryByRole('columnheader', { name: customers.list.columnTags })).toBeNull();
+    expect(table.getAllByRole('columnheader')).toHaveLength(3);
+
+    // A page with a tagged customer brings it back
+    await user.type(screen.getByRole('searchbox', { name: customers.list.searchLabel }), 'roof');
+    expect(await within(await tableFor()).findByRole('columnheader', { name: customers.list.columnTags })).toBeInTheDocument();
+    expect(within(await tableFor()).getByText('roof')).toBeInTheDocument();
+  });
+
   it('no customers yet shows what the list is for and a New customer button', async () => {
     signedIn(ACCOUNT, { [listKey('limit=50&offset=0')]: () => ({ body: page([]) }) });
     renderApp('/customers');

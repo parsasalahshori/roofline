@@ -84,14 +84,15 @@
 .facts {
   display: grid;
   grid-template-columns: 84px minmax(0, 1fr);
+  align-items: baseline;
   gap: 10px 12px;
   margin: 0;
   font-size: 13px;
 }
 
+/* A label and its first line of value share a baseline, whatever face the value is set in */
 .facts dt {
   color: var(--ink-3);
-  padding-top: 2px;
 }
 
 .facts dd {

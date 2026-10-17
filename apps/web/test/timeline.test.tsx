@@ -133,6 +133,19 @@ describe('timeline', () => {
     expect(within(list()).getByText(timeline.messageStatus.failed)).toBeInTheDocument();
   });
 
+  it('counts the note with a thousands separator, as the limit message writes it', async () => {
+    api = stubApi({
+      'GET /api/timeline?jobId=j1': () => ({ body: { items: [], nextBefore: null } }),
+    });
+    renderAt(<Timeline jobId="j1" />);
+
+    const field = await screen.findByLabelText(timeline.noteLabel);
+    expect(screen.getByText('0 of 2,000')).toBeInTheDocument();
+    fireEvent.change(field, { target: { value: 'a'.repeat(1234) } });
+    expect(screen.getByText('1,234 of 2,000')).toBeInTheDocument();
+    expect(timeline.noteTooLong).toContain('2,000');
+  });
+
   it('2001 characters is refused', async () => {
     api = stubApi({
       'GET /api/timeline?jobId=j1': () => ({ body: { items: [], nextBefore: null } }),
