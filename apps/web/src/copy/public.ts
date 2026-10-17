@@ -20,7 +20,7 @@ export const publicCopy = {
   /** With fewer than two facts the row says what the visit is instead. No number in it: only what the company does. */
   visitTitle: 'What happens at the visit',
   visitChecks: [
-    { lead: 'We check the roof', rest: ' and measure your windows and gutters.' },
+    { lead: 'We check the roof', rest: ' and measure every window.' },
     { lead: 'You get one written price', rest: ' for each option.' },
   ],
 
