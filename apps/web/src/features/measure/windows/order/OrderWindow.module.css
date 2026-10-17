@@ -258,8 +258,9 @@
     top: 16px;
   }
 
+  /* The panel starts about 220px down the page and its title takes 72 more: the room left on the first screen, so the pinned box is on it from the start */
   .detailFrame {
-    max-height: calc(100dvh - 116px);
+    max-height: max(320px, calc(100dvh - 324px));
   }
 
   .detailScroll {
