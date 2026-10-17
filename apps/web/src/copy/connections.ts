@@ -20,8 +20,9 @@ export const connections = {
   checkAgain: 'Check again',
   remove: 'Remove',
   ownerOnly: 'Only the owner can connect or remove ad accounts.',
-  /** The label over an account's ID, as the platform names it. */
-  accountIdLabel: 'Account ID',
+  /** The label over a linked account's ID, as each platform names it. */
+  googleAccountIdLabel: 'Customer ID',
+  metaAccountIdLabel: 'Ad account ID',
   /** What a person reads beside an account's status, by its status. */
   statuses: {
     pending: 'Waiting for you to accept',
@@ -31,11 +32,11 @@ export const connections = {
   } satisfies Record<'pending' | 'active' | 'error' | 'revoked', string>,
   /** Google Ads: the steps and the customer ID field. */
   googleStepId: 'Type your Google Ads customer ID in the field below.',
-  /** `managerId` is Roofline's Google manager account ID. */
-  googleStepManager: (managerId: string) => `We send a link request from our manager account ${managerId}.`,
-  googleStepManagerSoon: 'We send a link request from our manager account. Its ID shows here once it is set up.',
+  /** Pressing Connect is what sends the link request, so it is said in the step that says so. `managerId` is Roofline's Google manager account ID. */
+  googleStepManager: (managerId: string) => `Press Connect. We send a link request from our manager account ${managerId}.`,
+  googleStepManagerSoon: 'Press Connect. We send a link request from our manager account. Its ID shows here once it is set up.',
   googleStepAccept: 'In Google Ads, open Access and security, then Accept the link request.',
-  googleStepCheck: 'Press Check again.',
+  googleStepCheck: 'Come back here and press Check again.',
   googleCustomerId: 'Google Ads customer ID',
   googleCustomerIdHelp: 'Ten digits, with or without dashes',
   googleIdInvalid: 'Enter the ten-digit customer ID from Google Ads.',
