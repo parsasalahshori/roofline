@@ -136,10 +136,20 @@
   left: 0;
   z-index: 3;
   display: grid;
-  grid-template-rows: repeat(30, var(--row-h));
+  grid-auto-rows: var(--row-h);
   border-right: 1px solid var(--line);
   background: var(--surface);
   color: var(--ink-3);
+}
+
+/* The row that brings back the hours before the first visit, when a phone's day starts at it: a full-width quiet button on the panel's
+   own surface, 44px high */
+.earlier {
+  flex: none;
+  width: 100%;
+  justify-content: center;
+  border-radius: 0;
+  border-bottom: 1px solid var(--line-2);
 }
 
 .gutterCell {
@@ -168,7 +178,7 @@
 
 .slots {
   display: grid;
-  grid-template-rows: repeat(30, var(--row-h));
+  grid-auto-rows: var(--row-h);
 }
 
 .slot {

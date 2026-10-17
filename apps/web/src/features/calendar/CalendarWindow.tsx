@@ -253,6 +253,7 @@ export function CalendarWindow() {
           people={people}
           showCanceled={showCanceled}
           now={now}
+          pageScrolls={isPhone && view === 'day'}
           onSlot={onSlot}
           onOpen={onOpen}
         />
