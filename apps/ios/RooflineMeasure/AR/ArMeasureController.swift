@@ -8,18 +8,23 @@ import UIKit
 /// with the LiDAR rules of the iOS brief):
 /// - a centre reticle; once ARKit finds the vertical wall plane, the reticle's ray is intersected with that INFINITE
 ///   plane (moved onto the frame's face by the LiDAR points around the reticle), since a frame's edges are exactly where
-///   plane polygons stop;
-/// - a tap starts sampling: ~15 positions while the phone is held still, outliers dropped, averaged (each corner's
-///   spread is kept and sent as cornerSpreadM);
-/// - a tap whose depth points are mostly more than 5 cm off the wall is refused (hit through the glass);
+///   plane polygons stop; no corner can be placed before that wall plane is locked;
+/// - a tap starts sampling: ~45 positions (about a second) while the phone is held still, outliers dropped, averaged
+///   (each corner's block-mean spread is kept and sent as cornerSpreadM);
+/// - a tap whose high-confidence depth points within 2 cm are mostly more than 5 cm off the wall is refused (hit through
+///   the glass);
 /// - tracking lost between corners restarts the window; corners are ordered by gravity, never by tap order;
 /// - on save: the current frame's upright JPEG with the corners projected into it, into the outbox.
+///
+/// Threading: the ARSession delegate runs on a serial background queue (ArFrameEngine), which does all the per-frame
+/// work and hands this class plain-value snapshots; this class only holds the published UI state and the SceneKit nodes.
+/// No ARFrame is kept past its callback (the loupe is a crop of the camera image, not a snapshot of the view).
 @MainActor
 @Observable
 final class ArMeasureController {
     enum Phase: Equatable {
         case starting
-        /// Looking for a surface at the reticle.
+        /// Looking for a surface at the reticle (and for the wall, before any corner can be placed).
         case searching
         case aiming
         /// Collecting samples for a corner (progress 0...1).
@@ -43,11 +48,14 @@ final class ArMeasureController {
     /// Every corner is inside the photo that Save would keep.
     private(set) var cornersInPhoto = false
     private(set) var loupe: UIImage?
-    var wallLocked: Bool { capture.wallPlane != nil }
+    /// Has ARKit locked the wall plane the window is on?
+    private(set) var wallLocked = false
     /// The corners placed so far, as screen points of the AR view (for the homeowner app's dots and size plates).
     private(set) var cornerDots: [CGPoint] = []
     /// A length plate for each side drawn so far, at its midpoint on screen.
     private(set) var edgeLabels: [EdgeLabel] = []
+    /// A corner may be placed now: tracking normal, wall locked, a surface under the reticle, not already sampling.
+    private(set) var canPlace = false
 
     struct EdgeLabel: Equatable, Identifiable {
         var id: Int
@@ -64,33 +72,34 @@ final class ArMeasureController {
     var device: ArDevice { lidar ? .arkitLidar : .arkit }
     let startedAt = Date()
 
-    @ObservationIgnored let sceneView: ARSCNView
+    @ObservationIgnored let sceneView: ArMeasureSceneView
     @ObservationIgnored private let overlay: ArOverlay
-    @ObservationIgnored private var sampler = CornerSampler()
-    @ObservationIgnored private var samplingDepth: [Vec3] = []
-    @ObservationIgnored private var sampling = false
-    @ObservationIgnored private var samplingDeadline = Date.distantPast
-    @ObservationIgnored private var stillness = StillnessDetector()
-    @ObservationIgnored private var wallAnchorId: UUID?
-    @ObservationIgnored private var frameCount = 0
+    @ObservationIgnored private var engine: ArFrameEngine!
+    @ObservationIgnored private let mailbox = ArMailbox()
     @ObservationIgnored private var lastOverlayKey = ""
+    @ObservationIgnored private var lastMessageSeq = 0
     @ObservationIgnored private let haptics = UINotificationFeedbackGenerator()
-    @ObservationIgnored private let delegateProxy = ArSessionProxy()
-
-    /// Seconds a corner may take to sample before it is placed from what it has (or refused with < 5 samples).
-    static let samplingTimeout: TimeInterval = 4
 
     /// `tapeStyle`: the homeowner app draws corners and sides in tape yellow (Chalk Line's measuring colour).
     init(tapeStyle: Bool = false) {
         lidar = DeviceCaps.hasLiDAR
         overlay = ArOverlay(tapeStyle: tapeStyle)
-        sceneView = ARSCNView(frame: .zero)
+        sceneView = ArMeasureSceneView(frame: .zero)
         sceneView.automaticallyUpdatesLighting = true
         sceneView.rendersCameraGrain = false
         sceneView.scene.rootNode.addChildNode(overlay.root)
-        // The session keeps a weak reference to its delegate: the controller holds the proxy
-        delegateProxy.owner = self
-        sceneView.session.delegate = delegateProxy
+        let mailbox = self.mailbox
+        engine = ArFrameEngine(lidar: lidar, device: lidar ? .arkitLidar : .arkit) { [weak self] snapshot, haptics in
+            // Called on the engine's queue: keep only the newest snapshot, and wake the main queue once
+            guard mailbox.post(snapshot, haptics) else { return }
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.drain() } }
+        }
+        // The session keeps a weak reference to its delegate: the controller holds the engine. Its callbacks run on the
+        // engine's serial background queue, never on main.
+        sceneView.session.delegateQueue = engine.queue
+        sceneView.session.delegate = engine
+        sceneView.onLayout = { [weak engine] size in engine?.setViewport(size) }
+        engine.setViewport(sceneView.bounds.size)
     }
 
     // MARK: Session
@@ -100,9 +109,11 @@ final class ArMeasureController {
         config.worldAlignment = .gravity // world +Y is up: corners are ordered by it
         config.planeDetection = [.vertical]
         if lidar {
-            config.sceneReconstruction = .mesh
+            // Scene depth only: the corners and the off-wall check read depth points, nothing reads a mesh
             config.frameSemantics.insert(.sceneDepth)
+            if ARWorldTrackingConfiguration.supportsFrameSemantics(.smoothedSceneDepth) { config.frameSemantics.insert(.smoothedSceneDepth) }
         }
+        engine.setViewport(sceneView.bounds.size)
         sceneView.session.run(config, options: [.resetTracking, .removeExistingAnchors])
         phase = .searching
     }
@@ -111,208 +122,64 @@ final class ArMeasureController {
         sceneView.session.pause()
     }
 
-    fileprivate func anchorsUpdated(_ anchors: [ARAnchor]) {
-        // ARKit refines the wall it found: follow it
-        guard let id = wallAnchorId, let a = anchors.first(where: { $0.identifier == id }) as? ARPlaneAnchor,
-              let plane = Plane(anchor: a), let cam = sceneView.session.currentFrame?.camera else { return }
-        capture.setWallPlane(plane, viewer: Vec3(cam.transform.translation))
-    }
-
-    fileprivate func interrupted() {
-        trackingLost(reason: "The camera was interrupted.")
-    }
-
-    fileprivate func failed(_ error: Error) {
-        message = "AR stopped: \(error.localizedDescription)"
-        phase = .lost
-    }
-
-    // MARK: Every frame
-
-    fileprivate func handle(_ frame: ARFrame) {
-        frameCount += 1
-        let cam = frame.camera
-        let viewer = Vec3(cam.transform.translation)
-
-        // Tracking: a real loss restarts the window; poor tracking only blocks placing
-        var limitedReason: String?
-        var lost = false
-        switch cam.trackingState {
-        case .normal:
-            break
-        case .notAvailable:
-            lost = true
-        case .limited(let reason):
-            switch reason {
-            case .initializing, .relocalizing: lost = true
-            case .excessiveMotion: limitedReason = "Move the phone more slowly."
-            case .insufficientFeatures: limitedReason = "Aim at the frame's edge or something with more detail."
-            @unknown default: limitedReason = "Tracking is limited."
-            }
+    /// Take the engine's newest snapshot (main actor). Observed properties are only written when they change: SwiftUI
+    /// redraws on every write.
+    private func drain() {
+        guard let (s, feedback) = mailbox.take() else { return }
+        for f in feedback { haptics.notificationOccurred(f) }
+        if s.messageSeq != lastMessageSeq {
+            lastMessageSeq = s.messageSeq
+            message = s.message
         }
-        if lost {
-            trackingLost(reason: nil)
-            return
+        if phase != s.phase { phase = s.phase }
+        let wall = s.capture.wallPlane != nil
+        if wall != wallLocked { wallLocked = wall }
+        if capture.corners.count != s.capture.corners.count || capture.trackingLostCount != s.capture.trackingLostCount
+            || capture.restartsForTracking != s.capture.restartsForTracking || capture.tracking != s.capture.tracking
+            || capture.hadTracking != s.capture.hadTracking || (capture.wallPlane == nil) != (s.capture.wallPlane == nil)
+            || capture.corners.last?.point != s.capture.corners.last?.point {
+            capture = s.capture
         }
-        // Observed properties are only written when they change: SwiftUI redraws on every write
-        if !capture.tracking { capture.setTracking(normal: true) }
-
-        let forward = -Vec3(simd_float3(cam.transform.columns.2.x, cam.transform.columns.2.y, cam.transform.columns.2.z))
-        let still = stillness.update(time: frame.timestamp, position: viewer, forward: forward)
-
-        // The reticle: the centre of the view, as a point of the native image (0...1)
-        let bounds = sceneView.bounds
-        guard bounds.width > 0, bounds.height > 0 else { return }
-        let viewCenter = CGPoint(x: bounds.midX, y: bounds.midY)
-        // Checked (ARFrame.h): displayTransform converts normalized captured-image points to normalized view points;
-        // its inverse takes the view's centre back into the native image.
-        let imageCenter = CGPoint(x: 0.5, y: 0.5).applying(frame.displayTransform(for: .portrait, viewportSize: bounds.size).inverted())
-
-        // The wall: lock the first vertical plane ARKit reports at the reticle, then use it as an infinite plane
-        if capture.wallPlane == nil,
-           let q = sceneView.raycastQuery(from: viewCenter, allowing: .existingPlaneInfinite, alignment: .vertical),
-           let hit = sceneView.session.raycast(q).first,
-           let anchor = hit.anchor as? ARPlaneAnchor, anchor.alignment == .vertical,
-           let plane = Plane(anchor: anchor) {
-            capture.setWallPlane(plane, viewer: viewer)
-            if capture.wallPlane != nil { wallAnchorId = anchor.identifier }
-        }
-
-        let depth = lidar ? DepthSampler.points(frame: frame, center: imageCenter) : []
-        let estimatedQuery = sceneView.raycastQuery(from: viewCenter, allowing: .estimatedPlane, alignment: .any)
-        let rawHit: Vec3? = estimatedQuery.flatMap { sceneView.session.raycast($0).first }.map { Vec3($0.worldTransform.translation) }
-
-        let aimNow: Vec3?
-        if let wall = capture.wallPlane, let q = estimatedQuery {
-            let local = localFramePlane(wall: wall, depthPoints: depth, maxOffsetM: CornerCapture.maxOffPlaneM)
-            aimNow = local.intersect(rayOrigin: Vec3(q.origin), direction: Vec3(q.direction))
-        } else {
-            aimNow = rawHit
-        }
+        if canPlace != s.canPlace { canPlace = s.canPlace }
+        if sampleProgress != s.sampleProgress { sampleProgress = s.sampleProgress }
         // The shown aim follows to the nearest 2 mm (the samples use the exact value)
-        if (aimNow == nil) != (aim == nil) || (aimNow.map { a in aim.map { a.distance(to: $0) > 0.002 } ?? true } ?? false) { aim = aimNow }
-
-        if sampling {
-            if limitedReason == nil, still, let a = aimNow {
-                sampler.add(a)
-                samplingDepth.append(contentsOf: depth.isEmpty ? (rawHit.map { [$0] } ?? []) : depth)
-            }
-            if sampleProgress != sampler.progress { sampleProgress = sampler.progress }
-            if sampler.isFull || Date() >= samplingDeadline { finishSampling(viewer: viewer) }
+        if (s.aim == nil) != (aim == nil) || (s.aim.map { a in aim.map { a.distance(to: $0) > 0.002 } ?? true } ?? false) { aim = s.aim }
+        if finished != s.finished { finished = s.finished }
+        if preview != s.preview { preview = s.preview }
+        if cornersInPhoto != s.cornersInPhoto { cornersInPhoto = s.cornersInPhoto }
+        if let l = s.loupe, l !== loupe { loupe = l }
+        func moved(_ a: [CGPoint], _ b: [CGPoint]) -> Bool {
+            a.count != b.count || zip(a, b).contains { abs($0.x - $1.x) > 0.5 || abs($0.y - $1.y) > 0.5 }
         }
-
-        // Phase
-        let next: Phase
-        if capture.isComplete {
-            next = .complete
-            if frameCount % 3 == 0 {
-                let inPhoto = FrameCapture.projectCorners(finished?.pointsM ?? capture.points, camera: cam).allInView
-                if inPhoto != cornersInPhoto { cornersInPhoto = inPhoto }
-            }
-        } else if sampling {
-            next = still && limitedReason == nil ? .sampling : .holdStill
-        } else if let r = limitedReason {
-            next = .limited(r)
-        } else {
-            next = aimNow == nil ? .searching : .aiming
+        if moved(s.cornerDots, cornerDots) { cornerDots = s.cornerDots }
+        if s.edgeLabels.count != edgeLabels.count
+            || zip(s.edgeLabels, edgeLabels).contains(where: { moved([$0.point], [$1.point]) || $0.text != $1.text || $0.live != $1.live }) {
+            edgeLabels = s.edgeLabels
         }
-        if next != phase { phase = next }
-
-        updateOverlay(wallNormal: capture.wallPlane?.normal)
-        updateScreenMarks()
-        if frameCount % 6 == 0, !capture.isComplete { loupe = makeLoupe() }
-    }
-
-    private func trackingLost(reason: String?) {
-        // Once per loss (while lost, every frame lands here): count it, and restart a window in progress
-        if capture.tracking, capture.setTracking(normal: false) {
-            cancelSampling()
-            finished = nil
-            preview = nil
-            message = (reason ?? "Tracking was lost.") + " Start this window again from its first corner."
-            haptics.notificationOccurred(.warning)
+        if s.overlay.key != lastOverlayKey {
+            lastOverlayKey = s.overlay.key
+            overlay.update(corners: s.overlay.corners, aim: s.overlay.aim, wallNormal: s.overlay.wallNormal, closed: s.overlay.closed)
         }
-        if aim != nil { aim = nil }
-        if phase != .lost { phase = .lost }
-        updateOverlay(wallNormal: nil)
     }
 
     // MARK: Actions
-
-    var canPlace: Bool {
-        guard !capture.isComplete, !sampling, aim != nil else { return false }
-        switch phase {
-        case .aiming: return true
-        default: return false
-        }
-    }
 
     /// Start sampling the corner under the reticle.
     func placeCorner() {
         guard canPlace else { return }
         message = nil
-        sampler.reset()
-        samplingDepth = []
-        sampleProgress = 0
-        sampling = true
-        samplingDeadline = Date().addingTimeInterval(Self.samplingTimeout)
         haptics.prepare()
-    }
-
-    private func finishSampling(viewer: Vec3) {
-        sampling = false
-        sampleProgress = 0
-        guard let estimate = sampler.estimate() else {
-            message = "Hold the phone still on the corner, then tap again."
-            haptics.notificationOccurred(.warning)
-            return
-        }
-        switch capture.place(estimate, depthPoints: samplingDepth) {
-        case .placed:
-            haptics.notificationOccurred(.success)
-            if capture.isComplete { finish(viewer: viewer) }
-        case .offWall(let d):
-            message = "That point is \(Int((d * 100).rounded())) cm off the wall (through the glass?). Aim at the frame itself."
-            haptics.notificationOccurred(.error)
-        case .tooCloseToCorner:
-            message = "That corner is already placed. Aim at the next one."
-            haptics.notificationOccurred(.warning)
-        case .alreadyFour:
-            break
-        }
-        samplingDepth = []
-    }
-
-    private func cancelSampling() {
-        sampling = false
-        sampleProgress = 0
-        sampler.reset()
-        samplingDepth = []
-    }
-
-    private func finish(viewer: Vec3) {
-        finished = capture.finished(viewer: viewer)
-        if let f = finished {
-            preview = previewArSize(f.pointsM, device: device, cornerSpreadM: f.cornerSpreadM)
-        } else {
-            message = "These four corners do not make a window (in a line, or on a floor). Start over."
-        }
+        engine.place()
     }
 
     func undo() {
-        cancelSampling()
-        capture.undo()
-        finished = nil
-        preview = nil
         message = nil
+        engine.undo()
     }
 
     func startOver() {
-        cancelSampling()
-        capture.startOver()
-        finished = nil
-        preview = nil
         message = nil
+        engine.startOver()
     }
 
     /// The window to save: the current frame's photo, the corners drawn into it. Nil (with a message) when it cannot.
@@ -375,85 +242,46 @@ final class ArMeasureController {
         LiveReadout.from(corners: capture.points, aim: capture.isComplete ? nil : aim, device: device)
     }
 
-    /// Where the placed corners and the middle of each side are on screen, for the homeowner app's dots and plates.
-    private func updateScreenMarks() {
-        func screen(_ p: Vec3) -> CGPoint? {
-            let v = sceneView.projectPoint(SCNVector3(Float(p.x), Float(p.y), Float(p.z)))
-            // z > 1 is behind the camera
-            guard v.z > 0, v.z < 1 else { return nil }
-            return CGPoint(x: CGFloat(v.x), y: CGFloat(v.y))
-        }
-        let points = finished?.pointsM ?? capture.points
-        let dots = points.compactMap(screen)
-        var labels: [EdgeLabel] = []
-        var pairs: [(Vec3, Vec3, Bool)] = []
-        if points.count >= 2 { for i in 1..<points.count { pairs.append((points[i - 1], points[i], false)) } }
-        if points.count == 4 {
-            pairs.append((points[3], points[0], false))
-        } else if let a = aim, let last = points.last {
-            pairs.append((last, a, true))
-        }
-        for (i, pr) in pairs.enumerated() {
-            guard let mid = screen((pr.0 + pr.1) / 2) else { continue }
-            let inches = pr.0.distance(to: pr.1) * inchesPerMetre
-            labels.append(EdgeLabel(id: i, point: mid, text: Eighths.format(inches), inches: inches, live: pr.2))
-        }
-        // Observed properties are only written when they changed by a visible amount: SwiftUI redraws on every write
-        func moved(_ a: [CGPoint], _ b: [CGPoint]) -> Bool {
-            a.count != b.count || zip(a, b).contains { abs($0.x - $1.x) > 0.5 || abs($0.y - $1.y) > 0.5 }
-        }
-        if moved(dots, cornerDots) { cornerDots = dots }
-        if labels.count != edgeLabels.count || zip(labels, edgeLabels).contains(where: { moved([$0.point], [$1.point]) || $0.text != $1.text || $0.live != $1.live }) {
-            edgeLabels = labels
-        }
-    }
-
     /// The live sides, in eighths (the last one runs to the reticle while aiming).
     var liveSides: [(text: String, toAim: Bool)] {
         capture.liveEdgesIn(aim: capture.isComplete ? nil : aim).map { (Eighths.format($0.inches) + " in", $0.toAim) }
     }
+}
 
-    // MARK: Drawing
-
-    private func updateOverlay(wallNormal: Vec3?) {
-        let mm: (Vec3) -> String = { "\(Int($0.x * 500)),\(Int($0.y * 500)),\(Int($0.z * 500))" }
-        let key = (capture.points.map(mm) + [aim.map(mm) ?? "-", sampling ? "s" : "", capture.isComplete ? "c" : ""]).joined(separator: "|")
-        guard key != lastOverlayKey else { return }
-        lastOverlayKey = key
-        overlay.update(corners: finished?.pointsM ?? capture.points, aim: capture.isComplete ? nil : aim, wallNormal: wallNormal, closed: capture.isComplete)
-    }
-
-    /// The camera picture around the reticle, magnified (the corner under the crosshair).
-    private func makeLoupe() -> UIImage? {
-        // ON DEVICE: ARSCNView.snapshot() is fast enough at ~10 Hz on the target phones (else drop the loupe rate).
-        let snap = sceneView.snapshot()
-        guard let cg = snap.cgImage else { return nil }
-        let side = CGFloat(min(cg.width, cg.height)) * 0.18
-        let rect = CGRect(x: CGFloat(cg.width) / 2 - side / 2, y: CGFloat(cg.height) / 2 - side / 2, width: side, height: side)
-        guard let crop = cg.cropping(to: rect) else { return nil }
-        return UIImage(cgImage: crop, scale: snap.scale, orientation: snap.imageOrientation)
+/// An ARSCNView that reports its size to the frame engine (the reticle is the centre of the view).
+final class ArMeasureSceneView: ARSCNView {
+    var onLayout: ((CGSize) -> Void)?
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        onLayout?(bounds.size)
     }
 }
 
-/// ARSession's delegate (an NSObject, nonisolated): hands every callback to the controller on the main actor.
-/// The session calls back on the main queue because no delegateQueue is set.
-final class ArSessionProxy: NSObject, ARSessionDelegate {
-    weak var owner: ArMeasureController?
+/// The newest snapshot from the engine's queue, waiting for the main actor. Haptics queue up (none is dropped).
+final class ArMailbox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var snapshot: ArSnapshot?
+    private var feedback: [UINotificationFeedbackGenerator.FeedbackType] = []
+    private var scheduled = false
 
-    func session(_ session: ARSession, didUpdate frame: ARFrame) {
-        MainActor.assumeIsolated { owner?.handle(frame) }
+    /// Stores the snapshot; true when the caller must wake the main queue (none is pending yet).
+    func post(_ s: ArSnapshot, _ f: [UINotificationFeedbackGenerator.FeedbackType]) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        snapshot = s
+        feedback.append(contentsOf: f)
+        if scheduled { return false }
+        scheduled = true
+        return true
     }
 
-    func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
-        MainActor.assumeIsolated { owner?.anchorsUpdated(anchors) }
-    }
-
-    func sessionWasInterrupted(_ session: ARSession) {
-        MainActor.assumeIsolated { owner?.interrupted() }
-    }
-
-    func session(_ session: ARSession, didFailWithError error: Error) {
-        MainActor.assumeIsolated { owner?.failed(error) }
+    func take() -> (ArSnapshot, [UINotificationFeedbackGenerator.FeedbackType])? {
+        lock.lock(); defer { lock.unlock() }
+        scheduled = false
+        guard let s = snapshot else { return nil }
+        snapshot = nil
+        let f = feedback
+        feedback = []
+        return (s, f)
     }
 }
 

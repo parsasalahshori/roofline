@@ -153,6 +153,21 @@ let captureChecks: [Check] = [
             ctx.expect(false, "a tap on the glass should be refused")
         }
     },
+    Check("CornerCapture.canPlaceNext: not before the wall plane is locked") { ctx in
+        var c = CornerCapture()
+        ctx.expect(!c.canPlaceNext(aimed: true, sampling: false), "no tracking yet")
+        c.setTracking(normal: true)
+        ctx.expect(!c.canPlaceNext(aimed: true, sampling: false), "tracking but no wall plane")
+        c.setWallPlane(Plane(point: Vec3(0, 0, -2), normal: Vec3(0, 0, -1)), viewer: Vec3(0, 1.4, 0))
+        ctx.expect(c.canPlaceNext(aimed: true, sampling: false), "wall locked and aimed")
+        ctx.expect(!c.canPlaceNext(aimed: false, sampling: false), "no surface under the reticle")
+        ctx.expect(!c.canPlaceNext(aimed: true, sampling: true), "already sampling")
+        let r = rect(w: 36 * inch, h: 48 * inch)
+        for p in r { _ = c.place(CornerEstimate(point: p, spreadM: 0, used: 45, rejected: 0)) }
+        ctx.expect(!c.canPlaceNext(aimed: true, sampling: false), "all four placed")
+        c.setTracking(normal: false)
+        ctx.expect(!c.canPlaceNext(aimed: true, sampling: false), "tracking lost")
+    },
     Check("CornerCapture: too little depth near the tap judges nothing") { ctx in
         var c = CornerCapture()
         c.setTracking(normal: true)

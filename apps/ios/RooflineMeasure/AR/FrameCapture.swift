@@ -17,7 +17,8 @@ enum FrameCapture {
         var allInView: Bool
     }
 
-    private static let context = CIContext(options: [.useSoftwareRenderer: false])
+    /// One CIContext for the whole app's frame work (the JPEG and the loupe); thread-safe.
+    static let context = CIContext(options: [.useSoftwareRenderer: false])
 
     /// The upright portrait JPEG of a captured frame. Native capturedImage is landscape (sensor orientation); the
     /// back camera held upright needs it turned 90° clockwise (`.right`).
@@ -77,12 +78,13 @@ enum FrameCapture {
     }
 }
 
-/// LiDAR depth points around a pixel of the frame (world space), the confident ones only.
+/// LiDAR depth points around a pixel of the frame (world space), the high-confidence ones only.
 enum DepthSampler {
-    /// Points in a (2r+1)^2 grid, `step` depth pixels apart, around the native-image point `center` (0...1 of the
-    /// image). Empty without scene depth.
-    static func points(frame: ARFrame, center: CGPoint, radius: Int = 3, step: Int = 2) -> [Vec3] {
-        guard let depth = frame.sceneDepth else { return [] }
+    /// Points within `radiusM` (metres on the surface, `CornerCapture.depthRadiusM` = 2 cm by default) of the native-image
+    /// point `center` (0...1 of the image), one depth pixel apart, from the temporally smoothed depth when the phone gives
+    /// it (else the raw scene depth). Only `ARConfidenceLevel.high` pixels count. Empty without scene depth.
+    static func points(frame: ARFrame, center: CGPoint, radiusM: Double = CornerCapture.depthRadiusM) -> [Vec3] {
+        guard let depth = frame.smoothedSceneDepth ?? frame.sceneDepth else { return [] }
         let map = depth.depthMap
         let conf = depth.confidenceMap
         CVPixelBufferLockBaseAddress(map, .readOnly)
@@ -101,16 +103,26 @@ enum DepthSampler {
         let k = CameraIntrinsics(frame.camera).scaled(toWidth: Double(w), height: Double(h))
         let camT = Mat4(frame.camera.transform)
         let cx = Int(center.x * CGFloat(w)), cy = Int(center.y * CGFloat(h))
+        guard cx >= 0, cy >= 0, cx < w, cy < h else { return [] }
+        func depthAt(_ x: Int, _ y: Int) -> Float32 {
+            base.advanced(by: y * rowBytes + x * MemoryLayout<Float32>.size).assumingMemoryBound(to: Float32.self).pointee
+        }
+        // How many depth pixels make radiusM at the reticle's distance (a depth pixel is distance / focal length wide)
+        let d0 = depthAt(cx, cy)
+        let distance = d0.isFinite && d0 > 0.1 && d0 < 10 ? Double(d0) : 1.5
+        let pixelM = distance / max(k.fx, 1)
+        let r = max(1, Int((radiusM / pixelM).rounded(.up)))
         var out: [Vec3] = []
-        for dy in -radius...radius {
-            for dx in -radius...radius {
-                let x = cx + dx * step, y = cy + dy * step
+        for dy in -r...r {
+            for dx in -r...r {
+                guard Double(dx * dx + dy * dy).squareRoot() * pixelM <= radiusM + pixelM / 2 else { continue }
+                let x = cx + dx, y = cy + dy
                 guard x >= 0, y >= 0, x < w, y < h else { continue }
                 if let cb = confBase {
                     let level = cb.advanced(by: y * confRow + x).assumingMemoryBound(to: UInt8.self).pointee
-                    if level < 1 { continue } // ARConfidenceLevel.low
+                    if level < 2 { continue } // only ARConfidenceLevel.high
                 }
-                let d = base.advanced(by: y * rowBytes + x * MemoryLayout<Float32>.size).assumingMemoryBound(to: Float32.self).pointee
+                let d = depthAt(x, y)
                 guard d.isFinite, d > 0.1, d < 10 else { continue }
                 // Pixel centres: +0.5
                 out.append(ImageMapping.unproject(Vec2(Double(x) + 0.5, Double(y) + 0.5), depth: Double(d), cameraTransform: camT, intrinsics: k))

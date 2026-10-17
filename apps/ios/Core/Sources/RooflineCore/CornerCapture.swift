@@ -37,6 +37,12 @@ public struct CornerCapture: Sendable {
     public init() {}
 
     public var isComplete: Bool { corners.count == 4 }
+
+    /// May the next corner be placed now? Only with tracking normal, the wall plane locked (a corner before the wall is
+    /// known could not be checked or projected), the reticle on a surface, no sampling running and fewer than four corners.
+    public func canPlaceNext(aimed: Bool, sampling: Bool) -> Bool {
+        tracking && wallPlane != nil && aimed && !sampling && !isComplete
+    }
     public var points: [Vec3] { corners.map { $0.point } }
 
     /// Lock (or refresh) the wall plane. Only a vertical plane counts; the normal is turned toward the viewer.
