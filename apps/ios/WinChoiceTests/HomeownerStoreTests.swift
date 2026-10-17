@@ -122,6 +122,36 @@ final class HomeownerStoreTests: XCTestCase {
         XCTAssertEqual(h.store.windowRows[0].sizeText, "35 5/8 × 59 5/8")
     }
 
+    func testABathroomWindowIsSentFrostedAndTheQuoteShowsTheCompanysLevels() async throws {
+        let h = StoreHarness()
+        try await h.open()
+        let bathId = await h.capture(room: "Bathroom", frosted: true)
+        let kitchenId = await h.capture(room: "Kitchen")
+        let bayId = await h.capture(room: "Front room")
+        let bath = try XCTUnwrap(bathId), kitchen = try XCTUnwrap(kitchenId), bay = try XCTUnwrap(bayId)
+        await h.store.setStyle("double-hung", for: bath)
+        await h.store.setStyle("double-hung", for: kitchen)
+        await h.store.setStyle("arch", for: bay)
+        await h.settle()
+        await h.store.refresh()
+        let windows = try XCTUnwrap(h.store.view?.windows)
+        XCTAssertEqual(windows.first { $0.id == bath }?.input.frosted, true, "the bathroom answer reaches the server")
+        XCTAssertNil(windows.first { $0.id == kitchen }?.input.frosted, "clear glass sends nothing")
+        await h.store.prepareQuote()
+        let quote = try XCTUnwrap(h.store.quote)
+        // The company's own names and notes
+        XCTAssertEqual(quote.tiers.map { $0.label }, ["Replenish", "Refine", "Renew"])
+        XCTAssertEqual(quote.tiers.map { $0.note }, ["1-year warranty", "Lifetime warranty", "Lifetime warranty"])
+        // Frosted costs more than clear; a bay or odd shape has no instant price and is counted as such
+        let good = try XCTUnwrap(quote.tier("good"))
+        let price = { (id: String) in good.perWindow.first { $0.windowId == id } }
+        XCTAssertGreaterThan(try XCTUnwrap(price(bath)).price, try XCTUnwrap(price(kitchen)).price)
+        XCTAssertEqual(price(bay)?.atVisit, true)
+        XCTAssertEqual(price(bay)?.price, 0)
+        XCTAssertEqual(quote.atVisitCount, 1)
+        XCTAssertEqual(h.store.company.catalog.included.first, "Argon gas fill")
+    }
+
     func testTheStylePassReleasesEveryWindowAndOpensTheQuote() async throws {
         let h = StoreHarness()
         try await h.open()
@@ -143,12 +173,12 @@ final class HomeownerStoreTests: XCTestCase {
         let h = StoreHarness()
         try await h.open(windows: Array(FakeWindowSpec.mockupSeven.prefix(2)))
         let old = h.store.windowRows[0]
-        XCTAssertNotEqual(old.style, "casement")
-        await h.store.setStyle("casement", for: old.id)
+        XCTAssertNotEqual(old.style, "arch")
+        await h.store.setStyle("arch", for: old.id)
         await h.store.refresh()
         XCTAssertEqual(h.store.windowRows.count, 2, "the same number of windows")
         XCTAssertFalse(h.store.windowRows.contains { $0.id == old.id }, "the old one is gone")
-        XCTAssertEqual(h.store.windowRows.filter { $0.style == "casement" }.count, 1)
+        XCTAssertEqual(h.store.windowRows.filter { $0.style == "arch" }.count, 1)
     }
 
     func testARefusedWindowShowsTheServersSentenceInTheList() async throws {

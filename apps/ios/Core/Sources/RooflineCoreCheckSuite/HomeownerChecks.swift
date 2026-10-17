@@ -669,4 +669,69 @@ private let homeownerFormChecks: [Check] = [
         ctx.equal(StyleGuess.suggestion(widthIn: 71, heightIn: 59, offered: ["picture", "arch"]).keys, ["picture"], "only styles the company offers")
         ctx.equal(StyleGuess.suggestion(widthIn: 71, heightIn: 59, offered: ["arch"]).keys, ["arch"], "nothing likely offered: the company's first")
     },
+    Check("Homeowner API: four plain style choices, the company's catalog and trust, tier names and notes, bathroom windows") { ctx in
+        let company = try JSONDecoder().decode(HomeownerCompany.self, from: Data("""
+        { "apiVersion": 1, "name": "WinChoice (demo)",
+          "windowStyles": [
+            { "key": "double-hung", "label": "Opens up and down", "hint": "Double-hung", "tile": "up-down", "atVisit": false },
+            { "key": "arch", "label": "Bay, bow or odd shape", "hint": "We quote it at your visit", "tile": "special", "atVisit": true } ],
+          "trust": { "rating": { "value": 4.9, "count": 2400, "plus": true, "source": "homeowners" }, "sinceYear": 2012,
+                     "license": { "state": "ne", "number": "#48213" }, "badges": ["A+ BBB", "Made in USA", "Lifetime warranty", "A fourth"] },
+          "catalog": { "tiers": [ { "key": "good", "label": "Replenish", "note": "1-year warranty" }, { "bad": 1 } ],
+                       "included": ["Argon gas fill", "FlexScreen", ""],
+                       "offer": { "title": "October special", "termsUrl": "https://winchoice.com/promotional-terms-conditions/" },
+                       "financing": { "text": "Financing available.", "url": null } } }
+        """.utf8))
+        ctx.equal(company.windowStyles.map { $0.label }, ["Opens up and down", "Bay, bow or odd shape"])
+        ctx.equal(company.windowStyles[0].hint, "Double-hung")
+        ctx.equal(company.windowStyles[1].atVisit, true)
+        ctx.equal(company.windowStyles[0].tile, "up-down")
+        ctx.equal(company.trust?.rating?.line, "4.9 from 2,400+ homeowners")
+        ctx.equal(company.trust?.since, "2012")
+        ctx.equal(company.trust?.license, "NE #48213")
+        ctx.equal(company.trust?.badges, ["A+ BBB", "Made in USA", "Lifetime warranty"], "up to three badges")
+        ctx.equal(HomeownerRating(value: 4.8, count: 212, source: "Google").line, "4.8 from 212 Google reviews", "a source that is only a name gets 'reviews'")
+        ctx.equal(HomeownerRating(value: 4.8, count: 150, source: "Google reviews").caption, "150 Google reviews")
+        ctx.equal(company.catalog.tiers, [HomeownerCatalogTier(key: "good", label: "Replenish", note: "1-year warranty")], "a bad item in the list is skipped")
+        ctx.equal(company.catalog.tier("good")?.label, "Replenish")
+        ctx.equal(company.catalog.included, ["Argon gas fill", "FlexScreen"])
+        ctx.equal(company.catalog.offer?.title, "October special")
+        ctx.equal(company.catalog.financing?.url, nil)
+        // An older server sends none of it
+        let bare = try JSONDecoder().decode(HomeownerCompany.self, from: Data(#"{ "name": "X" }"#.utf8))
+        ctx.expect(bare.catalog.tiers.isEmpty && bare.catalog.included.isEmpty && bare.catalog.offer == nil && bare.trust == nil)
+
+        // The quote: the company's level name and note, and a window with no instant price
+        let view = try JSONDecoder().decode(HomeownerQuote.self, from: Data("""
+        { "tiers": [ { "key": "good", "label": "Replenish", "note": "1-year warranty", "name": "Economy vinyl series", "description": "d", "total": 1045,
+                       "perWindow": [ { "windowId": "a", "price": 535 }, { "windowId": "b", "price": 0, "atVisit": true } ], "estimatedCount": 0, "estimatedTotal": 0 },
+                     { "key": "best", "label": "Best", "name": "n", "description": "d", "total": 2000, "perWindow": [], "estimatedCount": 0, "estimatedTotal": 0 } ],
+          "measuredCount": 2, "estimatedCount": 0, "atVisitCount": 1 }
+        """.utf8))
+        ctx.equal(view.tiers[0].label, "Replenish")
+        ctx.equal(view.tiers[0].note, "1-year warranty")
+        ctx.equal(view.tiers[1].note, "", "no note: empty")
+        ctx.equal(view.tiers[0].perWindow.map { $0.atVisit }, [false, true])
+        ctx.equal(view.atVisitCount, 1)
+
+        // A bathroom window is sent as frosted: true, and only then
+        let scale = WindowPhotoScale.card(CardScale(cardCorners: [Vec2(100, 100), Vec2(400, 100), Vec2(400, 290), Vec2(100, 290)]))
+        var w = PhotoWindowInput(id: "w-1", uploadId: "u", label: nil, windowKey: nil, corners: [Vec2(0, 0), Vec2(10, 0), Vec2(10, 10), Vec2(0, 10)], scale: scale, room: "Bathroom", style: "double-hung")
+        ctx.equal((try json(w))["frosted"] == nil, true, "clear glass: the key is left out")
+        w.frosted = false
+        ctx.equal((try json(w))["frosted"] == nil, true, "false is the same as absent")
+        w.frosted = true
+        ctx.equal((try json(w))["frosted"] as? Bool, true)
+        let back = try JSONDecoder().decode(PhotoWindowInput.self, from: JSONEncoder().encode(w))
+        ctx.equal(back.frosted, true)
+
+        // With only the four plain choices, the shape's likeliest style is said in the company's own keys
+        let plain = HomeownerStyleOption.plain.map { $0.key }
+        ctx.equal(plain, ["double-hung", "slider-2", "picture", "arch"])
+        ctx.equal(StyleGuess.suggestion(widthIn: 71.25, heightIn: 59.375, offered: plain).keys, ["slider-2", "picture"])
+        ctx.equal(StyleGuess.suggestion(widthIn: 35.625, heightIn: 59.625, offered: plain).keys, ["double-hung"])
+        ctx.equal(StyleGuess.suggestion(widthIn: 36, heightIn: 36, offered: plain).keys, ["double-hung"], "a square window is never guessed to be a bay or an odd shape")
+        ctx.equal(StyleGuess.offeredKey(for: "slider-3", offered: plain), "slider-2")
+        ctx.equal(StyleGuess.offeredKey(for: "casement", offered: plain), nil)
+    },
 ]

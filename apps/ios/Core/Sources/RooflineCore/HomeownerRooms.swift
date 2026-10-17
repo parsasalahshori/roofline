@@ -96,6 +96,23 @@ public enum StyleGuess {
     /// The nine styles the server knows (GET /company, windowStyles). A company's own keys outside this list still work.
     public static let knownKeys = ["double-hung", "single-hung", "slider-2", "slider-3", "picture", "casement", "awning", "arch", "circle"]
 
+    /// The plain choices every company starts with, as the server groups the nine styles: a company that offers one style
+    /// per choice ("Opens up and down" sends `double-hung`) still gets the suggestion, said in its own keys.
+    public static let tileGroups: [[String]] = [
+        ["double-hung", "single-hung"],
+        ["slider-2", "slider-3"],
+        ["picture"],
+        ["arch", "circle", "casement", "awning"],
+    ]
+
+    /// The offered key that stands for `style`: the style itself when offered, else the offered key in its choice. The last
+    /// choice (bay, bow, odd shapes) is never guessed from a shape: only the exact style counts there.
+    public static func offeredKey(for style: String, offered: [String]) -> String? {
+        if offered.contains(style) { return style }
+        guard let group = tileGroups.dropLast().first(where: { $0.contains(style) }) else { return nil }
+        return offered.first { group.contains($0) }
+    }
+
     public static func suggestion(widthIn: Double, heightIn: Double, offered: [String]) -> Suggestion {
         let w = max(widthIn, 1), h = max(heightIn, 1)
         let candidates: [String]
@@ -110,7 +127,11 @@ public enum StyleGuess {
             candidates = ["double-hung", "casement", "single-hung"]
             hint = "close to square, so most homes use a double-hung or casement"
         }
-        let available = offered.isEmpty ? candidates : candidates.filter { offered.contains($0) }
+        var available: [String] = []
+        for c in candidates {
+            let key = offered.isEmpty ? c : offeredKey(for: c, offered: offered)
+            if let key = key, !available.contains(key) { available.append(key) }
+        }
         return Suggestion(keys: available.isEmpty ? Array(offered.prefix(1)) : available, hint: hint)
     }
 }

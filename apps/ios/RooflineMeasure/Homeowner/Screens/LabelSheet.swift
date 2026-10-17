@@ -11,6 +11,9 @@ struct LabelSheet: View {
     let onAgain: () -> Void
     @State private var room: String
     @State private var name = ""
+    /// "Bathroom window?": frosted glass. Starts on when the room is a bathroom, and the homeowner can still change it.
+    @State private var frosted: Bool
+    @State private var frostedTouched = false
     @State private var saving = false
     @State private var detent: PresentationDetent = .fraction(0.74)
     @FocusState private var nameFocused: Bool
@@ -19,6 +22,7 @@ struct LabelSheet: View {
         self.pending = pending
         self.onAgain = onAgain
         _room = State(initialValue: pending.room)
+        _frosted = State(initialValue: RoomNames.type(of: pending.room) == .bathroom)
     }
 
     private var showable: WindowPreview? {
@@ -36,6 +40,7 @@ struct LabelSheet: View {
                         ForEach(RoomType.allCases, id: \.self) { type in
                             WCChip(title: type.chip, isOn: RoomNames.type(of: room) == type) {
                                 room = RoomNames.room(for: type, current: room, existing: store.rooms)
+                                if !frostedTouched { frosted = type == .bathroom }
                             }
                         }
                     }
@@ -51,6 +56,7 @@ struct LabelSheet: View {
                         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(nameFocused ? Theme.blue : Theme.line2, lineWidth: nameFocused ? 2 : 1))
                         .padding(.top, 16)
                         .accessibilityLabel("Optional name for this window")
+                    bathroomRow.padding(.top, 16)
                     // With large text the buttons would fill the sheet: they come at the end of what scrolls
                     if typeSize.isAccessibilitySize { buttons.padding(.top, 20) }
                 }
@@ -77,12 +83,29 @@ struct LabelSheet: View {
         .interactiveDismissDisabled()
     }
 
+    /// "Bathroom window?": yes means frosted (privacy) glass, which adds to the price.
+    private var bathroomRow: some View {
+        Toggle(isOn: Binding(get: { frosted }, set: { frosted = $0; frostedTouched = true; Haptics.tap() })) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Bathroom window?").wc(17, .medium, relativeTo: .body).foregroundStyle(Theme.ink)
+                Text("Frosted glass, so no one can see in.").wc(14, relativeTo: .footnote).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .tint(Theme.blue)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(minHeight: 56)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.line2, lineWidth: 1))
+        .accessibilityIdentifier("bathroom-toggle")
+    }
+
     private var buttons: some View {
         VStack(spacing: 10) {
             WCPrimaryButton(title: "Save window \(pending.number)", isLoading: saving) {
                 saving = true
                 Task {
-                    await store.savePending(room: room, name: name)
+                    await store.savePending(room: room, name: name, frosted: frosted)
                     saving = false
                 }
             }

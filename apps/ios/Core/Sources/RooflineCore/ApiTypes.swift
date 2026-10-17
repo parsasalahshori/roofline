@@ -182,8 +182,10 @@ public struct PhotoWindowInput: Codable, Equatable, Sendable, Identifiable {
     public var room: String?
     /// Homeowner app only: the company's window style key (double-hung, slider, ...). Absent for rep windows.
     public var style: String?
+    /// Homeowner app only: "Bathroom window?" answered yes, so frosted glass (a price adder). Absent (nil or false) is clear glass.
+    public var frosted: Bool?
 
-    public init(id: String, uploadId: String?, label: String?, windowKey: String?, corners: [Vec2]?, scale: WindowPhotoScale, room: String? = nil, style: String? = nil) {
+    public init(id: String, uploadId: String?, label: String?, windowKey: String?, corners: [Vec2]?, scale: WindowPhotoScale, room: String? = nil, style: String? = nil, frosted: Bool? = nil) {
         self.id = id
         self.uploadId = uploadId
         self.label = label
@@ -192,12 +194,13 @@ public struct PhotoWindowInput: Codable, Equatable, Sendable, Identifiable {
         self.scale = scale
         self.room = room
         self.style = style
+        self.frosted = frosted
     }
 
     /// The window it belongs to: its shared key, else its own id.
     public var groupKey: String { (windowKey?.isEmpty == false ? windowKey : nil) ?? id }
 
-    private enum Keys: String, CodingKey { case id, uploadId, label, windowKey, corners, scale, room, style }
+    private enum Keys: String, CodingKey { case id, uploadId, label, windowKey, corners, scale, room, style, frosted }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -209,6 +212,7 @@ public struct PhotoWindowInput: Codable, Equatable, Sendable, Identifiable {
         scale = try c.decode(WindowPhotoScale.self, forKey: .scale)
         room = try c.decodeIfPresent(String.self, forKey: .room)
         style = try c.decodeIfPresent(String.self, forKey: .style)
+        frosted = try c.decodeIfPresent(Bool.self, forKey: .frosted)
     }
 
     // Exactly the input's keys: a sized PhotoWindow decoded into this drops widthIn etc. (the server refuses them)
@@ -223,6 +227,7 @@ public struct PhotoWindowInput: Codable, Equatable, Sendable, Identifiable {
         // Homeowner keys: written only when set, so a rep's window encodes exactly as before
         if let room = room, !room.isEmpty { try c.encode(room, forKey: .room) }
         if let style = style, !style.isEmpty { try c.encode(style, forKey: .style) }
+        if frosted == true { try c.encode(true, forKey: .frosted) }
     }
 }
 

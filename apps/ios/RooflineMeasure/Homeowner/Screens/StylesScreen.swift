@@ -27,8 +27,8 @@ struct StylesScreen: View {
                         WCHeadline(text: "Pick a style")
                         windowCard(row).padding(.top, 14)
                         GroupHeader(text: "Style").padding(.top, 18)
-                        // Three tiles across; with large text one, so the names are not cut
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: typeSize.isAccessibilitySize ? 1 : 3), spacing: 8) {
+                        // Three tiles across (four plain choices: two by two); with large text one, so the names are not cut
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: typeSize.isAccessibilitySize ? 1 : (store.styles.count == 4 ? 2 : 3)), spacing: 8) {
                             ForEach(store.styles) { style in
                                 StyleTile(style: style, selected: picked == style.key) {
                                     picked = style.key
@@ -220,11 +220,11 @@ private struct StyleTile: View {
                     .lineLimit(2)
                     .minimumScaleFactor(0.85)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(parts.detail ?? " ").wc(11, relativeTo: .caption2)
+                Text(parts.detail ?? style.hint ?? " ").wc(11, relativeTo: .caption2)
                     .foregroundStyle(Theme.ink3)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
-                    .opacity(parts.detail == nil ? 0 : 1)
+                    .opacity(parts.detail == nil && style.hint == nil ? 0 : 1)
             }
             .padding(.horizontal, 4)
             .padding(.top, 9)

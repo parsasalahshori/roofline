@@ -58,14 +58,19 @@ actor FakeHomeownerAPI: HomeownerAPI {
             text: "By checking this box and clicking \"Send my request\", I agree that WinChoice may contact me about my estimate and appointment by phone call and email at the phone number and email I provided, including calls that may use automated technology or a prerecorded or artificial voice. Consent is not a condition of purchase. I agree to the Privacy Policy and Terms.",
             textingText: "Text me too: WinChoice may send text messages about my estimate and appointment to the phone number I provided, which may be sent using automated technology. Consent is not a condition of purchase. Message frequency varies. Message and data rates may apply. Reply STOP to stop texts or HELP for help."
         ),
-        windowStyles: [
-            HomeownerStyleOption(key: "double-hung", label: "Double-hung"), HomeownerStyleOption(key: "single-hung", label: "Single-hung"),
-            HomeownerStyleOption(key: "slider-2", label: "Slider, 2 panes"), HomeownerStyleOption(key: "slider-3", label: "Slider, 3 panes"),
-            HomeownerStyleOption(key: "picture", label: "Picture (does not open)"), HomeownerStyleOption(key: "casement", label: "Casement (cranks open)"),
-            HomeownerStyleOption(key: "awning", label: "Awning (tilts out)"), HomeownerStyleOption(key: "arch", label: "Arch top"),
-            HomeownerStyleOption(key: "circle", label: "Round"),
-        ],
-        trust: nil
+        // The four plain choices and WinChoice's own words, as the server sends them (the prices are the fake's, not WinChoice's)
+        windowStyles: HomeownerStyleOption.plain,
+        trust: HomeownerTrust(since: "2012", rating: HomeownerRating(value: 4.9, count: 2400, plus: true, source: "homeowners"), badges: ["A+ BBB", "Made in USA", "Lifetime warranty"]),
+        catalog: HomeownerCatalog(
+            tiers: [
+                HomeownerCatalogTier(key: "good", label: "Replenish", note: "1-year warranty"),
+                HomeownerCatalogTier(key: "better", label: "Refine", note: "Lifetime warranty"),
+                HomeownerCatalogTier(key: "best", label: "Renew", note: "Lifetime warranty"),
+            ],
+            included: ["Argon gas fill", "Low-E glass (Cardinal LoE366)", "ENERGY STAR® certified", "FlexScreen"],
+            offer: HomeownerOffer(title: "October special on windows and roofing. Ask about it at your visit.", termsUrl: "https://winchoice.com/promotional-terms-conditions/"),
+            financing: HomeownerFinancing(text: "Financing available through our partner Skeps. Optional, with no obligation.", url: "https://winchoice.com/financing/")
+        )
     )
 
     // MARK: Test and debug controls
@@ -304,22 +309,30 @@ actor FakeHomeownerAPI: HomeownerAPI {
         let expected = r.override ?? r.estimate.windows?.likely ?? 0
         let measured = r.windows.count
         let estimatedCount = max(0, expected - measured)
+        let catalog = config.company.catalog
+        let bathroomAdder = 45.0   // the fake's own number, like the other prices
+        let atVisitKeys = Set(config.company.windowStyles.filter { $0.atVisit }.map { $0.key })
         let tiers: [HomeownerTier] = [
             ("good", "Good", "Vinyl double-hung and sliders", "Double-pane, Low-E glass, standard install"),
             ("better", "Better", "LoE366 glass with argon", "Full-frame install, lifetime warranty"),
             ("best", "Best", "Triple-pane glass", "Full-frame install"),
         ].map { key, label, name, detail in
             let price = config.pricePerWindow[key] ?? 0
-            let per = r.windows.map { HomeownerWindowPrice(windowId: $0.id, price: price) }
+            let own = catalog.tier(key)
+            let per = r.windows.map { w -> HomeownerWindowPrice in
+                if let style = w.input.style, atVisitKeys.contains(style) { return HomeownerWindowPrice(windowId: w.id, price: 0, atVisit: true) }
+                return HomeownerWindowPrice(windowId: w.id, price: price + (w.input.frosted == true ? bathroomAdder : 0))
+            }
             let est = price * Double(estimatedCount)
-            return HomeownerTier(key: key, label: label, name: name, detail: detail, total: price * Double(measured) + est, perWindow: per, estimatedCount: estimatedCount, estimatedTotal: est)
+            return HomeownerTier(key: key, label: own?.label ?? label, name: name, detail: detail, note: own?.note ?? "", total: per.reduce(0) { $0 + $1.price } + est, perWindow: per, estimatedCount: estimatedCount, estimatedTotal: est)
         }
         var hint: HomeownerMissingHint?
         if r.override == nil, let e = r.estimate.windows, measured < e.low {
             hint = HomeownerMissingHint(measured: measured, expectedLow: e.low, expectedHigh: e.high, expectedLikely: e.likely,
                                         text: "We think your home has about \(e.low) to \(e.high) windows and you have measured \(measured). Did we miss any?")
         }
-        return HomeownerQuote(tiers: tiers, measuredCount: measured, estimatedCount: estimatedCount, missingHint: hint)
+        let atVisit = r.windows.filter { $0.input.style.map(atVisitKeys.contains) ?? false }.count
+        return HomeownerQuote(tiers: tiers, measuredCount: measured, estimatedCount: estimatedCount, atVisitCount: atVisit, missingHint: hint)
     }
 
     private func statusBody(_ r: Stored) -> HomeownerStatus {

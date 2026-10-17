@@ -73,11 +73,11 @@ extension HomeownerStore {
     }
 
     /// "Save window 4": the window and its photo go on disk, the photo uploads at once, the window waits for its style.
-    func savePending(room: String, name: String) async {
+    func savePending(room: String, name: String, frosted: Bool = false) async {
         guard let p = pending, let s = session else { return }
         let cleanRoom = RoomNames.clean(room) ?? p.room
         let cleanName = Self.cleanLabel(name, max: company.limits.maxLabelLength)
-        let window = PhotoWindowInput(id: p.id, uploadId: nil, label: cleanName, windowKey: nil, corners: p.corners, scale: p.scale, room: cleanRoom, style: nil)
+        let window = PhotoWindowInput(id: p.id, uploadId: nil, label: cleanName, windowKey: nil, corners: p.corners, scale: p.scale, room: cleanRoom, style: nil, frosted: frosted ? true : nil)
         do {
             _ = try await outbox.enqueue(window: window, measurementId: s.requestId, address: s.address, jpeg: p.jpeg, imageWidthPx: p.imageWidthPx, imageHeightPx: p.imageHeightPx, held: true)
         } catch {

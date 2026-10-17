@@ -53,30 +53,109 @@ public enum HomeownerService: String, Codable, CaseIterable, Sendable, Hashable,
     }
 }
 
+/// One plain choice on the window-style step ("Opens up and down"). `key` is the style the app sends for a window that picks it.
 public struct HomeownerStyleOption: Codable, Equatable, Sendable, Hashable, Identifiable {
     public var key: String
     public var label: String
+    /// A few words under the label ("Double-hung"); nil when the company gave none.
+    public var hint: String?
+    /// The tile's id on the server ("up-down", "sideways", "fixed", "special"); nil from an older server.
+    public var tile: String?
+    /// True: the window is counted but has no instant price (bay, bow, odd shapes): "we price it at your visit".
+    public var atVisit: Bool
     public var id: String { key }
 
-    public init(key: String, label: String) {
+    public init(key: String, label: String, hint: String? = nil, tile: String? = nil, atVisit: Bool = false) {
         self.key = key
         self.label = label
+        self.hint = hint
+        self.tile = tile
+        self.atVisit = atVisit
+    }
+
+    private enum Keys: String, CodingKey { case key, label, hint, tile, atVisit }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        key = try c.decode(String.self, forKey: .key)
+        label = try c.decode(String.self, forKey: .label)
+        hint = c.soft(String.self, .hint).flatMap { $0.isEmpty ? nil : $0 }
+        tile = c.soft(String.self, .tile)
+        atVisit = c.soft(Bool.self, .atVisit) ?? false
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: Keys.self)
+        try c.encode(key, forKey: .key)
+        try c.encode(label, forKey: .label)
+        try c.encodeIfPresent(hint, forKey: .hint)
+        try c.encodeIfPresent(tile, forKey: .tile)
+        try c.encode(atVisit, forKey: .atVisit)
     }
 }
 
-/// "Reviews", "since" and "license" the company chose to show; every item optional, nothing invented.
+extension HomeownerStyleOption {
+    /// The four plain choices every company starts with (until its own list arrives): the server's own keys and wording.
+    public static let plain: [HomeownerStyleOption] = [
+        HomeownerStyleOption(key: "double-hung", label: "Opens up and down", hint: "Double-hung", tile: "up-down"),
+        HomeownerStyleOption(key: "slider-2", label: "Slides sideways", hint: "Slider", tile: "sideways"),
+        HomeownerStyleOption(key: "picture", label: "Doesn't open", hint: "Picture window", tile: "fixed"),
+        HomeownerStyleOption(key: "arch", label: "Bay, bow or odd shape", hint: "We quote it at your visit", tile: "special", atVisit: true),
+    ]
+}
+
+/// "4.9 from 2,400+ homeowners": a rating over a count with the company's own words after the count.
+public struct HomeownerRating: Codable, Equatable, Sendable {
+    public var value: Double
+    public var count: Int
+    /// Shown as "2,400+".
+    public var plus: Bool
+    public var source: String
+
+    public init(value: Double, count: Int, plus: Bool = false, source: String) {
+        self.value = value
+        self.count = count
+        self.plus = plus
+        self.source = source
+    }
+
+    /// "2,400+ homeowners", or "212 Google reviews" when the source is only a name.
+    public var caption: String {
+        let n = HomeownerRating.grouped(count) + (plus ? "+" : "")
+        let named = source.range(of: "\\b(reviews?|ratings?|homeowners?|customers?|clients?|families)\\b", options: [.regularExpression, .caseInsensitive]) != nil
+        return named ? "\(n) \(source)" : "\(n) \(source) \(count == 1 && !plus ? "review" : "reviews")"
+    }
+
+    /// "4.9 from 2,400+ homeowners".
+    public var line: String { String(format: "%.1f", value) + " from " + caption }
+
+    private static func grouped(_ n: Int) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.locale = Locale(identifier: "en_US")
+        return f.string(from: NSNumber(value: n)) ?? String(n)
+    }
+}
+
+/// What the company says about itself: a rating, the year it started, a licence and up to three short badges; every item
+/// optional, nothing invented. (An older server sent `reviews`, `since` and `license` as plain text.)
 public struct HomeownerTrust: Codable, Equatable, Sendable {
     public var reviews: String?
     public var since: String?
     public var license: String?
+    public var rating: HomeownerRating?
+    public var badges: [String]
 
-    public init(reviews: String? = nil, since: String? = nil, license: String? = nil) {
+    public init(reviews: String? = nil, since: String? = nil, license: String? = nil, rating: HomeownerRating? = nil, badges: [String] = []) {
         self.reviews = reviews
         self.since = since
         self.license = license
+        self.rating = rating
+        self.badges = badges
     }
 
-    private enum Keys: String, CodingKey { case reviews, since, license }
+    private enum Keys: String, CodingKey { case reviews, since, sinceYear, license, rating, badges }
+    private enum LicenseKeys: String, CodingKey { case state, number }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -87,9 +166,95 @@ public struct HomeownerTrust: Codable, Equatable, Sendable {
             return nil
         }
         reviews = text(.reviews)
-        since = text(.since)
-        license = text(.license)
+        since = text(.since) ?? text(.sinceYear)
+        // "NE #48213" from {state, number}, or the plain text an older server sent
+        if let l = try? c.nestedContainer(keyedBy: LicenseKeys.self, forKey: .license), let state = try? l.decode(String.self, forKey: .state), let number = try? l.decode(String.self, forKey: .number) {
+            license = "\(state.uppercased()) #\(number.hasPrefix("#") ? String(number.dropFirst()) : number)"
+        } else {
+            license = text(.license)
+        }
+        rating = c.soft(HomeownerRating.self, .rating)
+        badges = (c.soft([String].self, .badges) ?? []).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.prefix(3).map { $0 }
     }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: Keys.self)
+        try c.encodeIfPresent(reviews, forKey: .reviews)
+        try c.encodeIfPresent(since, forKey: .since)
+        try c.encodeIfPresent(license, forKey: .license)
+        try c.encodeIfPresent(rating, forKey: .rating)
+        if !badges.isEmpty { try c.encode(badges, forKey: .badges) }
+    }
+}
+
+/// A company's own name and one-line note for Good, Better or Best ("Replenish", "1-year warranty").
+public struct HomeownerCatalogTier: Codable, Equatable, Sendable {
+    public var key: String
+    public var label: String
+    public var note: String
+
+    public init(key: String, label: String, note: String = "") {
+        self.key = key
+        self.label = label
+        self.note = note
+    }
+
+    private enum Keys: String, CodingKey { case key, label, note }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        key = try c.decode(String.self, forKey: .key)
+        label = c.soft(String.self, .label) ?? key.capitalized
+        note = c.soft(String.self, .note) ?? ""
+    }
+}
+
+public struct HomeownerOffer: Codable, Equatable, Sendable {
+    public var title: String
+    public var termsUrl: String?
+
+    public init(title: String, termsUrl: String? = nil) {
+        self.title = title
+        self.termsUrl = termsUrl
+    }
+}
+
+public struct HomeownerFinancing: Codable, Equatable, Sendable {
+    public var text: String
+    public var url: String?
+
+    public init(text: String, url: String? = nil) {
+        self.text = text
+        self.url = url
+    }
+}
+
+/// The company's window catalog without prices (GET /company `catalog`): level names and notes, what every window
+/// includes, the optional offer and financing line. Everything optional; absent from an older server.
+public struct HomeownerCatalog: Codable, Equatable, Sendable {
+    public var tiers: [HomeownerCatalogTier]
+    public var included: [String]
+    public var offer: HomeownerOffer?
+    public var financing: HomeownerFinancing?
+
+    public init(tiers: [HomeownerCatalogTier] = [], included: [String] = [], offer: HomeownerOffer? = nil, financing: HomeownerFinancing? = nil) {
+        self.tiers = tiers
+        self.included = included
+        self.offer = offer
+        self.financing = financing
+    }
+
+    private enum Keys: String, CodingKey { case tiers, included, offer, financing }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        tiers = c.lossyList(HomeownerCatalogTier.self, .tiers)
+        included = (c.soft([String].self, .included) ?? []).filter { !$0.isEmpty }
+        offer = c.soft(HomeownerOffer.self, .offer)
+        financing = c.soft(HomeownerFinancing.self, .financing)
+    }
+
+    public func tier(_ key: String) -> HomeownerCatalogTier? { tiers.first { $0.key == key } }
 }
 
 /// The consent words the contact screen shows verbatim next to its two boxes, and the version the server expects back.
@@ -148,11 +313,12 @@ public struct HomeownerCompany: Codable, Equatable, Sendable {
     public var consent: HomeownerConsent?
     public var windowStyles: [HomeownerStyleOption]
     public var trust: HomeownerTrust?
+    public var catalog: HomeownerCatalog
     public var limits: HomeownerLimits
 
     public init(name: String, brandColor: String? = nil, phone: String? = nil, services: [HomeownerService] = HomeownerService.allCases, booking: Bool = true,
                 privacyUrl: String? = nil, termsUrl: String? = nil, consent: HomeownerConsent? = nil, windowStyles: [HomeownerStyleOption] = [],
-                trust: HomeownerTrust? = nil, limits: HomeownerLimits = HomeownerLimits()) {
+                trust: HomeownerTrust? = nil, catalog: HomeownerCatalog = HomeownerCatalog(), limits: HomeownerLimits = HomeownerLimits()) {
         self.name = name
         self.brandColor = brandColor
         self.phone = phone
@@ -163,10 +329,11 @@ public struct HomeownerCompany: Codable, Equatable, Sendable {
         self.consent = consent
         self.windowStyles = windowStyles
         self.trust = trust
+        self.catalog = catalog
         self.limits = limits
     }
 
-    private enum Keys: String, CodingKey { case name, brandColor, phone, services, booking, privacyUrl, termsUrl, consent, windowStyles, trust, limits, apiVersion }
+    private enum Keys: String, CodingKey { case name, brandColor, phone, services, booking, privacyUrl, termsUrl, consent, windowStyles, trust, catalog, limits, apiVersion }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -180,6 +347,7 @@ public struct HomeownerCompany: Codable, Equatable, Sendable {
         consent = c.soft(HomeownerConsent.self, .consent)
         windowStyles = c.lossyList(HomeownerStyleOption.self, .windowStyles)
         trust = c.soft(HomeownerTrust.self, .trust)
+        catalog = c.soft(HomeownerCatalog.self, .catalog) ?? HomeownerCatalog()
         limits = c.soft(HomeownerLimits.self, .limits) ?? HomeownerLimits()
     }
 
@@ -195,6 +363,7 @@ public struct HomeownerCompany: Codable, Equatable, Sendable {
         try c.encodeIfPresent(consent, forKey: .consent)
         try c.encode(windowStyles, forKey: .windowStyles)
         try c.encodeIfPresent(trust, forKey: .trust)
+        try c.encode(catalog, forKey: .catalog)
         try c.encode(limits, forKey: .limits)
     }
 }
@@ -415,15 +584,17 @@ public struct HomeownerWindow: Decodable, Equatable, Sendable, Identifiable {
     /// The server's own wording for how far off it may be, e.g. "about ±1/2 in" (the larger of the two, rounded up).
     public var uncertaintyLabel: String?
     public var sizeClass: String?
+    /// The plain name of the window's style choice ("Opens up and down"), when the server gives it.
+    public var styleLabel: String?
 
     public var id: String { input.id }
     public var room: String { input.room ?? "" }
     public var needsCheck: Bool { quality == "check" }
 
-    private enum Keys: String, CodingKey { case widthIn, heightIn, uncertaintyIn, quality, reasons, sizeLabel, uncertaintyLabel, sizeClass }
+    private enum Keys: String, CodingKey { case widthIn, heightIn, uncertaintyIn, quality, reasons, sizeLabel, uncertaintyLabel, sizeClass, styleLabel }
 
     public init(input: PhotoWindowInput, widthIn: Double, heightIn: Double, uncertaintyIn: Double?, quality: String = "good", reasons: [String] = [],
-                sizeLabel: String? = nil, uncertaintyLabel: String? = nil, sizeClass: String? = nil) {
+                sizeLabel: String? = nil, uncertaintyLabel: String? = nil, sizeClass: String? = nil, styleLabel: String? = nil) {
         self.input = input
         self.widthIn = widthIn
         self.heightIn = heightIn
@@ -433,6 +604,7 @@ public struct HomeownerWindow: Decodable, Equatable, Sendable, Identifiable {
         self.sizeLabel = sizeLabel
         self.uncertaintyLabel = uncertaintyLabel
         self.sizeClass = sizeClass
+        self.styleLabel = styleLabel
     }
 
     public init(from decoder: Decoder) throws {
@@ -453,30 +625,36 @@ public struct HomeownerWindow: Decodable, Equatable, Sendable, Identifiable {
         sizeLabel = c.soft(String.self, .sizeLabel)
         uncertaintyLabel = c.soft(String.self, .uncertaintyLabel)
         sizeClass = c.soft(String.self, .sizeClass)
+        styleLabel = c.soft(String.self, .styleLabel)
     }
 }
 
 public struct HomeownerWindowPrice: Codable, Equatable, Sendable {
     public var windowId: String
     public var price: Double
+    /// True: no instant price for this window (bay, bow, odd shape); its price is 0 and it is left out of the total.
+    public var atVisit: Bool
 
-    public init(windowId: String, price: Double) {
+    public init(windowId: String, price: Double, atVisit: Bool = false) {
         self.windowId = windowId
         self.price = price
+        self.atVisit = atVisit
     }
 
-    private enum Keys: String, CodingKey { case windowId, price, priceCents }
+    private enum Keys: String, CodingKey { case windowId, price, priceCents, atVisit }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         windowId = try c.decode(String.self, forKey: .windowId)
         price = c.dollars(.price, cents: .priceCents) ?? 0
+        atVisit = c.soft(Bool.self, .atVisit) ?? false
     }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: Keys.self)
         try c.encode(windowId, forKey: .windowId)
         try c.encode(price, forKey: .price)
+        if atVisit { try c.encode(true, forKey: .atVisit) }
     }
 }
 
@@ -487,6 +665,8 @@ public struct HomeownerTier: Codable, Equatable, Sendable, Identifiable {
     /// The company's name for it ("Vinyl double-hung") and a line about what it is, when the server gives them.
     public var name: String?
     public var detail: String?
+    /// One line about the level ("Lifetime warranty"); empty when the company set none.
+    public var note: String
     /// Whole dollars, measured windows plus estimated ones.
     public var total: Double
     public var perWindow: [HomeownerWindowPrice]
@@ -495,18 +675,19 @@ public struct HomeownerTier: Codable, Equatable, Sendable, Identifiable {
 
     public var id: String { key }
 
-    public init(key: String, label: String, name: String? = nil, detail: String? = nil, total: Double, perWindow: [HomeownerWindowPrice] = [], estimatedCount: Int = 0, estimatedTotal: Double = 0) {
+    public init(key: String, label: String, name: String? = nil, detail: String? = nil, note: String = "", total: Double, perWindow: [HomeownerWindowPrice] = [], estimatedCount: Int = 0, estimatedTotal: Double = 0) {
         self.key = key
         self.label = label
         self.name = name
         self.detail = detail
+        self.note = note
         self.total = total
         self.perWindow = perWindow
         self.estimatedCount = estimatedCount
         self.estimatedTotal = estimatedTotal
     }
 
-    private enum Keys: String, CodingKey { case key, label, name, description, total, totalCents, perWindow, estimatedCount, estimatedTotal, estimatedTotalCents }
+    private enum Keys: String, CodingKey { case key, label, name, description, note, total, totalCents, perWindow, estimatedCount, estimatedTotal, estimatedTotalCents }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -514,6 +695,7 @@ public struct HomeownerTier: Codable, Equatable, Sendable, Identifiable {
         label = c.soft(String.self, .label) ?? key.capitalized
         name = c.soft(String.self, .name)
         detail = c.soft(String.self, .description)
+        note = c.soft(String.self, .note) ?? ""
         total = c.dollars(.total, cents: .totalCents) ?? 0
         perWindow = c.lossyList(HomeownerWindowPrice.self, .perWindow)
         estimatedCount = c.soft(Int.self, .estimatedCount) ?? 0
@@ -526,6 +708,7 @@ public struct HomeownerTier: Codable, Equatable, Sendable, Identifiable {
         try c.encode(label, forKey: .label)
         try c.encodeIfPresent(name, forKey: .name)
         try c.encodeIfPresent(detail, forKey: .description)
+        if !note.isEmpty { try c.encode(note, forKey: .note) }
         try c.encode(total, forKey: .total)
         try c.encode(perWindow, forKey: .perWindow)
         try c.encode(estimatedCount, forKey: .estimatedCount)
@@ -568,22 +751,26 @@ public struct HomeownerQuote: Codable, Equatable, Sendable {
     public var tiers: [HomeownerTier]
     public var measuredCount: Int
     public var estimatedCount: Int
+    /// Measured windows with no instant price (bay, bow, odd shapes): counted, priced at the visit.
+    public var atVisitCount: Int
     public var missingHint: HomeownerMissingHint?
 
-    public init(tiers: [HomeownerTier], measuredCount: Int, estimatedCount: Int, missingHint: HomeownerMissingHint? = nil) {
+    public init(tiers: [HomeownerTier], measuredCount: Int, estimatedCount: Int, atVisitCount: Int = 0, missingHint: HomeownerMissingHint? = nil) {
         self.tiers = tiers
         self.measuredCount = measuredCount
         self.estimatedCount = estimatedCount
+        self.atVisitCount = atVisitCount
         self.missingHint = missingHint
     }
 
-    private enum Keys: String, CodingKey { case tiers, measuredCount, estimatedCount, missingHint }
+    private enum Keys: String, CodingKey { case tiers, measuredCount, estimatedCount, atVisitCount, missingHint }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         tiers = c.lossyList(HomeownerTier.self, .tiers)
         measuredCount = c.soft(Int.self, .measuredCount) ?? 0
         estimatedCount = c.soft(Int.self, .estimatedCount) ?? 0
+        atVisitCount = c.soft(Int.self, .atVisitCount) ?? 0
         missingHint = c.soft(HomeownerMissingHint.self, .missingHint)
     }
 

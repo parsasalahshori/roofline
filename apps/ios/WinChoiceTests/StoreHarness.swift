@@ -99,7 +99,7 @@ final class StoreHarness {
 
     /// A finished measure, saved: an AR window on the drawn sample photo, its photo up, its style still to pick.
     @discardableResult
-    func capture(room: String = "Kitchen", name: String = "") async -> String? {
+    func capture(room: String = "Kitchen", name: String = "", frosted: Bool = false) async -> String? {
         // A small drawn photo keeps the tests quick (same shape as the phone's 3:4)
         let scene = SampleScene.small
         let photo = PhotoPreparation.prepare(scene.image(withCard: false))
@@ -108,7 +108,7 @@ final class StoreHarness {
         let session = MeasureSession(method: .corners, room: room, number: store.nextWindowNumber)
         store.capture(scale: scale, corners: scene.frameCorners.map { Vec2(Double($0.x), Double($0.y)) }, jpeg: photo?.jpeg, widthPx: photo?.widthPx ?? 0, heightPx: photo?.heightPx ?? 0, in: session)
         let id = store.pending?.id
-        await store.savePending(room: room, name: name)
+        await store.savePending(room: room, name: name, frosted: frosted)
         await settle()
         return id
     }

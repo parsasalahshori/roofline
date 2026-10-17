@@ -156,10 +156,10 @@ final class HomeownerStore {
     /// The company as the brand file describes it, until the server answers.
     static func brandCompany(_ brand: Brand) -> HomeownerCompany {
         HomeownerCompany(name: brand.name, brandColor: brand.colors.red, phone: nil, services: HomeownerService.allCases, booking: true,
-                         windowStyles: StyleGuess.knownKeys.map { HomeownerStyleOption(key: $0, label: HomeownerStore.styleLabel($0)) })
+                         windowStyles: HomeownerStyleOption.plain)
     }
 
-    /// The labels the server gives the nine styles (until the company answers).
+    /// The labels the server gives the nine styles (an older server).
     static func styleLabel(_ key: String) -> String {
         switch key {
         case "double-hung": return "Double-hung"
