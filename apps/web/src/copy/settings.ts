@@ -82,6 +82,13 @@ export const settings = {
     ],
   },
 
+  /** The few words of the Storm tab that are not in storm.ts: a hail size in a list, and the photo drop box. */
+  stormTab: {
+    /** "1 in", "1.25 in": the size as a number without trailing zeros. */
+    hailSize: (inches: number) => `${inches} in`,
+    photoDrop: 'Drop a photo here',
+  },
+
   team: {
     heading: 'Team',
     /** Beside the heading: how many people are on the team. */

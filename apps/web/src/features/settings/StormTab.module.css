@@ -6,35 +6,107 @@
   min-width: 0;
 }
 
-/* A line of explanation under a control or above the photos */
+/* A line of explanation above the photos, and what is said while there are none */
 .help {
   margin: 8px 0 0;
   color: var(--ink-3);
   font-size: var(--font-size-body);
+  text-wrap: pretty;
 }
 
-/* The Google share: a slider the width of the panel, its two ends named under it */
+/* The Google share: a slider the width of the panel, its two ends named under it, then its help */
 .share {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
+/*
+ * The slider is drawn here so its parts are big enough to take hold of: a 24px thumb, a track whose edge is the
+ * controls' own line (3:1 against the panel) and a filled part in the brand colour that ends under the thumb.
+ * --ratio (0 to 1) comes from the page; the 12px either side is half the thumb.
+ */
 .share input[type='range'] {
+  appearance: none;
   width: 100%;
-  min-height: 40px;
+  min-height: 32px;
   margin: 0;
-  accent-color: var(--brand);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
 }
 
+.share input[type='range']:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* A thumb is taken hold of with a finger: the slider's own box is the 44px target on a phone */
+@media (max-width: 767.98px) {
+  .share input[type='range'] {
+    min-height: 44px;
+  }
+}
+
+.share input[type='range']::-webkit-slider-runnable-track {
+  height: 10px;
+  box-sizing: border-box;
+  border: 1px solid var(--line-ctl);
+  border-radius: var(--r-pill);
+  background: linear-gradient(
+    to right,
+    var(--brand) calc(12px + (100% - 24px) * var(--ratio, 0.5)),
+    var(--surface-2) calc(12px + (100% - 24px) * var(--ratio, 0.5))
+  );
+}
+
+.share input[type='range']::-moz-range-track {
+  height: 10px;
+  box-sizing: border-box;
+  border: 1px solid var(--line-ctl);
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+}
+
+.share input[type='range']::-moz-range-progress {
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--brand);
+}
+
+.share input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  margin-top: -8px;
+  box-sizing: border-box;
+  border: 3px solid var(--surface);
+  border-radius: 50%;
+  background: var(--brand);
+  box-shadow: 0 0 0 1px var(--brand), 0 1px 3px rgb(0 0 0 / 0.3);
+}
+
+.share input[type='range']::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  box-sizing: border-box;
+  border: 3px solid var(--surface);
+  border-radius: 50%;
+  background: var(--brand);
+  box-shadow: 0 0 0 1px var(--brand), 0 1px 3px rgb(0 0 0 / 0.3);
+}
+
+/* Google's share at the left end of the slider, Meta's at the right: short names, so the row never wraps */
 .split {
   display: flex;
-  flex-wrap: wrap;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 4px 16px;
+  gap: 16px;
   margin: 0;
   color: var(--ink-3);
   font-size: var(--font-size-body);
+  white-space: nowrap;
 }
 
 /* The two shares: mono, so the digits do not jump while the slider moves */
@@ -43,6 +115,22 @@
   font-family: var(--f-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 600;
+}
+
+/* The help under a control that is not a Field (the slider's): the same 12px line a Field's help is */
+.fieldHelp {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
+  text-wrap: pretty;
+}
+
+/* The line under the storm emails switch: the same help line */
+.toggleHelp {
+  margin: 8px 0 0;
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
+  text-wrap: pretty;
 }
 
 /* Each message is a text box with its standard-text button under it */

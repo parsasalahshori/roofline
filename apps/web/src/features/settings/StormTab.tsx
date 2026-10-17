@@ -1,10 +1,11 @@
 import { missingStormTokens } from '@roofline/shared';
 import { Button, EmptyState, Field, FilePicker, Listbox, Panel, Skeleton, Toggle, useToast, type ListboxOption } from '@roofline/ui';
-import { useState, type FormEvent } from 'react';
+import { useId, useState, type CSSProperties, type FormEvent } from 'react';
 import { ApiError } from '../../api/client.ts';
 import type { StormSettingsBody, StormSettingsPatch } from '../../api/types.ts';
 import { connections } from '../../copy/connections.ts';
 import { errors } from '../../copy/errors.ts';
+import { settings as settingsCopy } from '../../copy/settings.ts';
 import { storm } from '../../copy/storm.ts';
 import { useDeleteStormPhoto, useSaveStormSettings, useStormSettings, useUploadStormPhoto } from './stormApi.ts';
 import form from './form.module.css';
@@ -18,7 +19,7 @@ import styles from './StormTab.module.css';
 
 const THRESHOLD_OPTIONS: ListboxOption[] = ['0.75', '1', '1.25', '1.5', '1.75', '2'].map((value) => ({
   value,
-  label: storm.settings.thresholdOption(Number(value)),
+  label: settingsCopy.stormTab.hailSize(Number(value)),
 }));
 
 const PHOTO_TYPES = ['image/jpeg', 'image/png'];
@@ -50,7 +51,7 @@ type Draft = {
 function draftFrom(settings: StormSettingsBody): Draft {
   return {
     threshold: String(settings.thresholdIn),
-    budget: (settings.adBudgetCents / 100).toFixed(2),
+    budget: toDollars(settings.adBudgetCents),
     days: String(settings.adDays),
     share: settings.adGoogleSharePct,
     emailEnabled: settings.emailEnabled,
@@ -60,11 +61,16 @@ function draftFrom(settings: StormSettingsBody): Draft {
   };
 }
 
-/** Dollars typed as text back to whole cents, or null when it is not an amount of money. */
+/** Cents as the budget field shows them: whole dollars without decimals, else two places. */
+function toDollars(cents: number): string {
+  return cents % 100 === 0 ? String(cents / 100) : (cents / 100).toFixed(2);
+}
+
+/** Dollars typed as text back to whole cents, or null when it is not an amount of money. A $ and commas are allowed. */
 function parseDollars(text: string): number | null {
-  const trimmed = text.trim();
-  if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) return null;
-  return Math.round(Number(trimmed) * 100);
+  const clean = text.replace(/[$,\s]/g, '');
+  if (!/^\d+(\.\d{1,2})?$/.test(clean)) return null;
+  return Math.round(Number(clean) * 100);
 }
 
 /** Days typed as text back to a whole number, or null when it is not one. The server checks the range. */
@@ -143,6 +149,7 @@ type FormProps = { settings: StormSettingsBody };
 function SettingsForm({ settings }: FormProps) {
   const save = useSaveStormSettings();
   const toast = useToast();
+  const shareHelpId = useId();
   // What the form was loaded with: the form starts again from the server's answer after a save (see formKey)
   const [baseline] = useState<Draft>(() => draftFrom(settings));
   const [draft, setDraft] = useState<Draft>(baseline);
@@ -232,7 +239,8 @@ function SettingsForm({ settings }: FormProps) {
             error={days === null ? storm.settings.daysInvalid : at('adDays')}
             onChange={(event) => update({ days: event.target.value })}
           />
-          <div className={`${form.span} ${styles.share}`}>
+          {/* --ratio is how far along the slider is, so its filled part can follow the thumb */}
+          <div className={`${form.span} ${styles.share}`} style={{ '--ratio': draft.share / 100 } as CSSProperties}>
             <Field
               label={connections.googleShareLabel}
               type="range"
@@ -240,16 +248,22 @@ function SettingsForm({ settings }: FormProps) {
               max={100}
               step={5}
               value={String(draft.share)}
-              help={storm.settings.shareHelp}
+              aria-valuetext={connections.shareSplit(draft.share, 100 - draft.share)}
+              aria-describedby={shareHelpId}
               error={at('adGoogleSharePct')}
               onChange={(event) => update({ share: Number(event.target.value) })}
             />
-            {/* The two ends of the slider: Google's share on the left, Meta's on the right */}
-            <p className={styles.split}>
-              <span className={styles.figure}>{`${draft.share}%`}</span>
+            {/* The two ends of the slider, named short: Google's share on the left, Meta's on the right. The slider says both aloud. */}
+            <p className={styles.split} aria-hidden="true">
               <span>
-                {connections.metaShareLabel} <span className={styles.figure}>{`${100 - draft.share}%`}</span>
+                {connections.googleShareShort} <span className={styles.figure}>{`${draft.share}%`}</span>
               </span>
+              <span>
+                {connections.metaShareShort} <span className={styles.figure}>{`${100 - draft.share}%`}</span>
+              </span>
+            </p>
+            <p id={shareHelpId} className={styles.fieldHelp}>
+              {storm.settings.shareHelp}
             </p>
           </div>
         </div>
@@ -257,7 +271,7 @@ function SettingsForm({ settings }: FormProps) {
 
       <Panel title={storm.settings.emailsHeading}>
         <Toggle label={storm.settings.emailsLabel} checked={draft.emailEnabled} onChange={(next) => update({ emailEnabled: next })} />
-        <p className={styles.help}>{storm.settings.emailsHelp}</p>
+        <p className={styles.toggleHelp}>{storm.settings.emailsHelp}</p>
       </Panel>
 
       <Panel title={storm.settings.templatesHeading}>
@@ -380,7 +394,7 @@ function PhotosSection({ settings }: FormProps) {
           <FilePicker
             label={storm.settings.photoPickLabel}
             buttonLabel={storm.settings.photoChoose}
-            dropLabel={storm.settings.photoDrop}
+            dropLabel={settingsCopy.stormTab.photoDrop}
             accept="image/jpeg,image/png"
             busy={upload.isPending}
             error={photoError}

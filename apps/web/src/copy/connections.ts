@@ -5,9 +5,12 @@ export const connections = {
   /** The names of the two ad accounts, one name each everywhere. */
   googleAds: 'Google Ads',
   meta: 'Facebook and Instagram (Meta)',
-  /** The two sides of the ad budget split (Settings, Storm). */
+  /** The ad budget slider (Settings, Storm): its label, and the short names of its two ends beside their shares. */
   googleShareLabel: 'Share for Google Ads',
-  metaShareLabel: 'Share for Facebook and Instagram (Meta)',
+  googleShareShort: 'Google Ads',
+  metaShareShort: 'Meta',
+  /** What a screen reader says for the slider: it holds Google's share only, so both shares are named. */
+  shareSplit: (google: number, meta: number) => `Google Ads ${google}%, Meta ${meta}%`,
 
   /** The words both ad account cards share. */
   stepsLabel: 'How to connect',
