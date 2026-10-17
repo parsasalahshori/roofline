@@ -325,7 +325,7 @@ test('Settings: the switch is blocked without a number, the owner must confirm b
   const facts = settings.getByLabel('What the assistant should know about your company');
   const text = 'Open Monday to Friday, 8 to 5. We serve the whole county.';
   await facts.fill(text);
-  await expect(settings.getByText(`${text.length} of 2000 characters`)).toBeVisible();
+  await expect(settings.getByText(`${text.length} of 2,000 characters`)).toBeVisible();
   await settings.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.getByText('Saved.')).toBeVisible({ timeout: 20_000 });
 
