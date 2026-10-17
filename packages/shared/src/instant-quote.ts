@@ -1,4 +1,5 @@
 import type { LngLat } from './roof.ts';
+import type { PublicCatalogFacts } from './window-catalog.ts';
 
 /*
  * Instant quote: the public page a company puts on its own website in place of its "free estimate" form
@@ -132,6 +133,11 @@ export type PublicQuoteConfig = {
    * server's HOMEOWNER_APP_URL) and its name. Null when the server has none set: the page then offers only the free visit.
    */
   homeownerApp: { url: string; name: string } | null;
+  /**
+   * The company's window catalog without prices: the plain style choices, its tier names and notes, what every window
+   * includes, trust facts and badges, and the optional offer and financing lines (all empty or null by default).
+   */
+  catalog: PublicCatalogFacts;
 };
 
 /**

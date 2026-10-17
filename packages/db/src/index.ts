@@ -231,6 +231,7 @@ export * from './repos/window-measurements.ts';
 export * from './repos/google-retention.ts';
 export * from './repos/gutters.ts';
 export * from './repos/window-orders.ts';
+export * from './repos/window-catalog.ts';
 export * from './repos/tier-templates.ts';
 export * from './repos/proposals.ts';
 export * from './repos/proposal-public.ts';

@@ -316,6 +316,13 @@
       "when": 1792247277881,
       "tag": "0044_homeowner_satellite_reason",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1792274614981,
+      "tag": "0045_window_catalog",
+      "breakpoints": true
     }
   ]
 }

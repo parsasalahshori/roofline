@@ -163,6 +163,10 @@ describe('GET /api/public/quote/:slug', () => {
       },
       turnstileSiteKey: null,
     });
+    // The window catalog's words and facts (never its prices): four plain choices, Good/Better/Best, nothing entered
+    expect(res.body.catalog.tiles.map((x: { label: string }) => x.label)).toEqual(['Opens up and down', 'Slides sideways', "Doesn't open", 'Bay, bow or odd shape']);
+    expect(res.body.catalog.tiers.map((x: { label: string }) => x.label)).toEqual(['Good', 'Better', 'Best']);
+    expect(res.body.catalog).toMatchObject({ included: [], offer: null, financing: null, trust: { rating: null, badges: [] } });
     // The links go to the company's own policy pages, which answer.
     const slug = String((await q(`select slug from companies where id = $1`, [t.seed.a.companyId]))[0]!.slug);
     expect(res.body.consent.privacyUrl).toContain(slug);

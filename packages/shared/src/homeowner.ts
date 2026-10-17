@@ -2,7 +2,8 @@ import type { QuoteProduct } from './instant-quote.ts';
 import type { LngLat } from './roof.ts';
 import type { WindowStyle } from './window-order.ts';
 import type { ArDevice, ArQuad, Quad } from './window-photo-math.ts';
-import { DEFAULT_WINDOW_TIERS, type RoomPlanConfidence, WINDOW_SIZE_CLASSES, type WindowSizeClass, type WindowTier } from './windows.ts';
+import { DEFAULT_WINDOW_CATALOG, catalogWindowCents, type PublicCatalogFacts, tileOfStyle, TIER_RANK_WORDS, type WindowCatalog } from './window-catalog.ts';
+import { type RoomPlanConfidence, WINDOW_SIZE_CLASSES, type WindowSizeClass, type WindowTier } from './windows.ts';
 
 /*
  * The homeowner API: what the homeowner's phone app (WinChoice, on iPhone) says to the server and gets back, under
@@ -92,7 +93,12 @@ export function windowUncertaintyLabel(uncertaintyIn: { width: number; height: n
 /* The contract                                                                                                        */
 /* ------------------------------------------------------------------------------------------------------------------ */
 
-export type HomeownerWindowStyleOption = { key: WindowStyle; label: string };
+/**
+ * A choice on the window-style step: `key` is the style the app sends for it (the first of the choice's styles), `label`
+ * the plain words ("Opens up and down"), `hint` a few words under it, `tile` its id. `atVisit`: the window is counted
+ * but has no instant price (bay, bow and odd shapes).
+ */
+export type HomeownerWindowStyleOption = { key: WindowStyle; label: string; hint: string; tile: string; atVisit: boolean };
 
 /** GET /company. */
 export type HomeownerCompany = {
@@ -115,8 +121,13 @@ export type HomeownerCompany = {
    */
   consent: { version: string; text: string; textingText: string };
   windowStyles: HomeownerWindowStyleOption[];
-  /** Reserved: always null until a company can enter reviews, the year it started and its licence number. */
-  trust: { reviews?: number; since?: number; license?: string } | null;
+  /**
+   * What the company says about itself: a rating over a count with free-text source ("4.9 from 2,400+ homeowners"), the
+   * year it started, a licence, and up to three short badges. Null when the company entered none of it.
+   */
+  trust: PublicCatalogFacts['trust'] | null;
+  /** The tiers' own names and one-line notes, what every window includes, and the optional offer and financing lines. */
+  catalog: Pick<PublicCatalogFacts, 'tiers' | 'included' | 'offer' | 'financing'>;
   limits: { maxWindows: number; maxPhotoBytes: number; maxRoomLength: number; maxLabelLength: number; tokenDays: number };
 };
 
@@ -169,6 +180,8 @@ export type HomeownerWindowInput = {
   room: string;
   label?: string;
   style: WindowStyle;
+  /** Bathroom window: frosted (privacy) glass, which adds to the price. Absent: false. */
+  frosted?: boolean;
   scale: HomeownerArScale | HomeownerRoomPlanScale | HomeownerCardScale;
   uploadId?: string;
   corners?: Quad;
@@ -189,18 +202,23 @@ export type HomeownerWindow = HomeownerWindowInput & {
   sizeLabel: string;
   /** "about ±1/8 in" (rounded up to an eighth, never a bare ±). */
   uncertaintyLabel: string;
+  /** The plain name of the window's style choice ("Opens up and down"). */
+  styleLabel: string;
 };
 
 export type HomeownerQuoteTier = {
   key: HomeownerTierKey;
-  /** "Good", "Better", "Best". */
+  /** The company's name for the tier ("Replenish"); "Good", "Better" or "Best" when it set none. */
   label: string;
+  /** One line about the tier ("Lifetime warranty"); empty when the company set none. */
+  note: string;
   /** What the tier is ("Vinyl double-hung") and a line about it. */
   name: string;
   description: string;
   /** Whole dollars, installed: every measured window plus the estimated ones. total = sum(perWindow) + estimatedTotal. */
   total: number;
-  perWindow: { windowId: string; price: number }[];
+  /** `atVisit`: this window has no instant price (price is 0 and it is left out of the total). */
+  perWindow: { windowId: string; price: number; atVisit?: boolean }[];
   estimatedCount: number;
   estimatedTotal: number;
 };
@@ -213,6 +231,8 @@ export type HomeownerQuote = {
   measuredCount: number;
   /** Windows not measured yet, priced from the address estimate (or from the count the homeowner gave). */
   estimatedCount: number;
+  /** Measured windows with no instant price (bay, bow, odd shapes): counted, priced at the visit. */
+  atVisitCount?: number;
   missingHint?: HomeownerMissingHint;
 };
 
@@ -283,21 +303,20 @@ export function scaleWindowMix(mix: Partial<WindowMixCounts> | null, count: numb
   return out;
 }
 
-const TIER_LABELS: Readonly<Record<HomeownerTierKey, string>> = { good: 'Good', better: 'Better', best: 'Best' };
-
-/** The price of one window of a size class on a tier, whole US dollars. */
-const dollarsFor = (tier: WindowTier, sizeClass: WindowSizeClass): number => Math.round(tier.priceCents[sizeClass] / 100);
+const TIER_LABELS = TIER_RANK_WORDS;
 
 export type HomeownerQuoteInput = {
   /** The windows the homeowner measured (each priced at its own size class). */
-  measured: readonly { id: string; sizeClass: WindowSizeClass }[];
+  measured: readonly { id: string; sizeClass: WindowSizeClass; style?: WindowStyle; frosted?: boolean }[];
   /** The address estimate's window count, or null when there is none. */
   expected: { low: number; high: number; likely: number } | null;
   /** The number of windows the homeowner says the house has (measured ones included), or null. */
   override: number | null;
   /** The address estimate's mix of sizes (counts or shares), used to price the windows not measured yet. */
   mix: Partial<WindowMixCounts> | null;
-  /** The company's window tiers; the defaults when absent. */
+  /** The company's window catalog (tiers, style prices, frosted glass); the defaults when absent. */
+  catalog?: WindowCatalog;
+  /** Just the tiers, when there is no catalog (older callers). */
   tiers?: readonly WindowTier[];
 };
 
@@ -312,22 +331,33 @@ export function buildHomeownerQuote(input: HomeownerQuoteInput): HomeownerQuote 
   const expectedTotal = input.override ?? input.expected?.likely ?? measuredCount;
   const estimatedCount = Math.max(0, expectedTotal - measuredCount);
   const estimatedMix = scaleWindowMix(input.mix, estimatedCount);
-  const tiers = (input.tiers ?? DEFAULT_WINDOW_TIERS).filter((t) => t.enabled);
-  const out: HomeownerQuoteTier[] = tiers.map((t) => {
-    const perWindow = input.measured.map((w) => ({ windowId: w.id, price: dollarsFor(t, w.sizeClass) }));
-    const estimatedTotal = WINDOW_SIZE_CLASSES.reduce((n, c) => n + estimatedMix[c] * dollarsFor(t, c), 0);
-    return {
-      key: t.tier,
-      label: TIER_LABELS[t.tier],
-      name: t.name,
-      description: t.description,
-      total: perWindow.reduce((n, w) => n + w.price, 0) + estimatedTotal,
-      perWindow,
-      estimatedCount,
-      estimatedTotal,
-    };
-  });
-  const quote: HomeownerQuote = { tiers: out, measuredCount, estimatedCount };
+  const catalog: WindowCatalog = input.catalog ?? (input.tiers === undefined ? DEFAULT_WINDOW_CATALOG : { ...DEFAULT_WINDOW_CATALOG, tiers: [...input.tiers] });
+  const tiles = catalog.styleTiles;
+  const baseTile = tiles[0]!;
+  const dollars = (cents: number | null): number | null => (cents === null ? null : Math.round(cents / 100));
+  const atVisitCount = input.measured.filter((w) => w.style !== undefined && tileOfStyle(tiles, w.style).atVisit).length;
+  const out: HomeownerQuoteTier[] = catalog.tiers
+    .filter((t) => t.enabled)
+    .map((t) => {
+      const perWindow = input.measured.map((w) => {
+        const tile = w.style === undefined ? baseTile : tileOfStyle(tiles, w.style);
+        const price = dollars(catalogWindowCents(catalog, tile, t.tier, w.sizeClass, w.frosted === true));
+        return price === null ? { windowId: w.id, price: 0, atVisit: true } : { windowId: w.id, price };
+      });
+      const estimatedTotal = WINDOW_SIZE_CLASSES.reduce((n, c) => n + estimatedMix[c] * (dollars(catalogWindowCents(catalog, baseTile, t.tier, c, false)) ?? 0), 0);
+      return {
+        key: t.tier,
+        label: t.label ?? TIER_LABELS[t.tier],
+        note: t.note ?? '',
+        name: t.name,
+        description: t.description,
+        total: perWindow.reduce((n, w) => n + w.price, 0) + estimatedTotal,
+        perWindow,
+        estimatedCount,
+        estimatedTotal,
+      };
+    });
+  const quote: HomeownerQuote = { tiers: out, measuredCount, estimatedCount, ...(atVisitCount > 0 && { atVisitCount }) };
   // "Did we miss any?": fewer measured than the address estimate's low end, when the homeowner has not said their own count.
   if (input.override === null && input.expected !== null && measuredCount > 0 && measuredCount < input.expected.low) {
     const { low, high, likely } = input.expected;

@@ -3,7 +3,7 @@ import type { Request } from 'express';
 import { Router } from 'express';
 import busboy from 'busboy';
 import { z } from 'zod';
-import { appendWindowUpload, getLatestWindowMeasurementForProperty, getWindowMeasurement, type StoredFacadePhoto, type StoredWindowUpload, updateWindowMeasurement, type WindowMeasurementChange, withTenant } from '@roofline/db';
+import { appendWindowUpload, getLatestWindowMeasurementForProperty, getWindowCatalog, getWindowMeasurement, type StoredFacadePhoto, type StoredWindowUpload, updateWindowMeasurement, type WindowMeasurementChange, withTenant } from '@roofline/db';
 import { AR_DEVICES, cardProblem, type DoorRuler, HOMEOWNER_APP_SOURCE, type PhotoWindowInput, priceWindows, ROOMPLAN_CONFIDENCES, RULER_KINDS, RULER_MAX_IN, RULER_MIN_IN, SHEET_MAX_OFFSET_IN, SHEET_MAX_POINTS, SHEET_PAPER_IN, WINDOW_PHOTO_REFERENCES, WINDOW_SIZE_CLASSES, WINDOW_STYLES, type WindowAdjustments, type WindowQuote, windowCounts } from '@roofline/shared';
 import { arProblem, readImageInfo, roomPlanProblem, sheetProblem, sizePhotoWindow } from '../estimator/window-uploads.ts';
 import type { AppDeps } from '../app.ts';
@@ -152,6 +152,7 @@ const PhotoWindowSchema = z
     source: z.literal(HOMEOWNER_APP_SOURCE).optional(),
     room: z.string().min(1).max(40).refine(noNul).optional(),
     style: z.enum(WINDOW_STYLES).optional(),
+    frosted: z.boolean().optional(),
   })
   .strict()
   // Every kind but RoomPlan is sized on its photo: uploadId and corners are required. Corners need their photo.
@@ -540,7 +541,8 @@ export function windowMeasurementRoutes(deps: AppDeps): Router {
     const { ctx } = req;
     const row = await withTenant(pools, ctx, (tx) => getWindowMeasurement(tx, ctx, idParam(req.params.id)));
     if (row === null) throw new AppError(404, MESSAGES.notFound);
-    const quotes: WindowQuote[] | null = can(ctx, 'view_money_totals') ? priceWindows(windowCounts(toWindowView(row, clock.now()))) : null;
+    const tiers = can(ctx, 'view_money_totals') ? (await withTenant(pools, ctx, (tx) => getWindowCatalog(tx, ctx))).tiers : null;
+    const quotes: WindowQuote[] | null = tiers === null ? null : priceWindows(windowCounts(toWindowView(row, clock.now())), tiers);
     res.json({ quotes });
   });
 

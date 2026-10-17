@@ -92,6 +92,7 @@ import { publicHomeownerRoutes } from './public/homeowner.ts';
 import { publicQuoteRoutes } from './public/quote.ts';
 import { quotePage } from './public/quote-page.ts';
 import { instantQuoteSettingsRoutes } from './routes/instant-quote-settings.ts';
+import { windowCatalogRoutes } from './routes/window-catalog.ts';
 import { stormPage } from './public/storm-page.ts';
 import { unsubscribeRoutes } from './public/unsubscribe.ts';
 import { proposalRoutes } from './routes/proposals.ts';
@@ -412,6 +413,7 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/tier-templates', tierTemplateRoutes(deps));
   app.use('/api/estimator/settings', estimatorSettingsRoutes(deps));
   app.use('/api/instant-quote/settings', instantQuoteSettingsRoutes(deps));
+  app.use('/api/window-catalog', windowCatalogRoutes(deps));
   app.use('/api/estimator', estimatorMapRoutes(deps));
   app.use('/api/proposals', proposalRoutes(deps));
   // Storm Scout: storms and their plans, door-knock routes, per-company storm settings, and ads.

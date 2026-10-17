@@ -1,4 +1,4 @@
-import { getHomeownerMeasurement, getQuoteEstimate, homeownerProgress, type HomeownerProgress, type HomeownerRequestRow, type QuoteEstimateRow, type StoredWindowUpload, type TenantContext, type Tx } from '@roofline/db';
+import { getHomeownerMeasurement, getQuoteEstimate, getWindowCatalog, homeownerProgress, type HomeownerProgress, type HomeownerRequestRow, type QuoteEstimateRow, type StoredWindowUpload, type TenantContext, type Tx } from '@roofline/db';
 import {
   buildHomeownerQuote,
   HOMEOWNER_APP_SOURCE,
@@ -16,6 +16,9 @@ import {
   type PhotoWindow,
   type PhotoWindowInput,
   type QuoteProduct,
+  type StyleTile,
+  tileOfStyle,
+  type WindowCatalog,
   SATELLITE_UNUSABLE_MESSAGE,
   sizeFromArPoints,
   windowSizeLabel,
@@ -94,14 +97,16 @@ export function reasonsOf(w: PhotoWindow): string[] {
 }
 
 /** A stored, sized window as the homeowner sees it. */
-export function windowView(w: PhotoWindow): HomeownerWindow {
+export function windowView(w: PhotoWindow, tiles: readonly StyleTile[]): HomeownerWindow {
+  const style = w.style ?? 'double-hung';
   const uncertaintyIn = w.uncertaintyIn ?? { width: 0.5, height: 0.5 };
   const scale = w.scale as HomeownerWindowInput['scale'];
   return {
     id: w.id,
     room: w.room ?? '',
     ...(w.label !== undefined && { label: w.label }),
-    style: w.style ?? 'double-hung',
+    style,
+    ...(w.frosted === true && { frosted: true }),
     scale,
     ...(w.uploadId !== undefined && { uploadId: w.uploadId }),
     ...(w.corners !== undefined && { corners: w.corners }),
@@ -113,16 +118,18 @@ export function windowView(w: PhotoWindow): HomeownerWindow {
     reasons: reasonsOf(w),
     sizeLabel: windowSizeLabel(w.widthIn, w.heightIn),
     uncertaintyLabel: windowUncertaintyLabel(uncertaintyIn),
+    styleLabel: tileOfStyle(tiles, style).label,
   };
 }
 
 /** The windows quote for a request, or null when it is not about windows or is a call back. */
-export function quoteOf(request: HomeownerRequestRow, estimate: QuoteEstimateRow | null, windows: readonly PhotoWindow[]): HomeownerQuote | null {
+export function quoteOf(request: HomeownerRequestRow, estimate: QuoteEstimateRow | null, windows: readonly PhotoWindow[], catalog: WindowCatalog): HomeownerQuote | null {
   if (request.status === 'callback' || !request.services.includes('windows')) return null;
   const expected = estimateOf(request, estimate).windows;
   const stored = estimate?.result as StoredEstimateResult | undefined;
   return buildHomeownerQuote({
-    measured: windows.map((w) => ({ id: w.id, sizeClass: w.sizeClass })),
+    measured: windows.map((w) => ({ id: w.id, sizeClass: w.sizeClass, ...(w.style !== undefined && { style: w.style }), frosted: w.frosted === true })),
+    catalog,
     expected,
     override: request.windowCountOverride,
     mix: stored?.windowMix ?? null,
@@ -162,6 +169,7 @@ export function statusOf(request: HomeownerRequestRow, progress: HomeownerProgre
 export async function buildRequestView(tx: Tx, ctx: TenantContext, request: HomeownerRequestRow): Promise<HomeownerRequestView> {
   const estimate = request.quoteEstimateId === null ? null : await getQuoteEstimate(tx, ctx, request.quoteEstimateId);
   const { windows } = await sizedWindows(tx, ctx, request);
+  const catalog = await getWindowCatalog(tx, ctx);
   const summary: HomeownerRequestSummary = {
     id: request.id,
     status: request.status,
@@ -174,9 +182,9 @@ export async function buildRequestView(tx: Tx, ctx: TenantContext, request: Home
     createdAt: request.createdAt.toISOString(),
     expiresAt: request.expiresAt.toISOString(),
   };
-  const views = windows.map(windowView);
+  const views = windows.map((w) => windowView(w, catalog.styleTiles));
   const rooms = [...new Set(views.map((w) => w.room).filter((r) => r !== ''))];
-  const view: HomeownerRequestView = { request: summary, windows: views, rooms, quote: quoteOf(request, estimate, windows) };
+  const view: HomeownerRequestView = { request: summary, windows: views, rooms, quote: quoteOf(request, estimate, windows, catalog) };
   if (request.quoteRequestId !== null) {
     const rawZone = await zoneOf(tx, ctx);
     const timeZone = isTimeZone(rawZone) ? rawZone : 'UTC';
@@ -211,6 +219,7 @@ export function storedInput(w: HomeownerWindowInput): PhotoWindowInput {
     source: HOMEOWNER_APP_SOURCE,
     room: w.room,
     style: w.style,
+    ...(w.frosted === true && { frosted: true }),
   } as PhotoWindowInput;
 }
 

@@ -1,7 +1,7 @@
 import express, { Router, type Request, type RequestHandler } from 'express';
 import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
-import { createQuoteRequest, getProperty, getQuoteEstimate, quoteCompany, withTenant } from '@roofline/db';
+import { createQuoteRequest, getProperty, getQuoteEstimate, getWindowCatalog, quoteCompany, withTenant } from '@roofline/db';
 import {
   type PublicQuoteConfig,
   type PublicQuoteEstimate,
@@ -12,6 +12,7 @@ import {
   QUOTE_LIMITS,
   homeownerProducts,
   QUOTE_PRODUCTS,
+  publicFactsOf,
   QUOTE_WINDOW_COUNT,
   quoteConsentText,
   quoteTextConsentText,
@@ -155,6 +156,7 @@ export function publicQuoteRoutes(deps: AppDeps): Router {
       const { ctx, settings } = await pageFor(deps, req.params.slug);
       const company = await withTenant(deps.pools, ctx, (tx) => quoteCompany(tx, ctx));
       if (company === null) throw new AppError(404, MESSAGES.notFound);
+      const catalog = await withTenant(deps.pools, ctx, (tx) => getWindowCatalog(tx, ctx));
       const body: PublicQuoteConfig = {
         slug: settings.slug!,
         companyName: company.name,
@@ -171,6 +173,7 @@ export function publicQuoteRoutes(deps: AppDeps): Router {
         },
         turnstileSiteKey: turnstileOn(deps.config) ? deps.config.TURNSTILE_SITE_KEY! : null,
         homeownerApp: deps.config.HOMEOWNER_APP_URL === undefined ? null : { url: deps.config.HOMEOWNER_APP_URL, name: deps.config.HOMEOWNER_APP_NAME ?? 'WinChoice' },
+        catalog: publicFactsOf(catalog),
       };
       res.json(body);
     }),
@@ -200,8 +203,8 @@ export function publicQuoteRoutes(deps: AppDeps): Router {
     route(async (req, res) => {
       const { ctx, settings } = await pageFor(deps, req.params.slug);
       const body = parse(WindowsBody, req.body);
-      const row = await withTenant(deps.pools, ctx, (tx) => getQuoteEstimate(tx, ctx, body.quoteId));
-      const answer = row === null ? null : windowsForCount(row, body.count, settings.rangePct);
+      const { row, catalog } = await withTenant(deps.pools, ctx, async (tx) => ({ row: await getQuoteEstimate(tx, ctx, body.quoteId), catalog: await getWindowCatalog(tx, ctx) }));
+      const answer = row === null ? null : windowsForCount(row, body.count, settings.rangePct, catalog.tiers);
       // Another company's quote, one with no windows, or none at all: the same answer.
       if (answer === null) throw new AppError(404, QUOTE_MESSAGE);
       res.json(answer satisfies PublicQuoteWindows);
@@ -258,7 +261,7 @@ export function publicQuoteRoutes(deps: AppDeps): Router {
 
       const result = estimate.result as Partial<PublicQuoteEstimate>;
       // The homeowner's own window count, priced the way the page priced it (the summary says it was theirs).
-      const ownWindows = body.windowCount === undefined ? null : windowsForCount(estimate, body.windowCount, settings.rangePct);
+      const ownWindows = body.windowCount === undefined ? null : windowsForCount(estimate, body.windowCount, settings.rangePct, (await withTenant(deps.pools, ctx, (tx) => getWindowCatalog(tx, ctx))).tiers);
       const ipHash = quoteIpHash(deps.config, req.ip ?? 'unknown', ctx.companyId);
       const filed = await withTenant(deps.pools, ctx, (tx) =>
         createQuoteRequest(tx, ctx, {

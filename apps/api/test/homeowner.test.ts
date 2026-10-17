@@ -5,6 +5,7 @@ import request from 'supertest';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, inject, test, vi } from 'vitest';
 import { lockedQuoteVisit, withTenant } from '@roofline/db';
 import { insertFootprints } from '@roofline/db/system';
+import { WINCHOICE_CATALOG } from '../src/scripts/demo-winchoice-catalog.ts';
 import {
   DEFAULT_WINDOW_TIERS,
   HOMEOWNER_TOKEN_DAYS,
@@ -206,8 +207,20 @@ describe('GET /company', () => {
       trust: null,
       limits: { maxWindows: 60, maxPhotoBytes: 12 * 1024 * 1024, maxRoomLength: 40, maxLabelLength: 80, tokenDays: HOMEOWNER_TOKEN_DAYS },
     });
-    expect((res.body.windowStyles as { key: string }[]).map((s) => s.key)).toEqual(['double-hung', 'single-hung', 'slider-2', 'slider-3', 'picture', 'casement', 'awning', 'arch', 'circle']);
-    expect((res.body.windowStyles as { label: string }[]).every((s) => s.label.length > 0)).toBe(true);
+    // Four plain choices; each carries the style key an app sends for it
+    expect(res.body.windowStyles).toEqual([
+      { key: 'double-hung', label: 'Opens up and down', hint: 'Double-hung', tile: 'up-down', atVisit: false },
+      { key: 'slider-2', label: 'Slides sideways', hint: 'Slider', tile: 'sideways', atVisit: false },
+      { key: 'picture', label: "Doesn't open", hint: 'Picture window', tile: 'fixed', atVisit: false },
+      { key: 'arch', label: 'Bay, bow or odd shape', hint: 'We quote it at your visit', tile: 'special', atVisit: true },
+    ]);
+    // Nothing entered: Good / Better / Best with no notes, nothing included, no offer or financing
+    expect(res.body.catalog).toEqual({
+      tiers: [{ key: 'good', label: 'Good', note: '' }, { key: 'better', label: 'Better', note: '' }, { key: 'best', label: 'Best', note: '' }],
+      included: [],
+      offer: null,
+      financing: null,
+    });
     expect(JSON.stringify(res.body)).not.toMatch(/price|cents|dailyCap|embed/i);
   });
 
@@ -972,6 +985,63 @@ describe('the quote', () => {
     expect(v.request.estimate.roof).not.toBeNull();
     expect(v.request.home.address).toContain('4810 Underwood');
     expect(await count('window_measurements', t.seed.a.companyId)).toBe(1);
+  });
+});
+
+describe("the company's own catalog", () => {
+  const useWinChoice = () => q(`update company_settings set window_catalog = $2::jsonb where company_id = $1`, [t.seed.a.companyId, JSON.stringify(WINCHOICE_CATALOG)]);
+
+  test('/company carries the tier names and notes, what every window includes, the trust facts, offer and financing', async () => {
+    await useWinChoice();
+    const res = await get('/company');
+    expect(res.body.trust).toEqual({ rating: { value: 4.9, count: 2400, plus: true, source: 'homeowners' }, sinceYear: 2012, license: null, badges: ['A+ BBB', 'Made in USA', 'Lifetime warranty'] });
+    expect(res.body.catalog.tiers).toEqual([
+      { key: 'good', label: 'Replenish', note: '1-year warranty' },
+      { key: 'better', label: 'Refine', note: 'Lifetime warranty' },
+      { key: 'best', label: 'Renew', note: 'Lifetime warranty' },
+    ]);
+    expect(res.body.catalog.included).toEqual(['Argon gas fill', 'Low-E glass (Cardinal LoE366)', 'ENERGY STAR® certified', 'FlexScreen']);
+    expect(res.body.catalog.offer.termsUrl).toMatch(/^https:/);
+    expect(res.body.catalog.financing.url).toMatch(/^https:/);
+    expect((res.body.windowStyles as { tile: string }[]).map((x) => x.tile)).toEqual(['up-down', 'sideways', 'fixed', 'special']);
+    // Prices stay with the staff and the quote
+    expect(JSON.stringify(res.body)).not.toMatch(/price|cents/i);
+  });
+
+  test('the quote uses the company tiers, adds frosted glass for a bathroom window and leaves a bay or odd shape to the visit', async () => {
+    await useWinChoice();
+    const s = await start();
+    await addAr(s, 'plain', 36, 48);
+    await addAr(s, 'bath', 36, 48, { room: 'Bath', frosted: true });
+    await addAr(s, 'slide', 36, 48, { room: 'Den', style: 'slider-2' });
+    const bay = await addAr(s, 'bay', 36, 48, { room: 'Front', style: 'arch' });
+    const v = bay.res.body as HomeownerRequestView;
+    expect(v.windows.map((w) => [w.id, w.style, w.styleLabel, w.frosted ?? false])).toEqual([
+      ['plain', 'double-hung', 'Opens up and down', false],
+      ['bath', 'double-hung', 'Opens up and down', true],
+      ['slide', 'slider-2', 'Slides sideways', false],
+      ['bay', 'arch', 'Bay, bow or odd shape', false],
+    ]);
+    const good = v.quote!.tiers.find((x) => x.key === 'good')!;
+    // DEMO numbers: standard Replenish 490, frosted +45, sliders +20 on the base; the bay has no instant price
+    expect(good).toMatchObject({ label: 'Replenish', note: '1-year warranty' });
+    expect(good.perWindow).toEqual([
+      { windowId: 'plain', price: 490 },
+      { windowId: 'bath', price: 535 },
+      { windowId: 'slide', price: 510 },
+      { windowId: 'bay', price: 0, atVisit: true },
+    ]);
+    expect(good.total).toBe(490 + 535 + 510 + good.estimatedTotal);
+    expect(v.quote!.atVisitCount).toBe(1);
+    // A bathroom window said no or left out is clear glass: the same price
+    expect((await addAr(s, 'clear', 36, 48, { room: 'Bath 2', frosted: false })).res.status).toBe(201);
+  });
+
+  test('a bathroom window must be yes or no', async () => {
+    const s = await start();
+    const { res } = await addAr(s, 'a', 36, 48, { frosted: 'yes' });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('frosted');
   });
 });
 

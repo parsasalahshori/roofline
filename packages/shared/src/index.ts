@@ -50,6 +50,7 @@ export * from './window-photo-math.ts';
 export * from './gutters.ts';
 export * from './instant-quote.ts';
 export * from './window-order.ts';
+export * from './window-catalog.ts';
 export * from './window-photo-sheet.ts';
 export * from './window-photo-cv.ts';
 export * from './window-photo-card.ts';

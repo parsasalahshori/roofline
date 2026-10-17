@@ -297,6 +297,8 @@ export type PhotoWindowInput = {
   room?: string;
   /** The window's style as the homeowner picked it. */
   style?: WindowStyle;
+  /** Bathroom window: frosted (privacy) glass, which adds to the price. Absent: clear glass. */
+  frosted?: boolean;
 };
 
 /** The window a photographed window belongs to: its shared key, else its own id (one photo, one window). */
@@ -411,6 +413,10 @@ export type WindowTier = {
   tier: Tier;
   name: string;
   description: string;
+  /** The company's own name for the tier ("Replenish"); absent: Good, Better or Best. */
+  label?: string;
+  /** One line for the tier's card ("Lifetime warranty"); absent: none. */
+  note?: string;
   priceCents: Record<WindowSizeClass, number>;
   enabled: boolean;
 };

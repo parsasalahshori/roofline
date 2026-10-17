@@ -11,6 +11,7 @@ import {
   type TenantContext,
   withTenant,
   zoneDayStart,
+  getWindowCatalog,
 } from '@roofline/db';
 import {
   type InstantQuoteSettings,
@@ -28,6 +29,7 @@ import {
   scaleWindowMix,
   windowCounts,
   type WindowCounts,
+  type WindowTier,
   type WindowSizeClass,
   WINDOW_SIZE_CLASSES,
 } from '@roofline/shared';
@@ -177,9 +179,9 @@ async function eaveOf(deps: AppDeps, ctx: TenantContext, property: PropertyRow, 
 type WindowMix = Record<WindowSizeClass, number>;
 
 /** The window tiers' range for a count of each size. */
-function rangeOfMix(mix: WindowMix, pct: number): PriceRange | null {
+function rangeOfMix(mix: WindowMix, pct: number, tiers?: readonly WindowTier[]): PriceRange | null {
   const counts = Object.fromEntries(WINDOW_SIZE_CLASSES.map((c) => [c, { measured: 0, estimated: mix[c] }])) as WindowCounts;
-  return priceRange(priceWindows(counts).map((q) => q.totalCents), pct);
+  return priceRange(priceWindows(counts, tiers).map((q) => q.totalCents), pct);
 }
 
 /**
@@ -190,6 +192,7 @@ function windowsRange(
   ring: LngLat[],
   eaveHeightM: number | null,
   pct: number,
+  tiers?: readonly WindowTier[],
 ): { count: number; range: PriceRange; mix: WindowMix; floors: number | null; countRange: { low: number; high: number } | null } | null {
   const walls = wallsFor({ ring, camera: null, eaveHeightM, outlineSource: 'footprint' }, []);
   if (walls === null) return null;
@@ -198,7 +201,7 @@ function windowsRange(
   const mix = Object.fromEntries(WINDOW_SIZE_CLASSES.map((c) => [c, counts[c].estimated])) as WindowMix;
   const count = WINDOW_SIZE_CLASSES.reduce((n, c) => n + mix[c], 0);
   if (count === 0) return null;
-  const range = rangeOfMix(mix, pct);
+  const range = rangeOfMix(mix, pct, tiers);
   return range === null ? null : { count, range, mix, floors: walls.heightSource === 'assumed' ? null : walls.floors, countRange: estimated.range ?? null };
 }
 
@@ -210,11 +213,11 @@ export const scaleMix: (mix: Partial<WindowMix> | null, count: number) => Window
  * windows: the estimate's mix of sizes scaled to that count, at the width the estimate was priced at. Null when the
  * estimate has no windows. The stored estimate is never changed (another visitor of the address shares it).
  */
-export function windowsForCount(row: QuoteEstimateRow, count: number, fallbackPct: number): PublicQuoteWindows | null {
+export function windowsForCount(row: QuoteEstimateRow, count: number, fallbackPct: number, tiers?: readonly WindowTier[]): PublicQuoteWindows | null {
   const r = row.result as { windows?: { count: number } | null; windowMix?: Partial<WindowMix>; windowPct?: number };
   if (row.status !== 'ready' || !r.windows) return null;
   const n = Math.min(QUOTE_WINDOW_COUNT.max, Math.max(QUOTE_WINDOW_COUNT.min, Math.round(count)));
-  const range = rangeOfMix(scaleMix(r.windowMix ?? null, n), typeof r.windowPct === 'number' ? r.windowPct : fallbackPct);
+  const range = rangeOfMix(scaleMix(r.windowMix ?? null, n), typeof r.windowPct === 'number' ? r.windowPct : fallbackPct, tiers);
   return range === null ? null : { count: n, range };
 }
 
@@ -363,7 +366,8 @@ export async function estimateForAddress(
     // No roof price when the satellite pictures cannot be trusted; the windows and gutters carry on.
     const roof = wantsRoof && satellite === undefined ? await roofRange(deps, ctx, view, pct) : null;
     const eaveM = wantsWindows && ring !== null ? await eaveOf(deps, ctx, property, point, ring) : null;
-    const counted = wantsWindows && ring !== null ? windowsRange(ring, eaveM, pct) : null;
+    const tiers = wantsWindows ? (await withTenant(deps.pools, ctx, (tx) => getWindowCatalog(tx, ctx))).tiers : undefined;
+    const counted = wantsWindows && ring !== null ? windowsRange(ring, eaveM, pct, tiers) : null;
     const windows = counted === null ? null : { count: counted.count, range: counted.range };
     const outline = ring === null ? null : { center: view.center, ring: thin(ring) };
     const ready = roof !== null || windows !== null;

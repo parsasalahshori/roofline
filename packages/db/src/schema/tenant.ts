@@ -58,6 +58,7 @@ import {
   HOMEOWNER_CALLBACK_REASONS,
   type WindowOrderLine,
   type WindowOrderSettings,
+  type WindowCatalog,
   type WindowOrderSettingsPatch,
 } from '@roofline/shared';
 import { bytea, citext, enumCheck, multiPolygon, pk, point4326, timestamps, tstz } from './columns.ts';
@@ -226,6 +227,8 @@ export const companySettings = pgTable(
     estimateChangeClause: boolean('estimate_change_clause').notNull().default(true),
     /** Window factory orders: the company's deductions, rounding, uncertainty factor and limits (null = the defaults in code). */
     windowOrderSettings: jsonb('window_order_settings').$type<WindowOrderSettingsPatch>(),
+    /** The window catalog homeowners see: style choices, tier names and prices, adders, included list, trust, offer, financing (null = the defaults in code). */
+    windowCatalog: jsonb('window_catalog').$type<WindowCatalog>(),
     /** Front Desk: false until forwarding passes or the owner turns it on. */
     frontDeskEnabled: boolean('front_desk_enabled').notNull().default(false),
     /** Front Desk: text the caller back about a missed call and answer SMS. */

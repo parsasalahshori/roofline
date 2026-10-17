@@ -10,6 +10,7 @@ import {
   ensureHomeownerMeasurement,
   getFiledLead,
   getHomeownerRequest,
+  getWindowCatalog,
   getProperty,
   getQuoteEstimate,
   getWindowMeasurement,
@@ -34,7 +35,6 @@ import {
   HOMEOWNER_PHOTO_MAX_BYTES,
   HOMEOWNER_ROOM_MAX,
   HOMEOWNER_TOKEN_DAYS,
-  HOMEOWNER_WINDOW_STYLE_LABELS,
   type HomeownerRequestView,
   type PhotoWindowInput,
   QUOTE_CONSENT_VERSION,
@@ -49,6 +49,7 @@ import {
   WINDOW_STYLES,
   type WindowAdjustments,
   cardProblem,
+  publicFactsOf,
 } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { arProblem, readImageInfo, roomPlanProblem, sizePhotoWindow } from '../estimator/window-uploads.ts';
@@ -100,6 +101,7 @@ const NOT_OFFERED_MESSAGE = "We don't offer that online yet. Please give us a ca
 const ROOM_MESSAGE = `Please name the room (up to ${HOMEOWNER_ROOM_MAX} characters).`;
 const LABEL_MESSAGE = `Please keep the window's name to ${HOMEOWNER_LABEL_MAX} characters.`;
 const STYLE_MESSAGE = 'Please pick a window style.';
+const FROSTED_MESSAGE = 'Please say whether this is a bathroom window.';
 const WINDOW_MESSAGE = 'Please check this window and measure it again.';
 const COUNT_MESSAGE = `Use ${QUOTE_WINDOW_COUNT.min} to ${QUOTE_WINDOW_COUNT.max} windows.`;
 const FIRST_MESSAGE = 'Please enter your first name.';
@@ -215,6 +217,7 @@ const WindowBody = z
     room: z.string({ error: ROOM_MESSAGE }).trim().min(1, ROOM_MESSAGE).max(HOMEOWNER_ROOM_MAX, ROOM_MESSAGE).refine(noNul, ROOM_MESSAGE),
     label: z.string({ error: LABEL_MESSAGE }).trim().max(HOMEOWNER_LABEL_MAX, LABEL_MESSAGE).refine(noNul, LABEL_MESSAGE).optional(),
     style: z.enum(WINDOW_STYLES, { error: STYLE_MESSAGE }),
+    frosted: z.boolean({ error: FROSTED_MESSAGE }).optional(),
     scale: ScaleSchema,
     uploadId: z.string({ error: WINDOW_MESSAGE }).regex(UPLOAD_ID, WINDOW_MESSAGE).optional(),
     corners: QuadSchema.optional(),
@@ -228,6 +231,9 @@ type WindowBodyType = z.infer<typeof WindowBody>;
 /* ------------------------------------------------------------------------------------------------------------------ */
 /* Helpers                                                                                                             */
 /* ------------------------------------------------------------------------------------------------------------------ */
+
+/** Whether the company entered any trust fact. */
+const hasTrust = (t: { rating: unknown; sinceYear: number | null; license: unknown; badges: string[] }): boolean => t.rating !== null || t.sinceYear !== null || t.license !== null || t.badges.length > 0;
 
 /** A #rgb or #rrggbb colour as #rrggbb. */
 function hex6(color: string | null): string | null {
@@ -358,8 +364,9 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
     '/:slug/company',
     route(async (req, res) => {
       const { ctx, settings } = await pageFor(deps, req.params.slug);
-      const company = await withTenant(pools, ctx, (tx) => quoteCompany(tx, ctx));
+      const [company, catalog] = await withTenant(pools, ctx, async (tx) => [await quoteCompany(tx, ctx), await getWindowCatalog(tx, ctx)] as const);
       if (company === null) throw new AppError(404, MESSAGES.notFound);
+      const facts = publicFactsOf(catalog);
       const urls = policyUrls(deps.config, company.slug);
       const body: HomeownerCompany = {
         apiVersion: 1,
@@ -371,8 +378,9 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
         privacyUrl: urls.privacy,
         termsUrl: urls.terms,
         consent: { version: QUOTE_CONSENT_VERSION, text: quoteConsentText(company.name), textingText: quoteTextConsentText(company.name) },
-        windowStyles: WINDOW_STYLES.map((key) => ({ key, label: HOMEOWNER_WINDOW_STYLE_LABELS[key] })),
-        trust: null,
+        windowStyles: facts.tiles.map((t) => ({ key: t.style, label: t.label, hint: t.hint, tile: t.id, atVisit: t.atVisit })),
+        trust: hasTrust(facts.trust) ? facts.trust : null,
+        catalog: { tiers: facts.tiers, included: facts.included, offer: facts.offer, financing: facts.financing },
         limits: {
           maxWindows: HOMEOWNER_MAX_WINDOWS,
           maxPhotoBytes: HOMEOWNER_PHOTO_MAX_BYTES,

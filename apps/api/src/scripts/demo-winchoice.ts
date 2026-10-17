@@ -21,6 +21,7 @@ import { type Query, seedCompany } from '@roofline/db/testing';
 import type { JobStage } from '@roofline/shared';
 import { systemContext } from '../permissions.ts';
 import { createTask } from '../tasks/service.ts';
+import { seedWinChoiceCatalog } from './demo-winchoice-catalog.ts';
 import { seedRidgewayWindows } from './demo-winchoice-windows.ts';
 import { demoWorldCounts, seedAgentsDashboardActivity, type DemoWorld, type DemoWorldOptions } from './demo-world.ts';
 
@@ -130,7 +131,12 @@ export async function seedWinChoiceWorld(pools: Pools, ownerUrl: string, now: Da
     await q(`update companies set address_city = 'Omaha' where slug = 'summit-ridge-roofing' and address_city is null`);
 
     const existing = await findCompanyBySlug(pools.system, DEMO_WINCHOICE_SLUG);
-    if (existing) return { created: false, companyId: existing.id, counts: await winChoiceCounts(q, existing.id) };
+    if (existing) {
+      // A demo made before the catalog existed gets it now (a company that already has one keeps its own).
+      const has = await q(`select window_catalog is not null as has from company_settings where company_id = $1`, [existing.id]);
+      if (has[0]?.has !== true) await seedWinChoiceCatalog(pools, systemContext(existing.id), now);
+      return { created: false, companyId: existing.id, counts: await winChoiceCounts(q, existing.id) };
+    }
 
     const company = await seedCompany(ownerUrl, {
       name: DEMO_WINCHOICE_NAME,
@@ -144,6 +150,7 @@ export async function seedWinChoiceWorld(pools: Pools, ownerUrl: string, now: Da
     const { companyId } = company;
     const ctx = systemContext(companyId);
     const userId = (email: string) => company.users.find((u) => u.email === email)!.userId;
+    await seedWinChoiceCatalog(pools, ctx, now);
     const reps = { maddie: userId('maddie@winchoice.test'), caleb: userId('caleb@winchoice.test') } as const;
     const ago = (ms: number) => new Date(now.getTime() - ms);
     const ahead = (ms: number) => new Date(now.getTime() + ms);
