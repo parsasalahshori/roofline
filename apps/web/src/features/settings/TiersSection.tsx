@@ -418,6 +418,7 @@ function TierEditor({ tier, draft, errors, canEdit, onChange }: EditorProps) {
           <div className={styles.remove}>
             <Button
               variant="ghost"
+              className={styles.removeButton}
               disabled={!canEdit}
               onClick={() => onChange((current) => ({ ...current, addOns: current.addOns.filter((item) => item.id !== addOn.id) }))}
             >
@@ -455,6 +456,7 @@ function TierEditor({ tier, draft, errors, canEdit, onChange }: EditorProps) {
           <div className={styles.remove}>
             <Button
               variant="ghost"
+              className={styles.removeButton}
               disabled={!canEdit}
               onClick={() => onChange((current) => ({ ...current, highlights: current.highlights.filter((item) => item.id !== highlight.id) }))}
             >

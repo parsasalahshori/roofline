@@ -53,6 +53,11 @@
   min-height: 40px;
 }
 
+/* Remove is a quiet button: its words end where the fields end, out by its 14px of padding and 1px edge */
+.removeButton {
+  margin-right: -15px;
+}
+
 .add {
   display: flex;
   padding-top: 8px;
@@ -68,5 +73,11 @@
   .check,
   .remove {
     justify-content: flex-start;
+  }
+
+  /* Under its field, its words begin where the field begins */
+  .removeButton {
+    margin-right: 0;
+    margin-left: -15px;
   }
 }
