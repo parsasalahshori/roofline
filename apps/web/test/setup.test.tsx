@@ -117,19 +117,19 @@ describe('setup tab', () => {
     expect(screen.getByText('Waiting on phone carriers (usually 10–15 days)')).toBeInTheDocument();
   });
 
-  it('sets the steps that are not in the count apart, after the five that are', async () => {
+  it('sets the steps that are not in the count apart, with a band on the first of them', async () => {
     signedInApi(viewOf());
     renderApp('/settings/setup');
 
     const list = await stepList();
-    // The divider is not a row, so the list still has its nine steps
+    // The band sits inside a step, so the list keeps its nine steps and nothing in it is not a step
     expect(within(list).getAllByRole('listitem')).toHaveLength(9);
-    const divider = within(list).getByText(setup.laterHeading).closest('li') as HTMLElement;
-    expect(within(divider).getByText(setup.laterNote)).toBeInTheDocument();
-    // Five steps come before it, four after
-    const everything = Array.from(list.children);
-    expect(everything.indexOf(divider)).toBe(5);
-    expect(everything).toHaveLength(10);
+    expect(Array.from(list.children).every((child) => child.tagName === 'LI')).toBe(true);
+    const first = await rowOf(setupItems.prices_and_tiers.title);
+    expect(within(first).getByText(setup.laterHeading)).toBeInTheDocument();
+    expect(within(first).getByText(setup.laterNote)).toBeInTheDocument();
+    // Only that one: the five before it and the three after it have no band
+    expect(within(list).getAllByText(setup.laterHeading)).toHaveLength(1);
   });
 
   it('no step says it is coming later: every feature has shipped', async () => {

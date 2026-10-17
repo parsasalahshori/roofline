@@ -1,11 +1,11 @@
 import { FOUNDATION_ITEMS, type SetupItemView } from '@roofline/shared';
 import { Banner, Panel, ProgressRing, Skeleton } from '@roofline/ui';
-import { Fragment } from 'react';
 import { ApiError } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
 import { setup } from '../../copy/setup.ts';
 import { useSetup } from './api.ts';
 import { SetupRow } from './SetupRow.tsx';
+import rowStyles from './SetupRow.module.css';
 import styles from './SetupTab.module.css';
 
 /** The step to do next: the first one still to do or started, for the person who can act on it. */
@@ -57,15 +57,20 @@ export function SetupTab() {
       </div>
       <ol aria-label={setup.listLabel} className={styles.list}>
         {view.items.map((item, index) => (
-          <Fragment key={item.key}>
-            {index === firstLater ? (
-              <li role="presentation" className={styles.later}>
-                <span>{setup.laterHeading}</span>
-                <span className={styles.laterNote}>{setup.laterNote}</span>
-              </li>
-            ) : null}
-            <SetupRow item={item} canAct={isOwner} next={item.key === next} />
-          </Fragment>
+          <SetupRow
+            key={item.key}
+            item={item}
+            canAct={isOwner}
+            next={item.key === next}
+            {...(index === firstLater && {
+              lead: (
+                <>
+                  <span>{setup.laterHeading}</span>
+                  <span className={rowStyles.leadNote}>{setup.laterNote}</span>
+                </>
+              ),
+            })}
+          />
         ))}
       </ol>
     </Panel>

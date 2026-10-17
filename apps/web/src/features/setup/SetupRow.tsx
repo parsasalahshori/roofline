@@ -1,6 +1,6 @@
 import type { ComingWith, SetupItemKey, SetupItemView } from '@roofline/shared';
 import { Button, Tag, type IconName, type TagTone } from '@roofline/ui';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { comingWith, setup, setupItems } from '../../copy/setup.ts';
 import { CompanyBasicsSheet } from './CompanyBasicsSheet.tsx';
 import { useSkip, useUnskip } from './api.ts';
@@ -11,6 +11,8 @@ type SetupRowProps = {
   canAct: boolean;
   /** The step to do next: its action is the one primary button of the checklist. */
   next?: boolean;
+  /** A band across the top of the row: the first step of a group says what sets the group apart. */
+  lead?: ReactNode;
 };
 
 /** Where each step leads: a page, or the sheet that opens over this one (the company on the map). */
@@ -70,7 +72,7 @@ function tagText(item: SetupItemView, later: ComingWith | null): string {
 }
 
 /** One checklist step: its title, what it is for, what it unlocks, its status tag and the action that moves it on. */
-export function SetupRow({ item, canAct, next = false }: SetupRowProps) {
+export function SetupRow({ item, canAct, next = false, lead }: SetupRowProps) {
   const copy = setupItems[item.key];
   const [sheetOpen, setSheetOpen] = useState(false);
   const skip = useSkip();
@@ -123,6 +125,7 @@ export function SetupRow({ item, canAct, next = false }: SetupRowProps) {
 
   return (
     <li className={styles.row} data-status={look}>
+      {lead !== undefined ? <div className={styles.lead}>{lead}</div> : null}
       <div className={styles.main}>
         <h3 className={styles.title}>{copy.title}</h3>
         <p className={styles.description}>{copy.description}</p>
