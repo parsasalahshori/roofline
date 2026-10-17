@@ -1,4 +1,4 @@
-import { Button, Icon } from '@roofline/ui';
+import { Button, Icon, Tag } from '@roofline/ui';
 import { quotedTotals, type InstantEstimate } from '@roofline/shared';
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { legal } from '../../../copy/legal.ts';
@@ -27,7 +27,11 @@ export type CardNumbers = {
   edgeFt: number;
 };
 
-/** The card's numbers: the quoted sections' totals (the whole roof's when every section is in the quote). */
+/**
+ * The card's numbers: the quoted sections' totals (the whole roof's when every section is in the quote). The waste is
+ * what the quote adds when the quote is known, so the screen says one figure (the panel's "plus 12% waste" is the same
+ * number); until then it is the roof's own suggestion.
+ */
 export function cardNumbers(m: MeasurementView, estimate: InstantEstimate, model: RoofModel | null, wastePct: number | null): CardNumbers {
   if (model !== null) {
     const t = quotedTotals(model);
@@ -36,7 +40,7 @@ export function cardNumbers(m: MeasurementView, estimate: InstantEstimate, model
       slopedSqFt: t.slopedSqFt,
       pitch: model.pitch,
       facets: t.facetCount,
-      wastePct: t.wastePct,
+      wastePct: wastePct ?? t.wastePct,
       lines: [
         { kind: 'ridge', ft: t.ridgeFt },
         { kind: 'hip', ft: t.hipFt },
@@ -286,9 +290,7 @@ export function MeasureCard({
               <Icon name="chevd" size={16} className={styles.chevron} />
             </Button>
           ) : null}
-          <span className={styles.kind} data-kind={m.kind}>
-            {m.kind === 'exact' ? measure.exactLabel : measure.estimateLabel}
-          </span>
+          <Tag data-kind={m.kind}>{m.kind === 'exact' ? measure.exactLabel : measure.estimateLabel}</Tag>
         </div>
       ) : null}
     </section>

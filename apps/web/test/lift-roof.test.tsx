@@ -183,6 +183,16 @@ describe('the measure card', () => {
     expect(screen.getByText('12%')).toBeTruthy();
   });
 
+  it('says one waste figure: the quote\'s when it is known (as the panel does), the roof\'s own suggestion until then', () => {
+    const m = view();
+    const roof = gableRoof(ring as [number, number][]);
+    expect(cardNumbers(m, m.estimate, roof, null).wastePct).toBe(10);
+    expect(cardNumbers(m, m.estimate, roof, 12).wastePct).toBe(12);
+    render(<MeasureCard m={m} numbers={cardNumbers(m, m.estimate, roof, 12)} scan={scanAt('done', 1)} outlineOnly={false} editing={false} onEdit={() => undefined} panels={null} />);
+    expect(screen.getByText('12%')).toBeTruthy();
+    expect(screen.queryByText('10%')).toBeNull();
+  });
+
   it('says when the pitch is from Google Solar, and not otherwise', () => {
     const solar = view({ pitchSource: 'solar' });
     const numbers = cardNumbers(solar, solar.estimate, gableRoof(ring as [number, number][]), null);

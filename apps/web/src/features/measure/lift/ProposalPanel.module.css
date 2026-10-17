@@ -61,6 +61,7 @@
   display: inline-flex;
   flex: none;
   align-items: center;
+  gap: 4px;
   color: var(--brand-text);
   font-size: var(--font-size-min);
   font-weight: 600;
@@ -81,7 +82,7 @@
   flex-direction: column;
   gap: 14px;
   min-height: 0;
-  padding: 14px 16px 12px;
+  padding: 14px 16px 28px;
   overflow-y: auto;
   overscroll-behavior-y: contain;
 }
@@ -255,6 +256,7 @@
 }
 
 .foot {
+  position: relative;
   display: flex;
   flex: none;
   flex-direction: column;
@@ -262,6 +264,18 @@
   padding: 14px 16px 16px;
   border-top: 1px solid var(--line);
   background: var(--surface);
+}
+
+/* What scrolls under the footer fades out into it, so a heading or a row is never cut through by a hard edge (the scroll area's bottom padding keeps the last row clear of the fade) */
+.foot::before {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  left: 0;
+  height: 20px;
+  background: linear-gradient(to top, var(--surface), transparent);
+  pointer-events: none;
 }
 
 .totalRow {

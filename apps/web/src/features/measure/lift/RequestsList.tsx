@@ -36,6 +36,8 @@ export function RequestsList({ selectedId, onPick }: { selectedId: string; onPic
     return () => clearTimeout(timer);
   }, [text]);
   const { list, rows, total } = useRequestRows(q);
+  const searchRef = useRef<HTMLDivElement>(null);
+  const focusSearch = () => searchRef.current?.querySelector('input')?.focus();
   const navigate = useNavigate();
   const create = useMeasure();
   const prefetch = usePrefetchMeasure();
@@ -117,7 +119,7 @@ export function RequestsList({ selectedId, onPick }: { selectedId: string; onPic
         ) : null}
       </header>
       <p className={styles.subtitle}>{measure.requestsSubtitle}</p>
-      <div className={styles.search}>
+      <div className={styles.search} ref={searchRef}>
         <Icon name="search" size={16} className={styles.glass} />
         <Field
           label={measure.requestsSearch}
@@ -139,7 +141,17 @@ export function RequestsList({ selectedId, onPick }: { selectedId: string; onPic
       ) : list.isPending ? (
         <Skeleton lines={4} />
       ) : rows.length === 0 ? (
-        <p className={styles.note}>{q === '' ? measure.requestsEmpty : measure.requestsNoMatches}</p>
+        q === '' ? (
+          <div className={styles.empty} data-requests-empty="">
+            <p className={styles.note}>{measure.requestsEmpty}</p>
+            <p className={styles.note}>{measure.requestsEmptyHint}</p>
+            <Button className={styles.emptyAction} onClick={focusSearch}>
+              {measure.requestsEmptyAction}
+            </Button>
+          </div>
+        ) : (
+          <p className={styles.note}>{measure.requestsNoMatches}</p>
+        )
       ) : (
         <ul className={styles.list}>
           {rows.map((row) => (

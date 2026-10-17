@@ -238,3 +238,43 @@
     animation: none;
   }
 }
+
+/* A phone: on the roof step the recommended tier, its squares and its total stay at the bottom, above the tab bar, with the way to the proposal */
+.quoteBar {
+  position: sticky;
+  z-index: 2;
+  bottom: 0;
+  display: none;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px -16px -20px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+@container measure (max-width: 979.98px) {
+  .quoteBar {
+    display: flex;
+  }
+}
+
+.quoteBarText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.quoteBarLabel {
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+.quoteBarTotal {
+  color: var(--ink);
+  font: 750 26px / 1.1 var(--f-display);
+  font-stretch: 112%;
+  font-variant-numeric: tabular-nums;
+}
