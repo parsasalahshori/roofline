@@ -1,0 +1,235 @@
+/* The measuring flow (/q/:slug/measure): the quote page's cards and buttons, plus lists, choices and the photo to tap on. */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.text {
+  margin: 0;
+  color: var(--ds-text-2, #3a444d);
+}
+
+.small {
+  margin: 0;
+  color: var(--ds-text-3, #6b7680);
+  font-size: 0.875rem;
+}
+
+.stepLine {
+  margin: 0;
+  color: var(--ds-text-3, #6b7680);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.prompt {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--ds-r-ctl, 9px);
+  background: var(--ds-accent-tint, #fff1d1);
+  color: var(--ds-accent-ink, #8a5a00);
+  font-weight: 650;
+}
+
+/* Where the photo sits: dark, as wide as the card allows, never taller than most of the screen */
+.tapArea {
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  border-radius: 12px;
+  background: #1d2329;
+}
+
+.tapFrame {
+  --ratio: 1;
+
+  position: relative;
+  width: min(100%, calc(62dvh * var(--ratio)));
+  user-select: none;
+  touch-action: none;
+}
+
+/* Progress: four short steps */
+.progress {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.progress li {
+  padding-top: 8px;
+  border-top: 4px solid var(--ds-hairline-strong, #c3cbd1);
+  color: var(--ds-text-3, #6b7680);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.progress li[data-state="done"] {
+  border-top-color: var(--quote-accent);
+  color: var(--ds-text-2, #3a444d);
+}
+
+.progress li[data-state="now"] {
+  border-top-color: var(--quote-accent);
+  color: var(--ds-text-1, #151c22);
+}
+
+.coachSteps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-left: 1.25rem;
+  color: var(--ds-text-2, #3a444d);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.listRow,
+.windowRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--ds-hairline, rgba(21, 28, 34, 0.08));
+  border-radius: var(--ds-r-ctl, 9px);
+  background: var(--ds-surface, #fff);
+}
+
+.windowText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.size {
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.missing {
+  padding: 10px 12px;
+  border-radius: var(--ds-r-ctl, 9px);
+  background: var(--ds-accent-tint, #fff1d1);
+}
+
+.countForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* Radio choices as big buttons: 44px high, two to a row on a phone */
+.choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--ds-hairline-strong, #c3cbd1);
+  border-radius: var(--ds-r-ctl, 9px);
+  background: var(--ds-surface, #fff);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.choice input {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--quote-accent);
+}
+
+.choice[data-checked="true"] {
+  border-color: var(--quote-accent);
+  background: var(--ds-accent-tint, #fff1d1);
+  font-weight: 650;
+}
+
+@media (max-width: 340px) {
+  .choices {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.tiers {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tier {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px;
+  border: 1px solid var(--ds-hairline-strong, #c3cbd1);
+  border-radius: var(--ds-r-ctl, 9px);
+  background: var(--ds-surface, #fff);
+}
+
+.tier[data-tier="better"] {
+  border-color: var(--quote-accent);
+  border-width: 2px;
+}
+
+.tierLabel {
+  color: var(--ds-text-3, #6b7680);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tierName {
+  font-size: 1.0625rem;
+}
+
+.tierTotal {
+  margin-top: 4px;
+  font-size: 1.375rem;
+  font-weight: 750;
+}

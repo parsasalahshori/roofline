@@ -8,8 +8,10 @@ import { formatPhone } from '../../lib/phone.ts';
 import { ScanOverlay } from '../measure/lift/ScanOverlay.tsx';
 import { readScanMs, stageAt, type ScanStage } from '../measure/lift/scan.ts';
 import { type EstimateAnswer, QuoteApiError, quoteApi } from './api.ts';
+import { Letterhead } from './Letterhead.tsx';
 import { RoofThumb } from './RoofThumb.tsx';
 import { measureLink } from './paths.ts';
+import { writeSeed } from './measure/session.ts';
 import { QrCode } from './QrCode.tsx';
 import { Turnstile } from './Turnstile.tsx';
 import styles from './QuotePage.module.css';
@@ -93,14 +95,7 @@ export function QuotePage({ slug }: { slug: string }) {
 
   return (
     <div className={styles.page} style={brandStyle(c.accentColor)}>
-      <header className={styles.brand}>
-        {c.logoUrl ? <img className={styles.logo} src={c.logoUrl} alt={c.companyName} /> : <span className={styles.companyName}>{c.companyName}</span>}
-        {c.phone ? (
-          <a className={styles.phone} href={`tel:${c.phone}`}>
-            {formatPhone(c.phone)}
-          </a>
-        ) : null}
-      </header>
+      <Letterhead logoUrl={c.logoUrl} companyName={c.companyName} phone={c.phone} />
       <main className={styles.column}>
         {services === null ? (
           <ServicesStep
@@ -411,7 +406,7 @@ function Results({
         ) : null}
       </ul>
       {answer.roof ? <p className={styles.note}>{quote.finalNote}</p> : null}
-      {showContinue && windows ? <MeasureWindows slug={slug} quoteId={answer.quoteId} app={config.homeownerApp} device={device} /> : null}
+      {showContinue && windows ? <MeasureWindows slug={slug} quoteId={answer.quoteId} address={answer.address} services={services} app={config.homeownerApp} device={device} /> : null}
       {showContinue ? (
         <div className={styles.actions}>
           {windows && config.homeownerApp !== null ? (
@@ -437,7 +432,21 @@ function Results({
  * store; an Android phone measures in its browser; on a computer a QR code (one link for both) is scanned by the phone.
  * Without the company's app link the page offers only the free visit (the caller's link under this).
  */
-function MeasureWindows({ slug, quoteId, app, device }: { slug: string; quoteId: string; app: PublicQuoteConfig['homeownerApp']; device: Device }) {
+function MeasureWindows({
+  slug,
+  quoteId,
+  address,
+  services,
+  app,
+  device,
+}: {
+  slug: string;
+  quoteId: string;
+  address: string;
+  services: readonly QuoteProduct[];
+  app: PublicQuoteConfig['homeownerApp'];
+  device: Device;
+}) {
   if (app === null) return null;
   const link = measureLink(slug, quoteId);
   return (
@@ -452,7 +461,7 @@ function MeasureWindows({ slug, quoteId, app, device }: { slug: string; quoteId:
       ) : null}
       {device === 'android' ? (
         <>
-          <Button href={link} size="lg" className={`${styles.primary} ${styles.wrap}`}>
+          <Button href={link} size="lg" className={`${styles.primary} ${styles.wrap}`} onClick={() => writeSeed(slug, { quoteId, address, services: [...services] })}>
             {quote.browserMeasure}
           </Button>
           <p className={styles.small}>{quote.browserLine}</p>

@@ -504,3 +504,17 @@
   text-underline-offset: 3px;
   cursor: pointer;
 }
+
+/* Reviews, year started, licence: one quiet line under the letterhead */
+.trustRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 0 16px 8px;
+  list-style: none;
+  color: var(--ds-text-3, #6b7680);
+  font-size: 0.875rem;
+  box-sizing: border-box;
+}

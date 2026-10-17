@@ -1,22 +1,98 @@
-import { quote } from '../../copy/quote.ts';
-import styles from './QuotePage.module.css';
+import { Button, Skeleton } from '@roofline/ui';
+import type { PublicQuoteConfig } from '@roofline/shared';
+import { useEffect, useState, type CSSProperties } from 'react';
+import { homeownerMeasure as copy } from '../../copy/homeownerMeasure.ts';
+import { detectDevice, type Device } from '../../lib/device.ts';
+import { quoteApi, QuoteApiError } from './api.ts';
+import { Letterhead } from './Letterhead.tsx';
+import { MeasureFlow } from './measure/MeasureFlow.tsx';
+import { QrCode } from './QrCode.tsx';
+import q from './QuotePage.module.css';
 
 /**
- * /q/:slug/measure: measuring windows in the phone's browser. A placeholder until that page is built (a separate piece
- * of work): the link and the route exist so the quote page and its QR code can point here.
+ * /q/:slug/measure: measuring windows in the phone's browser. An iPhone is sent to the company's app (with a way to
+ * measure in the browser anyway), a computer shows a QR code to open this page on a phone, and an Android phone (or
+ * an iPhone that chose the browser) gets the measuring flow. `?request=` is the quote's id: the estimate this opens.
  */
 export function MeasurePage({ slug }: { slug: string }) {
-  return (
-    <div className={styles.page}>
-      <main className={styles.column}>
-        <section className={styles.card}>
-          <h1 className={styles.title}>{quote.browserSoonTitle}</h1>
-          <p className={styles.text}>{quote.browserSoonBody}</p>
-          <a className={styles.linkButton} href={`/q/${slug}`}>
-            {quote.browserSoonBack}
-          </a>
-        </section>
+  const [config, setConfig] = useState<{ data?: PublicQuoteConfig; error?: QuoteApiError; attempt: number }>({ attempt: 0 });
+  const [device] = useState<Device>(() => detectDevice());
+  const [anyway, setAnyway] = useState(false);
+  const quoteId = new URLSearchParams(window.location.search).get('request');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    quoteApi.config(slug, controller.signal).then(
+      (data) => setConfig((s) => ({ data, attempt: s.attempt })),
+      (error: unknown) => {
+        if (error instanceof QuoteApiError) setConfig((s) => ({ error, attempt: s.attempt }));
+      },
+    );
+    return () => controller.abort();
+  }, [slug, config.attempt]);
+
+  useEffect(() => {
+    if (config.data) document.title = copy.pageTitle(config.data.companyName);
+  }, [config.data]);
+
+  if (config.error) {
+    const missing = config.error.status === 404;
+    return (
+      <main className={q.page}>
+        <div className={q.column}>
+          <h1 className={q.title}>{missing ? copy.notFoundTitle : copy.loadFailed}</h1>
+          {missing ? <p className={q.text}>{copy.notFoundBody}</p> : <Button onClick={() => setConfig((s) => ({ attempt: s.attempt + 1 }))}>{copy.retry}</Button>}
+        </div>
       </main>
+    );
+  }
+  if (!config.data) {
+    return (
+      <main className={q.page}>
+        <div className={q.column} role="status">
+          <span className="visually-hidden">{copy.loading}</span>
+          <Skeleton lines={3} />
+        </div>
+      </main>
+    );
+  }
+  const c = config.data;
+  const app = c.homeownerApp;
+  const style = c.accentColor === null ? undefined : ({ '--quote-accent': c.accentColor } as CSSProperties);
+  const backHref = `/q/${slug}`;
+
+  return (
+    <div className={q.page} style={style} data-measure-device={device}>
+      <Letterhead logoUrl={c.logoUrl} companyName={c.companyName} phone={c.phone} />
+      {device === 'iphone' && app !== null && !anyway ? (
+        <main className={q.column}>
+          <section className={q.card} data-gate="iphone">
+            <h1 className={q.title}>{copy.iphoneTitle}</h1>
+            <p className={q.text}>{copy.iphoneBody(app.name)}</p>
+            <Button href={app.url} size="lg" className={q.primary} target="_blank" rel="noopener noreferrer">
+              {copy.iphoneButton(app.name)}
+            </Button>
+            <Button variant="ghost" className={q.secondary} onClick={() => setAnyway(true)}>
+              {copy.iphoneAnyway}
+            </Button>
+          </section>
+        </main>
+      ) : device === 'desktop' ? (
+        <main className={q.column}>
+          <section className={q.card} data-gate="desktop">
+            <h1 className={q.title}>{copy.desktopTitle}</h1>
+            <p className={q.text}>{copy.desktopBody}</p>
+            <div className={q.qr} data-qr-block="">
+              <QrCode value={`${window.location.origin}${window.location.pathname}${window.location.search}`} label={copy.desktopQrAlt} className={q.qrImage} />
+            </div>
+            <a className={q.linkButton} href={backHref}>
+              {copy.desktopBack}
+            </a>
+          </section>
+        </main>
+      ) : (
+        <MeasureFlow slug={slug} quoteId={quoteId} />
+      )}
     </div>
   );
 }
