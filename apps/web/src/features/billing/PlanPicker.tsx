@@ -11,6 +11,9 @@ export function PlanPicker({ view }: { view: BillingView }) {
   const changePlan = useChangePlan();
 
   const onError = (error: Error) => toast.show(error.message, 'error');
+  // One primary button in the view: the only plan, or the plan the company already chose. With several to pick from and
+  // none chosen yet no plan is pushed, so every "Pick this plan" is the plain button.
+  const leadKey = view.plans.length === 1 ? view.plans[0]?.key : view.planKey;
 
   return (
     <Panel title={billing.plansHeading}>
@@ -40,7 +43,7 @@ export function PlanPicker({ view }: { view: BillingView }) {
                 </Button>
               ) : (
                 <Button
-                  variant="primary"
+                  variant={plan.key === leadKey ? 'primary' : 'default'}
                   onClick={() => checkout.mutate(plan.key, { onError })}
                   busy={checkout.isPending && checkout.variables === plan.key}
                 >
