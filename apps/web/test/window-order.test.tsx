@@ -245,7 +245,8 @@ describe('Window factory order', () => {
     const row = within(lineEl('w1'));
     expect(row.getByText(sizeSpeech(sizeCopy, 36.125, 60.125, null, false))).toBeTruthy();
     expect(row.getByText(copy.errors.speech(0.5, 0.5))).toBeTruthy();
-    expect(row.getByText(copy.photosCount(2))).toBeTruthy();
+    // Each reading is listed in the panel, so the row does not count the photos
+    expect(row.queryByText(copy.photosCount(2))).toBeNull();
     const rows = detail().querySelectorAll('[data-reading]');
     expect(within(rows[1] as HTMLElement).getByText(copy.readings.smallest.both)).toBeTruthy();
     expect(within(rows[0] as HTMLElement).queryByText(/Smallest/)).toBeNull();

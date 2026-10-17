@@ -125,12 +125,8 @@ export function OrderSheet({ lines, checked, locked, factor, pickedId, onPick, t
                   ) : (
                     <span className={styles.measuredStack}>
                       <Size w={read.width.inches} h={read.height.inches} copy={sizeCopy} data-measured="" />
-                      {read.known || line.measured.length > 1 ? (
-                        <span className={styles.measuredMeta}>
-                          {read.known ? <ReadingErrors width={read.width.error} height={read.height.error} /> : null}
-                          {line.measured.length > 1 ? <span>{copy.photosCount(line.measured.length)}</span> : null}
-                        </span>
-                      ) : null}
+                      {/* How many photos read it is in the panel, where each reading is listed: every row stays two lines */}
+                      {read.known ? <ReadingErrors width={read.width.error} height={read.height.error} /> : null}
                     </span>
                   )}
                 </Td>
