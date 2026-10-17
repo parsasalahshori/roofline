@@ -155,6 +155,20 @@ test('calendar: the week, day and list views show the same visits, and the chips
   const clipped = await block.evaluate((element) => element.scrollWidth <= element.clientWidth + 1);
   expect(clipped).toBe(true);
 
+  // The grid opens with the first visit in view, below the sticky head and all-day row, whatever the hour is now: a tall visit that began
+  // above the fold would show only its coloured edge
+  const inView = await block.evaluate((element) => {
+    const scroller = element.closest('[data-testid="time-grid"]');
+    if (scroller === null) return false;
+    const box = element.getBoundingClientRect();
+    const frame = scroller.getBoundingClientRect();
+    const stuck = Array.from(scroller.querySelectorAll('[data-day]'))
+      .filter((cell) => getComputedStyle(cell).position === 'sticky')
+      .map((cell) => cell.getBoundingClientRect().bottom);
+    return box.top >= Math.max(frame.top, ...stuck) - 1 && box.bottom <= frame.bottom + 1;
+  });
+  expect(inView).toBe(true);
+
   // Show canceled adds the canceled visit, and says so in words
   await page.getByRole('switch', { name: 'Show canceled' }).click();
   await expect(grid.getByTestId(`appt-${visits.canceled}`)).toBeVisible();

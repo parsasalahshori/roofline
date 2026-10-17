@@ -303,6 +303,16 @@ test('the calendar opens on the day, with a strip of the week, and the visit pag
   await expect(page.getByTestId(`appt-${visit.rows[0]?.id}`)).toBeVisible();
   await noSideScroll(page);
 
+  // The people chips wrap onto lines: every one is on the screen, and the row is not a box that slides sideways
+  const chips = page.getByRole('group', { name: 'Show appointments for' });
+  await expect(chips).toBeVisible();
+  expect(await chips.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  for (const chip of await chips.getByRole('button').all()) {
+    const chipBox = await chip.boundingBox();
+    expect(chipBox!.x).toBeGreaterThanOrEqual(0);
+    expect(chipBox!.x + chipBox!.width).toBeLessThanOrEqual(375);
+  }
+
   // A day of the strip, a thumb wide
   const other = strip.getByRole('button').nth(0);
   const box = await other.boundingBox();
@@ -429,6 +439,16 @@ test('D1 Front Desk pages do not scroll sideways', async ({ page, loginAs, markT
     await page.goto(path);
     await expect(ready()).toBeVisible({ timeout: 20_000 });
     await noSideScroll(page);
+  }
+
+  // Today's numbers are two tiles across, the fifth the full width: all five on the screen, with no strip to slide
+  await page.goto('/front-desk');
+  const tiles = page.getByRole('region', { name: "Today's numbers" }).locator('dl');
+  await expect(tiles).toHaveCount(5, { timeout: 20_000 });
+  for (const tile of await tiles.all()) {
+    const tileBox = await tile.boundingBox();
+    expect(tileBox!.x).toBeGreaterThanOrEqual(0);
+    expect(tileBox!.x + tileBox!.width).toBeLessThanOrEqual(375);
   }
 });
 
