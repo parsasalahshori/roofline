@@ -6,6 +6,7 @@ import { appointments } from '../../copy/appointments.ts';
 import { job } from '../../copy/job.ts';
 import { jobs } from '../../copy/jobs.ts';
 import { TASK_STATUS_LABEL } from '../../copy/status.ts';
+import { useIsPhone } from '../../shell/useIsPhone.ts';
 import { formatDollars } from '../jobs/format.ts';
 import { EmptyPanel } from '../jobs/states.tsx';
 import { useCompanyZone } from '../jobs/useCompanyToday.ts';
@@ -35,46 +36,56 @@ export function AppointmentsPanel({ view, className }: PanelProps) {
     return appointment.allDay ? job.appointmentAllDay(dayFormat.format(start)) : whenFormat.format(start);
   }
 
+  // The two booking buttons sit in the panel's head on a desktop. Beside the title they leave it no room on a phone,
+  // so there they are a row of their own under the visits.
+  const phone = useIsPhone();
+  const empty = view.appointments.length === 0;
+  const bookButtons = view.can.edit ? (
+    <>
+      <Button variant="default" size="sm" href={`/calendar/new?jobId=${jobId}&kind=inspection`}>
+        {job.bookInspection}
+      </Button>
+      <Button variant="default" size="sm" href={`/calendar/new?jobId=${jobId}&kind=install`}>
+        {job.bookInstall}
+      </Button>
+    </>
+  ) : null;
+  const bookRow = phone && bookButtons ? (
+    <div className={styles.bookRow} data-after-list={empty ? 'false' : 'true'}>
+      {bookButtons}
+    </div>
+  ) : null;
+
   return (
-    <Panel
-      title={job.appointmentsTitle}
-      className={className}
-      padded={view.appointments.length === 0}
-      actions={
-        view.can.edit ? (
-          <>
-            <Button variant="default" size="sm" href={`/calendar/new?jobId=${jobId}&kind=inspection`}>
-              {job.bookInspection}
-            </Button>
-            <Button variant="default" size="sm" href={`/calendar/new?jobId=${jobId}&kind=install`}>
-              {job.bookInstall}
-            </Button>
-          </>
-        ) : undefined
-      }
-    >
-      {view.appointments.length === 0 ? (
-        <EmptyPanel variant="inline" title={job.appointmentsEmpty} body={job.appointmentsEmptyBody} />
+    <Panel title={job.appointmentsTitle} className={className} padded={empty} actions={phone ? undefined : (bookButtons ?? undefined)}>
+      {empty ? (
+        <>
+          <EmptyPanel variant="inline" title={job.appointmentsEmpty} body={job.appointmentsEmptyBody} />
+          {bookRow}
+        </>
       ) : (
-        <ul className={styles.rows}>
-          {view.appointments.map((appointment) => (
-            <li key={appointment.id}>
-              <UiLink
-                href={`/calendar/appointments/${appointment.id}`}
-                className={styles.row}
-                data-kind={appointment.kind}
-                data-status={appointment.status}
-              >
-                <span className={styles.main}>
-                  <span className={styles.strong}>{job.appointmentKind[appointment.kind]}</span>
-                  {appointment.status !== 'scheduled' ? <Tag>{appointments.status[appointment.status]}</Tag> : null}
-                </span>
-                <span className={styles.mono}>{whenText(appointment)}</span>
-                <span className={styles.muted}>{appointment.assigned?.name ?? jobs.unassigned}</span>
-              </UiLink>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className={styles.rows}>
+            {view.appointments.map((appointment) => (
+              <li key={appointment.id}>
+                <UiLink
+                  href={`/calendar/appointments/${appointment.id}`}
+                  className={styles.row}
+                  data-kind={appointment.kind}
+                  data-status={appointment.status}
+                >
+                  <span className={styles.main}>
+                    <span className={styles.strong}>{job.appointmentKind[appointment.kind]}</span>
+                    {appointment.status !== 'scheduled' ? <Tag>{appointments.status[appointment.status]}</Tag> : null}
+                  </span>
+                  <span className={styles.mono}>{whenText(appointment)}</span>
+                  <span className={styles.muted}>{appointment.assigned?.name ?? jobs.unassigned}</span>
+                </UiLink>
+              </li>
+            ))}
+          </ul>
+          {bookRow}
+        </>
       )}
     </Panel>
   );

@@ -275,16 +275,12 @@
 }
 
 @media (max-width: 767.98px) {
+  /* One field to a row: the unit ("Per foot of edge") does not fit half of a 360px phone's row */
   .addOn {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .addOnName {
-    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .addOnActions {
-    grid-column: 1 / -1;
     justify-content: space-between;
   }
 
