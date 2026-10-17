@@ -172,8 +172,11 @@ describe('ProposalWindow page', () => {
     mocks.proposal = make();
     show();
     expect(screen.getByText(proposals.statusLabelFor('draft'))).toBeInTheDocument();
-    expect(screen.getByText(proposals.customerLine('Dana Smith', '12 Oak St'))).toBeInTheDocument();
-    expect(screen.getByText(proposals.validUntil('Nov 11'))).toBeInTheDocument();
+    // One word each, so the page puts the same dot between them
+    const meta = document.querySelector('[data-proposal-meta]') as HTMLElement;
+    expect(within(meta).getByText('Dana Smith')).toBeInTheDocument();
+    expect(within(meta).getByText('12 Oak St')).toBeInTheDocument();
+    expect(within(meta).getByText(proposals.validUntil('Nov 11'))).toBeInTheDocument();
   });
 
   it('the valid-until date is plain: Nov 9, not 2026-11-09', () => {
@@ -289,5 +292,30 @@ describe('ProposalWindow page', () => {
     mocks.proposal = make({ status: 'sent', sentAt: '2026-10-12T15:00:00Z', messageBody: 'Hi there' });
     show();
     expect(within(screen.getByRole('region', { name: proposals.messageHeading })).getByText('Hi there')).toBeInTheDocument();
+  });
+
+  it('a sent text reads as the customer got it: the name and the address filled in, the link as a quiet word, no braces', () => {
+    mocks.proposal = make({
+      status: 'sent',
+      sentAt: '2026-10-12T15:00:00Z',
+      messageBody: 'Hi {first_name}, your proposal for {address}: {link} Reply STOP to opt out.',
+    });
+    show();
+    const region = within(screen.getByRole('region', { name: proposals.messageHeading }));
+    expect(region.getByText(/Hi Dana, your proposal for 12 Oak St:/)).toBeInTheDocument();
+    expect(region.getByText(proposals.messageLinkWord)).toBeInTheDocument();
+    expect(region.getByText(/Reply STOP to opt out\./)).toBeInTheDocument();
+    expect(region.queryByText(/[{}]/)).toBeNull();
+  });
+
+  it('a draft keeps the words that fill in as written in the box and reads back resolved under it', () => {
+    mocks.proposal = make({ messageBody: 'Hi {first_name}, here is {link}' });
+    show();
+    const region = within(screen.getByRole('region', { name: proposals.messageHeading }));
+    expect(region.getByRole('textbox')).toHaveValue('Hi {first_name}, here is {link}');
+    const preview = region.getByText(proposals.messagePreview).parentElement as HTMLElement;
+    expect(within(preview).getByText(/Hi Dana, here is/)).toBeInTheDocument();
+    expect(within(preview).getByText(proposals.messageLinkWord)).toBeInTheDocument();
+    expect(preview.textContent).not.toMatch(/[{}]/);
   });
 });

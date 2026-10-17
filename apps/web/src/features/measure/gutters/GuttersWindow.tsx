@@ -1,5 +1,5 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Banner, Button, Checkbox, EmptyState, Field, Icon } from '@roofline/ui';
+import { Banner, Button, Checkbox, EmptyState, Field, Icon, Tag } from '@roofline/ui';
 import {
   DEFAULT_GUTTER_TIERS,
   gutterView,
@@ -37,6 +37,7 @@ import { wholeDollars } from '../lift/proposalLines.ts';
 import { RequestsList } from '../lift/RequestsList.tsx';
 import { usableRoof } from '../lift/roofModel.ts';
 import roofStyles from '../lift/RoofView.module.css';
+import { Credits } from '../lift/Credits.tsx';
 import { ScanBar } from '../lift/ScanBar.tsx';
 import { ScanCardHead } from '../lift/ScanCardHead.tsx';
 import { ScanOverlay } from '../lift/ScanOverlay.tsx';
@@ -343,9 +344,9 @@ function GutterMap({
           </li>
         </ul>
       ) : null}
-      <p className={roofStyles.credits}>
+      <Credits>
         <span>{usesFreeAerial(readMapEnv()) ? legal.imageryAttribution : legal.maptilerImageryAttribution}</span>
-      </p>
+      </Credits>
       {failed ? <span className={styles.mapFailed} data-map-failed="" /> : null}
     </div>
   );
@@ -679,9 +680,7 @@ function GuttersCard({
             {copy.adjust}
             <Icon name="chevd" size={16} className={cardStyles.chevron} />
           </Button>
-          <span className={cardStyles.kind} data-kind={view.confidence}>
-            {copy.confidenceTag[view.confidence]}
-          </span>
+          <Tag data-kind={view.confidence}>{copy.confidenceTag[view.confidence]}</Tag>
         </div>
       ) : null}
     </section>

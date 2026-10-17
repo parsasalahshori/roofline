@@ -261,6 +261,7 @@ function Editor({ view, onResync }: { view: WindowOrderView; onResync: () => voi
               lines={draft.lines}
               checked={derived.checked}
               locked={locked}
+              factor={view.settings.uncertaintyFactor}
               pickedId={pickedId}
               onPick={setPicked}
               ticked={ticked}
@@ -285,6 +286,7 @@ function Editor({ view, onResync }: { view: WindowOrderView; onResync: () => voi
                 n={pickedAt + 1}
                 measurementId={view.windowMeasurementId}
                 locked={locked}
+                factor={view.settings.uncertaintyFactor}
                 onEdit={(edit) => editLine(pickedId!, edit)}
               />
             ) : (

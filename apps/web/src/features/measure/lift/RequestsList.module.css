@@ -81,12 +81,13 @@
   display: none;
 }
 
-/* The field is 36px tall (the hidden label takes no room): the icon sits at its middle */
+/* The field is as tall as its row (36px, 44px on a phone; the hidden label takes no room): the icon sits at its middle */
 .glass {
   position: absolute;
   z-index: 1;
   left: 10px;
-  top: 10px;
+  top: 50%;
+  transform: translateY(-50%);
   color: var(--ink-3);
   pointer-events: none;
 }
@@ -95,6 +96,18 @@
   margin: 0;
   padding: 0 8px;
   color: var(--ink-3);
+}
+
+/* No request yet: what to do, and the button that does it */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.emptyAction {
+  margin: 4px 8px 0;
 }
 
 .list {
@@ -119,6 +132,8 @@
   color: var(--info-text);
   font-size: var(--font-size-min);
   font-weight: 500;
+  /* As tall as the status chip beside it, so the two words sit on one line */
+  line-height: 22px;
   text-decoration: underline;
 }
 
@@ -175,17 +190,19 @@
   color: var(--brand-text);
 }
 
-.address,
 .material {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* The whole address, on two lines where the column is narrow: cut mid-value it would hide the town and the zip */
 .address {
   grid-area: address;
   color: var(--ink-3);
   font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .material {

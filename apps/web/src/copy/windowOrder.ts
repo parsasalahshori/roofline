@@ -80,6 +80,12 @@ export const windowOrder = {
   optionsFor: (n: number, location: string) => `Options for window ${n}, ${location}`,
   size: (w: number, h: number) => `${inches(w)} × ${inches(h)} in`,
   plusMinus: (u: number) => `± ${inches(u)}`,
+  /** What a reading's error takes off the order size, per side: "±3/4" when both sides have the same, "±3/4 × ±5/8" when they differ. */
+  errors: {
+    line: (width: number, height: number): string => (inches(width) === inches(height) ? `±${inches(width)}` : `±${inches(width)} × ±${inches(height)}`),
+    speech: (width: number, height: number): string =>
+      inches(width) === inches(height) ? `plus or minus ${inches(width)}` : `plus or minus ${inches(width)} wide and ${inches(height)} high`,
+  },
   photosCount: (n: number) => plural(n, 'photo', 'photos'),
   noSize: 'No size',
   orderHint: 'Smallest measured, less the fit allowance, rounded down',

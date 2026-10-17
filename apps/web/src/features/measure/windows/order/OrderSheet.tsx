@@ -1,12 +1,14 @@
 import { Button, Checkbox, Field, Panel, Size, Table, Td, Th, Tr } from '@roofline/ui';
-import { MAX_LOCATION_LENGTH, MAX_ORDER_QUANTITY, smallestMeasured, type CheckedLine, type WindowOrderLine } from '@roofline/shared';
+import { MAX_LOCATION_LENGTH, MAX_ORDER_QUANTITY, type CheckedLine, type WindowOrderLine } from '@roofline/shared';
 import type { ReactNode } from 'react';
 import { sizeCopy } from '../../../../copy/measureWindows.ts';
 import { windowOrder as copy } from '../../../../copy/windowOrder.ts';
-import { LineStatus, lineSpec, type LineEdit } from './OrderLine.tsx';
+import { LineStatus, lineSpec, ReadingErrors, type LineEdit } from './OrderLine.tsx';
 import styles from './OrderWindow.module.css';
+import { orderReadings } from './readings.ts';
 
-const SELECTED_TONE = { ready: 'brand', check: 'tape', error: 'bad' } as const;
+/** A picked row's tint says what it needs: brand for ready, red for a hold. A line to look at has the warning amber, in the css (the kit's row tones have none). */
+const SELECTED_TONE = { ready: 'brand', error: 'bad' } as const;
 
 /** The common frame colours as the spec column's note: "all White / White" when every window has the same, else nothing. */
 function sharedColors(lines: readonly WindowOrderLine[]): string | null {
@@ -20,6 +22,8 @@ type Props = {
   lines: readonly WindowOrderLine[];
   checked: readonly CheckedLine[];
   locked: boolean;
+  /** How many errors come off a reading (the company's setting), to tell which photo sets each side. */
+  factor: number;
   /** The window picked for the panel beside the table. */
   pickedId: string | null;
   onPick: (id: string) => void;
@@ -40,10 +44,10 @@ type Props = {
 /**
  * The order as the factory reads it: one row a window with where it is, what the photos read (the smallest, with its
  * error), the size to order, how it is built, how many and whether it is ready. Location and quantity are typed in
- * the row. A row opens in the panel beside the table; its tint says what it needs: brand for ready, tape yellow for a
+ * the row. A row opens in the panel beside the table; its tint says what it needs: brand for ready, warning amber for a
  * window to look at, red for a hold.
  */
-export function OrderSheet({ lines, checked, locked, pickedId, onPick, ticked, onTick, onTickAll, onEdit, actions, bar, foot }: Props) {
+export function OrderSheet({ lines, checked, locked, factor, pickedId, onPick, ticked, onTick, onTickAll, onEdit, actions, bar, foot }: Props) {
   const allTicked = lines.length > 0 && lines.every((l) => ticked.has(l.id));
   const colors = sharedColors(lines);
   const withColors = colors === null;
@@ -77,12 +81,13 @@ export function OrderSheet({ lines, checked, locked, pickedId, onPick, ticked, o
             const n = i + 1;
             const picked = line.id === pickedId;
             const name = line.location.trim() === '' ? copy.windowNumber(n) : line.location;
-            const measured = smallestMeasured(line.measured);
+            // What the order size is worked from: per side, the reading and its own error
+            const read = orderReadings(line.measured, factor);
             const spec = lineSpec(line, c, withColors);
             return (
               <Tr
                 key={line.id}
-                {...(picked ? { tone: SELECTED_TONE[c.status] } : {})}
+                {...(picked && c.status !== 'check' ? { tone: SELECTED_TONE[c.status] } : {})}
                 selected={picked}
                 className={styles.row}
                 role="row"
@@ -115,12 +120,13 @@ export function OrderSheet({ lines, checked, locked, pickedId, onPick, ticked, o
                   />
                 </Td>
                 <Td role="cell" className={styles.cMeasured}>
-                  {measured === null ? (
+                  {read === null ? (
                     <span className={styles.muted}>{copy.noSize}</span>
                   ) : (
                     <span className={styles.measuredStack}>
-                      <Size w={measured.widthIn} h={measured.heightIn} pm={measured.uncertaintyIn} copy={sizeCopy} data-measured="" />
-                      {line.measured.length > 1 ? <span className={styles.muted}>{copy.photosCount(line.measured.length)}</span> : null}
+                      <Size w={read.width.inches} h={read.height.inches} copy={sizeCopy} data-measured="" />
+                      {/* How many photos read it is in the panel, where each reading is listed: every row stays two lines */}
+                      {read.known ? <ReadingErrors width={read.width.error} height={read.height.error} /> : null}
                     </span>
                   )}
                 </Td>
@@ -136,14 +142,21 @@ export function OrderSheet({ lines, checked, locked, pickedId, onPick, ticked, o
                     <span className={styles.specName} data-unset={line.style === null ? 'true' : undefined}>
                       {spec.name}
                     </span>
-                    {spec.rest.map((part) => (
-                      <span key={part} className={styles.specPart}>
-                        {part}
-                      </span>
-                    ))}
+                    {/* The style is a line of its own, and the dots sit only between the parts that follow */}
+                    <span className={styles.specRest}>
+                      {spec.rest.map((part) => (
+                        <span key={part} className={styles.specPart}>
+                          {part}
+                        </span>
+                      ))}
+                    </span>
                   </div>
                 </Td>
                 <Td role="cell" className={styles.cQty}>
+                  {/* A phone has no column heads: the number says what it is */}
+                  <span className={styles.qtyLabel} aria-hidden="true">
+                    {copy.columns.quantity}
+                  </span>
                   <Field
                     className={styles.cellField}
                     label={copy.quantityFor(n)}

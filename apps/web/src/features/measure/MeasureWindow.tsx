@@ -23,6 +23,7 @@ import { measureStyle, useImageryDate, usesFreeAerial } from './lift/aerial.ts';
 import { buildingDetail } from './lift/BuildingPopover.tsx';
 import { ProposalPanel } from './lift/ProposalPanel.tsx';
 import { RequestsList } from './lift/RequestsList.tsx';
+import { RoofQuoteBar } from './lift/RoofQuoteBar.tsx';
 import { useRequestRows } from './lift/requests.ts';
 import { addRoofLayers, facetName, readRoof, usableRoof } from './lift/roofModel.ts';
 import { googlePhotoFailure } from './googlePhoto.ts';
@@ -74,11 +75,15 @@ const MIN_ROOF_PX = 120;
 /** The card's distance from the photo's bottom edge, and the gap kept above it. */
 const CARD_INSET_PX = 14;
 const CARD_GAP_PX = 18;
+/** On a map wider than this the credits are a strip along the bottom edge, under the card: the card's inset leaves them this much room (narrower, they fold into an "i" in the corner). */
+const CREDITS_FOLD_PX = 640;
+const CREDITS_ROOM_PX = 16;
 
 /** The free room for the roof, as fitBounds padding: what the measure card covers stays out of it. */
 export function roofPadding(w: number, h: number, cardPx: number, editing: boolean): { top: number; bottom: number; left: number; right: number } {
   const top = editing ? Math.round(h * 0.1) + 12 : Math.round(h * 0.18);
-  const wanted = Math.max(Math.round(h * 0.27), cardPx > 0 ? cardPx + CARD_INSET_PX + CARD_GAP_PX : 0);
+  const inset = CARD_INSET_PX + (w > CREDITS_FOLD_PX ? CREDITS_ROOM_PX : 0);
+  const wanted = Math.max(Math.round(h * 0.27), cardPx > 0 ? cardPx + inset + CARD_GAP_PX : 0);
   const bottom = Math.max(0, Math.min(wanted, h - top - MIN_ROOF_PX));
   return { top, bottom, left: Math.round(w * 0.22), right: Math.round(w * 0.22) };
 }
@@ -838,6 +843,7 @@ export function MeasureWindow() {
             </div>
           )}
         </div>
+        {proposalReady && activeStep === 'roof' ? <RoofQuoteBar preview={head.preview.data} onOpen={() => setStep('proposal')} /> : null}
       </MeasureHost>
     </MeasurePage>
   );

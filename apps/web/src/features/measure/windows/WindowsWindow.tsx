@@ -1,4 +1,4 @@
-import { Banner, Button, EmptyState, Field, Icon, Listbox, PageSlotsContext, Panel, PrecisionLadder, Segmented, Skeleton, type SegmentedOption } from '@roofline/ui';
+import { Banner, Button, EmptyState, Field, Icon, Listbox, PageSlotsContext, Panel, PrecisionLadder, Segmented, type SegmentedOption } from '@roofline/ui';
 import {
   priceWindows,
   RULER_KINDS,
@@ -24,11 +24,13 @@ import { measureWindows as copy, windowPhotos } from '../../../copy/measureWindo
 import { measureAddressHref, splitAddress } from '../address.ts';
 import { readHandoff, type MeasureHandoff } from '../handoff.ts';
 import { MeasureHost, MeasurePage, MeasureSteps } from '../MeasurePage.tsx';
+import { useGuttersLink } from '../useGuttersLink.ts';
 import { ScanBar } from '../lift/ScanBar.tsx';
 import { stageAt, useScan } from '../lift/scan.ts';
 import { pickedOption, TierPanel, type TierOption } from '../lift/ProposalPanel.tsx';
 import { wholeDollars } from '../lift/proposalLines.ts';
 import panelStyles from '../lift/ProposalPanel.module.css';
+import { useCompany } from '../../settings/api.ts';
 import { photoSrc, useCreateWindowMeasurement, usePatchWindowMeasurement, useWindowMeasurement, useWindowPreview } from './api.ts';
 import { ElevationDrawing } from './ElevationDrawing.tsx';
 import { liveCounts, newMarkId, readAdjustments, rulerSizeLabel, shownWindows, tiersFromQuotes, totalOf, type Box, type Corners } from './model.ts';
@@ -226,13 +228,12 @@ function QuoteBar({ options, tier, windows, onOpen }: { options: TierOption[]; t
   );
 }
 
-/** What the quote column holds before the windows are measured: its shape, and when it comes. */
+/** What the quote column holds before the windows are measured: what it will be, and when it comes (no bars: they would read as a stuck loading state). */
 function QuotePlaceholder() {
   return (
     <aside className={styles.placeholder} aria-label={liftProposal.label} data-quote-placeholder="">
       <h2 className={styles.placeholderTitle}>{copy.quoteTitle}</h2>
       <p className={styles.placeholderText}>{copy.quoteWaits}</p>
-      <Skeleton lines={4} />
     </aside>
   );
 }
@@ -240,7 +241,9 @@ function QuotePlaceholder() {
 function Loaded({ v }: { v: WindowMeasurementView }) {
   const { phone } = useContext(PageSlotsContext);
   const handoff = readHandoff(useLocation().state);
-  const scan = useScan(`windows:${v.id}`, true);
+  // A house with windows measured on site (photos) shows its work at once: the scan is the reveal of Estimator's own
+  // reading, for a house that has nothing else yet. Opening a measured house must not hide the table and the order behind a button.
+  const scan = useScan(`windows:${v.id}`, (v.photoWindows ?? []).length === 0);
   const startScan = useRef(scan.start);
   useEffect(() => {
     startScan.current = scan.start;
@@ -686,9 +689,10 @@ function Loaded({ v }: { v: WindowMeasurementView }) {
   );
 
   const active: Step = step === 'quote' && !done ? 'windows' : step;
+  const gutters = useGuttersLink(v.address);
 
   return (
-    <MeasurePage section="windows" address={v.address} subtitle={subtitle} actions={actions} links={{ roof: measureAddressHref(v.address), windows: `/estimator/windows/${encodeURIComponent(v.id)}` }}>
+    <MeasurePage section="windows" address={v.address} subtitle={subtitle} actions={actions} links={{ roof: measureAddressHref(v.address), windows: `/estimator/windows/${encodeURIComponent(v.id)}`, gutters }}>
       <MeasureHost stepsBelow={600} data-measure-windows="">
         <MeasureSteps
           label={copy.steps.label}
@@ -943,12 +947,22 @@ function WindowsStart({ openAddress }: { openAddress: string | null }) {
     if (text.trim() !== '' && !create.isPending) go({ address: text.trim() });
   };
   const failed = create.error instanceof ApiError && create.error.message !== '' ? create.error.message : copy.measureFailed;
+  // The example address is in the company's own town
+  const company = useCompany();
   return (
     <Panel title={copy.startTitle} headingLevel={2} className={styles.startPanel}>
       <div className={styles.startBody}>
-        <p className={styles.hint}>{copy.startSubtitle}</p>
+        {/* With nothing open the steps below say the same first thing, so the line over the form is only for the panel that sits beside an open house */}
+        {openAddress !== null ? <p className={styles.hint}>{copy.startSubtitle}</p> : null}
         <form className={styles.startForm} onSubmit={submit}>
-          <Field label={copy.addressLabel} placeholder={copy.addressPlaceholder} autoComplete="off" maxLength={300} value={text} onChange={(e) => setText(e.currentTarget.value)} />
+          <Field
+            label={copy.addressLabel}
+            placeholder={copy.addressPlaceholder(company.data?.addressCity ?? null, company.data?.addressState ?? null)}
+            autoComplete="off"
+            maxLength={300}
+            value={text}
+            onChange={(e) => setText(e.currentTarget.value)}
+          />
           <Button type="submit" busy={create.isPending} disabled={text.trim() === '' || create.isPending}>
             {create.isPending ? copy.measuring : copy.measure}
           </Button>
@@ -980,8 +994,9 @@ export function WindowsWindow() {
   const { windowMeasurementId = '' } = useParams();
   const query = useWindowMeasurement(windowMeasurementId);
   const v = query.data;
+  const gutters = useGuttersLink(null);
   if (v !== undefined && windowMeasurementId !== '') return <Loaded key={v.id} v={v} />;
-  const links = { roof: '/estimator', windows: '/estimator/windows' };
+  const links = { roof: '/estimator', windows: '/estimator/windows', gutters };
   return (
     <MeasurePage section="windows" title={copy.title} subtitle={copy.subtitle} links={links}>
       <MeasureHost data-measure-windows="">

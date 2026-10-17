@@ -137,6 +137,19 @@ function Windows({ boxes, selectedKey, progress, onSelect, ground }: { boxes: re
   );
 }
 
+/**
+ * "+2 more": the windows that did not fit. It sits in the drawing's lower corner, outside the house: on the wall it ran into
+ * the tallest windows (and their tags), and on a phone it cut across the last window's outline. Below the right-hand end of the
+ * ground line nothing else is drawn, so it can never cover anything.
+ */
+function Unseen({ frame, hidden }: { frame: Frame; hidden: number }): ReactNode {
+  return (
+    <text x={frame.W - 8} y={frame.H - 8} textAnchor="end" className={styles.more} data-unseen-windows="">
+      {copy.elevation.more(hidden)}
+    </text>
+  );
+}
+
 /** The house: a roof, the front wall with its length and height, the ground. The windows go on it at their sizes. */
 function House({ frame, wallFt, eave, floors, windows, progress, selectedKey, onSelect }: { frame: Frame; wallFt: number; eave: number; floors: number; windows: readonly DrawnWindow[]; progress: number; selectedKey: string | null; onSelect: (rowKey: string) => void }): ReactNode {
   const { W, H } = frame;
@@ -163,14 +176,15 @@ function House({ frame, wallFt, eave, floors, windows, progress, selectedKey, on
   const roofPath = `M${wx - 10} ${top} L${wx + inset} ${top - roofH} H${wx + ww - inset} L${wx + ww + 10} ${top} Z`;
   return (
     <>
+      {/* Nothing is drawn before the scan begins: a ground line alone would poke out from under the card that asks for it */}
       {drawn > 0 ? (
         <>
           <path d={roofPath} className={styles.roof} pathLength={1} style={{ strokeDasharray: 1, strokeDashoffset: 1 - Math.min(1, drawn * 2) }} />
           <rect x={wx} y={top} width={ww} height={wh} className={styles.wall} pathLength={1} style={{ strokeDasharray: 1, strokeDashoffset: 1 - drawn }} />
+          <path d={`M${Math.max(8, wx - 70)} ${ground}H${Math.min(W - 8, wx + ww + 70)}`} className={styles.ground} />
         </>
       ) : null}
       {done ? <path d={laps.map((y) => `M${wx} ${y}H${wx + ww}`).join('')} className={styles.laps} /> : null}
-      <path d={`M${Math.max(8, wx - 70)} ${ground}H${Math.min(W - 8, wx + ww + 70)}`} className={styles.ground} />
       <Windows boxes={boxes} selectedKey={selectedKey} progress={progress} onSelect={onSelect} ground={ground} />
       {done ? (
         <>
@@ -185,11 +199,7 @@ function House({ frame, wallFt, eave, floors, windows, progress, selectedKey, on
               {copy.elevation.feet(Math.round(eave))}
             </text>
           </g>
-          {hidden > 0 ? (
-            <text x={wx + ww - 6} y={top + 16} textAnchor="end" className={styles.more}>
-              {copy.elevation.more(hidden)}
-            </text>
-          ) : null}
+          {hidden > 0 ? <Unseen frame={frame} hidden={hidden} /> : null}
         </>
       ) : null}
     </>
@@ -212,11 +222,7 @@ function Row({ frame, windows, progress, selectedKey, onSelect }: { frame: Frame
     <>
       <path d={`M${Math.max(8, x)} ${ground}H${Math.min(W - 8, x + availW)}`} className={styles.ground} />
       <Windows boxes={boxes} selectedKey={selectedKey} progress={progress} onSelect={onSelect} ground={ground} />
-      {hidden > 0 && progress >= 1 ? (
-        <text x={x + availW - 6} y={pad.top} textAnchor="end" className={styles.more}>
-          {copy.elevation.more(hidden)}
-        </text>
-      ) : null}
+      {hidden > 0 && progress >= 1 ? <Unseen frame={frame} hidden={hidden} /> : null}
     </>
   );
 }

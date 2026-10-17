@@ -4,7 +4,6 @@ import {
   GLASS_PACKAGES,
   GRID_TYPES,
   MAX_NOTES_LENGTH,
-  orderGradeMeasured,
   SCREEN_TYPES,
   WINDOW_STYLES,
   type CheckedLine,
@@ -24,6 +23,7 @@ import { sizeCopy } from '../../../../copy/measureWindows.ts';
 import { windowOrder as copy } from '../../../../copy/windowOrder.ts';
 import { uploadSrc } from '../api.ts';
 import styles from './OrderWindow.module.css';
+import { orderReadings } from './readings.ts';
 
 /** A line's editable fields, without its id. */
 export type LineEdit = Omit<WindowOrderLinePatch, 'id'>;
@@ -37,10 +37,10 @@ export const gridOptions = GRID_TYPES.map((g) => ({ value: g, label: copy.grids[
 export const glassOptions = GLASS_PACKAGES.map((g) => ({ value: g, label: copy.glasses[g] }));
 export const screenOptions = SCREEN_TYPES.map((s) => ({ value: s, label: copy.screens[s] }));
 
-/** Ready is green, a line to look at is tape yellow (it needs the person's OK), a hold is red. Each has its glyph and its word. */
+/** Ready is green, a line to look at is the warning amber (tape yellow stays for measuring marks), a hold is red. Each has its glyph and its word. */
 const STATUS_TAG: Record<OrderLineStatus, { tone: TagTone; icon: IconName }> = {
   ready: { tone: 'ok', icon: 'check' },
-  check: { tone: 'tape', icon: 'alert' },
+  check: { tone: 'warn', icon: 'alert' },
   error: { tone: 'bad', icon: 'lock' },
 };
 
@@ -116,14 +116,19 @@ const intOrNull = (text: string): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
-/** The error of a reading, as the one number the readout shows after the size: the larger of width and height. */
-const errorOf = (m: MeasuredSize): number | null => (m.uncertaintyIn === null ? null : Math.max(m.uncertaintyIn.width, m.uncertaintyIn.height));
+/** The error a reading carries into the order size, side by side: "±3/4", or "±3/4 × ±5/8" when width and height differ. */
+export function ReadingErrors({ width, height }: { width: number; height: number }) {
+  return (
+    <span className={styles.errors} data-errors="">
+      <span className="visually-hidden">{copy.errors.speech(width, height)}</span>
+      <span aria-hidden="true">{copy.errors.line(width, height)}</span>
+    </span>
+  );
+}
 
-/** Each photo's reading of the window, with which of its sides the order takes (the smallest of each, over the photos). */
-function Readings({ measured }: { measured: readonly MeasuredSize[] }) {
-  const grade = orderGradeMeasured(measured);
-  const minW = Math.min(...grade.map((m) => m.widthIn));
-  const minH = Math.min(...grade.map((m) => m.heightIn));
+/** Each photo's reading of the window, with which of its sides the order takes (the one smallest once its error is off, per side). */
+function Readings({ measured, factor }: { measured: readonly MeasuredSize[]; factor: number }) {
+  const taken = orderReadings(measured, factor);
   let photo = 0;
   return (
     <div className={styles.readings}>
@@ -136,16 +141,16 @@ function Readings({ measured }: { measured: readonly MeasuredSize[] }) {
         </thead>
         <tbody>
           {measured.map((m, i) => {
-            const counts = grade.includes(m);
-            const takesW = counts && m.widthIn === minW;
-            const takesH = counts && m.heightIn === minH;
+            const takesW = taken !== null && taken.width.reading === m;
+            const takesH = taken !== null && taken.height.reading === m;
             const label = m.quoteOnly === true ? copy.readings.roomScan : copy.readings.photo(++photo);
             return (
               <Tr key={i} {...(takesW || takesH ? { tone: 'tape' as const } : {})} className={styles.reading} data-reading={i}>
                 <Td>{label}</Td>
                 <Td>
                   <span className={styles.readingSize}>
-                    <Size w={m.widthIn} h={m.heightIn} pm={errorOf(m)} copy={sizeCopy} />
+                    <Size w={m.widthIn} h={m.heightIn} copy={sizeCopy} />
+                    {m.uncertaintyIn !== null ? <ReadingErrors width={m.uncertaintyIn.width} height={m.uncertaintyIn.height} /> : null}
                     {takesW || takesH ? (
                       <span className={styles.smallest} data-smallest={takesW && takesH ? 'both' : takesW ? 'width' : 'height'}>
                         {copy.readings.smallest[takesW && takesH ? 'both' : takesW ? 'width' : 'height']}
@@ -169,6 +174,8 @@ type Props = {
   n: number;
   measurementId: string;
   locked: boolean;
+  /** How many errors come off a reading (the company's setting), to tell which photo sets each side. */
+  factor: number;
   /** Shows the change at once and saves it after the pause. */
   onEdit: (edit: LineEdit) => void;
 };
@@ -177,126 +184,135 @@ type Props = {
  * The picked window: its photo, what each photo read, why it needs another look (and the box that says it was checked),
  * and how it is built: style, colours, grid, glass, screen, tempered, obscure, notes and the safety-glass questions.
  */
-export function LineDetail({ line, checked, n, measurementId, locked, onEdit }: Props) {
+export function LineDetail({ line, checked, n, measurementId, locked, factor, onEdit }: Props) {
   const labels = gridLabels(line.style);
   const setSafety = (next: Partial<SafetyAnswers>) => onEdit({ safety: { ...line.safety, ...next } });
   const showSuggestions = checked.suggestions.length > 0 && !line.tempered;
   const name = line.location.trim() === '' ? copy.windowNumber(n) : line.location;
 
   return (
-    <Panel as="aside" title={copy.detailTitle(n, name)} tag={<LineStatus status={checked.status} />} className={styles.detailPanel} data-detail={line.id} data-status={checked.status}>
-      <div className={styles.detailBody}>
-        <div className={styles.detailLook}>
-          {line.uploadId !== null ? (
-            <img className={styles.photo} src={uploadSrc(measurementId, line.uploadId)} alt={copy.photoAlt(name)} loading="lazy" />
-          ) : (
-            <p className={styles.noPhoto}>{copy.noPhoto}</p>
-          )}
-          <Readings measured={line.measured} />
+    <Panel as="aside" title={copy.detailTitle(n, name)} tag={<LineStatus status={checked.status} />} padded={false} className={styles.detailPanel} data-detail={line.id} data-status={checked.status}>
+      <div className={styles.detailFrame}>
+        <div className={styles.detailScroll}>
+          <div className={styles.detailBody}>
+            <div className={styles.detailLook}>
+              {line.uploadId !== null ? (
+                <img className={styles.photo} src={uploadSrc(measurementId, line.uploadId)} alt={copy.photoAlt(name)} loading="lazy" />
+              ) : (
+                <p className={styles.noPhoto}>{copy.noPhoto}</p>
+              )}
+              <Readings measured={line.measured} factor={factor} />
 
-          {checked.reasons.length > 0 ? (
-            <ul className={styles.reasons} aria-label={copy.reasonsLabel}>
-              {checked.reasons.map((r) => (
-                <li key={r.message} data-level={r.level}>
-                  <Icon name="alert" size={16} />
-                  <span>{r.message}</span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {checked.status === 'check' ? <Checkbox checked={line.confirmed} disabled={locked} label={copy.confirm} onChange={(next) => onEdit({ confirmed: next })} /> : null}
-        </div>
-
-        <fieldset className={styles.options} disabled={locked}>
-          <legend className={styles.optionsTitle}>
-            <span className="visually-hidden">{copy.optionsFor(n, name)}</span>
-            <span aria-hidden="true">{copy.optionsTitle}</span>
-          </legend>
-          <Listbox
-            label={copy.style}
-            value={line.style ?? ''}
-            disabled={locked}
-            options={[{ value: '', label: copy.pickStyle }, ...styleOptions]}
-            onChange={(v) => onEdit({ style: v === '' ? null : (v as WindowStyle) })}
-          />
-          <div className={styles.pair}>
-            <Listbox label={copy.exterior} value={line.frameExterior} disabled={locked} options={colorOptions} onChange={(v) => onEdit({ frameExterior: v as FrameColor })} />
-            <Listbox label={copy.interior} value={line.frameInterior} disabled={locked} options={colorOptions} onChange={(v) => onEdit({ frameInterior: v as FrameColor })} />
-          </div>
-          <div className={styles.pair}>
-            <Listbox label={copy.grid} value={line.grid.type} disabled={locked} options={gridOptions} onChange={(v) => onEdit({ grid: { ...line.grid, type: v as GridType } })} />
-            <Listbox label={copy.screen} value={line.screen} disabled={locked} options={screenOptions} onChange={(v) => onEdit({ screen: v as ScreenType })} />
-          </div>
-          {line.grid.type !== 'none' ? (
-            <div className={styles.pair}>
-              <Field
-                label={labels.top}
-                placeholder={copy.gridPlaceholder}
-                value={line.grid.top}
-                maxLength={3}
-                disabled={locked}
-                onChange={(e) => onEdit({ grid: { ...line.grid, top: e.currentTarget.value.trim().toLowerCase() } })}
-              />
-              {labels.bottom !== null ? (
-                <Field
-                  label={labels.bottom}
-                  placeholder={copy.gridPlaceholder}
-                  value={line.grid.bottom}
-                  maxLength={3}
-                  disabled={locked}
-                  onChange={(e) => onEdit({ grid: { ...line.grid, bottom: e.currentTarget.value.trim().toLowerCase() } })}
-                />
+              {checked.reasons.length > 0 ? (
+                <ul className={styles.reasons} aria-label={copy.reasonsLabel}>
+                  {checked.reasons.map((r) => (
+                    <li key={r.message} data-level={r.level}>
+                      <Icon name="alert" size={16} />
+                      <span>{r.message}</span>
+                    </li>
+                  ))}
+                </ul>
               ) : null}
             </div>
-          ) : null}
-          <Listbox label={copy.glass} value={line.glass} disabled={locked} options={glassOptions} onChange={(v) => onEdit({ glass: v as GlassPackage })} />
-          <div className={styles.toggles}>
-            <Toggle label={copy.tempered} checked={line.tempered} disabled={locked} onChange={(next) => onEdit({ tempered: next })} />
-            <Toggle label={copy.obscure} checked={line.obscure} disabled={locked} onChange={(next) => onEdit({ obscure: next })} />
-          </div>
-          <Field
-            label={copy.notes}
-            multiline
-            rows={2}
-            value={line.notes}
-            maxLength={MAX_NOTES_LENGTH}
-            disabled={locked}
-            onChange={(e) => onEdit({ notes: e.currentTarget.value })}
-          />
-          <section className={styles.safety} aria-label={copy.safetyTitle}>
-            <h3 className={styles.safetyTitle}>{copy.safetyTitle}</h3>
-            <YesNo label={copy.besideDoor} value={line.safety.besideDoor} disabled={locked} onChange={(v) => setSafety({ besideDoor: v })} />
-            <YesNo label={copy.wetArea} value={line.safety.wetArea} disabled={locked} onChange={(v) => setSafety({ wetArea: v })} />
-            <YesNo label={copy.walkway} value={line.safety.walkway} disabled={locked} onChange={(v) => setSafety({ walkway: v })} />
-            <Field
-              label={copy.sill}
-              help={copy.sillHelp}
-              type="number"
-              inputMode="decimal"
-              min={0}
-              step={0.5}
-              value={line.safety.sillHeightIn === null ? '' : String(line.safety.sillHeightIn)}
-              disabled={locked}
-              onChange={(e) => setSafety({ sillHeightIn: intOrNull(e.currentTarget.value) })}
-            />
-            {showSuggestions ? (
-              <div className={styles.suggestions} data-suggestions="">
-                {checked.suggestions.map((s) => (
-                  <p key={s.rule} className={styles.suggestion}>
-                    {s.message}
-                  </p>
-                ))}
-                {!locked ? (
-                  <Button variant="default" size="sm" className={styles.useTempered} onClick={() => onEdit({ tempered: true })}>
-                    {copy.useTempered}
-                  </Button>
-                ) : null}
+
+            <fieldset className={styles.options} disabled={locked}>
+              <legend className={styles.optionsTitle}>
+                <span className="visually-hidden">{copy.optionsFor(n, name)}</span>
+                <span aria-hidden="true">{copy.optionsTitle}</span>
+              </legend>
+              <Listbox
+                label={copy.style}
+                value={line.style ?? ''}
+                disabled={locked}
+                options={[{ value: '', label: copy.pickStyle }, ...styleOptions]}
+                onChange={(v) => onEdit({ style: v === '' ? null : (v as WindowStyle) })}
+              />
+              <div className={styles.pair}>
+                <Listbox label={copy.exterior} value={line.frameExterior} disabled={locked} options={colorOptions} onChange={(v) => onEdit({ frameExterior: v as FrameColor })} />
+                <Listbox label={copy.interior} value={line.frameInterior} disabled={locked} options={colorOptions} onChange={(v) => onEdit({ frameInterior: v as FrameColor })} />
               </div>
-            ) : checked.suggestions.length > 0 ? (
-              <p className={styles.muted}>{copy.temperedChosen}</p>
-            ) : null}
-          </section>
-        </fieldset>
+              <div className={styles.pair}>
+                <Listbox label={copy.grid} value={line.grid.type} disabled={locked} options={gridOptions} onChange={(v) => onEdit({ grid: { ...line.grid, type: v as GridType } })} />
+                <Listbox label={copy.screen} value={line.screen} disabled={locked} options={screenOptions} onChange={(v) => onEdit({ screen: v as ScreenType })} />
+              </div>
+              {line.grid.type !== 'none' ? (
+                <div className={styles.pair}>
+                  <Field
+                    label={labels.top}
+                    placeholder={copy.gridPlaceholder}
+                    value={line.grid.top}
+                    maxLength={3}
+                    disabled={locked}
+                    onChange={(e) => onEdit({ grid: { ...line.grid, top: e.currentTarget.value.trim().toLowerCase() } })}
+                  />
+                  {labels.bottom !== null ? (
+                    <Field
+                      label={labels.bottom}
+                      placeholder={copy.gridPlaceholder}
+                      value={line.grid.bottom}
+                      maxLength={3}
+                      disabled={locked}
+                      onChange={(e) => onEdit({ grid: { ...line.grid, bottom: e.currentTarget.value.trim().toLowerCase() } })}
+                    />
+                  ) : null}
+                </div>
+              ) : null}
+              <Listbox label={copy.glass} value={line.glass} disabled={locked} options={glassOptions} onChange={(v) => onEdit({ glass: v as GlassPackage })} />
+              <div className={styles.toggles}>
+                <Toggle label={copy.tempered} checked={line.tempered} disabled={locked} onChange={(next) => onEdit({ tempered: next })} />
+                <Toggle label={copy.obscure} checked={line.obscure} disabled={locked} onChange={(next) => onEdit({ obscure: next })} />
+              </div>
+              <Field
+                label={copy.notes}
+                multiline
+                rows={2}
+                value={line.notes}
+                maxLength={MAX_NOTES_LENGTH}
+                disabled={locked}
+                onChange={(e) => onEdit({ notes: e.currentTarget.value })}
+              />
+              <section className={styles.safety} aria-label={copy.safetyTitle}>
+                <h3 className={styles.safetyTitle}>{copy.safetyTitle}</h3>
+                <YesNo label={copy.besideDoor} value={line.safety.besideDoor} disabled={locked} onChange={(v) => setSafety({ besideDoor: v })} />
+                <YesNo label={copy.wetArea} value={line.safety.wetArea} disabled={locked} onChange={(v) => setSafety({ wetArea: v })} />
+                <YesNo label={copy.walkway} value={line.safety.walkway} disabled={locked} onChange={(v) => setSafety({ walkway: v })} />
+                <Field
+                  label={copy.sill}
+                  help={copy.sillHelp}
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  step={0.5}
+                  value={line.safety.sillHeightIn === null ? '' : String(line.safety.sillHeightIn)}
+                  disabled={locked}
+                  onChange={(e) => setSafety({ sillHeightIn: intOrNull(e.currentTarget.value) })}
+                />
+                {showSuggestions ? (
+                  <div className={styles.suggestions} data-suggestions="">
+                    {checked.suggestions.map((s) => (
+                      <p key={s.rule} className={styles.suggestion}>
+                        {s.message}
+                      </p>
+                    ))}
+                    {!locked ? (
+                      <Button variant="default" size="sm" className={styles.useTempered} onClick={() => onEdit({ tempered: true })}>
+                        {copy.useTempered}
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : checked.suggestions.length > 0 ? (
+                  <p className={styles.muted}>{copy.temperedChosen}</p>
+                ) : null}
+              </section>
+            </fieldset>
+          </div>
+        </div>
+        {/* The box that clears a Check stays in view however far the options scroll */}
+        {checked.status === 'check' ? (
+          <div className={styles.detailFoot} data-detail-foot="">
+            <Checkbox checked={line.confirmed} disabled={locked} label={copy.confirm} onChange={(next) => onEdit({ confirmed: next })} />
+          </div>
+        ) : null}
       </div>
     </Panel>
   );

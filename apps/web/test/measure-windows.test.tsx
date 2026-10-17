@@ -8,6 +8,7 @@ import {
   windowSizeClass,
   type FacadePhoto,
   type MeasuredWindow,
+  type PhotoWindow,
   type WindowMeasurementView,
 } from '@roofline/shared';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -15,6 +16,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { liftProposal } from '../src/copy/liftMeasure.ts';
+import { measureGutters } from '../src/copy/measureGutters.ts';
 import { measureWindows as copy, windowPhotos as windowPhotosCopy } from '../src/copy/measureWindows.ts';
 import { wholeDollars } from '../src/features/measure/lift/proposalLines.ts';
 import { forgetRevealed } from '../src/features/measure/lift/scan.ts';
@@ -89,6 +91,9 @@ function view(over: Partial<WindowMeasurementView> = {}): WindowMeasurementView 
 type Call = { key: string; body: unknown };
 let calls: Call[];
 let current: WindowMeasurementView;
+/** The roof requests the list holds (the Gutters tab's place comes from them) and the company's own town. */
+let requestRows: unknown[];
+let companyBody: Record<string, unknown> | null;
 const sent = (key: string) => calls.filter((c) => c.key === key).map((c) => c.body as Record<string, unknown>);
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -131,6 +136,7 @@ function render_(path: string) {
   const router = createMemoryRouter(
     [
       { path: 'estimator', element: <p>The roof screen</p> },
+      { path: 'estimator/measure/:measurementId/gutters', element: <p>The gutters screen</p> },
       { path: 'estimator/windows', element: <WindowsWindow /> },
       { path: 'estimator/windows/:windowMeasurementId', element: <WindowsWindow /> },
     ],
@@ -170,6 +176,8 @@ function stubRect(el: HTMLElement, w = 640, h = 640) {
 beforeEach(() => {
   forgetRevealed();
   calls = [];
+  requestRows = [];
+  companyBody = null;
   vi.stubEnv('VITE_MEASURE_SCAN_MS', '0');
   vi.stubGlobal(
     'fetch',
@@ -178,6 +186,8 @@ beforeEach(() => {
       const body: unknown = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
       calls.push({ key, body });
       if (key === 'GET /api/auth/me') return json({ user: { id: 'u1', email: 'a@b.c', name: 'A', emailVerified: true }, company: { id: 'c1', name: 'C', slug: 'c', status: 'active' }, role: 'owner', companies: [] });
+      if (key.startsWith('GET /api/proposals')) return json({ proposals: requestRows, total: requestRows.length, totals: {} });
+      if (key === 'GET /api/company') return companyBody === null ? json({ error: 'No company' }, 404) : json(companyBody);
       if (key === 'GET /api/window-measurements/w1') return json(current);
       if (key === 'GET /api/window-measurements/w1/preview') return json({ quotes: priceWindows(windowCounts(current)) });
       if (key === 'PATCH /api/window-measurements/w1') {
@@ -313,6 +323,37 @@ describe('Measure windows: the scan', () => {
     const crumbs = screen.getByRole('navigation', { name: 'Breadcrumb' });
     expect(within(crumbs).getAllByRole('link').map((a) => a.textContent)).toEqual(['Measure', 'Windows']);
     expect(crumbs.textContent).toContain('214 Brookside Dr');
+  });
+
+  it('a house with windows photographed on site shows its work at once: there is nothing to press', async () => {
+    const photoWindow = {
+      id: 'pw1',
+      uploadId: 'up1',
+      label: 'Kitchen',
+      scale: { kind: 'reference', reference: 'letter', corners: [[0.1, 0.1], [0.2, 0.1], [0.2, 0.2], [0.1, 0.2]] },
+      widthIn: 36,
+      heightIn: 48,
+      sizeClass: 'standard',
+      quality: 'good',
+    } as unknown as PhotoWindow;
+    current = view({ photoWindows: [photoWindow], uploads: [] });
+    render_('/estimator/windows/w1');
+    await screen.findByRole('region', { name: copy.statsLabel });
+    expect(screen.queryByRole('button', { name: copy.scanButton })).toBeNull();
+    expect(card().dataset.phase).toBe('done');
+  });
+
+  it('with nothing drawn yet there is no ground line to poke out from under the card that asks for the scan', async () => {
+    // No street photo, so the front is the drawing
+    current = view({ photos: [] });
+    render_('/estimator/windows/w1');
+    const start = await screen.findByRole('button', { name: copy.scanButton });
+    expect(document.querySelector('[data-mode="house"]')).not.toBeNull();
+    expect(document.querySelector('[data-mode="house"] svg path[class*="ground"]')).toBeNull();
+    // Once it is drawn the ground is there
+    fireEvent.click(start);
+    await waitFor(() => expect(card().dataset.phase).toBe('done'));
+    expect(document.querySelector('[data-mode="house"] svg path[class*="ground"]')).not.toBeNull();
   });
 });
 
@@ -886,5 +927,70 @@ describe('Measure windows: reduced motion and touch', () => {
     expect(css).toMatch(/\.photoFrame\[data-marking="true"\] \{[^}]*touch-action: none;/);
     expect(css).toMatch(/\.corner \{[^}]*touch-action: none;/);
     expect(css).toMatch(/\.handle \{[^}]*touch-action: none;/);
+  });
+});
+
+describe('Measure windows: the switch and the start page', () => {
+  const ROOF_ROW = {
+    id: 'p9',
+    number: 'P-0009',
+    status: 'draft',
+    jobId: 'j1',
+    customer: { id: 'c1', name: 'Dana Smith', phone: null },
+    address: '214 Brookside Dr, Springdale, AR',
+    measurementId: 'm9',
+    basis: 'estimate',
+    options: [],
+    messageBody: '',
+    validUntil: '2026-11-12',
+    sentAt: null,
+    views: { count: 0, first: null, last: null },
+    signed: null,
+    declined: null,
+    taskId: null,
+    replacedById: null,
+    canEdit: true,
+  };
+  const switchOf = () => within(screen.getByRole('radiogroup', { name: copy.switchLabel }));
+
+  it('has the Gutters tab, as the roof screen does, when this house has a measured roof on the list', async () => {
+    requestRows = [ROOF_ROW];
+    current = view();
+    const router = render_('/estimator/windows/w1');
+    await screen.findByRole('button', { name: copy.scanButton });
+    const gutters = await switchOf().findByRole('radio', { name: measureGutters.switchGutters });
+    fireEvent.click(gutters);
+    await waitFor(() => expect(router.state.location.pathname).toBe('/estimator/measure/m9/gutters'));
+  });
+
+  it('leaves Gutters out when there is no roof to measure them on', async () => {
+    current = view();
+    render_('/estimator/windows/w1');
+    await screen.findByRole('button', { name: copy.scanButton });
+    expect(switchOf().getAllByRole('radio').map((radio) => radio.textContent)).toEqual([copy.switchRoof, copy.switchWindows]);
+  });
+
+  it('opens the start page on the first roof request\'s gutters too, with no house open', async () => {
+    requestRows = [ROOF_ROW];
+    render_('/estimator/windows');
+    expect(await switchOf().findByRole('radio', { name: measureGutters.switchGutters })).toBeInTheDocument();
+  });
+
+  it('gives the example address in the company\'s own town, and says it once (no intro repeating the first step)', async () => {
+    companyBody = { addressCity: 'Little Rock', addressState: 'AR' };
+    render_('/estimator/windows');
+    const field = await screen.findByLabelText(copy.addressLabel);
+    await waitFor(() => expect(field).toHaveAttribute('placeholder', copy.addressPlaceholder('Little Rock', 'AR')));
+    expect(field).toHaveAttribute('placeholder', '12 Elm St, Little Rock, AR');
+    expect(screen.queryByText(copy.startSubtitle)).toBeNull();
+    expect(screen.getByText(copy.startSteps[0]!)).toBeInTheDocument();
+  });
+
+  it('gives a bare example when the company\'s town is not known', async () => {
+    render_('/estimator/windows');
+    const field = await screen.findByLabelText(copy.addressLabel);
+    expect(field).toHaveAttribute('placeholder', copy.addressPlaceholder(null, null));
+    expect(copy.addressPlaceholder(null, null)).toBe('12 Elm St');
+    expect(copy.addressPlaceholder('Omaha', null)).toBe('12 Elm St, Omaha');
   });
 });

@@ -11,6 +11,8 @@ import { measure } from '../../../copy/measure.ts';
 import { useMeasurement } from '../api.ts';
 import type { MeasurementView } from '../types.ts';
 import { AiMark } from './AiMark.tsx';
+import { Credits } from './Credits.tsx';
+import { spreadLabels, type ScreenPoint } from './labelSpread.ts';
 import { cardNumbers, MeasureCard } from './MeasureCard.tsx';
 import { hiddenEdges, lidarFaces, setEdgeCue, setLidarFaces } from './edgeCue.ts';
 import { BuildingPopover, type PopoverAt } from './BuildingPopover.tsx';
@@ -112,6 +114,21 @@ function setFacetState(el: HTMLButtonElement, excluded: boolean, disabled: boole
 /** Label cards closer than this on screen would cover each other (and the roof): they shrink to their letter. */
 const CROWDED_DX_PX = 96;
 const CROWDED_DY_PX = 44;
+/** A letter alone is a 26px disc: two of them closer than this (with a gap) are pushed apart so each shows whole. */
+const LETTER_APART_PX = 30;
+
+/** Where each point is on the screen; one the map cannot place stays at the origin (so it moves nothing it is not near). */
+function placed(instance: MapLibreMap, points: readonly [number, number][]): ScreenPoint[] {
+  const loose = instance as unknown as Loose;
+  return points.map((p) => {
+    try {
+      const q = loose.project?.(p);
+      return q !== undefined && Number.isFinite(q.x) && Number.isFinite(q.y) ? { x: q.x, y: q.y } : { x: 0, y: 0 };
+    } catch {
+      return { x: 0, y: 0 };
+    }
+  });
+}
 
 /** Whether any two label points are too close on screen for full labels at this zoom. */
 function crowded(instance: MapLibreMap, points: readonly [number, number][]): boolean {
@@ -150,8 +167,11 @@ function useFacetLabels(instance: MapLibreMap | null, model: RoofModel | null, v
     });
     const points = facets.map((f) => f.labelAt);
     const fit = () => {
-      const compact = crowded(instance, points) ? 'true' : 'false';
-      for (const el of made.values()) el.dataset.compact = compact;
+      const tight = crowded(instance, points);
+      for (const el of made.values()) el.dataset.compact = tight ? 'true' : 'false';
+      // Letters that still touch (two facets whose label points are a few pixels apart) are moved apart: none hides another
+      const offsets = tight ? spreadLabels(placed(instance, points), LETTER_APART_PX) : null;
+      markers.forEach((marker, i) => (marker as unknown as { setOffset?: (offset: [number, number]) => void }).setOffset?.(offsets?.[i] ?? [0, 0]));
     };
     fit();
     const loose = instance as unknown as Loose;
@@ -474,10 +494,10 @@ function Stage({ m, slots, roof, scan, captured }: { m: MeasurementView; slots: 
         {roofDrawn && model !== null ? <Legend model={model} /> : null}
         {scan.phase === 'scanning' ? <RoofScanOverlay instance={map} ring={ring} scan={scan} /> : null}
         <ScaleAndNorth latitude={m.center[1]} zoom={zoom} />
-        <p className={styles.credits}>
+        <Credits>
           <span>{usesGoogleImagery() ? legal.googleImageryAttribution : usesFreeAerial({ maptilerKey: import.meta.env.VITE_MAPTILER_KEY }) ? legal.imageryAttribution : legal.maptilerImageryAttribution}</span>
           {footprintsShown(m, editing) ? <span>{legal.footprintAttribution}</span> : null}
-        </p>
+        </Credits>
         {/* The notices at the top and the card at the bottom share one column, so they can never overlap */}
         <div className={styles.overlay}>
           <Notices roof={{ mapFailed, roofPhotoExpired, locked, problem, saveFailed, drawMode, finishDrawing, clearDrawing }} />

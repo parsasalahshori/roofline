@@ -159,8 +159,10 @@ describe('Window factory order', () => {
     expect(ticket.getByText('3')).toBeTruthy();
 
     const kitchen = within(lineEl('w1'));
-    // 36.3 x 60.2 to the sixteenth, ± 1/8 (the larger of the two errors)
-    expect(kitchen.getByText(sizeSpeech(sizeCopy, 36.3, 60.2, 0.125, false))).toBeTruthy();
+    // 36.3 x 60.2 to the sixteenth, and under it the error each side carries into the order size (both read 1/8 here)
+    expect(kitchen.getByText(sizeSpeech(sizeCopy, 36.3, 60.2, null, false))).toBeTruthy();
+    expect(kitchen.getByText(copy.errors.speech(0.1, 0.125))).toBeTruthy();
+    expect(kitchen.getByText(copy.errors.line(0.1, 0.125))).toBeTruthy();
     // 36.3 - 0.1 - 1/4 = 35.95 -> 35 7/8; 60.2 - 0.125 - 1/4 = 59.825 -> 59 3/4
     expect(kitchen.getByText(sizeSpeech(sizeCopy, 35.875, 59.75, null, false))).toBeTruthy();
     expect(lineEl('w1').querySelector('[data-order-size]')).not.toBeNull();
@@ -198,14 +200,91 @@ describe('Window factory order', () => {
     expect(within(detail()).queryByRole('list', { name: copy.reasonsLabel })).toBeNull();
   });
 
-  it('the picked row is tinted for what it needs: red for a hold, tape yellow to check, the brand colour when ready', async () => {
+  it('the picked row is tinted for what it needs: red for a hold, the brand colour when ready; a check takes the warning amber from its status, never tape yellow', async () => {
     await open();
     expect(lineEl('w2').getAttribute('data-tone')).toBe('bad');
     pick('w3', 3, 'Living');
-    expect(lineEl('w3').getAttribute('data-tone')).toBe('tape');
+    // The kit's row tones have no amber: the row says check in data-status (and data-selected) and the css tints it
+    expect(lineEl('w3').hasAttribute('data-tone')).toBe(false);
+    expect(lineEl('w3').getAttribute('data-status')).toBe('check');
+    expect(lineEl('w3').getAttribute('data-selected')).toBe('true');
     expect(lineEl('w2').hasAttribute('data-tone')).toBe(false);
     pick('w1', 1, 'Kitchen');
     expect(lineEl('w1').getAttribute('data-tone')).toBe('brand');
+  });
+
+  it('a window to look at is the warning amber everywhere: its status tag, its reasons, its suggestions', async () => {
+    await open();
+    expect(within(lineEl('w3')).getByText(copy.lineStatusLabel(copy.lineStatus.check)).closest('[data-tone]')).toHaveAttribute('data-tone', 'warn');
+    expect(within(lineEl('w1')).getByText(copy.lineStatusLabel(copy.lineStatus.ready)).closest('[data-tone]')).toHaveAttribute('data-tone', 'ok');
+    expect(within(lineEl('w2')).getByText(copy.lineStatusLabel(copy.lineStatus.error)).closest('[data-tone]')).toHaveAttribute('data-tone', 'bad');
+    pick('w3', 3, 'Living');
+    expect(within(detail()).getByText(copy.lineStatusLabel(copy.lineStatus.check)).closest('[data-tone]')).toHaveAttribute('data-tone', 'warn');
+    // No tape-yellow tone anywhere on the sheet or its panel
+    expect(document.querySelectorAll('[data-order-sheet] [data-tone="tape"]')).toHaveLength(0);
+    expect(detail().querySelectorAll('[data-tone="tape"]:not([data-reading])')).toHaveLength(0);
+  });
+
+  it('the error each side carries is shown side by side, so the sheet adds up: 59 3/8 less 5/8 less 1/4 is the 58 1/2 ordered', async () => {
+    const demo = [line('w1', { location: 'Living', style: 'slider-3', measured: [m(71.25, 59.375, { uncertaintyIn: { width: 0.75, height: 0.625 } })] })];
+    await open(view(demo));
+    const row = within(lineEl('w1'));
+    expect(row.getByText(copy.errors.line(0.75, 0.625))).toBeTruthy();
+    expect(row.getByText(copy.errors.speech(0.75, 0.625))).toBeTruthy();
+    // The order size the factory gets
+    expect(row.getByText(sizeSpeech(sizeCopy, 70.25, 58.5, null, false))).toBeTruthy();
+    // The same in the panel, on the reading
+    pick('w1', 1, 'Living');
+    expect(within(detail()).getByText(copy.errors.line(0.75, 0.625))).toBeTruthy();
+  });
+
+  it('shows the photo that sets each side when the photos carry different errors', async () => {
+    // The LiDAR reading is the smallest, but the sheet photo is smaller once its larger error is off
+    const photos = [m(36, 60, { uncertaintyIn: { width: 0.125, height: 0.125 } }), m(36.125, 60.125, { uncertaintyIn: { width: 0.5, height: 0.5 } })];
+    await open(view([line('w1', { location: 'Kitchen', measured: photos })]));
+    const row = within(lineEl('w1'));
+    expect(row.getByText(sizeSpeech(sizeCopy, 36.125, 60.125, null, false))).toBeTruthy();
+    expect(row.getByText(copy.errors.speech(0.5, 0.5))).toBeTruthy();
+    // Each reading is listed in the panel, so the row does not count the photos
+    expect(row.queryByText(copy.photosCount(2))).toBeNull();
+    const rows = detail().querySelectorAll('[data-reading]');
+    expect(within(rows[1] as HTMLElement).getByText(copy.readings.smallest.both)).toBeTruthy();
+    expect(within(rows[0] as HTMLElement).queryByText(/Smallest/)).toBeNull();
+  });
+
+  it('the box that clears a Check is pinned under the options, outside the part that scrolls', async () => {
+    await open();
+    pick('w3', 3, 'Living');
+    const box = within(detail()).getByLabelText(copy.confirm);
+    const foot = detail().querySelector('[data-detail-foot]');
+    expect(foot).not.toBeNull();
+    expect(foot!.contains(box)).toBe(true);
+    expect(detail().querySelector('[class*="detailScroll"]')!.contains(box)).toBe(false);
+    // Only a window to look at has one
+    pick('w1', 1, 'Kitchen');
+    expect(detail().querySelector('[data-detail-foot]')).toBeNull();
+  });
+
+  it('every row says what its number is for a phone, where the column heads are gone: Qty beside the quantity', async () => {
+    await open();
+    const label = lineEl('w1').querySelector('[class*="qtyLabel"]') as HTMLElement;
+    expect(label.textContent).toBe(copy.columns.quantity);
+    // The box keeps its own accessible name; the word beside it is only for the eye
+    expect(label).toHaveAttribute('aria-hidden', 'true');
+    expect(within(lineEl('w1')).getByLabelText(copy.quantityFor(1))).toBeTruthy();
+  });
+
+  it('the style is a line of its own in the spec column, and the parts after it are one run with dots between them only', async () => {
+    await open();
+    const spec = lineEl('w1').querySelector('[class*="specList"]') as HTMLElement;
+    const name = spec.querySelector('[class*="specName"]') as HTMLElement;
+    const rest = spec.querySelector('[class*="specRest"]') as HTMLElement;
+    expect(name.textContent).toBe(copy.styles['double-hung']);
+    expect(rest).not.toBeNull();
+    // The style is not a sibling of the parts: nothing follows it on its line for a separator to dangle after
+    expect(name.parentElement).toBe(spec);
+    expect(rest.parentElement).toBe(spec);
+    expect([...rest.children].map((c) => c.textContent)).toContain(copy.glassShort['lowe-argon']);
   });
 
   it('a row opens its panel when pressed anywhere but its fields', async () => {
@@ -454,6 +533,9 @@ describe('OrderStatusChip', () => {
     chipAt();
     const link = await screen.findByRole('link', { name: copy.createOrder });
     expect(link.getAttribute('href')).toBe('/estimator/windows/m1/order');
+    // One control beside "Add on-site photos": a secondary button with its icon
+    expect(link).toHaveAttribute('data-variant', 'default');
+    expect(link.querySelector('svg')).not.toBeNull();
   });
 
   it('shows the order’s status and links to it', async () => {
@@ -461,6 +543,8 @@ describe('OrderStatusChip', () => {
     chipAt();
     const link = await screen.findByRole('link', { name: copy.chip(copy.status.ready) });
     expect(link.getAttribute('href')).toBe('/estimator/windows/m1/order');
+    expect(link).toHaveAttribute('data-variant', 'default');
+    expect(link.querySelector('svg')).not.toBeNull();
   });
 
   it('without photo windows shows nothing and does not ask for an order', async () => {

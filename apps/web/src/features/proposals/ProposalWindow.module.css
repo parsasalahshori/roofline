@@ -3,12 +3,43 @@
  * activity and the text message at the right.
  */
 .meta {
+  /* The room a dot has between two words */
+  --dot-room: 16px;
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 12px;
+  vertical-align: top;
+  row-gap: 4px;
   min-width: 0;
+  /* A word that wraps to the start of a line has its dot out past the left edge, and the edge cuts it off: no line starts or ends with one */
+  overflow: hidden;
   overflow-wrap: anywhere;
+}
+
+/* The status tag keeps its room from the words after it */
+.meta > :first-child {
+  margin-right: 12px;
+}
+
+/* The words under the title read as one line, a dot centred between each pair. Each word after the first pulls back over the room its
+   predecessor leaves for it and holds the dot in its own left padding. */
+.part:not(:last-child) {
+  padding-right: var(--dot-room);
+}
+
+.part + .part {
+  position: relative;
+  margin-left: calc(-1 * var(--dot-room));
+  padding-left: var(--dot-room);
+}
+
+.part + .part::before {
+  content: '\00b7';
+  position: absolute;
+  left: 0;
+  width: var(--dot-room);
+  text-align: center;
+  color: var(--ink-3);
 }
 
 .actions {
@@ -72,8 +103,39 @@
 
 .messageText {
   margin: 0;
+  line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* The proposal's link in the preview: a quiet word of its own line, since the real link is made when the text goes out */
+.messageLink {
+  display: inline-block;
+  margin: 2px 0;
+  padding: 1px 8px;
+  border-radius: var(--r-1);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--info-text);
+  font: 500 13px/1.4 var(--f-mono);
+  text-decoration: underline;
+}
+
+/* Under the editable box: the message as the customer reads it */
+.preview {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.previewLabel {
+  margin: 0;
+  color: var(--ink-3);
+  font: 600 var(--font-size-min) / 1.2 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .skeletonPanel {
