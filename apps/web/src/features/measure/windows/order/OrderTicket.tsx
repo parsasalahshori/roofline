@@ -73,7 +73,7 @@ export function OrderTicket({ id, address, status, poNumber, lineCount, locked, 
         </div>
       </div>
       <div className={styles.ticketActions}>
-        <Button variant="ghost" href={windowsHref}>
+        <Button variant="ghost" href={windowsHref} className={styles.back}>
           <Icon name="chevl" size={16} />
           {copy.back}
         </Button>

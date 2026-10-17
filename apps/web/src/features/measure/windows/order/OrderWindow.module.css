@@ -84,7 +84,7 @@
   display: flex;
   flex: none;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 4px;
   padding: 14px 24px;
   border-right: 1px dashed var(--line-ctl);
@@ -116,13 +116,14 @@
   color: var(--info-text);
 }
 
+/* Every cell hangs from the same top edge as the stub, so the eyebrows (FACTORY ORDER, ADDRESS, PO NUMBER, LINES) share one baseline */
 .cells {
   display: flex;
   flex: 1 1 auto;
-  align-items: center;
+  align-items: flex-start;
   gap: 32px;
   min-width: 0;
-  padding: 12px 24px;
+  padding: 14px 24px;
 }
 
 .cell {
@@ -157,12 +158,14 @@
 }
 
 .poField input {
-  min-height: 30px;
+  min-height: 0;
+  height: 21px;
   padding: 0;
   border-width: 0 0 1px;
   border-radius: 0;
   background: transparent;
   font-size: 15px;
+  line-height: 1.3;
 }
 
 .ticketActions {
@@ -249,15 +252,19 @@
     grid-template-columns: minmax(0, 1fr) 304px;
   }
 
+  /* Beside the table the picked window's panel stays in view: its options scroll inside it and the box that clears a Check stays pinned under them */
   .detailPanel {
     position: sticky;
     top: 16px;
   }
 
-  .detailBody {
-    max-height: calc(100dvh - 160px);
-    padding-right: 4px;
+  .detailFrame {
+    max-height: calc(100dvh - 116px);
+  }
+
+  .detailScroll {
     overflow-y: auto;
+    overscroll-behavior-y: contain;
   }
 }
 
@@ -336,6 +343,11 @@
   width: 56px;
 }
 
+/* The word "Qty" beside the number is for a phone, where there are no column heads (see the end) */
+.qtyLabel {
+  display: none;
+}
+
 .cQty input {
   text-align: right;
   font-family: var(--f-mono);
@@ -345,6 +357,23 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* Under the size: the error each side carries into the order size, and how many photos read it */
+.measuredMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
+  line-height: 1.3;
+}
+
+.errors {
+  color: var(--ink-3);
+  font: 500 var(--font-size-min) / 1.3 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* What the photos read is the quiet number; the size to order is the one that counts */
@@ -378,29 +407,40 @@
   font-weight: 500;
 }
 
-/* Each part stays whole and a dot follows all but the last, so a wrapped line never starts on a dot */
+/* The style is a line of its own; the parts that follow keep whole and a dot sits between them, so no dot ever dangles after the style */
 .specList {
+  display: flex;
+  flex-direction: column;
+}
+
+.specRest {
   display: flex;
   flex-wrap: wrap;
   gap: 0 6px;
 }
 
-.specList > span {
+.specRest > span {
   white-space: nowrap;
 }
 
-.specList > span:not(:last-child)::after {
+.specRest > span:not(:last-child)::after {
   content: "\00b7";
   margin-left: 6px;
   color: var(--ink-3);
 }
 
+/* What every window shares, said once in the head on the same line: "SPEC · all White / White" */
 .specNote {
-  display: block;
+  margin-left: 6px;
   color: var(--ink-3);
-  font-weight: 500;
+  font: 500 var(--font-size-min) / 1.2 var(--f-ui);
   letter-spacing: 0;
   text-transform: none;
+}
+
+.specNote::before {
+  content: "\00b7";
+  margin-right: 6px;
 }
 
 /* The picked row says what it needs: a bar at the edge in the colour of its tint */
@@ -410,7 +450,12 @@
 }
 
 .row[data-status="check"] {
-  --bar: var(--tape);
+  --bar: var(--warn);
+}
+
+/* The picked row of a window to look at has the warning amber (the kit's row tones have none): tape yellow is for measuring marks */
+.row[data-status="check"][data-selected="true"] > td {
+  background: var(--warn-tint);
 }
 
 .row[data-status="error"] {
@@ -513,7 +558,26 @@
   gap: 8px;
 }
 
-/* The picked window: what it looks like and reads, then how it is built */
+/* The picked window: what it looks like and reads, then how it is built; a pinned foot under the scrolling part */
+.detailFrame {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.detailScroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 16px;
+}
+
+.detailFoot {
+  flex: none;
+  padding: 6px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
 .detailBody {
   display: flex;
   flex-direction: column;
@@ -566,8 +630,13 @@
 
 .readingSize {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+
+.readingSize .smallest {
+  flex-basis: 100%;
 }
 
 /* On the tape tint the quiet ink steps up one, so its text keeps 4.5:1 in both themes (the kit's size parts read --ink-3 too) */
@@ -618,8 +687,8 @@
 }
 
 .reasons li[data-level="check"] {
-  background: var(--tape-tint);
-  color: var(--tape-ink);
+  background: var(--warn-tint);
+  color: var(--warn-text);
 }
 
 .options {
@@ -693,9 +762,9 @@
   gap: 6px;
   padding: 10px 12px;
   border-radius: var(--r-2);
-  background: var(--tape-tint);
-  box-shadow: inset 0 0 0 1px var(--tape-line);
-  color: var(--tape-ink);
+  background: var(--warn-tint);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 30%, transparent);
+  color: var(--warn-text);
 }
 
 .suggestion {
@@ -755,11 +824,26 @@
 }
 
 /*
- * A phone: no header row, and each window is two lines: its number, where it is and whether it is ready; then the size
- * to order and how many. What the photos read and how it is built are in the picked window's panel. The table keeps
- * its roles (set in the markup), since the display changes would otherwise drop them for some screen readers.
+ * A phone: no header row, and each window is a card of two lines: its number, where it is and whether it is ready; then
+ * the size to order and how many (the word "Qty" beside the number). What the photos read and how it is built are in the
+ * picked window's panel. The table keeps its roles (set in the markup), since the display changes would otherwise drop
+ * them for some screen readers. The sheet's actions are pinned above the tab bar while its lines scroll.
  */
 @container orderSheet (max-width: 719.98px) {
+  /* The card must not clip the pinned actions (sticky stops at an overflow edge) */
+  .sheet {
+    overflow: visible;
+  }
+
+  /* "Bring in new photo windows" stays on the title's line, in two lines of its own, instead of dropping under it */
+  .sheet > div:first-child {
+    flex-wrap: nowrap;
+  }
+
+  .sheet > div:first-child > :last-child:not(:first-child) {
+    flex: 0 1 150px;
+  }
+
   .table,
   .table tbody {
     display: block;
@@ -776,17 +860,18 @@
 
   .table .row {
     display: grid;
-    grid-template-columns: 40px 48px minmax(0, 1fr) auto;
+    grid-template-columns: 44px 44px minmax(0, 1fr) auto;
     grid-template-areas:
       "sel line loc status"
       "sel line order qty";
+    align-items: center;
     border-bottom: 1px solid var(--line);
   }
 
   .table .row > td {
     display: block;
     width: auto;
-    padding: 6px 8px;
+    padding: 4px;
     border-bottom: 0;
   }
 
@@ -795,8 +880,16 @@
     display: none;
   }
 
-  .cSelect {
+  /* The whole 44px square is the box's target */
+  .table .row > td.cSelect {
     grid-area: sel;
+    padding: 0;
+  }
+
+  .cSelect label {
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
   }
 
   .cLine {
@@ -810,19 +903,75 @@
 
   .cStatus {
     grid-area: status;
+    justify-self: end;
   }
 
   .cOrder {
     grid-area: order;
   }
 
-  .cQty {
+  .table .row > td.cQty {
+    display: flex;
     grid-area: qty;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
   }
 
+  .qtyLabel {
+    display: inline;
+    color: var(--ink-3);
+    font-size: 13px;
+  }
+
+  .cQty .cellField {
+    width: 64px;
+  }
+
+  /* Boxes are as tall as a thumb, and the location's text starts where the size's does */
+  .cellField input {
+    min-height: 44px;
+  }
+
+  .cLocation .cellField input {
+    padding-left: 0;
+  }
+
+  .poField input {
+    height: auto;
+    min-height: 44px;
+  }
+
+  /* "Back to windows" lines up with the ticket's text, not indented by its button's padding */
+  .back[data-variant] {
+    margin-left: -14px;
+  }
+
+  /* The counts and why it cannot go yet stay with the sheet; Save draft and Mark ready are pinned */
   .foot {
-    flex-direction: column;
-    align-items: stretch;
+    display: contents;
+  }
+
+  .footText {
+    padding: 14px 16px;
+    border-top: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+
+  .footActions {
+    position: sticky;
+    z-index: 3;
+    bottom: 0;
+    flex-wrap: nowrap;
+    padding: 12px 16px;
+    border-top: 1px solid var(--line);
+    border-radius: 0 0 var(--r-3) var(--r-3);
+    background: var(--surface);
+    box-shadow: 0 -10px 14px -12px color-mix(in srgb, var(--ink) 30%, transparent);
+  }
+
+  .footActions:empty {
+    display: none;
   }
 
   .footActions > * {
