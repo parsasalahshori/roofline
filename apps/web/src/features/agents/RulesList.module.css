@@ -1,20 +1,28 @@
+/* Each rule is a plain sentence on a chalk line down the left; its numbers are links to where they change */
 .list {
-  display: grid;
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   margin: 0;
-  padding-left: 20px;
+  padding: 0;
+  list-style: none;
 }
 
 .item {
+  padding-left: 12px;
+  border-left: 2px solid var(--line-2);
+  line-height: 1.45;
   overflow-wrap: anywhere;
 }
 
 .link {
-  color: var(--text);
+  color: var(--brand-text);
+  font-weight: 600;
   text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .empty {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }

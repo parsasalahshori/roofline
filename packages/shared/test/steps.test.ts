@@ -185,7 +185,7 @@ describe('previews', () => {
     expect(stepTypes.demo_message.preview({ label: 'Text 31 customers' }, FACTS).title).toBe('Text 31 customers');
     expect(stepTypes.demo_spend.preview({ label: 'Ads on the swath', maxSpendCents: 27000 }, FACTS)).toEqual({
       title: 'Ads on the swath',
-      lines: ['Spends up to $270.00'],
+      lines: ['Spends up to $270'],
       maxSpendCents: 27000,
     });
   });
@@ -262,7 +262,7 @@ describe('demo message and spend details', () => {
     expect(stepTypes.demo_spend.payload.parse(value)).toEqual(value);
     expect(stepTypes.demo_spend.preview(value, FACTS)).toEqual({
       title: 'Google + Facebook ads on the swath',
-      lines: ['Spends up to $270.00', 'North side swath · 4.2 sq mi'],
+      lines: ['Spends up to $270', 'North side swath · 4.2 sq mi'],
       maxSpendCents: 27000,
     });
   });

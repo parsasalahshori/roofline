@@ -1,13 +1,20 @@
-import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent } from 'react';
-import { visitTime } from './time.ts';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { visitClock, visitDay, visitTile, visitTime, zoneName } from './time.ts';
 import { Banner, Button, Checkbox, Field, IconButton, Skeleton } from '@roofline/ui';
 import { QUOTE_WINDOW_COUNT, type PublicQuoteConfig, type PublicQuoteSlot, type PublicQuoteWindows, type QuoteProduct } from '@roofline/shared';
-import { quote } from '../../copy/quote.ts';
+import { publicCopy } from '../../copy/public.ts';
+import { quote, quoteMoney } from '../../copy/quote.ts';
 import { formatPhone } from '../../lib/phone.ts';
 import { ScanOverlay } from '../measure/lift/ScanOverlay.tsx';
 import { readScanMs, stageAt, type ScanStage } from '../measure/lift/scan.ts';
+import { ArrowIcon, CheckIcon, HomeIcon, MinusIcon, PlusIcon } from '../public/icons.tsx';
+import { PublicHeader } from '../public/PublicHeader.tsx';
+import { StepProgress } from '../public/StepProgress.tsx';
+import { TrustRow } from '../public/TrustRow.tsx';
+import type { TrustFacts } from '../public/trust.ts';
+import { usePublicBrand } from '../public/usePublicBrand.ts';
 import { type EstimateAnswer, QuoteApiError, quoteApi } from './api.ts';
-import { RoofThumb } from './RoofThumb.tsx';
+import { RoofThumb, RoofThumbPlaceholder } from './RoofThumb.tsx';
 import { Turnstile } from './Turnstile.tsx';
 import styles from './QuotePage.module.css';
 
@@ -43,15 +50,22 @@ function useConfig(slug: string) {
   return { ...state, retry: () => setState((s) => ({ attempt: s.attempt + 1 })) };
 }
 
-/** The page's accent colour as CSS variables (the default when the company set none). */
-function brandStyle(color: string | null): CSSProperties | undefined {
-  return color === null ? undefined : ({ '--quote-accent': color } as CSSProperties);
+/** What the page reads about the company: the public config, and the facts for the trust row when the company has given any. */
+type QuoteConfig = PublicQuoteConfig & TrustFacts;
+
+/** Which of the three steps the person is on (the bars over the card), or null on the first screen and the last. */
+function progressOf(step: Step): number | null {
+  if (step.kind === 'measuring') return 1;
+  if (step.kind === 'results') return step.showForm && step.answer.status !== 'fallback' ? 3 : 2;
+  return null;
 }
 
 export function QuotePage({ slug }: { slug: string }) {
   const config = useConfig(slug);
   const [step, setStep] = useState<Step>({ kind: 'address' });
   const [typed, setTyped] = useState('');
+  // The company's one colour fills the brand slot (the main button); nothing else of the company's is read.
+  usePublicBrand(config.data?.accentColor);
 
   useEffect(() => {
     if (config.data) document.title = quote.pageTitle(config.data.companyName);
@@ -61,9 +75,9 @@ export function QuotePage({ slug }: { slug: string }) {
     const missing = config.error.status === 404;
     return (
       <main className={styles.page}>
-        <div className={styles.column}>
+        <div className={`${styles.column} ${styles.bare}`}>
           <h1 className={styles.title}>{missing ? quote.notFoundTitle : quote.loadFailed}</h1>
-          {missing ? <p className={styles.text}>{quote.notFoundBody}</p> : <Button onClick={config.retry}>{quote.retry}</Button>}
+          {missing ? <p className={styles.lede}>{quote.notFoundBody}</p> : <Button onClick={config.retry}>{quote.retry}</Button>}
         </div>
       </main>
     );
@@ -71,26 +85,21 @@ export function QuotePage({ slug }: { slug: string }) {
   if (!config.data) {
     return (
       <main className={styles.page}>
-        <div className={styles.column} role="status">
+        <div className={`${styles.column} ${styles.bare}`} role="status">
           <span className="visually-hidden">{quote.loading}</span>
           <Skeleton lines={3} />
         </div>
       </main>
     );
   }
-  const c = config.data;
+  const c = config.data as QuoteConfig;
+  const progress = progressOf(step);
 
   return (
-    <div className={styles.page} style={brandStyle(c.accentColor)}>
-      <header className={styles.brand}>
-        {c.logoUrl ? <img className={styles.logo} src={c.logoUrl} alt={c.companyName} /> : <span className={styles.companyName}>{c.companyName}</span>}
-        {c.phone ? (
-          <a className={styles.phone} href={`tel:${c.phone}`}>
-            {formatPhone(c.phone)}
-          </a>
-        ) : null}
-      </header>
+    <div className={styles.page}>
+      <PublicHeader name={c.companyName} logoUrl={c.logoUrl} phone={c.phone} />
       <main className={styles.column}>
+        {progress !== null ? <StepProgress step={progress} /> : null}
         {step.kind === 'address' ? (
           <AddressStep
             slug={slug}
@@ -104,7 +113,7 @@ export function QuotePage({ slug }: { slug: string }) {
           />
         ) : null}
         {step.kind === 'measuring' ? (
-          <Measuring step={step} onDone={(answer) => setStep({ kind: 'results', answer, showForm: answer.status === 'fallback', windows: answer.windows })} />
+          <Measuring step={step} address={typed} onDone={(answer) => setStep({ kind: 'results', answer, showForm: answer.status === 'fallback', windows: answer.windows })} />
         ) : null}
         {step.kind === 'results' ? (
           <>
@@ -130,6 +139,11 @@ export function QuotePage({ slug }: { slug: string }) {
           </>
         ) : null}
         {step.kind === 'done' ? <Done config={c} firstName={step.firstName} booked={step.booked} slotTaken={step.slotTaken} timeZone={step.timeZone} /> : null}
+        {step.kind === 'address' ? (
+          <div className={styles.bottom}>
+            <TrustRow facts={c} />
+          </div>
+        ) : null}
       </main>
     </div>
   );
@@ -180,14 +194,15 @@ function AddressStep({
   }
 
   return (
-    <section className={styles.card} aria-labelledby={headingId}>
+    <section className={styles.plain} aria-labelledby={headingId}>
       <h1 id={headingId} className={styles.title}>
         {quote.heading}
       </h1>
-      <p className={styles.text}>{quote.intro}</p>
+      <p className={styles.lede}>{quote.intro}</p>
       <form className={styles.addressForm} onSubmit={submit} noValidate>
         {error && error.field !== 'address' ? <Banner tone="danger">{error.message}</Banner> : null}
         <Field
+          className={styles.addressField}
           label={quote.addressLabel}
           name="address"
           autoComplete="street-address"
@@ -204,7 +219,7 @@ function AddressStep({
         <Button type="submit" size="lg" className={styles.primary} disabled={siteKey !== null && human === ''}>
           {quote.measureButton}
         </Button>
-        <p className={styles.small}>{quote.noObligation}</p>
+        <p className={styles.fine}>{quote.noObligation}</p>
       </form>
     </section>
   );
@@ -222,7 +237,7 @@ function Honeypot({ value, onChange }: { value: string; onChange: (v: string) =>
   );
 }
 
-function Measuring({ step, onDone }: { step: Extract<Step, { kind: 'measuring' }>; onDone: (a: EstimateAnswer) => void }) {
+function Measuring({ step, address, onDone }: { step: Extract<Step, { kind: 'measuring' }>; address: string; onDone: (a: EstimateAnswer) => void }) {
   const totalMs = readScanMs();
   const [elapsed, setElapsed] = useState(0);
   const done = useRef(false);
@@ -243,30 +258,40 @@ function Measuring({ step, onDone }: { step: Extract<Step, { kind: 'measuring' }
   const outline = answer?.outline ?? null;
   const box = { left: '20%', top: '15%', width: '60%', height: '70%' };
   return (
-    <section className={styles.card} aria-busy="true">
+    <section className={styles.plain} aria-busy="true">
       <h1 className={styles.title} role="status">
         {quote.measuringTitle}
       </h1>
+      <p className={styles.lede}>{answer?.address ?? address.trim()}</p>
       <div className={styles.scanFrame}>
         {outline !== null ? (
           <RoofThumb ring={outline.ring} center={outline.center} alt={quote.outlineAlt} showOutline={progress > 0.55}>
             <ScanOverlay box={box} sweeping={progress < 1} />
           </RoofThumb>
         ) : (
-          <div className={styles.thumbPlaceholder}>
+          <RoofThumbPlaceholder>
             <ScanOverlay box={box} sweeping />
-          </div>
+          </RoofThumbPlaceholder>
         )}
+        <p className={styles.clock} aria-hidden="true">
+          {quote.seconds(elapsed / 1000)}
+        </p>
       </div>
       <ol className={styles.stages}>
-        {(['finding', 'tracing', 'reading', 'pricing'] as const).map((s) => (
-          <li key={s} data-state={s === stage ? 'now' : stageIndex(s) < stageIndex(stage) ? 'done' : 'next'}>
-            {quote.stages[s]}
-          </li>
-        ))}
+        {(['finding', 'tracing', 'reading', 'pricing'] as const).map((s) => {
+          const state = s === stage ? 'now' : stageIndex(s) < stageIndex(stage) ? 'done' : 'next';
+          return (
+            <li key={s} data-state={state}>
+              <span className={styles.stageMark} aria-hidden="true">
+                {state === 'done' ? <CheckIcon size={14} /> : null}
+              </span>
+              {quote.stages[s]}
+            </li>
+          );
+        })}
       </ol>
-      <p className={styles.timer} aria-hidden="true">
-        {quote.seconds(elapsed / 1000)}
+      <p className={styles.credit}>
+        {publicCopy.measuringNote} {quote.imagery}
       </p>
     </section>
   );
@@ -295,55 +320,92 @@ function Results({
 }) {
   const headingId = useId();
   if (answer.status === 'fallback') {
+    // A person will work out the price: a service, not a problem, so the panel is info blue with a house and no red.
     return (
-      <section className={styles.card} aria-labelledby={headingId}>
+      <section className={styles.plain} aria-labelledby={headingId}>
         <h1 id={headingId} className={styles.title}>
           {quote.fallbackTitle}
         </h1>
-        <p className={styles.text}>{quote.fallbackBody}</p>
-        {answer.address !== '' ? <p className={styles.small}>{quote.forAddress(answer.address)}</p> : null}
+        {answer.address !== '' ? <p className={styles.lede}>{quote.forAddress(answer.address)}</p> : null}
+        <div className={styles.service}>
+          <span className={styles.serviceIcon} aria-hidden="true">
+            <HomeIcon size={20} />
+          </span>
+          <p className={styles.serviceText}>
+            <b>{quote.fallbackLead}</b> {quote.fallbackBody}
+          </p>
+        </div>
       </section>
     );
   }
   return (
-    <section className={styles.card} aria-labelledby={headingId}>
-      <h1 id={headingId} className={styles.title}>
-        {quote.resultsTitle}
-      </h1>
-      <p className={styles.small}>{quote.forAddress(answer.address)}</p>
-      {answer.outline !== null ? (
-        <div className={styles.scanFrame}>
-          <RoofThumb ring={answer.outline.ring} center={answer.outline.center} alt={quote.outlineAlt} showOutline />
-          <p className={styles.credit}>{quote.imagery}</p>
-        </div>
-      ) : null}
-      <ul className={styles.ranges}>
-        {windows ? <WindowsLine slug={slug} quoteId={answer.quoteId} windows={windows} onWindows={onWindows} /> : null}
-        {answer.roof ? (
-          <li>
-            <span className={styles.rangeLabel}>{quote.roofLine(answer.roof.squares)}</span>
-            <span className={styles.rangeValue}>{quote.range(answer.roof.range.lowCents, answer.roof.range.highCents)}</span>
-          </li>
-        ) : null}
-        {config.products.includes('gutters') ? (
-          <li>
-            <span className={styles.rangeLabel}>{quote.guttersLine}</span>
-            <span className={styles.atVisit}>{quote.guttersAtVisit}</span>
-          </li>
-        ) : null}
-      </ul>
-      <p className={styles.note}>{quote.finalNote}</p>
+    <>
+      <section className={styles.estimate} aria-labelledby={headingId}>
+        <header className={styles.estHead} data-thumb={answer.outline !== null ? true : undefined}>
+          {answer.outline !== null ? (
+            <div className={styles.estThumb}>
+              <RoofThumb ring={answer.outline.ring} center={answer.outline.center} alt={quote.outlineAlt} showOutline />
+            </div>
+          ) : null}
+          <div className={styles.estWho}>
+            <h1 id={headingId} className={styles.estEyebrow}>
+              {quote.resultsTitle}
+            </h1>
+            <p className={styles.estAddress}>{answer.address}</p>
+          </div>
+        </header>
+        <ul className={styles.rows}>
+          {answer.roof ? (
+            <li className={styles.row}>
+              <div className={styles.rowHead}>
+                <span className={styles.rowBox} aria-hidden="true">
+                  <CheckIcon size={14} />
+                </span>
+                <span className={styles.rowName}>{publicCopy.roofName}</span>
+                <Range low={answer.roof.range.lowCents} high={answer.roof.range.highCents} />
+              </div>
+              <p className={styles.rowNote}>{quote.roofLine(answer.roof.squares)}</p>
+            </li>
+          ) : null}
+          {windows ? <WindowsLine slug={slug} quoteId={answer.quoteId} windows={windows} onWindows={onWindows} /> : null}
+          {config.products.includes('gutters') ? (
+            <li className={styles.row}>
+              <div className={styles.rowHead}>
+                <span className={styles.rowBox} data-off="" aria-hidden="true" />
+                <span className={styles.rowName}>{quote.guttersLine}</span>
+                <span className={styles.atVisit}>{quote.guttersAtVisit}</span>
+              </div>
+              <p className={styles.rowNote}>{publicCopy.guttersWhy}</p>
+            </li>
+          ) : null}
+        </ul>
+      </section>
+      <div className={styles.notes}>
+        <p className={styles.fine}>{quote.finalNote}</p>
+        {answer.outline !== null ? <p className={styles.fine}>{quote.imagery}</p> : null}
+      </div>
       {showContinue ? (
-        <div className={styles.actions}>
+        <div className={styles.dock}>
           <Button size="lg" className={styles.primary} onClick={onContinue}>
             {quote.continueButton}
+            <ArrowIcon size={18} />
           </Button>
-          <Button variant="ghost" onClick={onStartOver}>
+          <Button variant="ghost" className={styles.quiet} onClick={onStartOver}>
             {quote.startOver}
           </Button>
         </div>
       ) : null}
-    </section>
+    </>
+  );
+}
+
+/** A price range in the short form a card has room for ($12,500–19,800); screen readers get the sentence form. */
+function Range({ low, high, pending = false }: { low: number; high: number; pending?: boolean }) {
+  return (
+    <span className={styles.price} data-pending={pending ? true : undefined} aria-busy={pending}>
+      <span aria-hidden="true">{publicCopy.rangeShort(quoteMoney(low), quoteMoney(high))}</span>
+      <span className="visually-hidden">{quote.range(low, high)}</span>
+    </span>
   );
 }
 
@@ -386,19 +448,26 @@ function WindowsLine({ slug, quoteId, windows, onWindows }: { slug: string; quot
   }, [count, windows.count, slug, quoteId]);
   const step = (by: number) => setCount((n) => Math.min(QUOTE_WINDOW_COUNT.max, Math.max(QUOTE_WINDOW_COUNT.min, n + by)));
   return (
-    <li>
-      <div className={styles.windowsRow}>
-        <span className={styles.rangeLabel} aria-live="polite">
-          {quote.windowsLine(count)}
+    <li className={styles.row}>
+      <div className={styles.rowHead}>
+        <span className={styles.rowBox} aria-hidden="true">
+          <CheckIcon size={14} />
         </span>
-        <div className={styles.stepper}>
-          <IconButton label={quote.windowsFewer} icon={<StepIcon minus />} onClick={() => step(-1)} disabled={count <= QUOTE_WINDOW_COUNT.min} />
-          <IconButton label={quote.windowsMore} icon={<StepIcon />} onClick={() => step(1)} disabled={count >= QUOTE_WINDOW_COUNT.max} />
-        </div>
+        <span className={styles.rowName}>{publicCopy.windowsName}</span>
+        <Range low={windows.range.lowCents} high={windows.range.highCents} pending={pending} />
       </div>
-      <span className={styles.small}>{quote.windowsAdjust}</span>
-      <span className={styles.rangeValue} data-pending={pending ? true : undefined} aria-busy={pending}>
-        {quote.range(windows.range.lowCents, windows.range.highCents)}
+      <div className={styles.step}>
+        <div className={styles.stepper}>
+          <IconButton className={styles.stepButton} label={quote.windowsFewer} icon={<MinusIcon />} onClick={() => step(-1)} disabled={count <= QUOTE_WINDOW_COUNT.min} />
+          <b className={styles.count} aria-hidden="true">
+            {count}
+          </b>
+          <IconButton className={styles.stepButton} label={quote.windowsMore} icon={<PlusIcon />} onClick={() => step(1)} disabled={count >= QUOTE_WINDOW_COUNT.max} />
+        </div>
+        <p className={styles.rowNote}>{quote.windowsAdjust}</p>
+      </div>
+      <span className="visually-hidden" aria-live="polite">
+        {quote.windowsLine(count)}
       </span>
       {pending ? <span className="visually-hidden">{quote.windowsUpdating}</span> : null}
       {failed ? (
@@ -407,14 +476,6 @@ function WindowsLine({ slug, quoteId, windows, onWindows }: { slug: string; quot
         </span>
       ) : null}
     </li>
-  );
-}
-
-function StepIcon({ minus = false }: { minus?: boolean }) {
-  return (
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-      <path d={minus ? 'M5 12h14' : 'M5 12h14M12 5v14'} />
-    </svg>
   );
 }
 
@@ -457,7 +518,7 @@ function LeadForm({
   onDone,
 }: {
   slug: string;
-  config: PublicQuoteConfig;
+  config: QuoteConfig;
   answer: EstimateAnswer;
   /** The window count the homeowner set, when it is not the estimated one. */
   windowCount: number | null;
@@ -536,10 +597,12 @@ function LeadForm({
       );
   }
 
-  const fmt = (iso: string, zone: string) => visitTime(iso, zone, 'short');
+  // The zone the visit times are in, said once above them (in words: "Central Daylight Time").
+  const firstSlot = slots?.slots[0];
+  const zoneLabel = slots !== null && firstSlot !== undefined ? zoneName(firstSlot.start, slots.timeZone) : null;
 
   return (
-    <section className={styles.card} aria-labelledby={headingId}>
+    <section className={styles.formBlock} aria-labelledby={headingId}>
       <h2 id={headingId} className={styles.subtitle}>
         {quote.formTitle}
       </h2>
@@ -551,19 +614,21 @@ function LeadForm({
         </div>
         <Field label={quote.email} name="email" type="email" autoComplete="email" inputMode="email" value={form.email} error={fieldError('email')} onChange={(e) => set('email', e.target.value)} maxLength={254} />
         <div className={styles.twoUp}>
-          <Field label={quote.phone} name="phone" type="tel" autoComplete="tel" inputMode="tel" value={form.phone} error={fieldError('phone')} onChange={(e) => set('phone', e.target.value)} maxLength={30} />
-          <Field label={quote.postalCode} name="postalCode" autoComplete="postal-code" inputMode="numeric" value={form.postalCode} error={fieldError('postalCode')} onChange={(e) => set('postalCode', e.target.value)} maxLength={10} />
+          <Field className={styles.mono} label={quote.phone} name="phone" type="tel" autoComplete="tel" inputMode="tel" value={form.phone} error={fieldError('phone')} onChange={(e) => set('phone', e.target.value)} maxLength={30} />
+          <Field className={styles.mono} label={quote.postalCode} name="postalCode" autoComplete="postal-code" inputMode="numeric" value={form.postalCode} error={fieldError('postalCode')} onChange={(e) => set('postalCode', e.target.value)} maxLength={10} />
         </div>
-        <fieldset className={styles.products}>
+        <fieldset className={styles.group}>
           <legend className={styles.legend}>{quote.pickProducts}</legend>
-          {config.products.map((p) => (
-            <Checkbox
-              key={p}
-              checked={form.products.includes(p)}
-              onChange={(on) => set('products', on ? config.products.filter((x) => x === p || form.products.includes(x)) : form.products.filter((x) => x !== p))}
-              label={quote.productName(p)}
-            />
-          ))}
+          <div className={styles.checks}>
+            {config.products.map((p) => (
+              <Checkbox
+                key={p}
+                checked={form.products.includes(p)}
+                onChange={(on) => set('products', on ? config.products.filter((x) => x === p || form.products.includes(x)) : form.products.filter((x) => x !== p))}
+                label={quote.productName(p)}
+              />
+            ))}
+          </div>
           {fieldError('products') ? (
             <p className={styles.error} role="alert">
               {fieldError('products')}
@@ -571,26 +636,36 @@ function LeadForm({
           ) : null}
         </fieldset>
         {config.booking ? (
-          <fieldset className={styles.products}>
+          <fieldset className={styles.group}>
             <legend className={styles.legend}>{quote.slotsTitle}</legend>
             {slots === null ? (
-              <p className={styles.small} role="status">
+              <p className={styles.fine} role="status">
                 {quote.slotsLoading}
               </p>
             ) : slots.slots.length === 0 ? (
-              <p className={styles.small}>{quote.slotsNone}</p>
+              <p className={styles.fine}>{quote.slotsNone}</p>
             ) : (
-              <div className={styles.slots}>
-                {[{ id: '', label: quote.slotNone }, ...slots.slots.map((s) => ({ id: s.id, label: fmt(s.start, slots.timeZone) }))].map((s) => (
-                  <label key={s.id === '' ? 'none' : s.id} className={styles.slot} data-checked={form.slotId === s.id ? true : undefined}>
-                    <input type="radio" name="slot" value={s.id} checked={form.slotId === s.id} onChange={() => set('slotId', s.id)} />
-                    {s.label}
+              <>
+                {zoneLabel !== null ? <p className={styles.fine}>{publicCopy.slotsZone(zoneLabel)}</p> : null}
+                <div className={styles.slots}>
+                  <label className={styles.slot} data-none="" data-checked={form.slotId === '' ? true : undefined}>
+                    <input type="radio" name="slot" value="" checked={form.slotId === ''} onChange={() => set('slotId', '')} />
+                    {quote.slotNone}
                   </label>
-                ))}
-              </div>
+                  {slots.slots.map((s) => (
+                    <label key={s.id} className={styles.slot} data-checked={form.slotId === s.id ? true : undefined}>
+                      <input type="radio" name="slot" value={s.id} checked={form.slotId === s.id} onChange={() => set('slotId', s.id)} />
+                      <span className={styles.slotDay}>{visitDay(s.start, slots.timeZone)}</span>
+                      {' '}
+                      <span className={styles.slotTime}>{visitClock(s.start, slots.timeZone)}</span>
+                    </label>
+                  ))}
+                </div>
+              </>
             )}
           </fieldset>
         ) : null}
+        <TrustRow facts={config} />
         <div className={styles.consent}>
           <Checkbox checked={form.consent} onChange={(on) => set('consent', on)} label={quote.consentLabel} description={config.consent.text} error={fieldError('consent')} />
           <Checkbox checked={form.textConsent} onChange={(on) => set('textConsent', on)} label={quote.textConsentLabel} description={config.consent.textingText} />
@@ -606,10 +681,12 @@ function LeadForm({
         </div>
         <Honeypot value={form.website} onChange={(v) => set('website', v)} />
         <Turnstile key={humanRound} siteKey={config.turnstileSiteKey} onToken={setHuman} />
-        <Button type="submit" size="lg" className={styles.primary} busy={sending} disabled={config.turnstileSiteKey !== null && human === ''}>
-          {sending ? quote.sending : quote.submit}
-        </Button>
-        <p className={styles.small}>{quote.finalNote}</p>
+        <div className={styles.dock}>
+          <Button type="submit" size="lg" className={styles.primary} busy={sending} disabled={config.turnstileSiteKey !== null && human === ''}>
+            {sending ? quote.sending : quote.submit}
+          </Button>
+          <p className={styles.fine}>{answer.status === 'fallback' && config.phone ? publicCopy.callFrom(formatPhone(config.phone)) : quote.noObligation}</p>
+        </div>
       </form>
     </section>
   );
@@ -631,20 +708,27 @@ function Done({
   const ref = useRef<HTMLHeadingElement>(null);
   useEffect(() => ref.current?.focus(), []);
   const when = booked ? visitTime(booked.start, timeZone, 'long') : null;
+  const tile = booked ? visitTile(booked.start, timeZone) : null;
   return (
-    <section className={styles.card}>
-      <div className={styles.check} aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M5 12.5l4.5 4.5L19 7.5" />
-        </svg>
-      </div>
+    <section className={styles.plain}>
+      <span className={styles.okMark} aria-hidden="true">
+        <CheckIcon size={26} />
+      </span>
       <h1 ref={ref} tabIndex={-1} className={styles.title}>
         {quote.doneTitle(firstName)}
       </h1>
-      <p className={styles.text}>{when === null ? quote.doneBody : quote.doneBodyBooked}</p>
-      {when !== null ? <p className={styles.text}>{quote.doneBooked(when)}</p> : null}
-      {when === null && slotTaken ? <p className={styles.text}>{quote.doneSlotTaken}</p> : null}
-      {config.phone ? <p className={styles.small}>{quote.doneCall(formatPhone(config.phone))}</p> : null}
+      <p className={styles.lede}>{when === null ? quote.doneBody : quote.doneBodyBooked}</p>
+      {when !== null && tile !== null ? (
+        <div className={styles.visit}>
+          <span className={styles.dateTile} aria-hidden="true">
+            <small>{tile.month}</small>
+            <b>{tile.day}</b>
+          </span>
+          <p className={styles.visitText}>{quote.doneBooked(when)}</p>
+        </div>
+      ) : null}
+      {when === null && slotTaken ? <p className={styles.lede}>{quote.doneSlotTaken}</p> : null}
+      {config.phone ? <p className={`${styles.fine} ${styles.foot}`}>{quote.doneCall(formatPhone(config.phone))}</p> : null}
     </section>
   );
 }

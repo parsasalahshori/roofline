@@ -1,19 +1,43 @@
+/* The reply box: a panel the width of the conversation, the text beside its Send button. A phone pins it to the bottom of the screen. */
 .form {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+}
+
+.composer {
+  display: flex;
+  align-items: flex-start;
   gap: 8px;
   min-width: 0;
 }
 
+.field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The box grows with the words, not by a handle */
+.field textarea {
+  resize: none;
+}
+
+.send {
+  flex: none;
+}
+
+/* Held for quiet hours: when it will go out, with a clock */
 .note {
-  margin: 0;
-  color: var(--text-muted);
-}
-
-.actions {
   display: flex;
-  justify-content: flex-end;
-}
-
-.actions > * {
-  min-height: 40px;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--info-text);
+  font-size: 13px;
+  font-weight: 600;
 }

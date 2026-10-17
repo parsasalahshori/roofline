@@ -1,0 +1,203 @@
+/*
+ * One screen in the shell's content column. The shell scrolls the column; a "fill" page takes exactly the
+ * column's height instead and lets its panels scroll, so a board keeps its headers in view.
+ */
+.page {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 20px 24px 32px;
+}
+
+.page[data-layout="fill"] {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-bottom: 20px;
+}
+
+/* No shell around (a test, a page alone): the trail sits above the head as a quiet row */
+.inlineCrumb {
+  margin-bottom: 12px;
+}
+
+.head {
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+/* The content draws its own header: the title is read out but not shown, so the head takes no room */
+.head[data-hidden="true"] {
+  margin: 0;
+}
+
+.titles {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* A mono caps line over the title: "FRIDAY, OCTOBER 16" */
+.eyebrow {
+  margin: 0 0 6px;
+  color: var(--ink-3);
+  font: 500 var(--font-size-min)/1 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 0;
+  font: 750 26px/1.05 var(--f-display);
+  font-stretch: 118%;
+  letter-spacing: -0.01em;
+}
+
+.subtitle {
+  margin: 6px 0 0;
+  color: var(--ink-3);
+}
+
+.actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.stats,
+.tabs {
+  flex: none;
+  margin-bottom: 16px;
+}
+
+.body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The body's children decide their own layout: a flow page stacks them, a fill page gives them the height */
+.page[data-layout="flow"] .body {
+  flex: none;
+}
+
+/* On a fill page a child keeps its own height (a tab row is never squeezed); the one that should take the rest
+   says so with its own flex. Written with :where so any class of theirs wins. */
+:where(.page[data-layout="fill"] .body) > * {
+  flex: none;
+}
+
+/* A phone's way back ("‹ Jobs") with the page's own controls at the right */
+.phoneBar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  margin-bottom: 4px;
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 44px;
+  margin-left: -6px;
+  padding: 0 8px 0 2px;
+  color: var(--brand-text);
+  font: 500 17px/1.2 var(--f-ui);
+  text-decoration: none;
+}
+
+.phoneBarActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* The shell's search, bell and person, beside a top-level page's title on a phone */
+.trailing {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  margin-right: -6px;
+}
+
+@media (max-width: 767.98px) {
+  /* One top inset on every page, so the row of the shell's buttons (or the way back) sits in the same place on each */
+  .page {
+    padding: max(16px, env(safe-area-inset-top, 0px)) 16px 24px;
+  }
+
+  /* The head is at least as tall as the 44px controls in it, so the title is centred on them whatever else it holds.
+     Its first row is the title with the shell's controls at the right; the subtitle and the page's buttons wrap under it */
+  .head {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 16px;
+    min-height: 44px;
+    margin-bottom: 12px;
+  }
+
+  .head[data-hidden="true"] {
+    min-height: 0;
+    margin: 0;
+  }
+
+  /* The eyebrow takes a row over the title; the title takes the next row with the shell's controls; the subtitle and the
+     page's own buttons wrap under it */
+  .eyebrow {
+    order: 0;
+    flex: 1 1 100%;
+    margin: 0 0 6px;
+  }
+
+  /* With the shell's controls the title is centred in a 44px row, which already leaves it room under the eyebrow */
+  .head[data-trailing="true"] .eyebrow {
+    margin: 0;
+  }
+
+  .titles {
+    order: 1;
+    flex: 1 1 0;
+  }
+
+  .trailing {
+    order: 2;
+  }
+
+  /* A page with its own way back has a title row only as tall as the title, so the subtitle clears the descenders by a
+     few pixels of its own */
+  .subtitle {
+    order: 3;
+    flex: 1 1 100%;
+    margin-top: 6px;
+    text-wrap: pretty;
+  }
+
+  /* With the shell's controls the title is centred in a 44px row, which already leaves it room: the subtitle tucks up */
+  .head[data-trailing="true"] .subtitle {
+    margin-top: -4px;
+  }
+
+  .actions {
+    order: 4;
+    flex: 1 1 100%;
+    justify-content: flex-start;
+    margin-top: 16px;
+  }
+
+  .title {
+    font-size: 26px;
+    font-stretch: 112%;
+  }
+}

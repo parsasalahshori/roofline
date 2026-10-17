@@ -1,0 +1,132 @@
+/* The filter bar: chips on the left, the search at the right; on a phone the search is on top and the chips wrap under it */
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.chips {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.search {
+  flex: none;
+  margin-left: auto;
+}
+
+@media (max-width: 767.98px) {
+  .bar {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .chips {
+    flex-wrap: wrap;
+  }
+
+  .search {
+    margin-left: 0;
+  }
+}
+
+/* The table sits in a panel: surface, hairline and a 10px radius */
+.panel {
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+  overflow: hidden;
+}
+
+.nameCell {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+}
+
+.nameLink {
+  color: var(--ink);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.nameLink:hover {
+  text-decoration: underline;
+}
+
+.nameLink:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--r-1);
+}
+
+.phone {
+  font-family: var(--f-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* A customer with no phone: a quiet dash where the number would be */
+.noPhone {
+  color: var(--ink-3);
+}
+
+/* The tags wrap inside their cell or card: a long one grows taller instead of running out of it */
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Phone: one card per customer */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: var(--r-4);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+}
+
+.cardMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  color: var(--ink-2);
+}
+
+.paging {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.range {
+  color: var(--ink-3);
+  font: 500 13px/1 var(--f-mono);
+}

@@ -1,4 +1,4 @@
-import type { AddOnUnit, ProposalEventKind, ProposalStatus, Tier } from '@roofline/shared';
+import type { AddOnUnit, ProposalStatus, Tier } from '@roofline/shared';
 
 /** Whole dollars, as the screen shows every amount. */
 const dollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -8,13 +8,15 @@ const dollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'U
  */
 export const proposals = {
   // --- loading and errors ---
+  pageTitle: 'Proposal',
+  errorTag: "Couldn't load",
   loadFailed: "We couldn't open this proposal. Try again.",
   retry: 'Try again',
   notFound: "We couldn't find this proposal.",
+  backToJobs: 'Back to jobs',
 
   // --- header ---
   title: (number: string): string => `Proposal ${number}`,
-  customerLine: (name: string, address: string): string => `${name} · ${address}`,
   validUntil: (date: string): string => `Good until ${date}`,
   /** Labels every instant number and every price derived from one (master 9.2). */
   estimateLabel: 'Estimate',
@@ -67,15 +69,6 @@ export const proposals = {
   /** "Opened 3 times · last today 7:12 PM". `last` comes from formatLastOpened in features/proposals/format.ts. */
   eventsLine: (count: number, last: string): string => `Opened ${count} ${count === 1 ? 'time' : 'times'} · last ${last}`,
   sentOn: (when: string): string => `Sent ${when}`,
-  eventKind: {
-    sent: 'Sent',
-    viewed: 'Opened',
-    option_viewed: 'Looked at an option',
-    signed: 'Signed',
-    declined: 'Declined',
-    link_resent: 'Link sent again',
-    link_copied: 'Link copied',
-  } satisfies Record<ProposalEventKind, string>,
   /** Words for a date label. `today` and `yesterday` are followed by a clock time. */
   today: 'today',
   yesterday: 'yesterday',
@@ -84,6 +77,10 @@ export const proposals = {
   messageHeading: 'Text message',
   messageLabel: 'What the customer gets by text',
   messageHelp: 'Keep {link} in the message so the customer can open the proposal.',
+  /** Under the text box: the same message with the words that fill in already filled, as the customer will read it. */
+  messagePreview: 'How it reads',
+  /** Stands for the proposal's link in that preview: the real link is made when the text goes out. */
+  messageLinkWord: 'link to your proposal',
 
   // --- actions ---
   send: 'Send',
@@ -95,18 +92,30 @@ export const proposals = {
   makeRevised: 'Make a revised proposal',
   reviseFailed: "We couldn't make a revised proposal. Try again.",
   saveFailed: "We couldn't save your change. Try again.",
-  saving: 'Saving',
+
+  // --- the options as rows and, on a phone, tabs ---
+  tiersLabel: 'Options',
+  recommended: 'Recommended',
+  /** On the option the customer signed, so the owner sees which of the three it was. */
+  optionSigned: 'Signed',
+  optionLeftOut: 'Left out',
+  /** The one line under an option's name: what it is made of and the waste it allows for. */
+  specLine: (material: string, wastePercent: number): string => `${material} · ${wastePercent}% waste`,
+  /** The same line when the option's name already says the material. */
+  specLineWasteOnly: (wastePercent: number): string => `${wastePercent}% waste`,
+  activityHeading: 'Activity',
 
   // --- option cards ---
   optionHeading: (tier: Tier): string => proposals.tierName[tier],
   tierName: { good: 'Good', better: 'Better', best: 'Best' } satisfies Record<Tier, string>,
   optionOn: 'Include this option',
-  optionOff: 'Left out of this proposal',
   fieldName: 'Option name',
   fieldMaterial: 'Material',
   fieldWaste: 'Waste (percent)',
   fieldMarkup: 'Markup (percent)',
   totalLabel: 'Total',
+  lineItem: 'Item',
+  lineAmount: 'Amount',
   includes: 'Includes',
   linesHeading: 'Price lines',
   pricesUnavailable: 'Live prices are not available to you. The saved total is shown.',

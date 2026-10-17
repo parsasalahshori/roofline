@@ -1,0 +1,71 @@
+/*
+ * MapLibre's own controls, in the app's look, for every map the app draws (the main map, a storm's swath map and a door
+ * route): the zoom on the surface colour, the attribution as a quiet pill, and in the dark theme their dark line art
+ * turned light. A map puts this class on the element MapLibre is given.
+ */
+
+/* A hairline, the surface colour and the small radius */
+.chrome :global(.maplibregl-ctrl-group) {
+  border-radius: var(--r-2);
+  background: var(--surface);
+  box-shadow: var(--e-2);
+}
+
+/* The corner's 10px margins become the design's 12px, so the zoom lines up with the legend and the switch */
+.chrome :global(.maplibregl-ctrl-bottom-right .maplibregl-ctrl) {
+  margin: 0 12px 12px 0;
+}
+
+.chrome :global(.maplibregl-ctrl-group button) {
+  width: 34px;
+  height: 34px;
+}
+
+/* The zoom's and the attribution's icons are dark line art; in the dark theme they are turned light */
+:global(:root[data-theme="dark"]) .chrome :global(.maplibregl-ctrl-icon),
+:global(:root[data-theme="dark"]) .chrome :global(.maplibregl-ctrl-attrib-button) {
+  filter: invert(1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme="light"])) .chrome :global(.maplibregl-ctrl-icon),
+  :global(:root:not([data-theme="light"])) .chrome :global(.maplibregl-ctrl-attrib-button) {
+    filter: invert(1);
+  }
+}
+
+.chrome :global(.maplibregl-ctrl-group button + button) {
+  border-top: 1px solid var(--line);
+}
+
+.chrome :global(.maplibregl-ctrl-attrib) {
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  color: var(--ink-3);
+}
+
+.chrome :global(.maplibregl-ctrl-attrib a) {
+  color: var(--ink-2);
+}
+
+/* MapLibre's own buttons are 29px (zoom) and 24px (attribution); on a phone they are 44px touch targets. */
+@media (max-width: 767.98px) {
+  .chrome :global(.maplibregl-ctrl-group button) {
+    width: 44px;
+    height: 44px;
+  }
+
+  .chrome :global(.maplibregl-ctrl-attrib.maplibregl-compact) {
+    padding: 12px 44px 12px 0;
+  }
+
+  .chrome :global(.maplibregl-ctrl-attrib.maplibregl-compact-show) {
+    padding: 12px 44px 12px 8px;
+  }
+
+  .chrome :global(.maplibregl-ctrl-attrib-button) {
+    width: 44px;
+    height: 44px;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+}

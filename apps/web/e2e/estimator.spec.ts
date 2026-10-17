@@ -23,6 +23,31 @@ test('typed address to sent in 3 clicks', async ({ page, loginAs, markTodaySeen,
   await expect(page.getByRole('button', { name: 'Copy link' })).toBeVisible();
 });
 
+test('the Measure head: the trail, the street as the title, and the Roof | Windows | Gutters switch', async ({ page, loginAs, markTodaySeen, click }) => {
+  test.setTimeout(90_000);
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  const sent = await makeAndSendProposal(page, click);
+  const proposal = await page.request.get('/api/proposals/' + sent.proposalId);
+  const { measurementId } = (await proposal.json()) as { measurementId: string };
+  await page.goto('/estimator/measure/' + measurementId);
+
+  // The street is the page's title; the trail in the top bar is Measure > Roof > the street
+  await expect(page.getByRole('heading', { level: 1, name: '22074 Farnam St' })).toBeVisible({ timeout: 20_000 });
+  const trail = page.getByRole('navigation', { name: 'Breadcrumb' });
+  await expect(trail.getByRole('link', { name: 'Measure', exact: true })).toHaveAttribute('href', '/estimator');
+  await expect(trail.getByText('22074 Farnam St', { exact: true })).toBeVisible();
+
+  // The switch: this roof is on, and Gutters is offered because the roof is measured
+  const switcher = page.getByRole('radiogroup', { name: 'What to measure' });
+  await expect(switcher.getByRole('radio', { name: 'Roof' })).toBeChecked();
+  await expect(switcher.getByRole('radio', { name: 'Windows' })).not.toBeChecked();
+  await switcher.getByRole('radio', { name: 'Gutters' }).click();
+  await expect(page).toHaveURL(new RegExp('/estimator/measure/' + measurementId + '/gutters$'));
+  await expect(page.getByRole('radiogroup', { name: 'What to measure' }).getByRole('radio', { name: 'Gutters' })).toBeChecked();
+  await expect(page.getByRole('heading', { level: 1, name: '22074 Farnam St' })).toBeVisible();
+});
+
 test('exact report: owner approves the spend', async ({ page, loginAs, markTodaySeen, click }) => {
   test.setTimeout(60_000);
   await loginAs(page, 'owner');
@@ -40,11 +65,11 @@ test('exact report: owner approves the spend', async ({ page, loginAs, markToday
 
   // The owner sees the most it can cost and approves it.
   await expect(page).toHaveURL(/\/approvals\//);
-  await expect(page.getByText(/^Up to \$[\d,]+$/)).toBeVisible();
-  await page.getByRole('button', { name: /^Approve 1 step · up to \$[\d,]+$/ }).click();
+  await expect(page.getByText(/^Up to \$[\d,]+(\.\d{2})?$/)).toBeVisible();
+  await page.getByRole('button', { name: /^Approve 1 step · up to \$[\d,]+(\.\d{2})?$/ }).click();
 
   // The order is placed and parks while the report is made. The step reads "Working on it".
-  await expect(page.getByRole('dialog').getByRole('list').getByText('Working on it', { exact: true })).toHaveCount(1, {
+  await expect(page.getByRole('main').getByRole('list').getByText('Working on it', { exact: true })).toHaveCount(1, {
     timeout: 20_000,
   });
 });

@@ -219,7 +219,14 @@ export function companyRoutes(deps: AppDeps): Router {
     const [row] = await (lock ? query.for('update') : query);
     if (!row) throw new AppError(404, MESSAGES.notFound);
     const facts = await companyLocationFacts(tx, ctx);
-    return { ...row, located: facts.located, serviceAreaMiles: facts.serviceAreaMiles };
+    // The company's brand colour for the app's white-label slot: the instant quote page's accent colour (#rgb or
+    // #rrggbb), or null for the default blue. Read-only here; Settings > Instant quote is where it changes.
+    const [brand] = await tx
+      .select({ brandColor: companySettings.quoteAccentColor })
+      .from(companySettings)
+      .where(eq(companySettings.companyId, ctx.companyId))
+      .limit(1);
+    return { ...row, located: facts.located, serviceAreaMiles: facts.serviceAreaMiles, brandColor: brand?.brandColor ?? null };
   };
 
   /** The company's settings row, made with the defaults if it is somehow missing. */

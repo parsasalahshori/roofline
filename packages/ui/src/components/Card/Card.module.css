@@ -1,9 +1,9 @@
 .card {
   margin: 0;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: var(--surface);
-  color: var(--text);
+  color: var(--ink);
   list-style: none;
 }
 

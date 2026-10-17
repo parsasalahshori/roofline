@@ -85,6 +85,8 @@ function open(proposal: ProposalView, own: Routes = {}) {
 }
 
 const card = (tier: Tier) => screen.findByRole('region', { name: proposals.optionHeading(tier) });
+/** Picks an option's row, which opens it out (the recommended one starts open). */
+const pick = async (user: ReturnType<typeof userEvent.setup>, tier: Tier) => user.click(within(await card(tier)).getByRole('radio'));
 
 describe('proposal window', () => {
   it('live totals equal priceTier', async () => {
@@ -97,6 +99,7 @@ describe('proposal window', () => {
       expect(within(await card(tier)).getAllByText(total).length).toBeGreaterThan(0);
     }
 
+    await pick(user, 'good');
     const first = await card('good');
     const waste = within(first).getByLabelText(proposals.fieldWaste);
     await user.clear(waste);
@@ -112,6 +115,7 @@ describe('proposal window', () => {
   it('a failed save puts the option back', async () => {
     const { user } = open(makeProposal(), { 'PATCH /api/proposals/p1': () => ({ status: 500, body: { error: 'nope' } }) });
 
+    await pick(user, 'good');
     const waste = within(await card('good')).getByLabelText(proposals.fieldWaste);
     await user.clear(waste);
     await user.type(waste, '15');
@@ -138,6 +142,7 @@ describe('proposal window', () => {
       },
     });
 
+    await pick(user, 'good');
     const waste = within(await card('good')).getByLabelText(proposals.fieldWaste);
     await user.clear(waste);
     await user.type(waste, '15');
@@ -265,5 +270,28 @@ describe('proposal window', () => {
 
     await user.click(await screen.findByRole('button', { name: proposals.send }));
     expect(await screen.findByText('This proposal was already sent.')).toBeInTheDocument();
+  });
+
+  it('a proposal that is not there says so in place, with a way back to the jobs', async () => {
+    open(makeProposal(), { 'GET /api/proposals/p1': () => ({ status: 404, body: { error: 'Not found' } }) });
+
+    expect(await screen.findByText(proposals.notFound)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: proposals.pageTitle })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: proposals.backToJobs })).toHaveAttribute('href', '/jobs');
+  });
+
+  it('a proposal that will not load says so in place, and Try again loads it', async () => {
+    let calls = 0;
+    const { user } = open(makeProposal(), {
+      'GET /api/proposals/p1': () => {
+        calls += 1;
+        return calls === 1 ? { status: 500, body: { error: 'x' } } : { body: makeProposal() };
+      },
+    });
+
+    const alert = (await screen.findByText(proposals.loadFailed)).closest('[role="alert"]');
+    expect(alert).not.toBeNull();
+    await user.click(within(alert as HTMLElement).getByRole('button', { name: proposals.retry }));
+    expect(await screen.findByRole('heading', { level: 1, name: proposals.title('P-0001') })).toBeInTheDocument();
   });
 });

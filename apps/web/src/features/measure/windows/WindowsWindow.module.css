@@ -1,57 +1,71 @@
-/* Measure windows: the roof screen's frame (MeasureWindow.module.css) with the house's photo in place of the map. */
-
-/* Roof | Windows in the header */
-.switch {
-  display: inline-flex;
-  flex: none;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 9px;
-  background: var(--ds-surface-2, #eceff1);
+/*
+ * Measure windows. Wide (the page 900px or more): the front of the house, the windows table and what was worked out on
+ * the left, the quote on the right. Between 600 and 900: the same in one column. Under 600 (a phone): one step at a time
+ * (Address, Windows, Quote) with the quote's total pinned at the bottom. The page's width is the container (see
+ * MeasurePage.module.css), not the screen's.
+ */
+.work {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  min-width: 0;
 }
 
-.switchItem {
-  min-height: 28px;
-  padding: 0 12px;
-  border-radius: 7px;
-  color: var(--ds-text-label, #505b64);
-  font-size: 13px;
-  font-weight: 600;
+.main,
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
 }
 
-/* Three choices (Roof | Windows | Gutters) fit beside the close button on a phone */
-@media (max-width: 479.98px) {
-  .switchItem {
-    padding: 0 8px;
-    font-size: 12.5px;
+.quote {
+  min-width: 0;
+}
+
+/* The address form is for the phone's first step; the wide page opens another address from the Measure tab */
+.start {
+  display: none;
+}
+
+@container measure (min-width: 900px) {
+  .work {
+    grid-template-columns: minmax(0, 1fr) 380px;
+  }
+
+  .quote {
+    position: sticky;
+    top: 16px;
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100dvh - 136px);
   }
 }
 
-.switchItem[data-selected="true"] {
-  background: var(--ds-surface, #fff);
-  color: var(--ds-text-1, #151c22);
-  box-shadow: 0 0 0 1px rgba(21, 28, 34, 0.08), 0 1px 3px rgba(21, 28, 34, 0.12);
+@container measure (max-width: 599.98px) {
+  .start {
+    display: block;
+  }
+
+  .work[data-step="start"] > .main,
+  .work[data-step="start"] > .quote,
+  .work[data-step="windows"] > .start,
+  .work[data-step="windows"] > .quote,
+  .work[data-step="quote"] > .start,
+  .work[data-step="quote"] > .main {
+    display: none;
+  }
 }
 
-/* The left column: an address to measure */
-.start {
+.startOnly {
+  max-width: 560px;
+}
+
+.startBody {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 16px;
-}
-
-.startTitle {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 700;
-}
-
-.startSubtitle {
-  margin: 0;
-  color: var(--ds-text-label, #505b64);
-  font-size: 12.5px;
-  line-height: 1.4;
+  gap: 12px;
 }
 
 .startForm {
@@ -60,69 +74,130 @@
   gap: 8px;
 }
 
+/* The steps read as the quiet help they are (the hint's size and colour), not as body copy */
+.startSteps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .openNow {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin: 8px 0 0;
+  margin: 0;
   padding: 10px 12px;
-  border-radius: 10px;
-  background: var(--ds-accent-tint, #fff1d1);
-  font-size: 12.5px;
+  border-radius: var(--r-2);
+  background: var(--sunken);
 }
 
 .openNow span {
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
+  font-size: 13px;
 }
 
-.strip {
-  display: flex;
-  flex: none;
-  align-items: center;
-  min-height: 62px;
-  padding: 0 4px;
-}
-
-.address {
+.hint {
   margin: 0;
-  overflow: hidden;
-  font-size: 18px;
-  font-stretch: 125%;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
-/* The stage: a dark backdrop, the chips on top, the photo contained in the middle, the card under it */
-.stage {
+.loading {
+  color: var(--ink-3);
+}
+
+.notices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* The demo detector's warning cannot be missed: a thick red frame round the banner */
+.standIn {
+  border-radius: var(--r-3);
+  box-shadow: 0 0 0 3px var(--bad);
+  font-weight: 600;
+}
+
+/* The front of the house: a segmented choice of views in the header, the view, the three grades under it */
+.viewTools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.viewArea {
+  position: relative;
+}
+
+/*
+ * The kit's panel header does not wrap, and this one holds the views, Adjust and the replay: where the card is narrow the
+ * tools take a line of their own (and the replay is its icon alone), instead of pushing off the edge.
+ */
+.elevation > div:first-child {
+  flex-wrap: wrap;
+}
+
+.elevation > div:first-child > :last-child:not(:first-child) {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+
+@container measure (max-width: 599.98px) {
+  .replayText {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* Its icon alone is a thumb-sized target on a phone (the kit's small button is 44px high there, but only as wide as its icon) */
+@media (max-width: 767.98px) {
+  .replay[data-variant] {
+    min-width: 44px;
+    justify-content: center;
+  }
+}
+
+.scaleNote {
+  margin: 0;
+  padding: 6px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
+}
+
+.ladder {
+  border-top: 1px solid var(--line);
+}
+
+/* The street photo and its chips */
+.photoView {
   position: relative;
   display: flex;
-  flex: 1 1 auto;
   flex-direction: column;
-  gap: 10px;
-  min-height: 460px;
-  padding: 12px;
-  box-sizing: border-box;
-  border-radius: 14px;
-  background: #1d2329;
-  box-shadow: 0 0 0 1px rgba(21, 28, 34, 0.12);
-  overflow: hidden;
-}
-
-.stageTop {
-  display: flex;
-  flex: none;
-  align-items: flex-start;
   gap: 8px;
-  min-height: 34px;
+  min-height: 340px;
+  padding: 12px;
+  background: var(--sunken);
 }
 
 .chips {
   display: flex;
-  flex: 1 1 auto;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
   min-width: 0;
 }
@@ -130,22 +205,22 @@
 .chip {
   display: inline-block;
   max-width: 100%;
+  padding: 4px 10px;
   overflow: hidden;
-  text-overflow: ellipsis;
-  box-sizing: border-box;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: var(--ds-glass-strong, rgba(246, 247, 248, 0.97));
-  color: var(--ds-text-2, #3a444d);
-  font-size: 12.5px;
+  border-radius: var(--r-1);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+  color: var(--ink-2);
+  font-size: 13px;
   font-weight: 500;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .chip[data-tone="measuring"] {
-  background: var(--ds-accent-tint, #fff1d1);
-  box-shadow: inset 0 0 0 1px rgba(217, 158, 0, 0.45);
-  color: #5c3d00;
+  background: var(--tape-tint);
+  box-shadow: inset 0 0 0 1px var(--tape-line);
+  color: var(--tape-ink);
   font-weight: 600;
 }
 
@@ -153,727 +228,272 @@
   display: inline-flex;
   gap: 2px;
   padding: 2px;
-  border-radius: 999px;
-  background: var(--ds-glass-strong, rgba(246, 247, 248, 0.97));
+  border-radius: var(--r-2);
+  background: var(--surface);
+  box-shadow: var(--e-1);
 }
 
 .photoPickButton {
-  min-width: 32px;
-  min-height: 28px;
+  min-width: 36px;
+  min-height: 32px;
   padding: 0 8px;
-  border-radius: 999px;
-  font-size: 12.5px;
+  border-radius: var(--r-1);
+  font-size: 13px;
   font-weight: 600;
 }
 
 .photoPickButton[aria-pressed="true"] {
-  background: var(--ds-accent, #ffc21a);
-  color: var(--ds-text-1, #151c22);
+  background: var(--ink);
+  color: var(--ink-inv);
 }
 
-/* The walls plan, top right: traced by the scan */
-.walls {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 12px 6px 6px;
-  border-radius: 12px;
-  background: var(--ds-glass-strong, rgba(246, 247, 248, 0.97));
-  box-shadow: 0 2px 6px rgba(21, 28, 34, 0.25);
-}
-
-.walls svg {
-  flex: none;
-}
-
-.wallsRect {
-  fill: rgba(255, 194, 26, 0.12);
-  stroke: var(--ds-accent, #ffc21a);
-  stroke-width: 2.5;
-  stroke-linejoin: round;
-}
-
-.wallsFront {
-  stroke: var(--ds-text-1, #151c22);
-  stroke-width: 3.5;
-  stroke-linecap: round;
-}
-
-.wallsText {
-  display: flex;
-  flex-direction: column;
-  color: var(--ds-text-2, #3a444d);
-  font-size: 12px;
-  line-height: 1.35;
-  font-variant-numeric: tabular-nums;
-}
-
-.wallsText strong {
-  color: var(--ds-text-1, #151c22);
-  font-size: 13px;
-}
-
-.notices {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  gap: 8px;
-}
-
-/* The demo detector's warning cannot be missed: a thick red frame round the banner */
-.standIn {
-  border-radius: 12px;
-  box-shadow: 0 0 0 3px var(--ds-danger, #d93a3a);
-  font-weight: 600;
-}
-
-/*
- * The photo fills the stage (cropped, kept on the front wall; PhotoStage works out the box) (cropped top and bottom, kept on the front wall) so the house reads large; while
- * Adjust is open it is contained instead, so every part of it can be reached to mark a window or move a corner.
- */
-.photoArea {
-  position: relative;
-  flex: 1 1 auto;
-  min-height: 200px;
-  overflow: hidden;
-  border-radius: 10px;
-}
-
-.photoFrame {
-  position: absolute;
-  user-select: none;
-}
-
-.photoFrame[data-marking="true"] {
-  cursor: crosshair;
-  touch-action: none;
-}
-
-.photoFrame[data-dragging] {
-  touch-action: none;
-}
-
-.photo {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  -webkit-user-drag: none;
-}
-
-.photoFailed,
-.noPhoto {
-  margin: 0;
-  padding: 24px;
-  color: #d8dde2;
-  font-size: 14px;
-  text-align: center;
-}
-
-/* The front wall from the outline: dashed yellow over the house */
-.wall {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-  pointer-events: none;
-}
-
-.wallFill {
-  fill: rgba(255, 194, 26, 0.1);
-  stroke: none;
-}
-
-.wallEdge {
-  stroke: var(--ds-accent, #ffc21a);
-  stroke-width: 2.5;
-  stroke-dasharray: 7 5;
-  stroke-linecap: round;
-  filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.7));
-  animation: edgeIn 0.45s ease-out;
-}
-
-.wallEdge[data-edge="ground"],
-.wallEdge[data-edge="eave"] {
-  stroke-width: 3;
-}
-
-@keyframes edgeIn {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-/* A window: a yellow outline that settles from a bright flash; its size under it */
-.box {
-  position: absolute;
-  z-index: 2;
-  box-sizing: border-box;
-  border: 2px solid var(--ds-accent, #ffc21a);
-  border-radius: 3px;
-  box-shadow: 0 0 0 1px rgba(21, 28, 34, 0.55);
-  transition: border-color 0.2s ease;
-}
-
-.box[data-fresh="true"] {
-  animation: boxIn 0.35s ease-out;
-}
-
-@keyframes boxIn {
-  from {
-    transform: scale(1.25);
-    opacity: 0;
-    box-shadow: 0 0 0 6px rgba(255, 194, 26, 0.6);
-  }
-
-  to {
-    transform: none;
-    opacity: 1;
-  }
-}
-
-.box[data-out="true"] {
-  border-style: dashed;
-  border-color: rgba(255, 255, 255, 0.75);
-  background: rgba(21, 28, 34, 0.35);
-}
-
-.box[data-selected="true"] {
-  border-color: #fff;
-  box-shadow: 0 0 0 2px var(--ds-accent, #ffc21a), 0 0 0 3px rgba(21, 28, 34, 0.6);
-}
-
-.boxButton {
-  position: absolute;
-  inset: -4px;
-  min-width: 0;
-  min-height: 0;
-  padding: 0;
-  border-radius: 4px;
-  background: transparent;
-}
-
-.boxButton:hover {
-  background: rgba(255, 194, 26, 0.16);
-}
-
-.photoFrame[data-marking="true"] .box[data-source="marked"] .boxButton {
-  cursor: move;
-}
-
-.boxLabel {
-  position: absolute;
-  top: calc(100% + 3px);
-  left: 50%;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 1px 6px;
-  transform: translateX(-50%);
-  border-radius: 6px;
-  background: rgba(21, 28, 34, 0.82);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-  pointer-events: none;
-}
-
-.autoChip {
-  position: absolute;
-  bottom: calc(100% + 2px);
-  left: -2px;
-  padding: 0 4px;
-  border-radius: 4px;
-  background: var(--ds-info, #2f6fde);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-.box:hover,
-.box:focus-within {
-  z-index: 4;
-}
-
-/* Resize handles: small squares with 32px hit areas */
-.handle {
-  position: absolute;
-  z-index: 3;
-  width: 32px;
-  height: 32px;
-  margin: -16px 0 0 -16px;
-  touch-action: none;
-}
-
-.handle::after {
-  position: absolute;
-  inset: 11px;
-  border-radius: 2px;
-  background: #fff;
-  box-shadow: 0 0 0 1.5px rgba(21, 28, 34, 0.7);
-  content: "";
-}
-
-.handle[data-handle="nw"] { top: 0; left: 0; cursor: nwse-resize; }
-.handle[data-handle="n"] { top: 0; left: 50%; cursor: ns-resize; }
-.handle[data-handle="ne"] { top: 0; left: 100%; cursor: nesw-resize; }
-.handle[data-handle="e"] { top: 50%; left: 100%; cursor: ew-resize; }
-.handle[data-handle="se"] { top: 100%; left: 100%; cursor: nwse-resize; }
-.handle[data-handle="s"] { top: 100%; left: 50%; cursor: ns-resize; }
-.handle[data-handle="sw"] { top: 100%; left: 0; cursor: nesw-resize; }
-.handle[data-handle="w"] { top: 50%; left: 0; cursor: ew-resize; }
-
-.removeBox {
-  position: absolute;
-  z-index: 4;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  min-height: 28px;
-  padding: 0 10px;
-  transform: translateX(-50%);
-  border-radius: 8px;
-  background: var(--ds-surface, #fff);
-  color: var(--ds-danger-ink, #a3201f);
-  font-size: 12px;
-  white-space: nowrap;
-  box-shadow: 0 2px 6px rgba(21, 28, 34, 0.3);
-}
-
-.drawing {
-  position: absolute;
-  z-index: 2;
-  border: 2px dashed #fff;
-  background: rgba(255, 194, 26, 0.18);
-  pointer-events: none;
-}
-
-/* The wall's corners: on top of everything on the photo, 44px hit areas */
-.corner {
-  position: absolute;
-  z-index: 5;
-  width: 44px;
-  min-width: 44px;
-  height: 44px;
-  min-height: 44px;
-  margin: -22px 0 0 -22px;
-  padding: 0;
-  border-radius: 50%;
-  background: transparent;
-  cursor: grab;
-  touch-action: none;
-}
-
-.corner:active {
-  cursor: grabbing;
-}
-
-.cornerDot {
-  width: 12px;
-  height: 12px;
-  border: 3px solid var(--ds-accent, #ffc21a);
-  border-radius: 50%;
-  background: var(--ds-text-1, #151c22);
-  box-shadow: 0 0 0 1.5px #fff;
-}
-
-.corner:hover .cornerDot,
-.corner:focus-visible .cornerDot {
-  background: var(--ds-accent, #ffc21a);
-}
-
-/* "Walls line up with the photo": in the row over the photo */
+/* "Walls line up with the photo": the status words come with a glyph, never the colour alone */
 .fitChip {
   display: inline-flex;
   flex-wrap: wrap;
-  min-width: 0;
   align-items: center;
   gap: 2px 8px;
-  padding: 6px 12px;
-  border-radius: 14px;
-  background: var(--ds-glass-strong, rgba(246, 247, 248, 0.97));
-  color: var(--ds-text-1, #151c22);
-  font-size: 12.5px;
+  min-width: 0;
+  padding: 4px 10px;
+  border-radius: var(--r-1);
+  background: var(--ok-tint);
+  color: var(--ok-text);
+  font-size: 13px;
   font-weight: 600;
 }
 
-.fitChip[data-fit="good"] svg {
-  color: var(--ds-success, #0ca30c);
-}
-
-.fitChip[data-fit="off"] {
-  background: var(--ds-warning-tint, #fff1d1);
-  color: #5c3d00;
+.fitChip[data-fit="off"],
+.fitChip[data-fit="unknown"] {
+  background: var(--warn-tint);
+  color: var(--warn-text);
 }
 
 .fitHeights {
-  color: var(--ds-text-label, #505b64);
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+  font: 500 13px var(--f-mono);
 }
 
 .markOn {
   position: absolute;
   z-index: 6;
   bottom: 50%;
-  left: 12px;
+  left: 24px;
   margin: 0;
   padding: 4px 10px;
-  border-radius: 8px;
-  background: var(--ds-accent, #ffc21a);
-  color: var(--ds-text-1, #151c22);
-  font-size: 12px;
+  border-radius: var(--r-2);
+  background: var(--tape-tint);
+  box-shadow: inset 0 0 0 1px var(--tape);
+  color: var(--tape-ink);
+  font-size: 13px;
   font-weight: 600;
   pointer-events: none;
 }
 
-/* The card under the photo, on the dark stage */
-.card {
-  flex: 0 1 auto;
-  width: min(640px, 100%);
-  max-height: 52%;
-  align-self: flex-start;
-}
-
-.stage[data-photo="none"] .photoArea {
-  flex: 0 0 auto;
-  min-height: 0;
-}
-
-.stage[data-photo="none"] .card {
-  max-height: none;
-}
-
-.card[data-editing="true"] {
-  max-height: 60%;
-}
-
-.cardBody {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 12px 20px;
-  margin-top: 10px;
-}
-
-.cardBody > :first-child {
-  flex: 0 1 170px;
-  min-width: 0;
-}
-
-.cardBody > :first-child span {
-  white-space: normal;
-}
-
-.about {
-  margin-right: 6px;
-  color: var(--ds-text-2, #3a444d);
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.table {
-  flex: 1 1 260px;
-  border-collapse: collapse;
-  font-size: 12.5px;
-  font-variant-numeric: tabular-nums;
-}
-
-.table th,
-.table td {
-  padding: 3px 6px;
-  border-bottom: 1px solid var(--line, #dde2e6);
-  text-align: right;
-}
-
-.table th:first-child {
-  text-align: left;
-}
-
-.table thead th {
-  color: var(--ds-text-label, #505b64);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.table [data-estimated] {
-  color: var(--ds-info-ink, #1f55b3);
-  font-style: italic;
-}
-
-.table tbody th {
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.classHint {
-  margin-left: 6px;
-  color: var(--ds-text-label, #505b64);
-  font-size: 12px;
-  font-weight: 400;
-}
-
-.facts {
-  display: grid;
-  grid-template-columns: repeat(3, auto);
-  gap: 6px 16px;
-  margin: 10px 0 0;
-  font-size: 12.5px;
-}
-
-.fact dt {
-  color: var(--ds-text-label, #505b64);
-  font-size: 12px;
-}
-
-.fact dd {
-  margin: 0;
-  font-weight: 600;
-}
-
-.fact[data-fact="basis"] {
-  grid-column: 1 / -1;
-}
-
-.fact[data-fact="basis"] dd {
-  font-weight: 500;
-  line-height: 1.4;
-}
-
-.detectorChip {
-  padding: 1px 6px;
-  border-radius: 6px;
-  background: var(--ds-surface-2, #eceff1);
-}
-
-.detectorChip[data-detector="stand-in"] {
-  background: var(--ds-danger, #d93a3a);
-  color: #fff;
-}
-
-/* "Add windows from photos" in the card's foot, between Adjust and the kind tag */
-.addPhotos {
-  gap: 6px;
-  margin-right: auto;
-  margin-left: 4px;
-}
-
-/* Adjust */
-.markRow {
-  display: flex;
-  gap: 8px;
-}
-
-.windowList {
+/* Adjust, with the Street View tools on */
+.adjust {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  gap: 12px;
 }
 
-.stepper {
-  display: grid;
-  grid-template-columns: 1fr 40px 40px 40px;
-  align-items: center;
-  gap: 4px;
-}
-
-.stepperName {
-  font-weight: 600;
-}
-
-.stepButton {
-  min-width: 40px;
-  min-height: 40px;
-  padding: 0;
-  border-radius: var(--ds-r-ctl, 9px);
-  background: var(--ds-surface-2, #eceff1);
-  font-size: 18px;
-}
-
-.stepValue {
-  text-align: center;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-.stepValue[data-changed="true"] {
-  color: var(--ds-info-ink, #1f55b3);
-}
-
-@media (max-width: 899.98px) {
-  .stage {
-    min-height: 0;
-    padding: 8px;
-  }
-
-  .walls {
-    padding: 4px 8px 4px 4px;
-  }
-
-  .walls svg {
-    width: 48px;
-    height: 44px;
-  }
-
-  .facts {
-    grid-template-columns: repeat(2, auto);
-  }
-
-  .card {
-    max-height: 58%;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .wallEdge,
-  .box[data-fresh="true"] {
-    animation: none;
-  }
-
-  .box {
-    transition: none;
-  }
-}
-
-/* Adjust: the whole photo, zoomed and panned with a pinch, the wheel or these buttons */
-.photoArea[data-fit="zoom"] {
-  background: #0f1418;
-}
-
-.photoFrame[data-adjusting="true"] {
-  touch-action: none;
-}
-
-.photoArea[data-fit="zoom"] {
-  min-height: min(380px, 56vh);
-}
-
-/* Phones: the card under the photo needs the room; the photo zooms instead */
-@media (max-width: 899.98px) {
-  .photoArea[data-fit="zoom"] {
-    min-height: 220px;
-  }
-
-  /* While adjusting on a phone the chips over the photo give their room to the photo and the panels (the same facts
-     are in the panels: the ruler, the front wall, the notes) */
-  .stage[data-editing="true"] .stageTop {
-    display: none;
-  }
-}
-
-/* Under the photo in Adjust: zoom out, the zoom, zoom in, zoom to the wall, the whole photo */
-.zoomBar {
+.section {
   display: flex;
-  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: var(--r-2);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+}
+
+.sectionTitle {
+  margin: 0;
+  font: 700 14px/1.2 var(--f-display);
+}
+
+.markRow {
+  display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 2px;
-  color: #fff;
-}
-
-.zoomBar button[data-variant="ghost"] {
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0 10px;
-  color: #fff;
-  font-size: 14px;
-}
-
-.zoomBar button[data-variant="ghost"]:disabled {
-  color: rgba(255, 255, 255, 0.45);
-}
-
-.zoomValue {
-  min-width: 48px;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-}
-
-/* The door marked as a ruler */
-.rulerBox {
-  position: absolute;
-  z-index: 2;
-  box-sizing: border-box;
-  border: 2px dashed #5cc8ff;
-  background: rgba(92, 200, 255, 0.12);
-  pointer-events: none;
-}
-
-.rulerLabel {
-  position: absolute;
-  bottom: calc(100% + 3px);
-  left: -2px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: #0b4f73;
-  color: #fff;
-  font-size: 12px;
-  line-height: 16px;
-  white-space: nowrap;
-}
-
-.drawing[data-ruler="true"] {
-  border-color: #5cc8ff;
-  background: rgba(92, 200, 255, 0.18);
-}
-
-.photoFrame[data-ruler-marking="true"] {
-  cursor: crosshair;
+  gap: 8px;
 }
 
 .rulerRow {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin: 8px 0;
 }
 
 .rulerField {
-  display: flex;
-  flex: 1 1 140px;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 13px;
-}
-
-.rulerField select {
-  min-height: 44px;
-  padding: 0 8px;
-  border: 1px solid var(--ds-border, #c9d1d8);
-  border-radius: 8px;
-  background: var(--ds-surface, #fff);
-  font: inherit;
+  flex: 1 1 160px;
+  min-width: 0;
 }
 
 .rulerResult {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin-top: 8px;
   padding: 8px 10px;
-  border-radius: 8px;
-  background: var(--ds-surface-sunken, #f2f5f7);
+  border-radius: var(--r-2);
+  background: var(--sunken);
   font-size: 13px;
 }
 
 .rulerWarn {
-  color: #8a5300;
+  color: var(--warn-text);
+  font-weight: 600;
 }
 
-/* An unsure count shown as a range ("14–16"), a size down from a single number (copy.range keeps it on one line) */
-.rangeStat {
-  font-size: 28px;
+/* Why to check the windows before pricing them */
+.review {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: var(--r-3);
+  background: var(--warn-tint);
+  box-shadow: inset 3px 0 0 var(--warn);
+  color: var(--warn-text);
+}
+
+.reviewText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  line-height: 1.4;
+}
+
+.reviewText strong {
+  font-weight: 600;
+}
+
+.reason {
+  display: block;
+}
+
+/* The windows table's panel: photos still uploading say so above it */
+.waiting {
+  margin: 0;
+  padding: 8px 16px;
+  background: var(--info-tint);
+  color: var(--info-text);
+  font-size: 13px;
+}
+
+/* How the estimate was worked out */
+.factList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px 24px;
+  margin: 0;
+}
+
+.fact dt {
+  color: var(--ink-3);
+  font: 600 var(--font-size-min) / 1.2 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fact dd {
+  margin: 4px 0 0;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.fact[data-fact="basis"] {
+  grid-column: 1 / -1;
+}
+
+.detectorChip {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: var(--r-1);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.detectorChip[data-detector="stand-in"] {
+  background: var(--bad);
+  box-shadow: none;
+  color: var(--bad-ink);
+}
+
+/* The quote column before and after the scan */
+.placeholder {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+}
+
+.placeholderTitle {
+  margin: 0;
+  font: 700 15px/1.2 var(--f-display);
+  font-stretch: 112%;
+}
+
+.placeholderText {
+  margin: 0;
+  color: var(--ink-3);
+  line-height: 1.4;
+}
+
+.stillEstimates {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.send {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.send > :first-child {
+  width: 100%;
+}
+
+/* A phone: the tier, how many windows and its total stay at the bottom, above the tab bar, with the way to the quote */
+.quoteBar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 -16px -24px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+@container measure (max-width: 599.98px) {
+  .quoteBar {
+    display: flex;
+  }
+}
+
+.quoteBarText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.quoteBarLabel {
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+.quoteBarTotal {
+  color: var(--ink);
+  font: 750 26px/1.1 var(--f-display);
+  font-stretch: 112%;
+  font-variant-numeric: tabular-nums;
 }

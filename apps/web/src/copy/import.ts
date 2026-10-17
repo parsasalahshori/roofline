@@ -1,8 +1,16 @@
 /** Importing customers. Named importCopy because import is a keyword. */
 export const importCopy = {
+  /** The five steps of an import, above the step in progress. */
+  stepsLabel: 'Import steps',
+  steps: { upload: 'Upload', mapping: 'Match columns', preview: 'Check', consent: 'Permission', run: 'Import' },
+  stepDone: 'Done',
+  /** At the left of the bar that ends a step: where the person is, in words. */
+  stepOf: (step: number, total: number) => `Step ${step} of ${total}`,
+  uploadTitle: 'Upload your customers',
   uploadLabel: 'Customer spreadsheet',
   uploadButton: 'Choose a file',
-  uploadDrop: 'or drop it here',
+  /** In the drop box, above the button that does the same thing the other way. */
+  uploadDrop: 'Drop your file here',
   uploadHelp: 'CSV or Excel, up to 20,000 rows.',
   mappingTitle: 'Match your columns',
   mappingHelp: 'Pick the column in your file for each detail. Leave a detail on "Don\'t import" to skip it.',
@@ -50,6 +58,7 @@ export const importCopy = {
   next: 'Next',
   startImport: 'Import',
   progressLabel: 'Importing your customers',
+  progressCount: (done: number, total: number) => `${done} of ${total} rows`,
   summaryTitle: 'Import finished',
   summaryNew: (n: number) => `${n} new customers added`,
   summaryUpdated: (n: number) => `${n} existing customers updated`,
@@ -58,6 +67,8 @@ export const importCopy = {
   summaryNotLocated: (n: number) => `${n} addresses not placed on the map`,
   downloadSkipped: 'Download skipped rows',
   failedTitle: "The import didn't finish",
+  failedTag: 'Stopped',
+  doneTag: 'Done',
   tryAgain: 'Try again',
   loadError: "We couldn't load this import.",
 } as const;

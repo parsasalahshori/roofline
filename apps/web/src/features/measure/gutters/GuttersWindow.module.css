@@ -1,6 +1,21 @@
-/* Measure gutters: the roof screen's map (RoofView.module.css) with the gutter runs drawn in screen space over it. */
-
+/*
+ * Measure gutters: the roof screen's map (RoofView.module.css) with the gutter runs drawn in screen space over it. The
+ * runs, rakes, downspouts and their length pills sit on an aerial photograph, so their colours are literal on purpose
+ * (the first rule); the legend reads the same custom properties, so it always matches the map. Every other colour is a
+ * token. Rules on a kit button name [data-variant] so they outrank the kit's variant rules in any stylesheet order.
+ */
 .stage {
+  /* literal: drawn over a photograph */
+  --gutter: #22c7f0;
+  --gutter-porch: #7fe3ff;
+  --gutter-hover: #7ddcf5;
+  --gutter-ink: #04202b;
+  --gutter-out: #94a3b8;
+  --gutter-rake: #c3ccd4;
+  --gutter-casing: #0b1a24;
+  --gutter-spout: #0b3b52;
+  --over-white: #fff;
+  --over-halo: rgb(21 28 34 / 0.3);
   position: relative;
   display: flex;
   flex: 1 1 auto;
@@ -21,7 +36,7 @@
 }
 
 .rake {
-  stroke: #c3ccd4;
+  stroke: var(--gutter-rake);
   stroke-width: 2.4;
   stroke-dasharray: 5 4;
   stroke-linecap: round;
@@ -29,26 +44,26 @@
 }
 
 .runCasing {
-  stroke: #0b1a24;
+  stroke: var(--gutter-casing);
   stroke-width: 8.5;
   stroke-linecap: round;
   opacity: 0.45;
 }
 
 .run {
-  stroke: #22c7f0;
+  stroke: var(--gutter);
   stroke-width: 5;
   stroke-linecap: round;
 }
 
 .runPorch {
-  stroke: #7fe3ff;
+  stroke: var(--gutter-porch);
   stroke-width: 5;
   stroke-linecap: round;
 }
 
 .runOut {
-  stroke: #94a3b8;
+  stroke: var(--gutter-out);
   stroke-width: 3.5;
   stroke-dasharray: 3 6;
   stroke-linecap: round;
@@ -62,13 +77,12 @@
 }
 
 .spout {
-  fill: #0b3b52;
-  stroke: #ffffff;
+  fill: var(--gutter-spout);
+  stroke: var(--over-white);
   stroke-width: 2.5;
 }
 
-/* A run's length: a pill on the outside of the eave, a button that leaves the run out or puts it back. The kit's ghost
-   button sets its own background, so these rules are written specific enough to win. */
+/* A run's length: a pill on the outside of the eave, a button that leaves the run out or puts it back */
 .runLabel[data-run-label][data-kind] {
   position: absolute;
   z-index: 2;
@@ -76,33 +90,35 @@
   min-height: 26px;
   padding: 0 9px;
   transform: translate(-50%, -50%);
-  border-radius: 999px;
-  background: #22c7f0;
-  color: #04202b;
-  font-size: 12px;
-  font-weight: 700;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--gutter);
+  box-shadow: 0 0 0 1.5px var(--over-white), 0 2px 6px var(--over-halo);
+  color: var(--gutter-ink);
+  font: 700 var(--font-size-min) / 1 var(--f-mono);
   white-space: nowrap;
-  box-shadow: 0 0 0 1.5px #ffffff, 0 2px 6px rgba(21, 28, 34, 0.3);
   touch-action: manipulation;
 }
 
 .runLabel[data-run-label][data-kind="low-attachment"] {
-  background: #7fe3ff;
-}
-
-.runLabel[data-run-label][data-excluded="true"] {
-  background: var(--ds-glass-strong, rgba(246, 247, 248, 0.97));
-  color: var(--ds-text-label, #505b64);
-  text-decoration: line-through;
+  background: var(--gutter-porch);
 }
 
 .runLabel[data-run-label][data-kind]:hover:not(:disabled) {
-  background: #7ddcf5;
+  background: var(--gutter-hover);
+}
+
+/* Left out: the card's own surface, struck through, so it never reads as a gutter */
+.runLabel[data-run-label][data-excluded="true"][data-kind],
+.runLabel[data-run-label][data-excluded="true"][data-kind]:hover:not(:disabled) {
+  background: var(--raised);
+  color: var(--ink-3);
+  text-decoration: line-through;
 }
 
 .runLabel[data-run-label][data-kind]:focus-visible {
-  outline: 3px solid var(--ds-accent, #ffc21a);
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: var(--focus);
 }
 
 .runLabel[data-run-label][data-kind]:disabled {
@@ -122,11 +138,11 @@
   max-width: calc(100% - 28px);
   margin: 0;
   padding: 8px 12px;
-  border-radius: 12px;
-  background: var(--ds-glass-strong, rgba(246, 247, 248, 0.97));
-  box-shadow: 0 0 0 1px rgba(21, 28, 34, 0.08), 0 2px 6px rgba(21, 28, 34, 0.12);
-  color: var(--ds-text-2, #3a444d);
-  font-size: 12px;
+  border-radius: var(--r-3);
+  background: var(--raised);
+  box-shadow: var(--e-2);
+  color: var(--ink-2);
+  font-size: var(--font-size-min);
   font-weight: 500;
   list-style: none;
   pointer-events: none;
@@ -141,26 +157,26 @@
 .legendDash {
   width: 16px;
   height: 4px;
-  border-radius: 999px;
-  background: #22c7f0;
+  border-radius: var(--r-pill);
+  background: var(--gutter);
 }
 
 .legendDash[data-legend="out"] {
-  background: #94a3b8;
+  background: var(--gutter-out);
 }
 
 .legendDash[data-legend="rake"] {
-  background: #c3ccd4;
-  box-shadow: 0 0 0 1px rgba(21, 28, 34, 0.25);
+  background: var(--gutter-rake);
+  box-shadow: 0 0 0 1px var(--line-ctl);
 }
 
 .legendDot {
   width: 12px;
   height: 12px;
-  border: 2px solid #fff;
+  border: 2px solid var(--over-white);
   border-radius: 50%;
-  background: #0b3b52;
-  box-shadow: 0 0 0 1px rgba(21, 28, 34, 0.35);
+  background: var(--gutter-spout);
+  box-shadow: 0 0 0 1px var(--line-ctl);
   box-sizing: border-box;
 }
 
@@ -172,7 +188,7 @@
 .overlay {
   position: absolute;
   z-index: 3;
-  inset: 56px 14px 14px;
+  inset: 56px 14px 30px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -194,6 +210,21 @@
   max-height: 72%;
 }
 
+/* Four phrases (downspouts, corners, size, eave height), not eight numbers: two by two, so none of them breaks inside a unit */
+.card .cells {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.card .cells dd {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+/* Under the numbers, with air between */
+.card [data-length-source] {
+  margin-top: 8px;
+}
+
 .facts {
   display: flex;
   flex-direction: column;
@@ -203,15 +234,15 @@
 
 .reason {
   margin: 0;
-  color: var(--ds-text-1, #151c22);
+  color: var(--ink);
   font-size: 13px;
   line-height: 1.4;
 }
 
 .small {
   margin: 0;
-  color: var(--ds-text-label, #505b64);
-  font-size: 12px;
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
   line-height: 1.4;
 }
 
@@ -221,10 +252,13 @@
   gap: 8px;
 }
 
+/* A mono caps eyebrow, as the kit's table heads */
 .panelTitle {
   margin: 0;
-  font-size: 13px;
-  font-weight: 700;
+  color: var(--ink-3);
+  font: 500 var(--font-size-min) / 1.2 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .runList {
@@ -252,23 +286,20 @@
 
 .stepButton {
   min-width: 36px;
-  min-height: 36px;
-  border: 1px solid var(--line, #dde2e6);
-  border-radius: var(--ds-r-ctl, 9px);
-  background: var(--ds-surface, #fff);
+  padding: 0;
   font-size: 16px;
   font-weight: 700;
 }
 
 .stepValue {
   min-width: 24px;
-  font-size: 15px;
-  font-weight: 700;
+  font: 700 15px / 1 var(--f-mono);
   text-align: center;
 }
 
+/* A count a person set (not the map's) is in the info colour, with the word "adjusted" on the card */
 .stepValue[data-changed="true"] {
-  color: #0b7fa0;
+  color: var(--info-text);
 }
 
 .sizes {
@@ -280,16 +311,14 @@
 .size {
   min-height: 40px;
   padding: 0 12px;
-  border: 1px solid var(--line, #dde2e6);
-  border-radius: var(--ds-r-ctl, 9px);
-  background: var(--ds-surface, #fff);
-  font-size: 13px;
 }
 
-.size[data-state="on"] {
-  border-color: var(--ds-accent, #ffc21a);
-  background: var(--ds-accent, #ffc21a);
-  color: var(--ds-text-1, #151c22);
+.size[data-state="on"][data-variant],
+.size[data-state="on"][data-variant]:hover {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  box-shadow: inset 0 0 0 1px var(--brand);
+  color: var(--brand-text);
 }
 
 /* "Likely short": the warning and a way straight into Adjust */
@@ -300,32 +329,20 @@
   gap: 6px;
 }
 
-.checkButton,
-.addButton,
-.removeButton {
-  min-height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--line, #dde2e6);
-  border-radius: var(--ds-r-ctl, 9px);
-  background: var(--ds-surface, #fff);
-  font-size: 13px;
-  font-weight: 600;
-}
-
 .adjustedBy {
   margin: 0;
-  color: #0b7fa0;
-  font-size: 12px;
+  color: var(--info-text);
+  font-size: var(--font-size-min);
   font-weight: 600;
 }
 
 .quoteDraft {
   margin: 4px 0 0;
   padding: 6px 8px;
-  border-radius: 8px;
-  background: var(--ds-surface-2, #eceff1);
-  color: var(--ds-text-2, #3a444d);
-  font-size: 12px;
+  border-radius: var(--r-2);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--font-size-min);
   line-height: 1.4;
 }
 
@@ -339,7 +356,7 @@
 
 .addedName {
   overflow: hidden;
-  font-size: 14px;
+  font-size: var(--font-size-body);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -367,12 +384,23 @@
   margin-bottom: 2px;
 }
 
-@media (max-width: 899.98px) {
+/* The map keeps its height where the three columns are steps */
+@container measure (max-width: 979.98px) {
   .stage {
-    min-height: 560px;
+    min-height: 0;
   }
 
-  /* Under the "worked out" chip, not over it */
+  .overlay {
+    inset: 52px 8px 30px;
+  }
+
+  .card {
+    max-height: 64%;
+  }
+}
+
+/* Under the "worked out" chip, not over it; and on a narrow map the credits are an "i" in the corner, so the card keeps the bottom */
+@container (max-width: 640px) {
   .legend {
     top: 52px;
     right: auto;
@@ -380,10 +408,6 @@
   }
 
   .overlay {
-    inset: 52px 8px 8px;
-  }
-
-  .card {
-    max-height: 64%;
+    inset-block-end: 14px;
   }
 }

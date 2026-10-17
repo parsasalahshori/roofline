@@ -1,10 +1,11 @@
 import { cleanup, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { keys } from '../src/api/keys.ts';
+import { search } from '../src/copy/search.ts';
 import { shell } from '../src/copy/shell.ts';
 import { AgentsWorking } from '../src/shell/topbar/AgentsWorking.tsx';
+import { PhoneChrome } from '../src/shell/phone/PhoneChrome.tsx';
 import { ShellTopBar } from '../src/shell/topbar/ShellTopBar.tsx';
-import { WeatherChip } from '../src/shell/topbar/WeatherChip.tsx';
 import { ACCOUNT, makeTask, renderAt, SHELL_ROUTES, stubApi } from './helpers.tsx';
 
 let api: ReturnType<typeof stubApi>;
@@ -14,14 +15,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
   expect(api?.unexpected ?? []).toEqual([]);
 });
-
-const SUNNY = {
-  tempF: 71.6,
-  summary: 'Sunny and warm',
-  icon: 'sun',
-  isDaytime: true,
-  updatedAt: '2026-10-11T12:00:00.000Z',
-};
 
 describe('agents working', () => {
   it.each([0, 1, 3])('says how many agents are working (%i)', async (working) => {
@@ -51,43 +44,41 @@ describe('agents working', () => {
   });
 });
 
-describe('weather', () => {
-  it('shows the temperature and the summary', async () => {
-    api = stubApi({ ...SHELL_ROUTES, 'GET /api/weather': () => ({ body: { weather: SUNNY } }) });
-    renderAt(<WeatherChip />);
-    expect(await screen.findByText(shell.degrees(SUNNY.tempF))).toBeInTheDocument();
-    expect(screen.getByText(SUNNY.summary)).toBeInTheDocument();
-    expect(document.querySelector('[data-weather]')).toHaveAttribute('data-weather', 'sun');
-  });
-
-  it('hides the weather when there is none or it fails', async () => {
-    api = stubApi({ ...SHELL_ROUTES, 'GET /api/weather': () => ({ body: { weather: null } }) });
-    const first = renderAt(<WeatherChip />);
-    await waitFor(() => expect(first.queryClient.getQueryState(keys.weather)?.status).toBe('success'));
-    expect(document.querySelector('[data-weather]')).toBeNull();
-
-    cleanup();
-    api.routes['GET /api/weather'] = () => ({ status: 500, body: { error: 'Weather is down.' } });
-    const second = renderAt(<WeatherChip />);
-    await waitFor(() => expect(second.queryClient.getQueryState(keys.weather)?.status).toBe('error'));
-    expect(document.querySelector('[data-weather]')).toBeNull();
-    // The toast region for errors is always on the page; a failed weather read must not fill it
-    expect(screen.getByRole('alert')).toBeEmptyDOMElement();
-  });
-});
+function bar() {
+  return <ShellTopBar crumbsRef={() => {}} actionsRef={() => {}} />;
+}
 
 describe('top bar', () => {
-  it('shows the company name and the pieces', async () => {
+  it('is the slim bar of a page: the trail slot, then the pill, the agents, the bell and the clock', async () => {
     api = stubApi({
       ...SHELL_ROUTES,
       'GET /api/auth/me': () => ({ body: ACCOUNT }),
       'GET /api/approvals': () => ({ body: { count: 1, tasks: [makeTask({ id: 't1' })] } }),
       'GET /api/tasks/summary': () => ({ body: { working: 2 } }),
     });
-    renderAt(<ShellTopBar />);
-    expect(screen.getByRole('banner')).toBeInTheDocument();
-    expect(await screen.findByText(ACCOUNT.company.name)).toBeInTheDocument();
+    renderAt(bar());
+    const banner = screen.getByRole('banner');
     expect(await screen.findByRole('link', { name: shell.needYourOk(1) })).toHaveAttribute('href', '/approvals/t1');
     expect(await screen.findByText(shell.agentsWorking(2))).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: shell.notificationsLabel })).toHaveAttribute('href', '/approvals');
+    expect(banner.querySelector('time')).not.toBeNull();
+    // The company, the search and the person are in the rail on a desktop, not here
+    expect(screen.queryByText(ACCOUNT.company.name)).toBeNull();
+    expect(screen.queryByRole('button', { name: ACCOUNT.user.name })).toBeNull();
+  });
+
+  it('has no phone version: a phone draws no bar and its pages carry the controls', async () => {
+    api = stubApi({
+      ...SHELL_ROUTES,
+      'GET /api/auth/me': () => ({ body: ACCOUNT }),
+      'GET /api/approvals': () => ({ body: { count: 2, tasks: [makeTask({ id: 't1' }), makeTask({ id: 't2' })] } }),
+    });
+    renderAt(<PhoneChrome />);
+    expect(screen.getByRole('button', { name: search.open })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: shell.notificationsLabel })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: ACCOUNT.user.name })).toBeInTheDocument();
+    // Not the pill, the agents or the clock: the Today tab and the More sheet count what waits
+    expect(screen.queryByRole('link', { name: shell.needYourOk(2) })).toBeNull();
+    expect(screen.queryByText(shell.agentsWorking(0))).toBeNull();
   });
 });

@@ -1,141 +1,250 @@
 /*
- * S1 design tokens (spec 4.5). tokens.ts mirrors this file for code that cannot read CSS
- * variables (the map style needs literal colours); test/tokens.test.ts keeps the two in step.
- */
-:root {
-  /* Surfaces and ink */
-  --bg: #efe9dc;
-  --surface: #fffdf8;
-  --surface-2: #f6f1e6;
-  --text: #2b2620;
-  /* 72% of --text, not the spec's 60%: 60% is 4.0:1 on --surface and fails WCAG AA. */
-  --text-muted: rgba(43, 38, 32, 0.72);
-  --accent: #f5b324;
-  --accent-ink: #2b2620;
-  /* Never a text colour or under white text (3.4:1). Use it for dots, icons and bars. */
-  --success: #2f9e44;
-  --danger: #e03131;
-  /* The danger button's text and hover fill. White on --danger-hover is above 4.5:1, which a brightness filter on --danger is not. */
-  --on-danger: #ffffff;
-  --danger-hover: #c92a2a;
-  --line: #eee5cf;
-
-  /* Shape */
-  --radius-card: 12px;
-  --radius-window: 14px;
-  --shadow-window: 0 12px 30px rgba(60,40,0,.15);
-  --shadow-marker: 0 1px 3px rgb(0 0 0 / 0.35);
-  --shadow-marker-ring: 0 0 0 1px rgb(0 0 0 / 0.35);
-
-  /* Type: nothing on screen is smaller than --font-size-min (the stylelint rule enforces it) */
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-size-min: 12px;
-  --font-size-body: 14px;
-  --font-size-stat: 24px;
-
-  /* Hail scale, yellow to magenta. Used only for hail. */
-  --hail-1: #ffe066;
-  --hail-2: #ffb347;
-  --hail-3: #ff7a45;
-  --hail-4: #f0508c;
-  --hail-5: #c026d3;
-
-  /* Map pins: customers are purple, job stages have their own colours */
-  --pin-customer: #7048e8;
-  --stage-lead: #1971c2;
-  --stage-inspection: #0b7285;
-  --stage-proposal: #e67700;
-  --stage-won: #2f9e44;
-}
-
-/*
- * Design tokens from the reference app's computed styles (roofing-os-demo.vercel.app): Archivo, cool
- * graphite ink on a pale steel ground, a tape-yellow accent. Other windows read the --ds-* names (with a
- * fallback). A later :root block on purpose: tokens.test.ts and tokens.ts mirror only the first one, so the
- * legacy names are re-pointed at the end of this block and the whole app takes the reference look. Light
- * only, like the reference.
+ * Chalk Line design tokens (design/REDESIGN.md section 5). One light block, then the dark theme twice:
+ * under the OS setting (prefers-color-scheme, unless the page says data-theme="light") and when the page
+ * says data-theme="dark". tokens.ts mirrors the FIRST block as literal values for code that cannot read CSS
+ * variables (the map paint needs literal colours) and darkTokens mirrors the dark block;
+ * test/tokens.test.ts keeps the files in step, and checks the two dark blocks are the same.
+ *
+ * White label: --brand, --brand-hover, --brand-ink, --brand-tint, --brand-line, --brand-text and --ring are the
+ * company's slot. They hold Roofline chalk blue here and are overwritten at run time from the company's
+ * colour (src/brand.ts, applied by the web app's useBrand). Nothing else changes per company.
+ *
+ * Hooks, unset by default. A page that keeps the company's colour for its main button (the homeowner's pages) sets
+ * these on itself, and a checkbox falls back to --brand and --brand-ink without them:
+ *   --checkbox-fill: the fill and the edge of a ticked checkbox
+ *   --checkbox-tick: the tick drawn on that fill
+ *
+ * Rules: tape yellow is for measuring and "needs your OK" only; red (--bad) is for holds and errors only; a
+ * status colour is never the only signal (every status is an icon plus a word); nothing is under 12px.
  */
 :root {
   color-scheme: light;
-  --ds-font: "Archivo Variable", ui-sans-serif, system-ui, sans-serif;
-  --ds-text-1: #151c22;
-  --ds-text-2: #3a444d;
-  --ds-text-label: #505b64;
-  --ds-text-3: #6b7680;
-  --ds-bg: #f6f7f8;
-  --ds-surface: #ffffff;
-  --ds-surface-2: #eceff1;
-  --ds-fill: #c3cbd1;
-  --ds-hairline: rgba(21, 28, 34, 0.08);
-  --ds-hairline-strong: #c3cbd1;
-  --ds-accent: #ffc21a;
-  --ds-accent-line: rgba(217, 158, 0, 0.55);
-  --ds-accent-tint: #fff1d1;
-  --ds-accent-ink: #8a5a00;
-  --ds-success: #0ca30c;
-  --ds-success-tint: #e2f4e2;
-  --ds-success-ink: #0a6e1d;
-  --ds-danger: #d03b3b;
-  --ds-danger-tint: #fbe3e3;
-  --ds-danger-ink: #a32424;
-  --ds-info: #2f6fde;
-  --ds-info-tint: #e3ecfb;
-  --ds-info-ink: #1f55b3;
-  --ds-r-card: 12px;
-  --ds-r-ctl: 9px;
-  --ds-r-chip: 999px;
-  --ds-r-tag: 6px;
-  --ds-r-widget: 20px;
-  --ds-r-window: 18px;
-  --ds-shadow: 0 0 0 1px rgba(21, 28, 34, 0.08), 0 14px 34px -16px rgba(21, 28, 34, 0.35);
-  --ds-glass: rgba(246, 247, 248, 0.82);
-  --ds-glass-strong: rgba(246, 247, 248, 0.97);
 
-  /* The legacy names, re-pointed */
-  --bg: var(--ds-bg);
-  --surface: var(--ds-surface);
-  --surface-2: var(--ds-surface-2);
-  --text: var(--ds-text-1);
-  --text-muted: var(--ds-text-label);
-  --accent: var(--ds-accent);
-  --accent-ink: var(--ds-text-1);
-  --line: #dde2e6;
-  --font: var(--ds-font);
+  /* Ground and surfaces */
+  --ground: #eef0ee;
+  --surface: #ffffff;
+  --surface-2: #f6f7f5;
+  --sunken: #e6e9e6;
+  --raised: #ffffff;
+
+  /* Ink. --ink-3 is 5.1:1 on the ground and 4.8:1 on --sunken (the design's 65707F is 4.4:1 on the ground). */
+  --ink: #0d1724;
+  --ink-2: #3a4656;
+  --ink-3: #5b6675;
+  --ink-inv: #ffffff;
+
+  /* Rules. --line-ctl is the edge of a form control: 3:1 against the surface. */
+  --line: #dce0df;
+  --line-2: #c5cbcb;
+  --line-ctl: #8b9595;
+
+  /* White-label brand slot: Roofline chalk blue unless the company sets its own colour */
+  --brand: #2050e6;
+  --brand-hover: #1a43c4;
+  --brand-ink: #ffffff;
+  --brand-tint: #e6ecfd;
+  --brand-line: #9db2f4;
+  --brand-text: #1a43c4;
+  --ring: #1a43c4;
+
+  /* Toasts and other inverse surfaces: graphite with white text in both themes (the accent on them is --tape) */
+  --toast: #0d1724;
+  --toast-ink: #ffffff;
+
+  /* Tape yellow: measuring guides, dimension lines and "needs your OK" */
+  --tape: #ffc21f;
+  --tape-tint: #fff3cf;
+  --tape-ink: #5a4200;
+  --tape-line: rgba(255, 194, 31, 0.6);
+
+  /* Status. Text in these colours sits on the matching tint, so tags mix them toward --ink. */
+  --ok: #17804a;
+  --ok-tint: #e2f2e8;
+  --warn: #a35f00;
+  --warn-tint: #fcefd9;
+  --bad: #c8352a;
+  --bad-tint: #fbe5e2;
+  --bad-ink: #ffffff;
+  --info: #2563c9;
+  --info-tint: #e3ecfa;
+  /* Status as text: the status colour mixed 20% toward --ink, 4.5:1 on its own tint and on every ground. Use these, not --ok and friends, for words. */
+  --ok-text: #156b42;
+  --warn-text: #855107;
+  --bad-text: #a32f29;
+  --info-text: #2054a8;
+
+  /* Job stages. Paid is plain ink. */
+  --st-lead: #5a6b85;
+  --st-insp: #0e7c86;
+  --st-prop: #b86a00;
+  --st-won: #17804a;
+  --st-inst: #3d4c9e;
+  --st-paid: #0d1724;
+
+  /* Hail scale, yellow to magenta. Used only for hail. */
+  --hail-1: #f7e27a;
+  --hail-2: #f6b547;
+  --hail-3: #ee7a36;
+  --hail-4: #d9455f;
+  --hail-5: #9b2c9e;
+
+  /* Map: a desaturated basemap, so the data owns the colour */
+  --map-land: #e9ece8;
+  --map-block: #e0e4df;
+  --map-road: #ffffff;
+  --map-road-2: #f7f8f6;
+  --map-water: #cfdce4;
+  --map-park: #dce6d7;
+  --map-label: #7c8692;
+
+  /* Type: nothing on screen is smaller than --font-size-min (the stylelint rule enforces it) */
+  --f-display: "Archivo Variable", Archivo, "Helvetica Neue", Arial, sans-serif;
+  --f-ui: "Instrument Sans Variable", "Instrument Sans", "Helvetica Neue", Arial, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --font-size-min: 12px;
+  --font-size-body: 14px;
+  --font-size-stat: 28px;
+  /* The stacked eighth in a measurement: 12px in tables, 14px on cards and readouts (em and max() fail the stylelint floor) */
+  --font-size-frac: 12px;
+  --font-size-frac-lg: 14px;
+
+  /* Radius */
+  --r-1: 4px;
+  --r-2: 6px;
+  --r-3: 10px;
+  --r-4: 14px;
+  --r-pill: 999px;
+
+  /* Elevation: hairline first, a shadow only when something floats */
+  --e-0: 0 0 0 1px var(--line);
+  --e-1: 0 0 0 1px var(--line), 0 1px 2px rgba(13, 23, 36, 0.05);
+  --e-2: 0 0 0 1px rgba(13, 23, 36, 0.08), 0 8px 24px -10px rgba(13, 23, 36, 0.28);
+  --e-3: 0 0 0 1px rgba(13, 23, 36, 0.1), 0 24px 48px -18px rgba(13, 23, 36, 0.4);
+  --shadow-marker: 0 1px 3px rgb(0 0 0 / 0.35);
+  --shadow-marker-ring: 0 0 0 1px rgb(0 0 0 / 0.35);
+  --focus: 0 0 0 2px var(--surface), 0 0 0 4px var(--ring);
+
+  /* Motion: 120ms hover and press, 180ms panels and menus, 240ms pages and sheets */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --t-fast: 120ms;
+  --t-mid: 180ms;
+  --t-slow: 240ms;
 }
 
-/* The dock tiles, the dock tray and the quiet top bar (lift-01), in the reference's colours. */
-:root {
-  --lift-tile-launcher: linear-gradient(160deg, #3a444d, #151c22);
-  --lift-tile-storm: linear-gradient(160deg, #3a3f7a, #23264d);
-  --lift-tile-jobs: linear-gradient(160deg, #4a86ec, #2358bd);
-  --lift-tile-estimator: linear-gradient(160deg, #ffd24d, #f0b000);
-  --lift-tile-claims: linear-gradient(160deg, #3b9870, #246a4b);
-  --lift-tile-calendar: linear-gradient(160deg, #cf7a3f, #9c5222);
-  --lift-tile-front-desk: linear-gradient(160deg, #2aa2a2, #176f6f);
-  --lift-tile-agents: linear-gradient(160deg, #3a444d, #151c22);
-  --lift-tile-ink: #ffffff;
-  --lift-tile-ink-accent: #ffc21a;
-  --lift-tile-ink-dark: #151c22;
-  --lift-tile-search: #ffffff;
-  --lift-tray-bg: rgba(246, 247, 248, 0.82);
-  --lift-tray-line: rgba(21, 28, 34, 0.1);
-  --lift-tray-shadow: 0 0 0 1px rgba(21, 28, 34, 0.1), 0 20px 40px -18px rgba(21, 28, 34, 0.45);
-  --lift-tile-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -2px 0 rgba(0, 0, 0, 0.16), 0 6px 14px -6px rgba(21, 28, 34, 0.5);
-  --lift-bar-bg: rgba(246, 247, 248, 0.82);
-  --lift-bar-line: rgba(21, 28, 34, 0.08);
-  --lift-bar-ink: #151c22;
-  --lift-bar-muted: #3a444d;
-  --lift-hover: rgba(21, 28, 34, 0.07);
-  --lift-badge-bg: #d03b3b;
-  --lift-badge-ink: #ffffff;
-  --lift-tooltip-bg: #151c22;
-  --lift-tooltip-ink: #ffffff;
-  --lift-ok-bg: #fff1d1;
-  --lift-ok-ink: #8a5a00;
-  --lift-ok-line: #fab219;
-  --lift-agents-bg: transparent;
-  --lift-agents-ink: #151c22;
-  --lift-avatar-bg: #151c22;
-  --lift-avatar-ink: #ffffff;
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ground: #0a0f16;
+    --surface: #111822;
+    --surface-2: #161f2b;
+    --sunken: #0c121a;
+    --raised: #1a2431;
+    --ink: #e9eef4;
+    --ink-2: #aeb8c6;
+    --ink-3: #8590a0;
+    --ink-inv: #0a0f16;
+    --line: #222d3b;
+    --line-2: #2f3b4b;
+    --line-ctl: #66727f;
+    --brand: #5b80ff;
+    --brand-hover: #7894ff;
+    --brand-ink: #06102a;
+    --brand-tint: #16224a;
+    --brand-line: #3550a8;
+    --brand-text: #8fa8ff;
+    --ring: #8fa8ff;
+    --toast: #243142;
+    --toast-ink: #e9eef4;
+    --tape: #ffcb3d;
+    --tape-tint: #3a2e0b;
+    --tape-ink: #ffe08a;
+    --tape-line: rgba(255, 203, 61, 0.55);
+    --ok: #48c27f;
+    --ok-tint: #0f2a1c;
+    --warn: #f0a63a;
+    --warn-tint: #33230a;
+    --bad: #ff6f61;
+    --bad-tint: #3a1512;
+    --bad-ink: #2a0a07;
+    --info: #6fa2ff;
+    --info-tint: #11223f;
+    --ok-text: #68cb96;
+    --warn-text: #efb45f;
+    --bad-text: #fb887e;
+    --info-text: #87b1fd;
+    --st-lead: #8c9ab3;
+    --st-insp: #3fb8c2;
+    --st-prop: #f0a63a;
+    --st-won: #48c27f;
+    --st-inst: #8e9bff;
+    --st-paid: #e9eef4;
+    --map-land: #0f151e;
+    --map-block: #131b26;
+    --map-road: #1d2733;
+    --map-road-2: #18212c;
+    --map-water: #0b2233;
+    --map-park: #11201a;
+    --map-label: #6d7887;
+    --e-1: 0 0 0 1px var(--line);
+    --e-2: 0 0 0 1px var(--line-2), 0 10px 28px -12px rgba(0, 0, 0, 0.7);
+    --e-3: 0 0 0 1px var(--line-2), 0 24px 48px -18px rgba(0, 0, 0, 0.8);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground: #0a0f16;
+  --surface: #111822;
+  --surface-2: #161f2b;
+  --sunken: #0c121a;
+  --raised: #1a2431;
+  --ink: #e9eef4;
+  --ink-2: #aeb8c6;
+  --ink-3: #8590a0;
+  --ink-inv: #0a0f16;
+  --line: #222d3b;
+  --line-2: #2f3b4b;
+  --line-ctl: #66727f;
+  --brand: #5b80ff;
+  --brand-hover: #7894ff;
+  --brand-ink: #06102a;
+  --brand-tint: #16224a;
+  --brand-line: #3550a8;
+  --brand-text: #8fa8ff;
+  --ring: #8fa8ff;
+  --toast: #243142;
+  --toast-ink: #e9eef4;
+  --tape: #ffcb3d;
+  --tape-tint: #3a2e0b;
+  --tape-ink: #ffe08a;
+  --tape-line: rgba(255, 203, 61, 0.55);
+  --ok: #48c27f;
+  --ok-tint: #0f2a1c;
+  --warn: #f0a63a;
+  --warn-tint: #33230a;
+  --bad: #ff6f61;
+  --bad-tint: #3a1512;
+  --bad-ink: #2a0a07;
+  --info: #6fa2ff;
+  --info-tint: #11223f;
+  --ok-text: #68cb96;
+  --warn-text: #efb45f;
+  --bad-text: #fb887e;
+  --info-text: #87b1fd;
+  --st-lead: #8c9ab3;
+  --st-insp: #3fb8c2;
+  --st-prop: #f0a63a;
+  --st-won: #48c27f;
+  --st-inst: #8e9bff;
+  --st-paid: #e9eef4;
+  --map-land: #0f151e;
+  --map-block: #131b26;
+  --map-road: #1d2733;
+  --map-road-2: #18212c;
+  --map-water: #0b2233;
+  --map-park: #11201a;
+  --map-label: #6d7887;
+  --e-1: 0 0 0 1px var(--line);
+  --e-2: 0 0 0 1px var(--line-2), 0 10px 28px -12px rgba(0, 0, 0, 0.7);
+  --e-3: 0 0 0 1px var(--line-2), 0 24px 48px -18px rgba(0, 0, 0, 0.8);
 }

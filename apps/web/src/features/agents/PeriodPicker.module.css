@@ -1,0 +1,28 @@
+/*
+ * On a phone the four choices fill the row, each as wide as its words plus an equal share of what is left, so the control
+ * ends where the cards under it end. On a screen narrower than 380px four in one row are wider than the screen and the
+ * edge would cut the last one off, so there they sit two by two, each cell half the row.
+ */
+@media (max-width: 767.98px) {
+  .picker[role="radiogroup"] {
+    display: grid;
+    grid-template-columns: repeat(4, auto);
+    width: 100%;
+  }
+
+  .picker[role="radiogroup"] > [role="radio"] {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 379.98px) {
+  .picker[role="radiogroup"] {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .picker[role="radiogroup"] > [role="radio"] {
+    justify-content: center;
+  }
+}

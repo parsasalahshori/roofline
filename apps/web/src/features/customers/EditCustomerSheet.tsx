@@ -1,6 +1,6 @@
-import { CONSENT_STATUSES, type ConsentStatus, type CustomerView } from '@roofline/shared';
-import { Button, Checkbox, Field, IconButton, Select, Sheet, Toggle, UiLink, useToast, type SelectOption } from '@roofline/ui';
-import { useState, type FormEvent } from 'react';
+import type { ConsentStatus, CustomerView } from '@roofline/shared';
+import { Button, Checkbox, Field, Icon, IconButton, Listbox, Sheet, Toggle, UiLink, useToast, type ListboxOption } from '@roofline/ui';
+import { useId, useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client.ts';
 import { common } from '../../copy/common.ts';
 import { customers } from '../../copy/customers.ts';
@@ -40,11 +40,7 @@ function parseTags(text: string): string[] {
   return [...new Set(tags)];
 }
 
-function isConsentStatus(value: string): value is ConsentStatus {
-  return (CONSENT_STATUSES as readonly string[]).includes(value);
-}
-
-function consentOptions(current: ConsentStatus): SelectOption[] {
+function consentOptions(current: ConsentStatus): ListboxOption<ConsentStatus>[] {
   const choices = CHOSEN_CONSENT.map((status) => ({ value: status, label: customers.edit.consentOptions[status] }));
   return current === 'attested' ? [{ value: 'attested', label: customers.consent.attested }, ...choices] : choices;
 }
@@ -63,6 +59,7 @@ export function EditCustomerSheet({ view, onDone }: EditCustomerSheetProps) {
   const { customer, can } = view;
   const toast = useToast();
   const update = useUpdateCustomer(customer.id);
+  const formId = useId();
 
   const [displayName, setDisplayName] = useState(customer.displayName);
   const [firstName, setFirstName] = useState(customer.firstName ?? '');
@@ -148,8 +145,18 @@ export function EditCustomerSheet({ view, onDone }: EditCustomerSheetProps) {
   }
 
   return (
-    <Sheet open title={customers.edit.title} closeLabel={common.close} onClose={onDone}>
-      <form className={styles.form} onSubmit={(event) => void save(event)}>
+    <Sheet
+      open
+      title={customers.edit.title}
+      closeLabel={common.close}
+      onClose={onDone}
+      footer={
+        <Button type="submit" form={formId} variant="primary" busy={update.isPending} disabled={displayName.trim() === ''}>
+          {update.isPending ? customers.edit.saving : customers.edit.save}
+        </Button>
+      }
+    >
+      <form id={formId} className={styles.form} onSubmit={(event) => void save(event)}>
         <Field
           label={customers.edit.displayName}
           required
@@ -210,6 +217,7 @@ export function EditCustomerSheet({ view, onDone }: EditCustomerSheetProps) {
             className={styles.addRow}
             onClick={() => setPhones((rows) => [...rows, { key: freshKey(), number: '', label: '' }])}
           >
+            <Icon name="plus" size={16} />
             {customers.edit.addPhone}
           </Button>
         </section>
@@ -237,6 +245,7 @@ export function EditCustomerSheet({ view, onDone }: EditCustomerSheetProps) {
             </div>
           ))}
           <Button variant="ghost" className={styles.addRow} onClick={() => setEmails((rows) => [...rows, { key: freshKey(), value: '' }])}>
+            <Icon name="plus" size={16} />
             {customers.edit.addEmail}
           </Button>
         </section>
@@ -245,14 +254,12 @@ export function EditCustomerSheet({ view, onDone }: EditCustomerSheetProps) {
 
         {can.changeConsent ? (
           <section className={styles.section}>
-            <Select
+            <Listbox
               label={customers.edit.consent}
               value={consent}
               options={consentOptions(customer.consent)}
               help={consent === 'written' && customer.consent !== 'written' ? customers.edit.consentConfirm : undefined}
-              onChange={(value) => {
-                if (isConsentStatus(value)) setConsent(value);
-              }}
+              onChange={setConsent}
             />
             {consent === 'written' ? (
               <Field
@@ -266,9 +273,6 @@ export function EditCustomerSheet({ view, onDone }: EditCustomerSheetProps) {
           </section>
         ) : null}
 
-        <Button type="submit" className={styles.save} busy={update.isPending} disabled={displayName.trim() === ''}>
-          {update.isPending ? customers.edit.saving : customers.edit.save}
-        </Button>
       </form>
     </Sheet>
   );

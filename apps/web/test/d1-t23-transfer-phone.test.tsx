@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { frontDeskSettings } from '../src/copy/front-desk-settings.ts';
+import { settings } from '../src/copy/settings.ts';
 import { TransferPhone } from '../src/features/front-desk/settings/TransferPhone.tsx';
 import { stubApi } from './helpers.tsx';
 
@@ -33,6 +34,7 @@ function renderWith(view: { e164: string | null; prefill: string | null; recordi
 const phoneField = () => screen.findByLabelText(copy.label);
 const ackBox = () => screen.findByRole('checkbox', { name: copy.ack });
 const saveButton = () => screen.findByRole('button', { name: copy.save });
+const saveBar = () => screen.queryByRole('group', { name: settings.saveBar.label });
 
 describe('Your transfer phone: prefill', () => {
   it('shows the prefill when no transfer phone is saved yet', async () => {
@@ -54,11 +56,30 @@ describe('Your transfer phone: prefill', () => {
 describe('Your transfer phone: acknowledgement', () => {
   it('keeps Save disabled until the recording box is ticked, then enables it', async () => {
     const { user } = renderWith({ e164: null, prefill: '+14025551234', recordingAcknowledgedAt: null });
+    const field = await phoneField();
+    await user.clear(field);
+    await user.type(field, '4025550177');
     const save = await saveButton();
     expect(save).toBeDisabled();
 
     await user.click(await ackBox());
     expect(await saveButton()).toBeEnabled();
+  });
+
+  it('shows the save bar only when the number or the box has changed, and Discard puts both back', async () => {
+    const { user } = renderWith({ e164: '+14025559999', prefill: null, recordingAcknowledgedAt: null });
+    const field = await phoneField();
+    expect(saveBar()).toBeNull();
+
+    await user.type(field, '1');
+    expect(saveBar()).not.toBeNull();
+    await user.click(await ackBox());
+
+    await user.click(screen.getByRole('button', { name: settings.saveBar.discard }));
+    expect(saveBar()).toBeNull();
+    expect(await phoneField()).toHaveValue('+14025559999');
+    expect(await ackBox()).not.toBeChecked();
+    expect(api.count(PUT)).toBe(0);
   });
 });
 
@@ -76,6 +97,8 @@ describe('Your transfer phone: saving', () => {
     await waitFor(() => expect(api.sent(PUT)).toEqual([{ e164: '+14025551234', ackRecording: true }]));
     expect(await screen.findByText(copy.saved)).toBeInTheDocument();
     expect(await phoneField()).toHaveValue('+14025551234');
+    // What was saved is the new starting point: there is nothing left to save
+    await waitFor(() => expect(saveBar()).toBeNull());
   });
 
   it('shows the invalid message and sends nothing for a number that is not a phone', async () => {

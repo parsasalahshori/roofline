@@ -1,0 +1,71 @@
+.tabs {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+/* The bar's hairline is the list's own bottom edge, inside the scroll area: the current tab's 2px rule overlaps it there
+   instead of being clipped to 1px at the edge of the scroll box. It is as wide as the tabs when they overflow. */
+.list {
+  display: flex;
+  gap: 4px;
+  min-width: max-content;
+  margin: 0;
+  padding: 0;
+  border-bottom: 1px solid var(--line);
+  list-style: none;
+}
+
+.tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 12px;
+  color: var(--ink-3);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.tab:hover {
+  color: var(--ink);
+}
+
+.tab[aria-current="page"] {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* The first tab's words sit on the content edge, like the title above them (its padding is only for the others) */
+.list > li:first-child .tab {
+  padding-left: 0;
+}
+
+/* The current tab's rule sits on the bar's own rule and is as wide as the label */
+.tab[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  bottom: -1px;
+  left: 12px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--brand);
+}
+
+.list > li:first-child .tab[aria-current="page"]::after {
+  left: 0;
+}
+
+.count {
+  color: var(--ink-3);
+  font: 500 var(--font-size-min)/1 var(--f-mono);
+}
+
+@media (max-width: 767.98px) {
+  .tab {
+    min-height: 44px;
+  }
+}

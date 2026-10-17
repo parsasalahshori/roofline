@@ -1,30 +1,35 @@
+/* How time saved is counted: a table of what each kind of finished work is worth, with the number a person may change */
 .root {
   display: grid;
-  gap: 12px;
+  gap: 14px;
   min-width: 0;
-}
-
-.title {
-  margin: 0;
 }
 
 .text {
   margin: 0;
 }
 
+.quiet {
+  margin: 0;
+  color: var(--ink-3);
+}
+
 .problem {
   margin: 0;
-  color: var(--danger);
+  color: var(--bad-text);
 }
 
 .link {
-  color: var(--text);
-  text-decoration: underline;
+  color: var(--brand-text);
+  font-weight: 600;
+  text-underline-offset: 2px;
 }
 
 .tableWrap {
   max-width: 100%;
   overflow-x: auto;
+  border-radius: var(--r-2);
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 
 .table {
@@ -33,14 +38,29 @@
   text-align: left;
 }
 
-.table th,
-.table td {
-  padding: 8px;
+.table thead th {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line-2);
+  background: var(--surface-2);
+  color: var(--ink-3);
+  font: 600 var(--font-size-min)/1.2 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.table tbody th,
+.table tbody td {
+  padding: 11px 12px;
   vertical-align: top;
   overflow-wrap: anywhere;
 }
 
-.table tbody tr {
+.table tbody th {
+  font-weight: 600;
+}
+
+.table tbody tr + tr > * {
   border-top: 1px solid var(--line);
 }
 
@@ -55,25 +75,35 @@
 
 .cellLabel {
   display: none;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-weight: 600;
 }
 
+/* The minutes: the field, what the standard is and a way back to it */
 .edit {
   display: grid;
   gap: 4px;
+  max-width: 11rem;
   justify-items: start;
 }
 
-.hint {
-  color: var(--text-muted);
+/* Numbers in a table are mono: the typed minutes and the standard under them */
+.edit input {
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
 }
 
-.saveRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
+.hint {
+  color: var(--ink-3);
+  font-family: var(--f-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.form {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
 }
 
 @media (max-width: 40rem) {
@@ -95,6 +125,14 @@
 
   .table tbody tr {
     padding: 8px 0;
+  }
+
+  .table tbody tr + tr {
+    border-top: 1px solid var(--line);
+  }
+
+  .table tbody tr + tr > * {
+    border-top: 0;
   }
 
   .cellLabel {

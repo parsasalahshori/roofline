@@ -1,27 +1,35 @@
+import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures.ts';
 
 /*
- * Today: the "My day" window opens once per day when the person arrives at the map home, never on a
- * deep link, and stays closed after Esc and a reload the same day. The day it was shown is stored on
- * the server, so these tests do not call markTodaySeen. Windows are found by their accessible name
+ * Today: the "My day" page opens once per day when the person arrives at Home, never on a
+ * deep link, and stays closed after going Home and a reload the same day. The day it was shown is stored on
+ * the server, so these tests do not call markTodaySeen. Pages are found by their accessible name
  * and banners by their text, never by a bare role=status.
  */
+
+/** Home through the rail: a page has no close button, and Esc leaves it where it is. */
+async function goHome(page: Page): Promise<void> {
+  await page.getByRole('navigation', { name: 'Apps' }).getByRole('link', { name: 'Home', exact: true }).click();
+  await expect(page).toHaveURL(/\/$/);
+}
 
 test('opens once per day, again the next day', async ({ page, loginAs, db }) => {
   await loginAs(page, 'owner');
   await page.goto('/');
   await expect(page).toHaveURL(/\/today$/);
-  const dlg = page.getByRole('dialog', { name: 'My day' });
-  await expect(dlg).toContainText('Good');
-  await page.keyboard.press('Escape');
-  await expect(page).toHaveURL(/\/$/);
+  const dlg = page.getByRole('main', { name: 'My day' });
+  // The page names itself and lists today's visits; it does not greet (Home does)
+  await expect(dlg.getByRole('heading', { level: 1, name: 'My day' })).toBeVisible();
+  await expect(dlg.getByRole('region', { name: 'Your visits today' })).toBeVisible();
+  await goHome(page);
 
   // Same day: the question is asked again, but the answer is no
   const answered = page.waitForResponse('**/api/me/today-shown');
   await page.goto('/');
   await answered;
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('main', { name: 'My day' })).toHaveCount(0);
 
   // Yesterday was the last time it was shown, so today it opens again
   await db.query(
@@ -40,7 +48,7 @@ test('a deep link does not open Today', async ({ page, loginAs }) => {
   });
 
   await page.goto('/jobs');
-  await expect(page.getByRole('dialog', { name: 'Jobs', exact: true })).toBeVisible();
+  await expect(page.getByRole('main', { name: 'Jobs', exact: true })).toBeVisible();
   await expect(page).toHaveURL(/\/jobs$/);
   // Give a stray question time to be sent before concluding there was none
   await page.waitForTimeout(1000);
@@ -51,19 +59,18 @@ test('a deep link does not open Today', async ({ page, loginAs }) => {
   await expect(page).toHaveURL(/\/today$/);
 });
 
-test('auto-open on arrival at the map home, gone after Esc and reload', async ({ page, loginAs }) => {
+test('auto-open on arrival at Home, gone after going Home and reloading', async ({ page, loginAs }) => {
   await loginAs(page, 'owner');
   await page.goto('/');
-  await expect(page.getByRole('dialog', { name: 'My day' })).toBeVisible();
+  await expect(page.getByRole('main', { name: 'My day' })).toBeVisible();
   await expect(page).toHaveURL(/\/today$/);
 
-  await page.keyboard.press('Escape');
-  await expect(page).toHaveURL(/\/$/);
+  await goHome(page);
 
   // The day is stored on the server: the reload asks again and must not reopen Today
   const answered = page.waitForResponse('**/api/me/today-shown');
   await page.reload();
   await answered;
-  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('main', { name: 'My day' })).toHaveCount(0);
   await expect(page).toHaveURL(/\/$/);
 });

@@ -131,7 +131,7 @@ describe('ReviewSteps in review mode', () => {
     ]);
     const edits = screen.getAllByRole('button', { name: copy.edit });
     expect(edits).toHaveLength(1);
-    expect(edits[0]).toHaveAttribute('data-variant', 'ghost');
+    expect(edits[0]).toHaveAttribute('data-variant', 'default');
     await user.click(edits[0]!);
     expect(onEdit).toHaveBeenCalledWith('msg');
   });
@@ -197,6 +197,57 @@ describe('ReviewSteps in review mode', () => {
   });
 });
 
+describe('ReviewSteps in the Chalk Line style', () => {
+  it('puts the cost at the right of the title in mono, once', () => {
+    setup([spend(27000)]);
+    const item = row('Run the ad');
+    const cost = within(item).getByText(copy.spend(27000));
+    expect(cost.closest('li')).toBe(item);
+    expect(within(item).getAllByText(copy.spend(27000))).toHaveLength(1);
+  });
+
+  it('says in words, with a glyph, that a switched-off step is left out', () => {
+    setup([internal({ enabled: false }), internal({ id: 'int2', title: 'Another route' })]);
+    const off = within(row('Plan the route')).getByText(copy.stepStatus('skipped'));
+    expect(off).toHaveAttribute('data-status', 'skipped');
+    expect(off.querySelector('svg')).not.toBeNull();
+    expect(within(row('Another route')).queryByText(copy.stepStatus('skipped'))).toBeNull();
+  });
+
+  it('draws a decided step status as a tag with a glyph and a word', () => {
+    setup([msg({ open: false, status: 'failed', errorPlain: 'It did not send.' })], { mode: 'progress' });
+    const tag = within(row('Text customers')).getByText(copy.stepStatus('failed'));
+    expect(tag).toHaveAttribute('data-tone', 'bad');
+    expect(tag.querySelector('svg')).not.toBeNull();
+  });
+
+  it('shows a sentence under the step it is about, as an alert', () => {
+    setup([msg(), internal()], { errors: { int: 'That step is locked right now.' } });
+    const alert = within(row('Plan the route')).getByRole('alert');
+    expect(alert).toHaveTextContent('That step is locked right now.');
+    expect(within(row('Text customers')).queryByRole('alert')).toBeNull();
+  });
+
+  it('keeps only the title, cost and facts of a compact step: its words are shown somewhere else', () => {
+    setup([msg({ compact: true, preview: { ...msg().preview, maxSpendCents: 900 } }), internal()]);
+    const compact = row('Text customers');
+    expect(within(compact).queryByText('Hi Dana, we are in your area this week.')).toBeNull();
+    expect(within(compact).queryByText('From the shop number')).toBeNull();
+    expect(within(compact).getByText(copy.recipients(31))).toBeInTheDocument();
+    expect(within(compact).getByText(copy.spend(900))).toBeInTheDocument();
+    // A step that is not compact still shows what it will do
+    expect(within(row('Plan the route')).getByText('12 doors, 3 hours')).toBeInTheDocument();
+  });
+
+  it('leaves out the footer when the screen has its own action bar', () => {
+    setup([msg()], { footer: false });
+    expect(screen.queryByRole('button', { name: copy.notNow })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Approve/ })).toBeNull();
+    expect(screen.queryByText(copy.footerNote)).toBeNull();
+    expect(screen.getByRole('switch', { name: copy.switchLabel('Text customers') })).toBeInTheDocument();
+  });
+});
+
 describe('ReviewSteps in progress mode', () => {
   it('has no footer and no switches, and shows each step status', () => {
     setup([msg({ status: 'running', open: false }), internal({ status: 'done', open: false })], { mode: 'progress' });
@@ -240,7 +291,7 @@ describe('ReviewSteps in progress mode', () => {
     expect(within(row('Running step')).queryByRole('button', { name: copy.retry })).not.toBeInTheDocument();
     expect(within(row('Done step')).queryByRole('button', { name: copy.retry })).not.toBeInTheDocument();
     const retry = within(row('Failed step')).getByRole('button', { name: copy.retry });
-    expect(retry).toHaveAttribute('data-variant', 'ghost');
+    expect(retry).toHaveAttribute('data-variant', 'default');
     expect(within(row('Attention step')).getByRole('button', { name: copy.retry })).toBeInTheDocument();
     await user.click(retry);
     expect(onRetry).toHaveBeenCalledWith('b');

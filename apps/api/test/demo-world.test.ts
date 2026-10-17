@@ -140,6 +140,18 @@ describe('the demo world', () => {
       expect(lot.n, `lot ${lng},${lat}`).toBeGreaterThan(0);
     }
 
+    // The finished storm plan's approval carries the counts a real approval writes, so the feed does not say it was
+    // "approved with every step switched off" when it sent 48 texts.
+    const approval = (
+      await owner.query(
+        `select e.data from agent_task_events e join agent_tasks t on t.id = e.task_id
+          where e.company_id = $1 and e.kind = 'approved' and t.title = 'Storm plan for Elkhorn'`,
+        [first.companyId],
+      )
+    ).rows;
+    expect(approval).toHaveLength(1);
+    expect(approval[0]?.data).toEqual({ totalSteps: 1, approvedSteps: 1, forwardedSteps: 0 });
+
     const second = await seedDemoWorld(t.deps.pools, ownerUrl, now, { encryptionKey: TEST_ENCRYPTION_KEY });
     expect(second).toEqual({ created: false, companyId: first.companyId, counts: first.counts });
   });

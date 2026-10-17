@@ -35,6 +35,13 @@ describe('review words', () => {
     expect(review.spend(27000)).toBe('Up to $270');
   });
 
+  it('shows the cents of an amount that has them, so the steps add up to the total', () => {
+    expect(review.spend(14850)).toBe('Up to $148.50');
+    expect(review.spend(12150)).toBe('Up to $121.50');
+    expect(review.approveButton({ count: 2, maxSpendCents: 14850 + 12150, ownerSteps: 0 })).toBe('Approve 2 steps · up to $270');
+    expect(review.approveButton({ count: 1, maxSpendCents: 14850, ownerSteps: 0 })).toBe('Approve 1 step · up to $148.50');
+  });
+
   it('names a switch by the step it turns on or off, and reads the step status', () => {
     expect(review.switchLabel('Door-knock routes')).toBe('Door-knock routes');
     expect(review.stepStatus('done')).toBe('Done');

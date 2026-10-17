@@ -1,0 +1,75 @@
+/* The letterhead of a homeowner page: the company's mark on the left, a Call pill on the right. 600px like the column. */
+.site {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 10px 16px 8px;
+  box-sizing: border-box;
+}
+
+.mark {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  min-width: 0;
+}
+
+/* The company's own image, on whatever ground the page has */
+.logo {
+  display: block;
+  max-width: 100%;
+  max-height: 40px;
+  object-fit: contain;
+}
+
+/* A text wordmark: Archivo, a little wider than the body, as the design sets a company's name */
+.wordmark {
+  color: var(--ink);
+  font-family: var(--f-display);
+  font-size: 1.0625rem;
+  font-stretch: 112%;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.call {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 0 16px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  color: var(--ink);
+  font-family: var(--f-ui);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.call:hover {
+  box-shadow: inset 0 0 0 1px var(--ink-3);
+}
+
+/*
+ * Embedded on the company's own site the frame has no letterhead of its own: that page already carries the company's
+ * name and phone. A logo image is the one thing of the company's kept (and the one colour is the main button).
+ */
+:global(html[data-embedded]) .call,
+:global(html[data-embedded]) .wordmark {
+  display: none;
+}
+
+:global(html[data-embedded]) .site:not([data-logo]) {
+  display: none;
+}

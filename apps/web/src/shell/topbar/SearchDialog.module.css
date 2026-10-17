@@ -10,7 +10,7 @@
   justify-content: center;
   align-items: flex-start;
   padding-top: 12vh;
-  background: rgba(43, 38, 32, 0.35);
+  background: rgba(10, 15, 22, 0.5);
 }
 
 .dialog {
@@ -19,10 +19,10 @@
   width: min(560px, calc(100vw - 32px));
   max-height: 70vh;
   overflow: hidden;
-  border-radius: var(--radius-window);
+  border-radius: var(--r-4);
   background: var(--surface);
-  color: var(--text);
-  box-shadow: var(--shadow-window);
+  color: var(--ink);
+  box-shadow: var(--e-2);
 }
 
 /* The container takes focus only to hold it; the field is the control that shows the ring */
@@ -40,14 +40,14 @@
   border-bottom: 1px solid var(--line);
   border-radius: 0;
   background: transparent;
-  color: var(--text);
+  color: var(--ink);
   font: inherit;
   font-size: 1rem;
 }
 
 /* Inset by 2px rather than the kit's 2px outside: the field spans the dialog, which clips what sits outside it */
 .input:focus-visible {
-  outline: 2px solid var(--text);
+  outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
 
@@ -64,7 +64,7 @@
 
 .heading {
   padding: 8px 8px 4px;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-min);
   font-weight: 600;
 }
@@ -74,10 +74,10 @@
   flex-direction: column;
   justify-content: center;
   gap: 2px;
-  min-height: 40px;
+  min-height: 44px;
   padding: 6px 8px;
   border-radius: 8px;
-  color: var(--text);
+  color: var(--ink);
   cursor: pointer;
 }
 
@@ -91,7 +91,7 @@
 }
 
 .secondary {
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-min);
 }
 
@@ -99,19 +99,19 @@
   flex: none;
   margin: 0;
   padding: 16px;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-body);
 }
 
 /* lift-01: the top bar's search button is a quiet round button; 40px on a phone for the thumb */
 button.trigger {
   border-radius: 7px;
-  color: var(--lift-bar-muted);
+  color: var(--ink-2);
 }
 
 button.trigger:hover {
-  background: var(--lift-hover);
-  color: var(--text);
+  background: var(--sunken);
+  color: var(--ink);
 }
 
 @media (min-width: 768px) {
@@ -120,5 +120,62 @@ button.trigger:hover {
     height: 26px;
     min-width: 30px;
     min-height: 26px;
+  }
+}
+
+/* The rail's search box: a 34px field-looking button with the key hint at its right */
+.field {
+  display: flex;
+  width: 100%;
+  height: 34px;
+  min-height: 34px;
+  padding: 0 10px;
+  gap: 8px;
+  justify-content: flex-start;
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+  background: var(--surface-2);
+  color: var(--ink-3);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.field:hover {
+  background: var(--sunken);
+  color: var(--ink-2);
+}
+
+.fieldText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  min-width: 20px;
+  margin-left: auto;
+  padding: 0 5px;
+  border: 1px solid var(--line-2);
+  border-bottom-width: 2px;
+  border-radius: var(--r-1);
+  background: var(--surface);
+  color: var(--ink-3);
+  font: 500 var(--font-size-min)/1 var(--f-mono);
+}
+
+/* Below 1100px the rail is icons only: the box becomes a plain icon button */
+@media (min-width: 768px) and (max-width: 1099.98px) {
+  .field {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .fieldText,
+  .hint {
+    display: none;
   }
 }

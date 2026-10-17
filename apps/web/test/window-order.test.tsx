@@ -10,9 +10,11 @@ import {
   type WindowOrderView,
 } from '@roofline/shared';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { sizeSpeech } from '@roofline/ui';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
+import { sizeCopy } from '../src/copy/measureWindows.ts';
 import { windowOrder as copy } from '../src/copy/windowOrder.ts';
 import { OrderStatusChip } from '../src/features/measure/windows/order/OrderChip.tsx';
 import { OrderWindow } from '../src/features/measure/windows/order/OrderWindow.tsx';
@@ -129,81 +131,274 @@ async function open(v: WindowOrderView | null = current) {
   await screen.findByRole('table', { name: copy.tableCaption });
 }
 
-const lineEl = (id: string) => document.querySelector(`[data-line="${id}"]`) as HTMLElement;
+const lineEl = (id: string) => document.querySelector(`tr[data-line="${id}"]`) as HTMLElement;
 const orderStatus = () => screen.getByText(copy.statusLabel).parentElement!.textContent;
 const markReady = () => screen.getByRole('button', { name: copy.markReady });
+/** The panel beside the table: the picked window. */
+const detail = () => document.querySelector('[data-detail]') as HTMLElement;
+/** Picks a window by pressing its number. */
+const pick = (id: string, n: number, location: string) => fireEvent.click(within(lineEl(id)).getByRole('button', { name: copy.openLine(n, location) }));
+/** Opens a kit Listbox in `scope` by its label and picks an option. */
+function choose(scope: HTMLElement, label: string, option: string) {
+  fireEvent.click(within(scope).getByLabelText(label));
+  fireEvent.click(screen.getByRole('option', { name: option }));
+}
+const savedState = () => document.querySelector('[data-save]')!.getAttribute('data-save');
 
 describe('Window factory order', () => {
-  it('lists the lines with the measured size (± when known), the order size, the photo and the photo-only note', async () => {
+  it('lists the lines with the measured size (± when known), the order size and the photo-only note', async () => {
     await open();
-    expect(screen.getByRole('heading', { name: '12 Elm St, Omaha, NE' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 1, name: '12 Elm St' })).toBeTruthy();
     expect(screen.getByText(copy.onlyPhotoNote)).toBeTruthy();
     expect(orderStatus()).toBe(copy.statusLabel + copy.status.draft);
     expect(screen.getByRole('link', { name: copy.back }).getAttribute('href')).toBe('/estimator/windows/m1');
+    // The ticket: the whole address, the PO box and how many lines
+    const ticket = within(screen.getByRole('region', { name: copy.ticketLabel }));
+    expect(ticket.getByText('12 Elm St, Omaha, NE')).toBeTruthy();
+    expect(ticket.getByLabelText(copy.poLabel)).toBeTruthy();
+    expect(ticket.getByText('3')).toBeTruthy();
 
     const kitchen = within(lineEl('w1'));
-    expect(kitchen.getByText(copy.size(36.3, 60.2))).toBeTruthy();
-    expect(kitchen.getByText(copy.plusMinus(0.125))).toBeTruthy();
-    expect(copy.plusMinus(0.125)).toBe('± 1/8');
+    // 36.3 x 60.2 to the sixteenth, and under it the error each side carries into the order size (both read 1/8 here)
+    expect(kitchen.getByText(sizeSpeech(sizeCopy, 36.3, 60.2, null, false))).toBeTruthy();
+    expect(kitchen.getByText(copy.errors.speech(0.1, 0.125))).toBeTruthy();
+    expect(kitchen.getByText(copy.errors.line(0.1, 0.125))).toBeTruthy();
     // 36.3 - 0.1 - 1/4 = 35.95 -> 35 7/8; 60.2 - 0.125 - 1/4 = 59.825 -> 59 3/4
-    expect(lineEl('w1').querySelector('[data-order-size]')!.textContent).toBe('35 7/8 × 59 3/4 in');
+    expect(kitchen.getByText(sizeSpeech(sizeCopy, 35.875, 59.75, null, false))).toBeTruthy();
+    expect(lineEl('w1').querySelector('[data-order-size]')).not.toBeNull();
     expect((kitchen.getByLabelText(copy.locationFor(1)) as HTMLInputElement).value).toBe('Kitchen');
-    expect(kitchen.getByRole('img').getAttribute('src')).toBe('/api/window-measurements/m1/uploads/u-w1');
     // No ± when the method cannot tell
     expect(within(lineEl('w2')).queryByText(/±/)).toBeNull();
+    // The photo is in the picked window's panel
+    pick('w1', 1, 'Kitchen');
+    expect(within(detail()).getByRole('img').getAttribute('src')).toBe('/api/window-measurements/m1/uploads/u-w1');
   });
 
-  it('shows each line’s status in words with its reasons, errors first', async () => {
+  it('the rule the sizes follow is written in the company’s own numbers', async () => {
+    await open();
+    expect(screen.getByText(copy.rule('1/4', '1/8'))).toBeTruthy();
+    cleanup();
+    await open(view(mixedLines(), { settings: { ...S, widthDeductionIn: 0.5, heightDeductionIn: 0.25 } }));
+    expect(screen.getByText(copy.ruleSplit('1/2', '1/4', '1/8'))).toBeTruthy();
+  });
+
+  it('shows each line’s status in words; the picked line gives its reasons, errors first', async () => {
     await open();
     expect(within(lineEl('w1')).getByText(copy.lineStatusLabel(copy.lineStatus.ready))).toBeTruthy();
-    const bath = within(lineEl('w2'));
-    expect(bath.getByText(copy.lineStatusLabel(copy.lineStatus.error))).toBeTruthy();
-    expect(bath.getByRole('list', { name: copy.reasonsLabel }).textContent).toContain('Pick a style.');
-    expect((bath.getByLabelText(copy.style) as HTMLSelectElement).value).toBe('');
-    expect(bath.getByRole('option', { name: copy.pickStyle })).toBeTruthy();
-    const living = within(lineEl('w3'));
-    expect(living.getByText(copy.lineStatusLabel(copy.lineStatus.check))).toBeTruthy();
-    expect(living.getByText(/steep or unclear/)).toBeTruthy();
-    // Only check lines offer the confirm box
-    expect(within(lineEl('w1')).queryByLabelText(copy.confirm)).toBeNull();
+    expect(within(lineEl('w2')).getByText(copy.lineStatusLabel(copy.lineStatus.error))).toBeTruthy();
+    expect(within(lineEl('w3')).getByText(copy.lineStatusLabel(copy.lineStatus.check))).toBeTruthy();
+    // The first window that needs a look is picked: Bath has no style
+    expect(detail().getAttribute('data-detail')).toBe('w2');
+    expect(within(detail()).getByRole('list', { name: copy.reasonsLabel }).textContent).toContain('Pick a style.');
+    expect(within(detail()).getByLabelText(copy.style).textContent).toContain(copy.pickStyle);
+    // Living's photo was unclear: its reason, and the confirm box only check lines offer
+    pick('w3', 3, 'Living');
+    expect(within(detail()).getByText(/steep or unclear/)).toBeTruthy();
+    expect(within(detail()).getByLabelText(copy.confirm)).toBeTruthy();
+    pick('w1', 1, 'Kitchen');
+    expect(within(detail()).queryByLabelText(copy.confirm)).toBeNull();
+    expect(within(detail()).queryByRole('list', { name: copy.reasonsLabel })).toBeNull();
+  });
+
+  it('the picked row is tinted for what it needs: red for a hold, the brand colour when ready; a check takes the warning amber from its status, never tape yellow', async () => {
+    await open();
+    expect(lineEl('w2').getAttribute('data-tone')).toBe('bad');
+    pick('w3', 3, 'Living');
+    // The kit's row tones have no amber: the row says check in data-status (and data-selected) and the css tints it
+    expect(lineEl('w3').hasAttribute('data-tone')).toBe(false);
+    expect(lineEl('w3').getAttribute('data-status')).toBe('check');
+    expect(lineEl('w3').getAttribute('data-selected')).toBe('true');
+    expect(lineEl('w2').hasAttribute('data-tone')).toBe(false);
+    pick('w1', 1, 'Kitchen');
+    expect(lineEl('w1').getAttribute('data-tone')).toBe('brand');
+  });
+
+  it('a window to look at is the warning amber everywhere: its status tag, its reasons, its suggestions', async () => {
+    await open();
+    expect(within(lineEl('w3')).getByText(copy.lineStatusLabel(copy.lineStatus.check)).closest('[data-tone]')).toHaveAttribute('data-tone', 'warn');
+    expect(within(lineEl('w1')).getByText(copy.lineStatusLabel(copy.lineStatus.ready)).closest('[data-tone]')).toHaveAttribute('data-tone', 'ok');
+    expect(within(lineEl('w2')).getByText(copy.lineStatusLabel(copy.lineStatus.error)).closest('[data-tone]')).toHaveAttribute('data-tone', 'bad');
+    pick('w3', 3, 'Living');
+    expect(within(detail()).getByText(copy.lineStatusLabel(copy.lineStatus.check)).closest('[data-tone]')).toHaveAttribute('data-tone', 'warn');
+    // No tape-yellow tone anywhere on the sheet or its panel
+    expect(document.querySelectorAll('[data-order-sheet] [data-tone="tape"]')).toHaveLength(0);
+    expect(detail().querySelectorAll('[data-tone="tape"]:not([data-reading])')).toHaveLength(0);
+  });
+
+  it('the error each side carries is shown side by side, so the sheet adds up: 59 3/8 less 5/8 less 1/4 is the 58 1/2 ordered', async () => {
+    const demo = [line('w1', { location: 'Living', style: 'slider-3', measured: [m(71.25, 59.375, { uncertaintyIn: { width: 0.75, height: 0.625 } })] })];
+    await open(view(demo));
+    const row = within(lineEl('w1'));
+    expect(row.getByText(copy.errors.line(0.75, 0.625))).toBeTruthy();
+    expect(row.getByText(copy.errors.speech(0.75, 0.625))).toBeTruthy();
+    // The order size the factory gets
+    expect(row.getByText(sizeSpeech(sizeCopy, 70.25, 58.5, null, false))).toBeTruthy();
+    // The same in the panel, on the reading
+    pick('w1', 1, 'Living');
+    expect(within(detail()).getByText(copy.errors.line(0.75, 0.625))).toBeTruthy();
+  });
+
+  it('shows the photo that sets each side when the photos carry different errors', async () => {
+    // The LiDAR reading is the smallest, but the sheet photo is smaller once its larger error is off
+    const photos = [m(36, 60, { uncertaintyIn: { width: 0.125, height: 0.125 } }), m(36.125, 60.125, { uncertaintyIn: { width: 0.5, height: 0.5 } })];
+    await open(view([line('w1', { location: 'Kitchen', measured: photos })]));
+    const row = within(lineEl('w1'));
+    expect(row.getByText(sizeSpeech(sizeCopy, 36.125, 60.125, null, false))).toBeTruthy();
+    expect(row.getByText(copy.errors.speech(0.5, 0.5))).toBeTruthy();
+    // Each reading is listed in the panel, so the row does not count the photos
+    expect(row.queryByText(copy.photosCount(2))).toBeNull();
+    const rows = detail().querySelectorAll('[data-reading]');
+    expect(within(rows[1] as HTMLElement).getByText(copy.readings.smallest.both)).toBeTruthy();
+    expect(within(rows[0] as HTMLElement).queryByText(/Smallest/)).toBeNull();
+  });
+
+  it('why a window needs another look comes straight under its photo, before what each photo read, so it is in view beside the box that clears it', async () => {
+    await open();
+    pick('w3', 3, 'Living');
+    const reasons = within(detail()).getByRole('list', { name: copy.reasonsLabel });
+    const readings = within(detail()).getByRole('table', { name: copy.readings.title });
+    const photo = detail().querySelector('img');
+    expect(photo).not.toBeNull();
+    // Photo, then the reasons, then the readings table
+    expect(photo!.compareDocumentPosition(reasons) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(reasons.compareDocumentPosition(readings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('the panel that scrolls fades its bottom edge only while there is more under what it shows', async () => {
+    const scroller = () => detail().querySelector('[class*="detailScroll"]') as HTMLElement;
+    await open();
+    pick('w3', 3, 'Living');
+    // jsdom has no layout: nothing scrolls, so no fade
+    expect(scroller().hasAttribute('data-more')).toBe(false);
+    cleanup();
+
+    // A box taller than it shows (600 of 300 pixels, at the top): the fade is on
+    const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight');
+    const shown = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight');
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', { configurable: true, get: () => 600 });
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get: () => 300 });
+    try {
+      await open();
+      pick('w3', 3, 'Living');
+      await waitFor(() => expect(scroller().getAttribute('data-more')).toBe('true'));
+    } finally {
+      if (height) Object.defineProperty(HTMLElement.prototype, 'scrollHeight', height);
+      else delete (HTMLElement.prototype as unknown as Record<string, unknown>)['scrollHeight'];
+      if (shown) Object.defineProperty(HTMLElement.prototype, 'clientHeight', shown);
+      else delete (HTMLElement.prototype as unknown as Record<string, unknown>)['clientHeight'];
+    }
+  });
+
+  it('the box that clears a Check is pinned under the options, outside the part that scrolls', async () => {
+    await open();
+    pick('w3', 3, 'Living');
+    const box = within(detail()).getByLabelText(copy.confirm);
+    const foot = detail().querySelector('[data-detail-foot]');
+    expect(foot).not.toBeNull();
+    expect(foot!.contains(box)).toBe(true);
+    expect(detail().querySelector('[class*="detailScroll"]')!.contains(box)).toBe(false);
+    // Only a window to look at has one
+    pick('w1', 1, 'Kitchen');
+    expect(detail().querySelector('[data-detail-foot]')).toBeNull();
+  });
+
+  it('every row says what its number is for a phone, where the column heads are gone: Qty beside the quantity', async () => {
+    await open();
+    const label = lineEl('w1').querySelector('[class*="qtyLabel"]') as HTMLElement;
+    expect(label.textContent).toBe(copy.columns.quantity);
+    // The box keeps its own accessible name; the word beside it is only for the eye
+    expect(label).toHaveAttribute('aria-hidden', 'true');
+    expect(within(lineEl('w1')).getByLabelText(copy.quantityFor(1))).toBeTruthy();
+  });
+
+  it('the style is a line of its own in the spec column, and the parts after it are one run with dots between them only', async () => {
+    await open();
+    const spec = lineEl('w1').querySelector('[class*="specList"]') as HTMLElement;
+    const name = spec.querySelector('[class*="specName"]') as HTMLElement;
+    const rest = spec.querySelector('[class*="specRest"]') as HTMLElement;
+    expect(name.textContent).toBe(copy.styles['double-hung']);
+    expect(rest).not.toBeNull();
+    // The style is not a sibling of the parts: nothing follows it on its line for a separator to dangle after
+    expect(name.parentElement).toBe(spec);
+    expect(rest.parentElement).toBe(spec);
+    expect([...rest.children].map((c) => c.textContent)).toContain(copy.glassShort['lowe-argon']);
+  });
+
+  it('a row opens its panel when pressed anywhere but its fields', async () => {
+    await open();
+    fireEvent.click(within(lineEl('w3')).getByText(copy.lineStatusLabel(copy.lineStatus.check)));
+    expect(detail().getAttribute('data-detail')).toBe('w3');
+    // Typing in a field does not move the panel
+    fireEvent.click(within(lineEl('w1')).getByLabelText(copy.locationFor(1)));
+    expect(detail().getAttribute('data-detail')).toBe('w3');
+  });
+
+  it('the panel lists what each photo read and marks the smallest of each side', async () => {
+    const two = [line('w1', { location: 'Kitchen', measured: [m(36.5, 60.25), m(36.25, 60.5)] })];
+    await open(view(two));
+    const rows = detail().querySelectorAll('[data-reading]');
+    expect(rows).toHaveLength(2);
+    // Photo 1 has the smaller height, photo 2 the smaller width
+    expect(within(rows[0] as HTMLElement).getByText(copy.readings.smallest.height)).toBeTruthy();
+    expect(within(rows[1] as HTMLElement).getByText(copy.readings.smallest.width)).toBeTruthy();
+    expect(rows[0]!.getAttribute('data-tone')).toBe('tape');
+    expect(within(detail()).getByText(copy.readings.note)).toBeTruthy();
+  });
+
+  it('a window with no photo says so in its panel', async () => {
+    await open(view([line('w1', { location: 'Kitchen', uploadId: null })]));
+    expect(within(detail()).getByText(copy.noPhoto)).toBeTruthy();
+    expect(within(detail()).queryByRole('img')).toBeNull();
   });
 
   it('a picker change shows at once and saves one PATCH after the pause', async () => {
     await open();
-    const bath = within(lineEl('w2'));
-    fireEvent.change(bath.getByLabelText(copy.style), { target: { value: 'casement' } });
-    fireEvent.change(bath.getByLabelText(copy.exterior), { target: { value: 'bronze' } });
+    // Bath is picked: it has no style
+    choose(detail(), copy.style, copy.styles.casement);
+    choose(detail(), copy.exterior, copy.colors.bronze);
     // The status follows at once, before the save
-    expect(bath.getByText(copy.lineStatusLabel(copy.lineStatus.ready))).toBeTruthy();
+    expect(within(lineEl('w2')).getByText(copy.lineStatusLabel(copy.lineStatus.ready))).toBeTruthy();
     expect(patches()).toHaveLength(0);
+    expect(savedState()).toBe('waiting');
     await waitFor(() => expect(patches()).toHaveLength(1));
     expect(patches()[0]).toEqual({ lines: [{ id: 'w2', style: 'casement', frameExterior: 'bronze' }] });
-    await screen.findByText(copy.saved);
+    await waitFor(() => expect(savedState()).toBe('saved'));
+    expect(screen.getByText(copy.saved)).toBeTruthy();
+  });
+
+  it('Save draft sends what is waiting at once', async () => {
+    await open();
+    choose(detail(), copy.style, copy.styles.casement);
+    expect(patches()).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: copy.saveDraft }));
+    await waitFor(() => expect(patches()).toHaveLength(1));
+    expect(patches()[0]).toEqual({ lines: [{ id: 'w2', style: 'casement' }] });
   });
 
   it('a grid needs a pattern; a one-sash style has no bottom sash', async () => {
     await open();
-    const kitchen = within(lineEl('w1'));
-    fireEvent.change(kitchen.getByLabelText(copy.grid), { target: { value: 'colonial' } });
-    expect(kitchen.getByLabelText(copy.gridTop)).toBeTruthy();
-    expect(kitchen.getByLabelText(copy.gridBottom)).toBeTruthy();
-    fireEvent.change(kitchen.getByLabelText(copy.gridTop), { target: { value: '3x2' } });
-    fireEvent.change(kitchen.getByLabelText(copy.style), { target: { value: 'picture' } });
-    expect(kitchen.queryByLabelText(copy.gridBottom)).toBeNull();
-    expect(kitchen.getByLabelText(copy.gridOnly)).toBeTruthy();
+    pick('w1', 1, 'Kitchen');
+    choose(detail(), copy.grid, copy.grids.colonial);
+    expect(within(detail()).getByLabelText(copy.gridTop)).toBeTruthy();
+    expect(within(detail()).getByLabelText(copy.gridBottom)).toBeTruthy();
+    fireEvent.change(within(detail()).getByLabelText(copy.gridTop), { target: { value: '3x2' } });
+    choose(detail(), copy.style, copy.styles.picture);
+    expect(within(detail()).queryByLabelText(copy.gridBottom)).toBeNull();
+    expect(within(detail()).getByLabelText(copy.gridOnly)).toBeTruthy();
     await waitFor(() => expect(patches()).toHaveLength(1));
     expect(patches()[0]!.lines![0]).toEqual({ id: 'w1', grid: { type: 'colonial', top: '3x2', bottom: '' }, style: 'picture' });
   });
 
   it('a yes beside a door suggests tempered glass with the code; Use tempered applies it (never automatic)', async () => {
     await open();
-    const kitchen = within(lineEl('w1'));
+    pick('w1', 1, 'Kitchen');
+    const kitchen = within(detail());
     const door = kitchen.getByRole('group', { name: copy.besideDoor });
     fireEvent.click(within(door).getByRole('button', { name: copy.yes }));
     expect(within(door).getByRole('button', { name: copy.yes }).getAttribute('aria-pressed')).toBe('true');
     const suggestion = kitchen.getAllByText(/IRC R308\.4\.2/);
     expect(suggestion.length).toBeGreaterThan(0);
-    expect(kitchen.getByText(copy.lineStatusLabel(copy.lineStatus.check))).toBeTruthy();
+    expect(within(lineEl('w1')).getByText(copy.lineStatusLabel(copy.lineStatus.check))).toBeTruthy();
     expect(kitchen.getByRole('switch', { name: copy.tempered }).getAttribute('aria-checked')).toBe('false');
 
     fireEvent.click(kitchen.getByRole('button', { name: copy.useTempered }));
@@ -216,17 +411,26 @@ describe('Window factory order', () => {
 
   it('the sill height is saved as a number', async () => {
     await open();
-    fireEvent.change(within(lineEl('w1')).getByLabelText(copy.sill), { target: { value: '30' } });
+    pick('w1', 1, 'Kitchen');
+    fireEvent.change(within(detail()).getByLabelText(copy.sill), { target: { value: '30' } });
     await waitFor(() => expect(patches()).toHaveLength(1));
     expect(patches()[0]!.lines![0]!.safety!.sillHeightIn).toBe(30);
   });
 
   it('I checked this window confirms a check line', async () => {
     await open();
-    const living = within(lineEl('w3'));
-    fireEvent.click(living.getByLabelText(copy.confirm));
+    pick('w3', 3, 'Living');
+    fireEvent.click(within(detail()).getByLabelText(copy.confirm));
     await waitFor(() => expect(patches()).toHaveLength(1));
     expect(patches()[0]).toEqual({ lines: [{ id: 'w3', confirmed: true }] });
+  });
+
+  it('location and quantity are typed in the row', async () => {
+    await open();
+    fireEvent.change(within(lineEl('w1')).getByLabelText(copy.locationFor(1)), { target: { value: 'Pantry' } });
+    fireEvent.change(within(lineEl('w1')).getByLabelText(copy.quantityFor(1)), { target: { value: '3' } });
+    await waitFor(() => expect(patches()).toHaveLength(1));
+    expect(patches()[0]).toEqual({ lines: [{ id: 'w1', location: 'Pantry', quantity: 3 }] });
   });
 
   it('bulk apply sets the options on every selected line in one PATCH', async () => {
@@ -234,22 +438,37 @@ describe('Window factory order', () => {
     expect(screen.queryByRole('region', { name: copy.bulkLabel })).toBeNull();
     fireEvent.click(within(lineEl('w1')).getByLabelText(copy.selectLine(1, 'Kitchen')));
     fireEvent.click(within(lineEl('w2')).getByLabelText(copy.selectLine(2, 'Bath')));
-    const bar = within(screen.getByRole('region', { name: copy.bulkLabel }));
+    const barEl = screen.getByRole('region', { name: copy.bulkLabel });
+    const bar = within(barEl);
     expect(bar.getByText(copy.bulkSelected(2))).toBeTruthy();
-    fireEvent.change(bar.getByLabelText(copy.style), { target: { value: 'slider-2' } });
-    fireEvent.change(bar.getByLabelText(copy.interior), { target: { value: 'black' } });
-    fireEvent.change(bar.getByLabelText(copy.glass), { target: { value: 'triple-lowe-argon' } });
-    fireEvent.change(bar.getByLabelText(copy.tempered), { target: { value: 'yes' } });
+    choose(barEl, copy.style, copy.styles['slider-2']);
+    choose(barEl, copy.interior, copy.colors.black);
+    choose(barEl, copy.glass, copy.glasses['triple-lowe-argon']);
+    choose(barEl, copy.tempered, copy.bulkTemperedYes);
     fireEvent.click(bar.getByRole('button', { name: copy.bulkApply(2) }));
     await waitFor(() => expect(patches()).toHaveLength(1));
     const change = { style: 'slider-2', frameInterior: 'black', glass: 'triple-lowe-argon', tempered: true };
     expect(patches()[0]).toEqual({ lines: [{ id: 'w1', ...change }, { id: 'w2', ...change }] });
-    expect((within(lineEl('w2')).getByLabelText(copy.style) as HTMLSelectElement).value).toBe('slider-2');
-    expect((within(lineEl('w3')).getByLabelText(copy.style) as HTMLSelectElement).value).toBe('double-hung');
+    // Bath is the picked window: its panel shows the new style; Living keeps its own
+    expect(within(detail()).getByLabelText(copy.style).textContent).toContain(copy.styles['slider-2']);
+    pick('w3', 3, 'Living');
+    expect(within(detail()).getByLabelText(copy.style).textContent).toContain(copy.styles['double-hung']);
   });
 
-  it('Mark ready is off while lines need attention, and says how many', async () => {
+  it('the select-all box in the head ticks every window', async () => {
     await open();
+    fireEvent.click(screen.getByLabelText(copy.selectAll));
+    expect(screen.getByText(copy.bulkSelected(3))).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(copy.selectAll));
+    expect(screen.queryByRole('region', { name: copy.bulkLabel })).toBeNull();
+  });
+
+  it('the foot counts the windows by status and Mark ready is off, saying how many need a look', async () => {
+    await open();
+    const counts = within(document.querySelector('[data-counts]') as HTMLElement);
+    expect(counts.getByText(copy.counts.ready(1))).toBeTruthy();
+    expect(counts.getByText(copy.counts.check(1))).toBeTruthy();
+    expect(counts.getByText(copy.counts.hold(1))).toBeTruthy();
     expect((markReady() as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(copy.linesNeedAttention(2))).toBeTruthy();
   });
@@ -277,15 +496,17 @@ describe('Window factory order', () => {
     expect(csv.getAttribute('href')).toBe('/api/window-orders/o1/sheet.csv');
     expect(csv.hasAttribute('download')).toBe(true);
     expect(screen.getByRole('link', { name: copy.downloadPdf }).getAttribute('href')).toBe('/api/window-orders/o1/sheet.pdf');
-    expect((within(lineEl('w1')).getByLabelText(copy.style) as HTMLSelectElement).disabled).toBe(true);
+    expect((within(detail()).getByLabelText(copy.style) as HTMLButtonElement).disabled).toBe(true);
     expect((within(lineEl('w1')).getByLabelText(copy.locationFor(1)) as HTMLInputElement).disabled).toBe(true);
     expect(screen.queryByLabelText(copy.poLabel)).toBeNull();
+    expect(screen.queryByLabelText(copy.selectAll)).toBeNull();
     expect(screen.queryByRole('button', { name: copy.markReady })).toBeNull();
+    expect(screen.queryByRole('button', { name: copy.saveDraft })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: copy.reopen }));
     await screen.findByRole('button', { name: copy.markReady });
     expect(orderStatus()).toBe(copy.statusLabel + copy.status.draft);
-    expect((within(lineEl('w1')).getByLabelText(copy.style) as HTMLSelectElement).disabled).toBe(false);
+    expect((within(detail()).getByLabelText(copy.style) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('a rep sees a ready order without Reopen', async () => {
@@ -302,8 +523,17 @@ describe('Window factory order', () => {
     expect(within(totals).getByText(copy.totals.lines).nextElementSibling!.textContent).toBe('1');
     const row = document.querySelector('[data-group="1"]') as HTMLElement;
     expect(row.textContent).toContain('Kitchen, Bath');
-    expect(row.textContent).toContain('36 × 59 7/8 in');
+    expect(within(row).getByText(sizeSpeech(sizeCopy, 36, 59.875, null, false))).toBeTruthy();
     expect(row.textContent).toContain(copy.glasses['lowe-argon']);
+  });
+
+  it('the spec column says the colours once when every window has the same', async () => {
+    await open(view(goodLines()));
+    expect(screen.getByText(copy.allColors('White', 'White'))).toBeTruthy();
+    cleanup();
+    await open(view([line('w1', { location: 'Kitchen' }), line('w2', { location: 'Bath', frameExterior: 'bronze' })]));
+    expect(screen.queryByText(copy.allColors('White', 'White'))).toBeNull();
+    expect(within(lineEl('w2')).getByText(copy.colorsSlash('Bronze', 'White'), { exact: false })).toBeTruthy();
   });
 
   it('the PO number saves after the pause', async () => {
@@ -340,6 +570,9 @@ describe('OrderStatusChip', () => {
     chipAt();
     const link = await screen.findByRole('link', { name: copy.createOrder });
     expect(link.getAttribute('href')).toBe('/estimator/windows/m1/order');
+    // One control beside "Add on-site photos": a secondary button with its icon
+    expect(link).toHaveAttribute('data-variant', 'default');
+    expect(link.querySelector('svg')).not.toBeNull();
   });
 
   it('shows the order’s status and links to it', async () => {
@@ -347,6 +580,8 @@ describe('OrderStatusChip', () => {
     chipAt();
     const link = await screen.findByRole('link', { name: copy.chip(copy.status.ready) });
     expect(link.getAttribute('href')).toBe('/estimator/windows/m1/order');
+    expect(link).toHaveAttribute('data-variant', 'default');
+    expect(link.querySelector('svg')).not.toBeNull();
   });
 
   it('without photo windows shows nothing and does not ask for an order', async () => {

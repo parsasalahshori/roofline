@@ -7,8 +7,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CompanyBody } from '../src/api/types.ts';
 import { createAppRouter } from '../src/app/router.tsx';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
+import { home } from '../src/copy/home.ts';
 import { today } from '../src/copy/today.ts';
 import { ACCOUNT, makeTask, SHELL_ROUTES, signedTodayRoute, stubApi, where } from './helpers.tsx';
+import { approvals } from '../src/copy/approvals.ts';
 
 // The real map loads maplibre-gl, which these tests never need
 vi.mock('../src/shell/map/MapView.tsx', async () => {
@@ -78,24 +80,20 @@ function mount(initialEntries: string[], own: Parameters<typeof stubApi>[0] = {}
 const settle = () => new Promise((resolve) => setTimeout(resolve, 100));
 
 describe('the Today window', () => {
-  it('greets by first name in the company time zone', async () => {
+  it('puts the date, in the company time zone, over the page title', async () => {
     // Only Date is faked, so timers and promises still run
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-12T14:00:00Z')); // 09:00 in Chicago
 
     mount(['/today']);
 
-    expect(
-      await screen.findByRole('heading', {
-        level: 2,
-        name: 'Good morning, Dana',
-      }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'My day' })).toBeInTheDocument();
     expect(screen.getByText('Monday, October 12')).toBeInTheDocument();
+    expect(screen.getByRole('main', { name: 'My day' })).toBeInTheDocument();
     expect(api.unexpected).toEqual([]);
   });
 
-  it('lists the top 3 drafts', async () => {
+  it('shows the newest plan as an approval card and points at the rest', async () => {
     const tasks = [1, 2, 3, 4, 5].map((n) =>
       makeTask({
         id: `t${n}`,
@@ -108,23 +106,19 @@ describe('the Today window', () => {
       'GET /api/approvals': () => ({ body: { count: 5, tasks } }),
     });
 
-    const dialog = await screen.findByRole('dialog');
-    const section = await within(dialog).findByRole('region', {
+    const main = await screen.findByRole('main');
+    const section = await within(main).findByRole('region', {
       name: today.needYourOk,
     });
-    const list = await within(section).findByRole('list', {
-      name: today.draftsLabel,
-    });
-    const links = within(list).getAllByRole('link');
-
-    // Newest first: Plan 5, Plan 4, Plan 3
-    expect(links).toHaveLength(3);
-    expect(links.map((link) => link.getAttribute('href'))).toEqual(['/approvals/t5', '/approvals/t4', '/approvals/t3']);
-    expect(links[0]).toHaveTextContent('Plan 5');
-    expect(links[2]).toHaveTextContent('Plan 3');
-
-    const seeAll = within(section).getByRole('link', { name: today.seeAll(5) });
-    expect(seeAll).toHaveAttribute('href', '/approvals');
+    // One decision on top, then the day: the newest plan, with a way into its review
+    const card = await within(section).findByRole('article', { name: 'Plan 5' });
+    expect(within(section).getAllByRole('article')).toHaveLength(1);
+    expect(within(card).getByRole('link', { name: approvals.reviewPlan })).toHaveAttribute('href', '/approvals/t5');
+    // The heading above already says "Need your OK": a phone keeps the card's tag for a screen reader only
+    expect(within(card).getByText(approvals.tagNeedsOk)).toHaveAttribute('data-phone', 'sr-only');
+    // The other four wait behind it, one tap from the whole queue
+    expect(within(section).getByText(home.moreWaiting(4))).toBeInTheDocument();
+    expect(within(section).getByRole('link', { name: home.seeAll })).toHaveAttribute('href', '/approvals');
     expect(api.unexpected).toEqual([]);
   });
 
@@ -172,7 +166,7 @@ describe('auto-opens only from the map home', () => {
       'POST /api/me/today-shown': () => ({ body: { show: true } }),
     });
 
-    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(await screen.findByRole('main')).toBeInTheDocument();
     await settle();
     expect(api.count('POST /api/me/today-shown')).toBe(0);
     expect(where(router)).toBe('/jobs');

@@ -48,9 +48,14 @@ export const comingWith: Record<ComingWith, string> = {
 };
 
 export const setup = {
+  /** The title of the checklist's panel. */
+  heading: 'Setup checklist',
   listLabel: 'Setup steps',
   progress: (done: number, total: number) => `${done} of ${total} setup steps done`,
   ringLabel: (done: number, total: number) => `${done} of ${total} setup steps done`,
+  /** The divider before the steps that are not in the count above it. */
+  laterHeading: 'More to set up',
+  laterNote: 'Not in the count above',
   ownerNote: 'Your owner finishes setup.',
   chips: {
     todo: 'To do',
@@ -73,6 +78,9 @@ export const setup = {
     undoSkip: 'Undo skip',
     connectCalendar: 'Connect your calendar',
     connectAds: 'Connect ad accounts',
+    /** A finished step (or one waiting on someone else) still leads to where it can be looked at. */
+    review: 'Review',
+    reviewFor: (title: string) => `Review ${title}`,
   },
   sheet: {
     title: 'Your company on the map',

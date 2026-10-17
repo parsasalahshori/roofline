@@ -121,10 +121,24 @@ it('owner sees the plan, usage and plans', async () => {
   renderApp('/settings/billing');
 
   expect(await screen.findByText(billing.noPlan)).toBeInTheDocument();
+  expect(screen.getByText(billing.usageHeading)).toBeInTheDocument();
+  expect(screen.getByRole('region', { name: billing.noPlan })).toHaveAttribute('data-padded', 'true');
   expect(await screen.findByText('6 so far')).toBeInTheDocument();
   expect(screen.getAllByText('12 of 300 AI call minutes').length).toBeGreaterThan(0);
   expect(screen.getByText('$199/month')).toBeInTheDocument();
   expect(screen.getByText('Includes 300 AI call minutes and 1,000 text segments')).toBeInTheDocument();
+});
+
+it('a company with no meters has no usage heading, and no empty panel body', async () => {
+  signedIn({
+    status: 'trial_ended',
+    view: billingView({ status: 'trial_ended', hasPaymentMethod: false, usage: [], plans: [STARTER] }),
+  });
+  renderApp('/settings/billing');
+
+  expect(await screen.findByText(billing.noPlan)).toBeInTheDocument();
+  expect(screen.queryByText(billing.usageHeading)).not.toBeInTheDocument();
+  expect(screen.getByRole('region', { name: billing.noPlan })).toHaveAttribute('data-padded', 'false');
 });
 
 it('Pick this plan goes to checkout', async () => {
@@ -141,6 +155,28 @@ it('Pick this plan goes to checkout', async () => {
 
   await waitFor(() => expect(assign).toHaveBeenCalledWith(CHECKOUT_URL));
   expect(api.sent('POST /api/billing/checkout')).toEqual([{ planKey: 'starter' }]);
+});
+
+it('with several plans and none chosen no Pick this plan button is primary; the plan already chosen is', async () => {
+  signedIn({ view: billingView({ hasPaymentMethod: false, planKey: null, plans: [STARTER, GROWTH] }) });
+  renderApp('/settings/billing');
+
+  const buttons = await screen.findAllByRole('button', { name: billing.pickPlan });
+  expect(buttons).toHaveLength(2);
+  for (const button of buttons) expect(button).toHaveAttribute('data-variant', 'default');
+  cleanup();
+
+  signedIn({ view: billingView({ hasPaymentMethod: false, planKey: 'growth', plans: [STARTER, GROWTH] }) });
+  renderApp('/settings/billing');
+  const chosen = await screen.findAllByRole('button', { name: billing.pickPlan });
+  expect(chosen.map((button) => button.getAttribute('data-variant'))).toEqual(['default', 'primary']);
+});
+
+it('a single plan on offer is the one primary button', async () => {
+  signedIn({ view: billingView({ hasPaymentMethod: false, plans: [STARTER] }) });
+  renderApp('/settings/billing');
+
+  expect(await screen.findByRole('button', { name: billing.pickPlan })).toHaveAttribute('data-variant', 'primary');
 });
 
 it('subscribed owners switch plans in place', async () => {
@@ -298,7 +334,7 @@ it('a canceled company can pick its old plan again', async () => {
   });
   const { user } = renderApp('/settings/billing');
 
-  const card = (await screen.findByRole('heading', { name: 'Growth', level: 4 })).closest('li') as HTMLElement;
+  const card = (await screen.findByRole('heading', { name: 'Growth', level: 3 })).closest('li') as HTMLElement;
   expect(within(card).queryByText(billing.yourPlan)).not.toBeInTheDocument();
   await user.click(within(card).getByRole('button', { name: billing.pickPlan }));
 
@@ -317,6 +353,65 @@ it('an active subscriber still sees Your plan on its own plan', async () => {
   });
   renderApp('/settings/billing');
 
-  const card = (await screen.findByRole('heading', { name: 'Growth', level: 4 })).closest('li') as HTMLElement;
+  const card = (await screen.findByRole('heading', { name: 'Growth', level: 3 })).closest('li') as HTMLElement;
   expect(within(card).getByText(billing.yourPlan)).toBeInTheDocument();
+});
+
+it.each([
+  ['trial', /^Free trial until /],
+  ['active', /^Active$/],
+  ['past_due', /^Payment didn't go through$/],
+  ['trial_ended', /^Trial ended$/],
+  ['canceled', /^Canceled$/],
+] as const)('the plan panel says how the plan stands as a tag: %s', async (status, words) => {
+  signedIn({
+    status: status === 'past_due' ? 'past_due' : 'active',
+    view: billingView({ status, planKey: 'starter', planName: 'Starter', trialEndsAt: '2026-10-25T12:00:00.000Z', plans: [STARTER] }),
+  });
+  renderApp('/settings/billing');
+
+  const panel = (await screen.findByRole('heading', { name: 'Starter', level: 2 })).closest('section') as HTMLElement;
+  expect(within(panel).getByText(words)).toBeInTheDocument();
+});
+
+it('Invoices and card opens the payment portal from the plan panel', async () => {
+  const assign = vi.spyOn(go, 'assign').mockImplementation(() => {});
+  signedIn({
+    view: billingView({ planKey: 'starter', planName: 'Starter', hasPaymentMethod: true, canOpenPortal: true, plans: [STARTER] }),
+    routes: { 'POST /api/billing/portal': () => ({ body: { url: PORTAL_URL } }) },
+  });
+  const { user } = renderApp('/settings/billing');
+
+  const panel = (await screen.findByRole('heading', { name: 'Starter', level: 2 })).closest('section') as HTMLElement;
+  await user.click(within(panel).getByRole('button', { name: billing.invoicesAndCard }));
+
+  await waitFor(() => expect(assign).toHaveBeenCalledWith(PORTAL_URL));
+});
+
+it('there is no Invoices and card until the company has something to open', async () => {
+  signedIn({ view: billingView({ canOpenPortal: false }) });
+  renderApp('/settings/billing');
+
+  expect(await screen.findByText(billing.noPlan)).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: billing.invoicesAndCard })).not.toBeInTheDocument();
+});
+
+it('the company\'s own plan is tagged and the other plans offer a switch', async () => {
+  signedIn({
+    view: billingView({
+      status: 'active',
+      planKey: 'growth',
+      planName: 'Growth',
+      hasPaymentMethod: true,
+      plans: [STARTER, GROWTH],
+    }),
+  });
+  renderApp('/settings/billing');
+
+  const own = (await screen.findByRole('heading', { name: 'Growth', level: 3 })).closest('li') as HTMLElement;
+  const other = screen.getByRole('heading', { name: 'Starter', level: 3 }).closest('li') as HTMLElement;
+  expect(within(own).getByText(billing.yourPlan)).toBeInTheDocument();
+  expect(within(own).queryByRole('button')).toBeNull();
+  expect(within(other).getByRole('button', { name: billing.switchPlan })).toBeInTheDocument();
+  expect(within(other).queryByText(billing.yourPlan)).toBeNull();
 });

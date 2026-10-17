@@ -9,7 +9,6 @@ export const keys = {
   task: (id: string) => ['task', id] as const,
   summary: ['summary'] as const,
   attention: ['attention'] as const,
-  weather: ['weather'] as const,
   mapArea: ['map-area'] as const,
   pins: (bboxKey: string) => ['pins', bboxKey] as const,
   stormLayer: (bboxKey: string, zoom: number, days: number) => ['storm-layer', bboxKey, zoom, days] as const,

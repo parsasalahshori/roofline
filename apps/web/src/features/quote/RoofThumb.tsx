@@ -1,6 +1,6 @@
 import type { LngLat } from '@roofline/shared';
 import { useState, type ReactNode } from 'react';
-import styles from './QuotePage.module.css';
+import styles from './RoofThumb.module.css';
 
 /*
  * The home from above with its measured outline: a few satellite tiles laid out in Web Mercator and an SVG ring on
@@ -50,6 +50,11 @@ export function thumbLayout(ring: readonly LngLat[], center: LngLat): ThumbLayou
     }
   }
   return { tiles, points: pts.map(([x, y]) => [((x - x0) / W) * 100, ((y - y0) / H) * 100]) };
+}
+
+/** The photo's stand-in before the answer is in (the scan's guides are drawn over it). */
+export function RoofThumbPlaceholder({ children }: { children?: ReactNode }) {
+  return <div className={styles.placeholder}>{children}</div>;
 }
 
 /**

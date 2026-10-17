@@ -1,146 +1,574 @@
-/* The window factory order: the Measure frame's header (MeasureWindow.module.css), then one scrolling column. */
-
-.headerBack {
-  margin-left: auto;
-}
-
-.tall {
-  min-height: 44px;
-}
-
-.scroll {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
-}
-
-.content {
+/*
+ * The factory order: a ticket (what it is, where, the PO, how many lines), the rule the sizes follow, the sheet with one
+ * row a window beside the picked window's panel, then the totals and the sheet as the factory reads it. The page's width
+ * is the container, so the same markup is two columns on a desktop and one on a phone, where each row stacks.
+ * Everything is a token; rules on a kit button name [data-variant] so they outrank the kit's variant rules.
+ */
+.host {
+  container: orderSheet / inline-size;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 16px;
+  min-width: 0;
+}
+
+.muted {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+.note {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.mono {
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The save state at the top right of the bar, and the loading and empty states in the middle */
+.saveState {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.saveState svg {
+  color: var(--ink-3);
+}
+
+.saveState[data-save="saved"] svg {
+  color: var(--ok-text);
+}
+
+.saveState[data-save="error"] {
+  color: var(--bad-text);
+}
+
+.saveState[data-save="error"] svg {
+  color: var(--bad-text);
 }
 
 .centre {
   display: flex;
-  flex: 1 1 auto;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   gap: 12px;
-  padding: 24px 16px;
+  padding: 48px 16px;
   text-align: center;
 }
 
 .preparing {
   margin: 0;
-  font-size: 16px;
-  font-weight: 700;
+  font: 700 18px / 1.2 var(--f-display);
 }
 
-.muted {
+/* The ticket: a stub, a dashed tear line, the details and the actions */
+.ticket {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+}
+
+.stub {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 14px 24px;
+  border-right: 1px dashed var(--line-ctl);
+}
+
+.eyebrow,
+.cellLabel,
+.optionsTitle,
+.safetyTitle {
   margin: 0;
-  color: var(--ds-text-label, #505b64);
-  font-size: 12.5px;
-  line-height: 1.4;
+  color: var(--ink-3);
+  font: 500 var(--font-size-min) / 1.2 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.nowrap {
+.status {
+  color: var(--ink);
+  font: 750 24px / 1.1 var(--f-display);
+  font-stretch: 112%;
+  letter-spacing: -0.01em;
+}
+
+.status[data-status="ready"] {
+  color: var(--ok-text);
+}
+
+.status[data-status="sent"] {
+  color: var(--info-text);
+}
+
+/* Every cell hangs from the same top edge as the stub, so the eyebrows (FACTORY ORDER, ADDRESS, PO NUMBER, LINES) share one baseline */
+.cells {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: flex-start;
+  gap: 32px;
+  min-width: 0;
+  padding: 14px 24px;
+}
+
+.cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cell[data-cell="address"] {
+  flex: 1 1 auto;
+}
+
+.cellValue {
+  overflow: hidden;
+  font: 500 15px / 1.3 var(--f-ui);
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* The top: address, status, save state, PO number and the photo-only note */
-.top {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.topLine {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-}
-
-.address {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.statusPill {
-  display: inline-flex;
-  align-items: center;
-  min-height: 26px;
-  padding: 0 12px;
-  border: 1px solid var(--ds-hairline-strong, #c3cbd1);
-  border-radius: var(--ds-r-chip, 999px);
-  background: var(--ds-surface-2, #eceff1);
-  font-size: 12.5px;
-  font-weight: 700;
-}
-
-.statusPill[data-status="ready"] {
-  border-color: var(--ds-success, #0ca30c);
-  background: var(--ds-success-tint, #e2f4e2);
-  color: var(--ds-success-ink, #0a6e1d);
-}
-
-.statusPill[data-status="sent"] {
-  border-color: var(--ds-info, #2f6fde);
-  background: var(--ds-info-tint, #e3ecfb);
-  color: var(--ds-info-ink, #1f55b3);
-}
-
-.saveState {
-  margin: 0 0 0 auto;
-  color: var(--ds-text-label, #505b64);
-  font-size: 12.5px;
-}
-
-.saveState[data-save="error"] {
-  color: var(--ds-danger-ink, #a32424);
-  font-weight: 600;
-}
-
+/* The PO field reads as a cell of the ticket: the label is the eyebrow, the box is a line */
 .poField {
-  width: 220px;
+  width: 168px;
+  gap: 4px;
+}
+
+.poField label {
+  color: var(--ink-3);
+  font: 500 var(--font-size-min) / 1.2 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .poField input {
-  min-height: 44px;
+  min-height: 0;
+  height: 21px;
+  padding: 0;
+  border-width: 0 0 1px;
+  border-radius: 0;
+  background: transparent;
+  font-size: 15px;
+  line-height: 1.3;
 }
 
-.po {
+.ticketActions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px 12px 0;
+}
+
+@container orderSheet (max-width: 859.98px) {
+  .ticket {
+    flex-wrap: wrap;
+  }
+
+  .stub {
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px 16px;
+    border-right: 0;
+    border-bottom: 1px dashed var(--line-ctl);
+  }
+
+  .cells {
+    flex-wrap: wrap;
+    gap: 12px 24px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px 16px;
+  }
+
+  .cell[data-cell="address"] {
+    flex: 1 1 100%;
+  }
+
+  .ticketActions {
+    justify-content: flex-start;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0 16px 14px;
+  }
+}
+
+/* The rule the sizes follow, and what can be ordered at all */
+.rule {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.rule svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--ink-3);
+}
+
+.rule p {
+  margin: 0;
+}
+
+.rule p + p {
+  color: var(--ink-3);
+}
+
+/* The sheet beside the picked window's panel */
+.work {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  min-width: 0;
+}
+
+@container orderSheet (min-width: 1040px) {
+  .work {
+    grid-template-columns: minmax(0, 1fr) 304px;
+  }
+
+  /* Beside the table the picked window's panel stays in view: its options scroll inside it and the box that clears a Check stays pinned under them */
+  .detailPanel {
+    position: sticky;
+    top: 16px;
+  }
+
+  /* The panel starts about 220px down the page and its title takes 72 more: the room left on the first screen, so the pinned box is on it from the start */
+  .detailFrame {
+    max-height: max(320px, calc(100dvh - 324px));
+  }
+
+  .detailScroll {
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+
+  /* While there is more to scroll to, the bottom edge fades: a row or a note cut there reads as "scroll", not as a fault */
+  .detailScroll[data-more="true"] {
+    mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 32px), transparent);
+  }
+}
+
+.sheet {
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* The kit's panel header does not wrap: where the card is narrow, "Bring in new photo windows" takes a line of its own, not the title's room */
+.sheet > div:first-child {
+  flex-wrap: wrap;
+}
+
+.sheet > div:first-child > :last-child:not(:first-child) {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+
+/* "Bring in new photo windows" wraps onto two lines where the header is narrow */
+.refresh[data-variant] {
+  min-width: 0;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  line-height: 1.2;
+  text-align: left;
+  white-space: normal;
+}
+
+.table th,
+.table td {
+  padding-right: 6px;
+  padding-left: 6px;
+}
+
+.thSelect,
+.cSelect {
+  width: 36px;
+  padding-right: 0;
+}
+
+.thLine,
+.cLine {
+  width: 48px;
+}
+
+.table .lineButton[data-variant] {
+  min-width: 36px;
+  padding: 0 4px;
+  color: var(--ink-3);
+  font: 600 var(--font-size-min) / 1 var(--f-mono);
+  letter-spacing: 0.04em;
+}
+
+.table .lineButton[data-variant][aria-pressed="true"] {
+  color: var(--ink);
+}
+
+/* Location and quantity are typed in the row: a bare box until it is hovered or has focus */
+.cellField input {
+  min-height: 32px;
+  padding: 0 8px;
+  border-color: transparent;
+  background: transparent;
+  font-size: var(--font-size-body);
+}
+
+.cellField input:hover:not(:disabled) {
+  border-color: var(--line-ctl);
+}
+
+.cLocation {
+  min-width: 104px;
+}
+
+.cQty .cellField {
+  width: 56px;
+}
+
+/* The word "Qty" beside the number is for a phone, where there are no column heads (see the end) */
+.qtyLabel {
+  display: none;
+}
+
+.cQty input {
+  text-align: right;
+  font-family: var(--f-mono);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.measuredStack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Under the size: the error each side carries into the order size */
+.errors {
+  color: var(--ink-3);
+  font: 500 var(--font-size-min) / 1.3 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* What the photos read is the quiet number; the size to order is the one that counts */
+.cMeasured [data-scale] {
+  color: var(--ink-3);
+}
+
+/* On a selected row's tint the quiet ink steps up one, so its text keeps 4.5:1 in both themes (the kit's size parts read --ink-3 too) */
+.row[data-selected="true"] {
+  --ink-3: var(--ink-2);
+}
+
+.cOrder [data-scale] > [aria-hidden="true"] {
+  font-weight: 700;
+}
+
+.cSpec {
+  min-width: 140px;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.specName {
+  color: var(--ink);
   font-weight: 600;
 }
 
-/* Bulk apply */
-.bulk {
-  position: sticky;
-  z-index: 2;
-  top: 0;
+.specName[data-unset="true"] {
+  color: var(--ink-3);
+  font-weight: 500;
+}
+
+/*
+ * The style is a line of its own. The parts after it keep whole, with a dot hanging on each one's left edge, centred in the
+ * 12px between parts. The run is clipped 4px in from where its parts start, and each part is pulled 2px left over the
+ * one before: a part that wraps to the start of a line has its dot out past the clip, so a dot is only ever drawn
+ * between two parts on the same line, never dangling at the end of one.
+ */
+.specList {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--ds-accent-line, rgba(217, 158, 0, 0.55));
-  border-radius: var(--ds-r-card, 12px);
-  background: var(--ds-accent-tint, #fff1d1);
+}
+
+.specRest {
+  display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+  margin-left: -4px;
+  overflow: hidden;
+}
+
+.specRest > span {
+  position: relative;
+  margin-left: -2px;
+  padding: 0 8px 0 6px;
+  white-space: nowrap;
+}
+
+.specRest > span:not(:first-child)::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 3px;
+  height: 3px;
+  margin: -1.5px 0 0 -1.5px;
+  border-radius: 50%;
+  background: var(--ink-3);
+}
+
+.thSpec {
+  padding-right: 14px;
+}
+
+/* What every window shares, said once in the head on the same line: "SPEC · all White / White" */
+.specNote {
+  margin-left: 6px;
+  color: var(--ink-3);
+  font: 500 var(--font-size-min) / 1.2 var(--f-ui);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.specNote::before {
+  content: "\00b7";
+  margin-right: 6px;
+}
+
+/* The picked row says what it needs: a bar at the edge in the colour of its tint */
+.row {
+  --bar: var(--brand);
+  cursor: pointer;
+}
+
+.row[data-status="check"] {
+  --bar: var(--warn);
+}
+
+/* The picked row of a window to look at has the warning amber (the kit's row tones have none): tape yellow is for measuring marks */
+.row[data-status="check"][data-selected="true"] > td {
+  background: var(--warn-tint);
+}
+
+.row[data-status="error"] {
+  --bar: var(--bad);
+}
+
+.row[data-selected="true"] > td:first-child {
+  box-shadow: inset 3px 0 0 var(--bar);
+}
+
+/* The foot of the sheet: the counts, why it cannot go yet, and the actions */
+.foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.footText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+  margin: 0;
+  font: 500 13px / 1.4 var(--f-mono);
+}
+
+.counts span + span::before {
+  content: "\00b7";
+  margin-right: 8px;
+  color: var(--ink-3);
+}
+
+.footReasons {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.reason {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.reason svg {
+  flex: none;
+  color: var(--warn-text);
+}
+
+.reason[data-tone="stop"],
+.reason[data-tone="stop"] svg {
+  color: var(--bad-text);
+}
+
+.footActions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Change the ticked windows together */
+.bulk {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
 }
 
 .bulkCount {
   margin: 0;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .bulkFields {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 8px;
+  gap: 10px 12px;
 }
 
 .bulkActions {
@@ -149,463 +577,446 @@
   gap: 8px;
 }
 
-.selectAll {
+/* The picked window: what it looks like and reads, then how it is built; a pinned foot under the scrolling part */
+.detailFrame {
   display: flex;
-  align-items: center;
-  min-height: 44px;
+  flex-direction: column;
+  min-height: 0;
 }
 
-/* The lines table: one tbody per line, a summary row and an options row */
-.lines {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-}
-
-.caption {
-  margin-bottom: 8px;
-  color: var(--ds-text-label, #505b64);
-  font-size: 12.5px;
-  text-align: left;
-}
-
-.lines th {
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--line, #dde2e6);
-  color: var(--ds-text-label, #505b64);
-  font-size: 12px;
-  font-weight: 700;
-  text-align: left;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.line td {
-  padding: 8px;
-  vertical-align: top;
-}
-
-.line .summaryRow td {
-  border-top: 1px solid var(--line, #dde2e6);
-  background: var(--ds-surface, #fff);
-}
-
-.line .optionsRow td {
-  padding-top: 0;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--line, #dde2e6);
-  background: var(--ds-surface, #fff);
-}
-
-.line[data-status="error"] .summaryRow td:first-child,
-.line[data-status="error"] .optionsRow td:first-child {
-  box-shadow: inset 4px 0 0 var(--ds-danger, #d03b3b);
-}
-
-.line[data-status="check"] .summaryRow td:first-child,
-.line[data-status="check"] .optionsRow td:first-child {
-  box-shadow: inset 4px 0 0 var(--ds-accent, #ffc21a);
-}
-
-.selectCell {
-  width: 44px;
-}
-
-.selectCell label {
-  min-width: 44px;
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-}
-
-.photoCell {
-  width: 72px;
-}
-
-.thumb {
-  display: block;
-  width: 64px;
-  height: 64px;
-  border-radius: var(--ds-r-tag, 6px);
-  background: var(--ds-surface-2, #eceff1);
-  object-fit: cover;
-}
-
-.locationCell {
-  min-width: 160px;
-}
-
-.locationInner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.lineNo {
-  display: inline-grid;
-  flex: none;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: var(--ds-r-chip, 999px);
-  background: var(--ds-surface-2, #eceff1);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.compactField {
+.detailScroll {
   flex: 1 1 auto;
+  min-height: 0;
+  padding: 16px;
+}
+
+.detailFoot {
+  flex: none;
+  padding: 6px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.detailBody {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
   min-width: 0;
 }
 
-.compactField input {
-  min-height: 44px;
+.detailLook {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
 }
 
-.qtyCell {
-  width: 88px;
+/* Under the table (the page is not wide enough for the side panel) it has room for two columns */
+@container orderSheet (min-width: 640px) and (max-width: 1039.98px) {
+  .detailBody {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 20px;
+    align-items: start;
+  }
 }
 
-.sizeCell {
-  min-width: 120px;
+.photo {
+  display: block;
+  width: 100%;
+  max-height: 280px;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  border-radius: var(--r-2);
+  background: var(--sunken);
+}
+
+.noPhoto {
+  margin: 0;
+  padding: 18px;
+  border-radius: var(--r-2);
+  background: var(--sunken);
+  color: var(--ink-3);
+  font-size: 13px;
+  text-align: center;
+}
+
+.readings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.readingSize {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+
+.readingSize .smallest {
+  flex-basis: 100%;
+}
+
+/* "Photo 1" stays on one line; the size beside it wraps instead */
+.reading > td:first-child {
   white-space: nowrap;
 }
 
-.sizeCell > span {
-  display: block;
+/* On the tape tint the quiet ink steps up one, so its text keeps 4.5:1 in both themes (the kit's size parts read --ink-3 too) */
+.reading[data-tone="tape"] {
+  --ink-3: var(--ink-2);
 }
 
-.orderSize {
-  display: block;
-  font-size: 16px;
-  font-weight: 800;
+/* On a tape-tinted row, so tape ink: the order takes this side of this photo */
+.smallest {
+  color: var(--tape-ink);
+  font-size: var(--font-size-min);
+  font-weight: 600;
 }
 
-.special {
-  display: inline-block;
-  margin-top: 4px;
-  padding: 2px 8px;
-  border-radius: var(--ds-r-chip, 999px);
-  background: var(--ds-info-tint, #e3ecfb);
-  color: var(--ds-info-ink, #1f55b3);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.statusCell {
-  min-width: 200px;
-}
-
-.lineStatus {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 26px;
-  padding: 0 10px;
-  border-radius: var(--ds-r-chip, 999px);
-  font-size: 12.5px;
-  font-weight: 700;
-}
-
-.lineStatus[data-status="ready"] {
-  background: var(--ds-success-tint, #e2f4e2);
-  color: var(--ds-success-ink, #0a6e1d);
-}
-
-.lineStatus[data-status="check"] {
-  background: var(--ds-accent-tint, #fff1d1);
-  color: var(--ds-accent-ink, #8a5a00);
-}
-
-.lineStatus[data-status="error"] {
-  background: var(--ds-danger-tint, #fbe3e3);
-  color: var(--ds-danger-ink, #a32424);
-}
-
-.reasons {
-  margin: 6px 0;
-  padding-left: 18px;
-  font-size: 12.5px;
+.readingsNote {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 13px;
   line-height: 1.4;
 }
 
+.reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reasons li {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--r-2);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.reasons li svg {
+  flex: none;
+  margin-top: 1px;
+}
+
 .reasons li[data-level="error"] {
-  color: var(--ds-danger-ink, #a32424);
+  background: var(--bad-tint);
+  color: var(--bad-text);
 }
 
 .reasons li[data-level="check"] {
-  color: var(--ds-accent-ink, #8a5a00);
+  background: var(--warn-tint);
+  color: var(--warn-text);
 }
 
-/* The options row: pickers in a wrapping grid */
 .options {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-  gap: 10px 12px;
-  margin: 0;
-  padding: 0 0 0 52px;
-  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
-.options select,
-.options input {
-  min-height: 44px;
+.optionsTitle {
+  padding: 0;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
 }
 
 .toggles {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 4px 16px;
-}
-
-.toggles button {
-  min-height: 44px;
-}
-
-.notes {
-  grid-column: span 2;
+  gap: 8px 20px;
 }
 
 .safety {
-  display: grid;
-  grid-column: 1 / -1;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: 8px 12px;
-  padding: 10px 12px;
-  border-radius: var(--ds-r-card, 12px);
-  background: var(--ds-bg, #f6f7f8);
-}
-
-.safetyTitle {
-  grid-column: 1 / -1;
-  margin: 0;
-  color: var(--ds-text-label, #505b64);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--r-2);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 
 .yesNo {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.question {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.yesNoButtons {
-  display: inline-flex;
-  gap: 6px;
-}
-
-.answer {
-  min-width: 64px;
-  min-height: 44px;
-  border: 1px solid var(--ds-hairline-strong, #c3cbd1);
-  background: var(--ds-surface, #fff);
-}
-
-.answer[data-on="true"] {
-  border-color: var(--ds-text-1, #151c22);
-  background: var(--ds-text-1, #151c22);
-  color: var(--ds-surface, #fff);
-}
-
-.sill {
-  max-width: 220px;
-}
-
-.suggestions {
-  display: flex;
-  grid-column: 1 / -1;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
-  padding: 8px 10px;
-  border: 1px solid var(--ds-accent-line, rgba(217, 158, 0, 0.55));
-  border-radius: var(--ds-r-ctl, 9px);
-  background: var(--ds-accent-tint, #fff1d1);
-}
-
-.suggestion {
-  flex: 1 1 260px;
-  margin: 0;
-  font-size: 12.5px;
-  line-height: 1.4;
-}
-
-.useTempered {
-  min-height: 44px;
-  border: 1px solid var(--ds-text-1, #151c22);
-  background: var(--ds-surface, #fff);
-}
-
-/* Totals, the sheet preview and the actions */
-.bottom {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(260px, 1fr);
-  gap: 16px;
-  align-items: start;
-}
-
-.panel {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
-  padding: 14px;
-  border: 1px solid var(--line, #dde2e6);
-  border-radius: var(--ds-r-card, 12px);
-  background: var(--ds-surface, #fff);
-}
-
-.panelTitle {
-  margin: 0;
-  color: var(--ds-text-label, #505b64);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.totals {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-}
-
-.total {
-  display: flex;
   justify-content: space-between;
   gap: 12px;
 }
 
+.question {
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.yesNoButtons {
+  display: flex;
+  gap: 6px;
+}
+
+.answer {
+  min-width: 56px;
+}
+
+.answer[data-on="true"][data-variant],
+.answer[data-on="true"][data-variant]:hover {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  box-shadow: inset 0 0 0 1px var(--brand);
+  color: var(--brand-text);
+}
+
+.suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--r-2);
+  background: var(--warn-tint);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 30%, transparent);
+  color: var(--warn-text);
+}
+
+.suggestion {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.useTempered {
+  align-self: flex-start;
+}
+
+/* The totals and the sheet as the factory reads it */
+.summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  min-width: 0;
+}
+
+@container orderSheet (min-width: 1040px) {
+  .summary {
+    grid-template-columns: 300px minmax(0, 1fr);
+  }
+}
+
+.totals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+  margin: 0;
+}
+
 .total dt {
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
+  font: 500 var(--font-size-min) / 1.2 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .total dd {
-  margin: 0;
-  font-weight: 700;
+  margin: 2px 0 0;
+  font: 600 20px / 1.2 var(--f-mono);
   font-variant-numeric: tabular-nums;
 }
 
-.sheetScroll {
-  overflow-x: auto;
+.sheetEmpty {
+  margin: 0;
+  padding: 16px;
+  color: var(--ink-3);
+  font-size: 13px;
 }
 
-.sheet {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12.5px;
+.nowrap {
+  white-space: nowrap;
 }
 
-.sheetCaption {
-  margin-bottom: 6px;
-  color: var(--ds-text-label, #505b64);
-  text-align: left;
-}
-
-.sheet th,
-.sheet td {
-  padding: 4px 6px;
-  border-bottom: 1px solid var(--line, #dde2e6);
-  text-align: left;
-  vertical-align: top;
-}
-
-.sheet th {
-  font-weight: 700;
-}
-
-.downloads {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-@media (max-width: 1100px) {
-  .bottom {
-    grid-template-columns: minmax(0, 1fr) minmax(260px, 1fr);
+/*
+ * A phone: no header row, and each window is a card of two lines: its number, where it is and whether it is ready; then
+ * the size to order and how many (the word "Qty" beside the number). What the photos read and how it is built are in the
+ * picked window's panel. The table keeps its roles (set in the markup), since the display changes would otherwise drop
+ * them for some screen readers. The sheet's actions are pinned above the tab bar while its lines scroll.
+ */
+@container orderSheet (max-width: 719.98px) {
+  /* The card must not clip the pinned actions (sticky stops at an overflow edge) */
+  .sheet {
+    overflow: visible;
   }
 
-  .bottom > :nth-child(2) {
-    grid-column: 1 / -1;
-    grid-row: 2;
+  /* "Bring in new photo windows" stays on the title's line, in two lines of its own, instead of dropping under it */
+  .sheet > div:first-child {
+    flex-wrap: nowrap;
   }
-}
 
-/* Narrow (a tablet held upright, a phone): each line becomes a stacked card */
-@media (max-width: 820px) {
-  .lines,
-  .lines tbody,
-  .lines tr,
-  .lines td {
+  .sheet > div:first-child > :last-child:not(:first-child) {
+    flex: 0 1 150px;
+  }
+
+  .table,
+  .table tbody {
     display: block;
   }
 
-  .lines thead {
+  .table thead {
     position: absolute;
     width: 1px;
     height: 1px;
     overflow: hidden;
     clip-path: inset(50%);
+    white-space: nowrap;
   }
 
-  .line {
-    margin-bottom: 12px;
-    border: 1px solid var(--line, #dde2e6);
-    border-radius: var(--ds-r-card, 12px);
-    overflow: hidden;
-  }
-
-  .line .summaryRow {
+  .table .row {
     display: grid;
-    grid-template-columns: 44px 72px minmax(0, 1fr);
+    grid-template-columns: 44px 44px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "sel line loc status"
+      "sel line order qty";
+    border-bottom: 1px solid var(--line);
   }
 
-  .line .summaryRow td {
-    border-top: 0;
-  }
-
-  .locationCell {
-    grid-column: 3;
-  }
-
-  .sizeCell,
-  .qtyCell,
-  .statusCell {
-    grid-column: 1 / -1;
+  /* Each cell fills its grid area (so a picked row's tint is one block) and centres what it holds */
+  .table .row > td {
+    display: flex;
+    align-items: center;
     width: auto;
+    padding: 4px;
+    border-bottom: 0;
   }
 
-  .sizeCell::before {
-    content: attr(data-label);
-    display: block;
-    color: var(--ds-text-label, #505b64);
-    font-size: 12px;
-    font-weight: 700;
+  .table .row > td.cMeasured,
+  .table .row > td.cSpec {
+    display: none;
   }
 
-  .options {
+  /* The whole 44px square is the box's target */
+  .table .row > td.cSelect {
+    grid-area: sel;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .cSelect label {
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .cLine {
+    grid-area: line;
+    justify-content: center;
+  }
+
+  .cLocation {
+    grid-area: loc;
+    min-width: 0;
+  }
+
+  .cLocation .cellField {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .cStatus {
+    grid-area: status;
+    justify-content: flex-end;
+  }
+
+  /* The tag ends where the quantity's number and the sheet's own padding end (16px in), not 4px from the card's edge */
+  .table .row > td.cStatus {
+    padding-right: 16px;
+  }
+
+  .cOrder {
+    grid-area: order;
+  }
+
+  .table .row > td.cQty {
+    grid-area: qty;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .qtyLabel {
+    display: inline;
+    color: var(--ink-3);
+    font-size: 13px;
+  }
+
+  .cQty .cellField {
+    width: 64px;
+  }
+
+  /* Boxes are as tall as a thumb, and the location's text starts where the size's does */
+  .cellField input {
+    min-height: 44px;
+  }
+
+  .cLocation .cellField input {
     padding-left: 0;
   }
 
-  .notes {
-    grid-column: 1 / -1;
+  .poField input {
+    height: auto;
+    min-height: 44px;
   }
 
-  .bottom {
-    grid-template-columns: minmax(0, 1fr);
+  /* The PO box is a thumb tall: the line count beside it is centred in the same 44px, so the two read on one line */
+  .cell[data-cell="lines"] .cellValue {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
   }
 
-  .bottom > :nth-child(2) {
-    grid-row: auto;
+  /* "Back to windows" lines up with the ticket's text, not indented by its button's padding */
+  .back[data-variant] {
+    margin-left: -20px;
+  }
+
+  /* The counts and why it cannot go yet stay with the sheet; Save draft and Mark ready are pinned */
+  .foot {
+    display: contents;
+  }
+
+  .footText {
+    padding: 14px 16px;
+    border-top: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+
+  .footActions {
+    position: sticky;
+    z-index: 3;
+    bottom: 0;
+    flex-wrap: nowrap;
+    padding: 12px 16px;
+    border-top: 1px solid var(--line);
+    border-radius: 0 0 var(--r-3) var(--r-3);
+    background: var(--surface);
+    box-shadow: 0 -10px 14px -12px color-mix(in srgb, var(--ink) 30%, transparent);
+  }
+
+  .footActions:empty {
+    display: none;
+  }
+
+  .footActions > * {
+    flex: 1 1 auto;
   }
 }

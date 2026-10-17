@@ -1,10 +1,16 @@
-import { cleanup, screen } from '@testing-library/react';
+import { cleanup, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProposalView } from '@roofline/shared';
 import { Button } from '@roofline/ui';
 import { proposals } from '../src/copy/proposals.ts';
 import { formatLastOpened } from '../src/features/proposals/format.ts';
 import { renderAt } from './helpers.tsx';
+
+const phoneMode = vi.hoisted(() => ({ phone: false }));
+vi.mock('../src/shell/useIsPhone.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/shell/useIsPhone.ts')>()),
+  useIsPhone: () => phoneMode.phone,
+}));
 
 const mocks = vi.hoisted(() => ({
   proposal: undefined as unknown,
@@ -25,9 +31,26 @@ vi.mock('../src/features/proposals/api.ts', () => ({
 }));
 vi.mock('../src/features/settings/api.ts', () => ({ useCompany: () => ({ data: { timezone: 'America/Chicago' } }) }));
 vi.mock('../src/features/proposals/OptionCard.tsx', () => ({
-  OptionCard: (props: { option: { id: string; name: string }; editable: boolean; onChange: (patch: { enabled?: boolean }) => void }) => (
-    <div data-testid={`option-${props.option.id}`} data-editable={String(props.editable)}>
+  OptionCard: (props: {
+    option: { id: string; name: string };
+    editable: boolean;
+    open?: boolean;
+    signed?: boolean;
+    onSelect?: () => void;
+    radioName?: string;
+    onChange: (patch: { enabled?: boolean }) => void;
+  }) => (
+    <div
+      data-testid={`option-${props.option.id}`}
+      data-editable={String(props.editable)}
+      data-open={String(props.open)}
+      data-signed={String(props.signed === true)}
+      data-pickable={String(props.onSelect !== undefined)}
+    >
       {props.option.name}
+      {props.onSelect ? (
+        <input type="radio" name={props.radioName} aria-label={`pick-${props.option.id}`} checked={props.open} onChange={props.onSelect} />
+      ) : null}
       <Button onClick={() => props.onChange({ enabled: false })}>{`off-${props.option.id}`}</Button>
     </div>
   ),
@@ -36,7 +59,7 @@ vi.mock('../src/features/proposals/OptionCard.tsx', () => ({
 const { ProposalWindow } = await import('../src/features/proposals/ProposalWindow.tsx');
 
 function make(overrides: Partial<ProposalView> = {}): ProposalView {
-  const option = (id: string, tier: 'good' | 'better' | 'best') => ({ id, tier, name: `Option ${id}`, enabled: true });
+  const option = (id: string, tier: 'good' | 'better' | 'best', totalCents: number) => ({ id, tier, name: `Option ${id}`, enabled: true, totalCents });
   return {
     id: 'p1',
     number: 'P-1001',
@@ -46,7 +69,7 @@ function make(overrides: Partial<ProposalView> = {}): ProposalView {
     address: '12 Oak St',
     measurementId: 'm1',
     basis: 'estimate',
-    options: [option('o1', 'good'), option('o2', 'better'), option('o3', 'best')],
+    options: [option('o1', 'good', 940000), option('o2', 'better', 1100000), option('o3', 'best', 1380000)],
     messageBody: 'Hi {link}',
     validUntil: 'Nov 11',
     sentAt: null,
@@ -71,6 +94,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  phoneMode.phone = false;
 });
 
 describe('ProposalWindow', () => {
@@ -131,5 +155,180 @@ describe('formatLastOpened', () => {
   });
   it('accepts an undefined zone', () => {
     expect(() => formatLastOpened('2026-10-12T20:00:00Z', now, undefined)).not.toThrow();
+  });
+});
+
+describe('ProposalWindow page', () => {
+  it('the number is the title; Jobs and the customer are in the trail', () => {
+    mocks.proposal = make();
+    show();
+    expect(screen.getByRole('heading', { level: 1, name: proposals.title('P-1001') })).toBeInTheDocument();
+    const trail = within(screen.getByRole('navigation', { name: 'Breadcrumb' }));
+    expect(trail.getByRole('link', { name: 'Jobs' })).toHaveAttribute('href', '/jobs');
+    expect(trail.getByRole('link', { name: 'Dana Smith' })).toHaveAttribute('href', '/jobs/j1');
+  });
+
+  it('under the title: its status, who it is for and until when', () => {
+    mocks.proposal = make();
+    show();
+    expect(screen.getByText(proposals.statusLabelFor('draft'))).toBeInTheDocument();
+    // One word each, so the page puts the same dot between them
+    const meta = document.querySelector('[data-proposal-meta]') as HTMLElement;
+    expect(within(meta).getByText('Dana Smith')).toBeInTheDocument();
+    expect(within(meta).getByText('12 Oak St')).toBeInTheDocument();
+    expect(within(meta).getByText(proposals.validUntil('Nov 11'))).toBeInTheDocument();
+  });
+
+  it('the valid-until date is plain: Nov 9, not 2026-11-09', () => {
+    mocks.proposal = make({ validUntil: '2026-11-09' });
+    show();
+    expect(screen.getByText(proposals.validUntil('Nov 9'))).toBeInTheDocument();
+  });
+
+  it('the actions are in the head: the PDF is a link to the proposal pdf', () => {
+    mocks.proposal = make();
+    show();
+    expect(screen.getByRole('link', { name: proposals.downloadPdf })).toHaveAttribute('href', '/api/proposals/p1/pdf');
+  });
+
+  it('shows all three options as radio rows on a desktop, the recommended one picked first', async () => {
+    mocks.proposal = make();
+    const { user } = show();
+    const group = within(screen.getByRole('radiogroup', { name: proposals.tiersLabel }));
+    for (const id of ['o1', 'o2', 'o3']) {
+      expect(screen.getByTestId(`option-${id}`).closest('[hidden]')).toBeNull();
+      expect(screen.getByTestId(`option-${id}`)).toHaveAttribute('data-pickable', 'true');
+    }
+    expect(screen.getByTestId('option-o2')).toHaveAttribute('data-open', 'true');
+    expect(screen.getByTestId('option-o1')).toHaveAttribute('data-open', 'false');
+    expect(screen.getByTestId('option-o3')).toHaveAttribute('data-open', 'false');
+
+    await user.click(group.getByRole('radio', { name: 'pick-o3' }));
+    expect(screen.getByTestId('option-o3')).toHaveAttribute('data-open', 'true');
+    expect(screen.getByTestId('option-o2')).toHaveAttribute('data-open', 'false');
+  });
+
+  it('a signed proposal opens the option the customer signed, and marks it, wherever the recommended one is', () => {
+    mocks.proposal = make({ status: 'signed', canEdit: false, signed: { optionId: 'o3', name: 'Dana Smith', at: '2026-10-13T20:00:00Z' } });
+    show();
+    expect(screen.getByTestId('option-o3')).toHaveAttribute('data-open', 'true');
+    expect(screen.getByTestId('option-o2')).toHaveAttribute('data-open', 'false');
+    expect(screen.getByTestId('option-o3')).toHaveAttribute('data-signed', 'true');
+    expect(screen.getByTestId('option-o1')).toHaveAttribute('data-signed', 'false');
+    expect(screen.getByTestId('option-o2')).toHaveAttribute('data-signed', 'false');
+  });
+
+  it('on a phone the signed option is the tab that opens first', () => {
+    phoneMode.phone = true;
+    mocks.proposal = make({ status: 'signed', canEdit: false, signed: { optionId: 'o1', name: 'Dana Smith', at: '2026-10-13T20:00:00Z' } });
+    show();
+    const tabs = within(screen.getByRole('radiogroup', { name: proposals.tiersLabel }));
+    expect(tabs.getByRole('radio', { name: /^Good/ })).toBeChecked();
+    expect(screen.getByTestId('option-o1').closest('[hidden]')).toBeNull();
+    expect(screen.getByTestId('option-o2').closest('[hidden]')).not.toBeNull();
+  });
+
+  it('a proposal nobody has signed marks no option as signed', () => {
+    mocks.proposal = make();
+    show();
+    for (const id of ['o1', 'o2', 'o3']) expect(screen.getByTestId(`option-${id}`)).toHaveAttribute('data-signed', 'false');
+  });
+
+  it('the rows share one radio name, and the arrow keys move the pick between them, round the ends', async () => {
+    mocks.proposal = make();
+    const { user } = show();
+    const radio = (id: string) => screen.getByRole('radio', { name: `pick-${id}` });
+    expect(new Set(['o1', 'o2', 'o3'].map((id) => (radio(id) as HTMLInputElement).name)).size).toBe(1);
+
+    radio('o2').focus();
+    await user.keyboard('{ArrowDown}');
+    expect(screen.getByTestId('option-o3')).toHaveAttribute('data-open', 'true');
+    expect(radio('o3')).toHaveFocus();
+    await user.keyboard('{ArrowDown}');
+    expect(screen.getByTestId('option-o1')).toHaveAttribute('data-open', 'true');
+    expect(radio('o1')).toHaveFocus();
+    await user.keyboard('{ArrowUp}');
+    expect(screen.getByTestId('option-o3')).toHaveAttribute('data-open', 'true');
+  });
+
+  it('on a phone: three tabs with their prices, the recommended option first, one option at a time', async () => {
+    phoneMode.phone = true;
+    mocks.proposal = make();
+    const { user } = show();
+
+    const tabs = within(screen.getByRole('radiogroup', { name: proposals.tiersLabel }));
+    expect(tabs.getAllByRole('radio').map((tab) => tab.textContent)).toEqual([
+      expect.stringContaining('Good'),
+      expect.stringContaining('Better'),
+      expect.stringContaining('Best'),
+    ]);
+    expect(tabs.getByRole('radio', { name: /^Better/ })).toBeChecked();
+    expect(tabs.getByRole('radio', { name: /^Good/ })).toHaveTextContent(proposals.money(940000));
+    // Better is shown; Good and Best are mounted but hidden
+    expect(screen.getByTestId('option-o2').closest('[hidden]')).toBeNull();
+    expect(screen.getByTestId('option-o1').closest('[hidden]')).not.toBeNull();
+    expect(screen.getByTestId('option-o3').closest('[hidden]')).not.toBeNull();
+    // The tabs pick, so the headings are not radios
+    expect(screen.getByTestId('option-o2')).toHaveAttribute('data-pickable', 'false');
+
+    await user.click(tabs.getByRole('radio', { name: /^Good/ }));
+    expect(screen.getByTestId('option-o1').closest('[hidden]')).toBeNull();
+    expect(screen.getByTestId('option-o2').closest('[hidden]')).not.toBeNull();
+  });
+
+  it('shows activity only when something has happened', () => {
+    mocks.proposal = make();
+    show();
+    expect(screen.queryByRole('region', { name: proposals.activityHeading })).toBeNull();
+    cleanup();
+
+    mocks.proposal = make({ status: 'sent', sentAt: '2026-10-12T15:00:00Z' });
+    show();
+    const activity = within(screen.getByRole('region', { name: proposals.activityHeading }));
+    expect(activity.getByText(proposals.eventsNone)).toBeInTheDocument();
+  });
+
+  it('a proposal the customer signed or declined is never listed as not opened, whatever its view count says', () => {
+    mocks.proposal = make({ status: 'signed', sentAt: '2026-10-12T15:00:00Z', signed: { optionId: 'o2', name: 'Karen White', at: '2026-10-12T19:54:00Z' } });
+    show();
+    const activity = within(screen.getByRole('region', { name: proposals.activityHeading }));
+    expect(activity.queryByText(proposals.eventsNone)).toBeNull();
+    expect(activity.getByText(/^Signed by Karen White/)).toBeInTheDocument();
+    cleanup();
+
+    mocks.proposal = make({ status: 'declined', sentAt: '2026-10-12T15:00:00Z', declined: { at: '2026-10-12T19:54:00Z', reason: null } });
+    show();
+    expect(within(screen.getByRole('region', { name: proposals.activityHeading })).queryByText(proposals.eventsNone)).toBeNull();
+  });
+
+  it('the text message is a panel of its own', () => {
+    mocks.proposal = make({ status: 'sent', sentAt: '2026-10-12T15:00:00Z', messageBody: 'Hi there' });
+    show();
+    expect(within(screen.getByRole('region', { name: proposals.messageHeading })).getByText('Hi there')).toBeInTheDocument();
+  });
+
+  it('a sent text reads as the customer got it: the name and the address filled in, the link as a quiet word, no braces', () => {
+    mocks.proposal = make({
+      status: 'sent',
+      sentAt: '2026-10-12T15:00:00Z',
+      messageBody: 'Hi {first_name}, your proposal for {address}: {link} Reply STOP to opt out.',
+    });
+    show();
+    const region = within(screen.getByRole('region', { name: proposals.messageHeading }));
+    expect(region.getByText(/Hi Dana, your proposal for 12 Oak St:/)).toBeInTheDocument();
+    expect(region.getByText(proposals.messageLinkWord)).toBeInTheDocument();
+    expect(region.getByText(/Reply STOP to opt out\./)).toBeInTheDocument();
+    expect(region.queryByText(/[{}]/)).toBeNull();
+  });
+
+  it('a draft keeps the words that fill in as written in the box and reads back resolved under it', () => {
+    mocks.proposal = make({ messageBody: 'Hi {first_name}, here is {link}' });
+    show();
+    const region = within(screen.getByRole('region', { name: proposals.messageHeading }));
+    expect(region.getByRole('textbox')).toHaveValue('Hi {first_name}, here is {link}');
+    const preview = region.getByText(proposals.messagePreview).parentElement as HTMLElement;
+    expect(within(preview).getByText(/Hi Dana, here is/)).toBeInTheDocument();
+    expect(within(preview).getByText(proposals.messageLinkWord)).toBeInTheDocument();
+    expect(preview.textContent).not.toMatch(/[{}]/);
   });
 });

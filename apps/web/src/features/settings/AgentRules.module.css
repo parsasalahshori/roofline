@@ -1,94 +1,27 @@
-/* The Agent rules section sits under the Agents tab's own content, one block of stacked groups */
-.section {
+/* The rules under the time baselines: three panels (claims, scheduler, follow-up) on the two-column grid, then the save bar */
+.body {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-width: 720px;
-  margin-top: 24px;
   min-width: 0;
 }
 
-.title {
-  margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
-}
-
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-/* A group is a fieldset, drawn without its border so the title and fields sit as plain blocks */
-.group {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  min-width: 0;
-}
-
-.groupTitle {
-  padding: 0;
-  margin: 0 0 4px;
-  font-size: var(--font-size-body);
-  font-weight: 600;
-}
-
-.help {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: var(--font-size-min);
-}
-
-/* Fields wrap onto a new line rather than squeezing; on a phone each one takes the full width */
-.row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px 16px;
-}
-
-.field {
-  flex: 1 1 200px;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.field input {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 40px;
-}
-
+/* The checkboxes of the follow-up panel, one under another, each with its explanation */
 .switches {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
-/* The whole switch row is the target: at least 40px tall on a phone */
-.switches label {
-  min-height: 40px;
-  display: flex;
-  align-items: center;
+/* A line of explanation that begins the number fields under the switches: set off from them by a hairline */
+.rule {
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
 }
 
+/* A number that is not whole, answered under its group */
 .problem {
   margin: 0;
-  color: var(--danger);
+  color: var(--bad-text);
   font-size: var(--font-size-body);
-}
-
-.save {
-  justify-self: start;
-  min-height: 40px;
-}
-
-@media (max-width: 767.98px) {
-  .field {
-    flex-basis: 100%;
-  }
 }

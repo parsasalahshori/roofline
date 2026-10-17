@@ -1,36 +1,14 @@
-.brand {
-  display: inline-flex;
+.crumbs {
+  min-width: 0;
+}
+
+/* The page's own controls (the Measure switch): empty, and so no gap, on every other page */
+.actions {
+  display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 0;
-  padding: 0 8px;
 }
 
-.logo {
-  flex: none;
-  width: 20px;
-  height: 20px;
-  color: var(--ds-text-1, #151c22);
-}
-
-/* The wordmark: Archivo at its widest, bold, as the reference sets it */
-.company {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--lift-bar-ink);
-  font-size: 13px;
-  font-stretch: 125%;
-  font-weight: 700;
-  letter-spacing: -0.13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* The open app, quiet beside the company */
-.app {
-  flex: none;
-  color: var(--ds-text-3, #6b7680);
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
+.actions:empty {
+  display: none;
 }

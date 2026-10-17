@@ -1,21 +1,93 @@
-.window {
+/*
+ * One job's page: the next step, details, claim and agent tasks at the right (the side column of the job mockup), the
+ * proposals, roof, visits, quotes and the timeline in the main column. A phone is one column in the order a person
+ * works: the next step, the proposal and the roof, then the rest.
+ */
+.content {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 14px;
   min-width: 0;
 }
 
-.loading {
-  padding: 16px 0;
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 14px;
+  align-items: start;
 }
 
-.stats {
+.main,
+.side {
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
 }
 
-.stats > * {
-  flex: 1 1 140px;
-  min-width: 0;
+.main {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.side {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+@media (max-width: 1023.98px) {
+  .grid {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .main,
+  .side {
+    display: contents;
+  }
+
+  .next {
+    order: 1;
+  }
+
+  .proposals {
+    order: 2;
+  }
+
+  .roof {
+    order: 3;
+  }
+
+  .details {
+    order: 4;
+  }
+
+  .appointments {
+    order: 5;
+  }
+
+  .quotes {
+    order: 6;
+  }
+
+  .claim {
+    order: 7;
+  }
+
+  .tasks {
+    order: 8;
+  }
+
+  .timeline {
+    order: 9;
+  }
+}
+
+.skeletonPanel {
+  padding: 16px;
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: var(--e-1);
 }

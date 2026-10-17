@@ -1,18 +1,60 @@
-/* The drawing pad: a white canvas that takes pointer, pen and touch input without scrolling the page. */
+/*
+ * The drawing pad: paper that takes pointer, pen and touch input without scrolling the page. The canvas itself is dark ink
+ * on white (that is what is saved). In dark mode it is inverted on screen (light ink on black) and screened onto the well,
+ * so the black drops out and the well keeps the sheet's own colour, with the ink still light on it.
+ */
 .pad {
   display: flex;
   flex-direction: column;
+  gap: 7px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
+  min-height: 24px;
+}
+
+.heading {
+  margin: 0;
+  font: 600 0.8125rem/1.2 var(--f-ui);
+}
+
+.clear {
+  min-height: 32px;
+  min-width: 40px;
+  color: var(--ink-3);
+  font-size: 0.8125rem;
+}
+
+.well {
+  position: relative;
+  /* The canvas blends with the well alone, never with what is behind the sheet */
+  isolation: isolate;
+  height: 140px;
+  overflow: hidden;
+  border-radius: var(--r-2);
+  background: var(--surface);
+}
+
+/* The hairline round the well is drawn over the canvas (an inset shadow on the well itself would sit under it) */
+.well::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px var(--line-ctl);
+  pointer-events: none;
 }
 
 .canvas {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
-  height: 160px;
-  box-sizing: border-box;
-  background: #ffffff;
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  height: 100%;
   touch-action: none;
   cursor: crosshair;
 }
@@ -22,12 +64,33 @@
   opacity: 0.6;
 }
 
-.toolbar {
-  display: flex;
-  justify-content: flex-end;
+/* The line to sign on and the cross at its start: over the canvas, out of the way of the pen */
+.base {
+  position: absolute;
+  right: 14px;
+  bottom: 28px;
+  left: 14px;
+  border-top: 1px dashed var(--line-ctl);
+  pointer-events: none;
 }
 
-.clear {
-  min-height: 40px;
-  min-width: 40px;
+.cross {
+  position: absolute;
+  bottom: 32px;
+  left: 14px;
+  color: var(--ink-3);
+  font: 600 1rem/1 var(--f-ui);
+  pointer-events: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme="light"])) .canvas {
+    filter: invert(1);
+    mix-blend-mode: screen;
+  }
+}
+
+:global(:root[data-theme="dark"]) .canvas {
+  filter: invert(1);
+  mix-blend-mode: screen;
 }

@@ -1,0 +1,44 @@
+/* The map's frame: a 10px panel with a hairline, the land colour behind the tiles while they load */
+.panel {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 320px;
+  overflow: hidden;
+  border-radius: var(--r-3);
+  background: var(--map-land);
+  box-shadow: var(--e-1);
+  /* What floats over the map follows the map's own width, not the screen's: a laptop with a side column has a narrow map too */
+  container: mappanel / inline-size;
+}
+
+.loading {
+  position: absolute;
+  inset: 0;
+}
+
+/* Over the map, top left, clear of the layer switch at the right (about 250px); wide enough for the storm note to run two lines. The wrapper lets clicks through to the map between its children. */
+.overlay {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(520px, calc(100% - 274px));
+  pointer-events: none;
+}
+
+/* A narrow map (a phone, or a laptop with the side column open): the layer switch takes the top right, so the callout sits under it, across the width */
+@container mappanel (max-width: 640px) {
+  .overlay {
+    top: 68px;
+    right: 12px;
+    max-width: none;
+  }
+}
+
+.overlay > * {
+  pointer-events: auto;
+}

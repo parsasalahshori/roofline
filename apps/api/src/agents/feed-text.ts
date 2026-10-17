@@ -86,8 +86,6 @@ const FD_TITLES = {
 } as const;
 const FD_TEXTS_COUNTED = /^Answered (\d+) texts?$/;
 
-/** Prefix for a created plan whose title does not already read as "a/an ...". */
-const PLAN_PREFIX = 'a plan: ';
 const ARTICLE = /^(a|an) /i;
 
 function fill(template: string, values: Record<string, string | number>): string {
@@ -100,8 +98,19 @@ function countOf(value: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** A title set in quotes, so a colon inside it is not read as the sentence's own. */
+function quoted(title: string): string {
+  return `\u201c${title}\u201d`;
+}
+
+/** A task title set into a sentence: quoted when it holds a colon of its own, so the sentence keeps one colon ("Finished: ..."). */
+function titled(title: string): string {
+  return title.includes(':') ? quoted(title) : title;
+}
+
+/** What was drafted: a title that reads as "a/an ..." stands as it is, any other is quoted ("drafted "Storm plan: Elm Street""). */
 function planPhrase(title: string): string {
-  return ARTICLE.test(title) ? title : `${PLAN_PREFIX}${title}`;
+  return ARTICLE.test(title) ? title : quoted(title);
 }
 
 /** Texts sent by a send_sms_batch step, from its stored result; plain when the count is missing. */
@@ -114,13 +123,13 @@ function textsSentSentence(row: FeedRow): string {
 function finishedSentence(row: FeedRow): string {
   switch (row.data.status) {
     case 'done':
-      return fill(FEED_COPY.finishedDone, { title: row.taskTitle });
+      return fill(FEED_COPY.finishedDone, { title: titled(row.taskTitle) });
     case 'partly_done':
-      return fill(FEED_COPY.finishedPartly, { title: row.taskTitle });
+      return fill(FEED_COPY.finishedPartly, { title: titled(row.taskTitle) });
     case 'failed':
-      return fill(FEED_COPY.finishedFailed, { title: row.taskTitle });
+      return fill(FEED_COPY.finishedFailed, { title: titled(row.taskTitle) });
     default:
-      return fill(FEED_COPY.finishedOther, { title: row.taskTitle });
+      return fill(FEED_COPY.finishedOther, { title: titled(row.taskTitle) });
   }
 }
 
@@ -162,7 +171,7 @@ export function feedSentence(row: FeedRow): string {
   switch (row.kind) {
     case 'created': {
       // A person (not an agent) creates a task only by re-running an expired plan.
-      if (row.actorName !== null) return fill(FEED_COPY.reran, { actor: row.actorName, title: row.taskTitle });
+      if (row.actorName !== null) return fill(FEED_COPY.reran, { actor: row.actorName, title: titled(row.taskTitle) });
       const base = fill(FEED_COPY.created, { agent, plan: planPhrase(row.taskTitle) });
       return row.customerFirstName ? base + fill(FEED_COPY.createdFor, { firstName: row.customerFirstName }) : base;
     }
@@ -190,7 +199,7 @@ export function feedSentence(row: FeedRow): string {
     }
     case 'declined':
       if (row.stepType !== null) return fill(FEED_COPY.declinedStep, { actor: row.actorName ?? SOMEONE });
-      if (row.actorName === null && typeof row.data.replacedByTaskId === 'string') return fill(FEED_COPY.replaced, { agent, title: row.taskTitle });
+      if (row.actorName === null && typeof row.data.replacedByTaskId === 'string') return fill(FEED_COPY.replaced, { agent, title: titled(row.taskTitle) });
       return fill(FEED_COPY.declined, { actor: row.actorName ?? SOMEONE });
     case 'step_done': {
       if (row.stepType === 'send_sms_batch') return textsSentSentence(row);
@@ -207,19 +216,19 @@ export function feedSentence(row: FeedRow): string {
     case 'finished':
       return finishedSentence(row);
     case 'expired':
-      return fill(FEED_COPY.expired, { title: row.taskTitle });
+      return fill(FEED_COPY.expired, { title: titled(row.taskTitle) });
     default:
-      return fill(FEED_COPY.fallback, { agent, title: row.taskTitle });
+      return fill(FEED_COPY.fallback, { agent, title: titled(row.taskTitle) });
   }
 }
 
 /** Sentence for a draft waiting for approval, e.g. "Storm Scout has a draft waiting: <title>". */
 export function waitingDraftText(agent: Agent, title: string): string {
-  return fill(FEED_COPY.waitingDraft, { agent: AGENT_NAMES[agent], title });
+  return fill(FEED_COPY.waitingDraft, { agent: AGENT_NAMES[agent], title: titled(title) });
 }
 
 /** Sentence for a task that needs attention; `reason` is the plain error text or null. */
 export function waitingAttentionText(agent: Agent, title: string, reason: string | null): string {
-  const sentence = fill(FEED_COPY.waitingAttention, { agent: AGENT_NAMES[agent], title });
+  const sentence = fill(FEED_COPY.waitingAttention, { agent: AGENT_NAMES[agent], title: titled(title) });
   return reason ? fill(FEED_COPY.waitingReason, { sentence, reason }) : sentence;
 }

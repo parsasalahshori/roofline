@@ -7,19 +7,24 @@
   min-width: 0;
   padding: 12px 16px;
   background: var(--surface-2);
-  color: var(--text);
+  color: var(--ink);
   border-left: 4px solid var(--line);
-  border-radius: var(--radius-card);
-  font-family: var(--font);
+  border-radius: var(--r-3);
+  font-family: var(--f-ui);
   font-size: var(--font-size-body);
 }
 
+/* The edges are the status colours, never the company's: on WinChoice --brand is red, and a warning must not read as an error */
+.banner[data-tone="info"] {
+  border-left-color: var(--info);
+}
+
 .banner[data-tone="warning"] {
-  border-left-color: var(--accent);
+  border-left-color: var(--warn);
 }
 
 .banner[data-tone="danger"] {
-  border-left-color: var(--danger);
+  border-left-color: var(--bad);
 }
 
 .text {

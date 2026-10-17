@@ -46,14 +46,63 @@ test('agents window: cards show the numbers from the seeded tasks', async ({ pag
   await expect(storm.getByText('Waiting', { exact: true })).toBeVisible();
   await expect(storm.getByText(/^Waiting on you: [2-9]\d*$/)).toBeVisible();
   await expect(estimator.getByText('Waiting on you: 1', { exact: true })).toBeVisible();
-  // Storm minutes this week include today's 90-minute task: at least 1 whole hour, marked as an estimate.
+  // Storm minutes this week include today's 90-minute task: at least an hour, marked as an estimate ("about 1.5 hours").
   expect(AGENTS_SEED_MINUTES.stormToday).toBe(90);
-  await expect(storm.getByText(/^about [1-9]\d* hrs$/)).toBeVisible();
+  await expect(storm.getByText(/^about [1-9]\d*(\.5)? hours?$/)).toBeVisible();
 
   // Picking a card opens its panel, which links to the agent's own page.
   await page.getByRole('button', { name: 'Show details for Storm Scout' }).click();
   const open = page.getByRole('link', { name: 'Open Storm Scout' });
   await expect(open).toHaveAttribute('href', '/agents/storm-scout');
+});
+
+test('agents window: tabbing to a card draws a ring around the whole card', async ({ page, loginAs, markTodaySeen, agentsSeed }) => {
+  void agentsSeed;
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/agents');
+  await expect(card(page, 'Estimator')).toBeVisible({ timeout: 15_000 });
+
+  // A keyboard user reaches a card by its name. The ring is drawn by the stretched name button's overlay, so it is the
+  // overlay's outline that has to be a real line (a wrong colour token makes it fall back to none and nothing shows).
+  const pick = page.getByRole('button', { name: 'Show details for Estimator' });
+  for (let step = 0; step < 60 && !(await pick.evaluate((el) => el === document.activeElement)); step += 1) {
+    await page.keyboard.press('Tab');
+  }
+  await expect(pick).toBeFocused();
+  const ring = await pick.evaluate((el) => {
+    const after = getComputedStyle(el, '::after');
+    const box = el.closest('article')?.getBoundingClientRect();
+    return { style: after.outlineStyle, width: after.outlineWidth, overlay: [Math.round(parseFloat(after.width)), Math.round(parseFloat(after.height))], card: box ? [Math.round(box.width), Math.round(box.height)] : null };
+  });
+  expect(ring.style).toBe('solid');
+  expect(ring.width).toBe('2px');
+  // The overlay covers the card edge to edge, so the ring is around the card and not only around the words
+  expect(ring.overlay).toEqual(ring.card);
+});
+
+test.describe('agents on a tablet', () => {
+  // 1024px less the icon rail leaves under 62rem: no room for the panel beside the cards
+  test.use({ viewport: { width: 1024, height: 800 } });
+
+  test('with no room for the panel a card opens its agent page, and there is no panel stacked under the page', async ({
+    page,
+    loginAs,
+    markTodaySeen,
+    agentsSeed,
+  }) => {
+    void agentsSeed;
+    await loginAs(page, 'owner');
+    await markTodaySeen('owner@a.test');
+    await page.goto('/agents');
+    await expect(grid(page)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('complementary', { name: /Front Desk/ })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^Show details for / })).toHaveCount(0);
+
+    await page.getByRole('link', { name: 'Open Estimator' }).click();
+    await expect(page).toHaveURL(/\/agents\/estimator$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Estimator' })).toBeVisible({ timeout: 15_000 });
+  });
 });
 
 test('agents window: totals tiles show tasks, hours and office time, marked as estimates', async ({ page, loginAs, markTodaySeen, agentsSeed }) => {
@@ -63,9 +112,9 @@ test('agents window: totals tiles show tasks, hours and office time, marked as e
   await page.goto('/agents');
   const tiles = page.getByRole('region', { name: 'Totals for your agents' });
   await expect(tiles).toBeVisible({ timeout: 15_000 });
-  await expect(tiles.getByRole('heading', { name: 'Tasks today' })).toBeVisible();
-  await expect(tiles.getByRole('heading', { name: 'Hours saved this week' })).toBeVisible();
-  await expect(tiles.getByRole('heading', { name: 'Office time saved this week' })).toBeVisible();
+  await expect(tiles.getByText('Tasks today', { exact: true })).toBeVisible();
+  await expect(tiles.getByText('Saved this week', { exact: true })).toBeVisible();
+  await expect(tiles.getByText('Office time saved', { exact: true })).toBeVisible();
   // Estimated money and time say so.
   await expect(tiles.getByText(/^about \$[\d,]+$/)).toBeVisible();
   await expect(tiles).toContainText('(estimate)');
@@ -113,15 +162,16 @@ test('agent page: the owner pauses Storm Scout through the confirm sheet and the
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   await page.goto('/agents/storm-scout');
-  const pause = page.getByRole('switch', { name: 'Paused' });
+  // The page's switch means what the card's does: on is running
+  const pause = page.getByRole('switch', { name: 'Running' });
   await expect(pause).toBeVisible({ timeout: 15_000 });
-  await expect(pause).toHaveAttribute('aria-checked', 'false');
+  await expect(pause).toHaveAttribute('aria-checked', 'true');
   await pause.click();
   const sheet = page.getByRole('dialog', { name: 'Pause this agent?' });
   await expect(sheet).toBeVisible();
   await sheet.getByRole('button', { name: 'Pause', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Pause this agent?' })).toHaveCount(0, { timeout: 15_000 });
-  await expect(pause).toHaveAttribute('aria-checked', 'true', { timeout: 15_000 });
+  await expect(pause).toHaveAttribute('aria-checked', 'false', { timeout: 15_000 });
 
   await page.goto('/agents');
   await expect(card(page, 'Storm Scout')).toContainText('Paused', { timeout: 15_000 });
@@ -178,7 +228,7 @@ test('waiting list: rows link to the approvals review', async ({ page, loginAs, 
   await open.click();
   await expect(page).toHaveURL(new RegExp('/approvals/' + agentsSeed.draftTaskId + '$'));
   // The /approvals/:id route opens the review dialog (approvals.spec.ts); its Approve button proves the review, not the list, is showing.
-  const review = page.getByRole('dialog');
+  const review = page.getByRole('main');
   await expect(review.getByRole('button', { name: /^Approve \d+ steps?/ })).toBeVisible({ timeout: 15_000 });
   await expect(review.getByText(agentsSeed.draftTitle).first()).toBeVisible();
 });

@@ -1,16 +1,50 @@
-import { Button, Card, EmptyState, Skeleton, StatCard, useToast } from '@roofline/ui';
-import { useState } from 'react';
+import { Button, EmptyState, KpiTile, Panel, Skeleton, Tag, useToast } from '@roofline/ui';
+import { useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { ApiError } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
 import { errors } from '../../copy/errors.ts';
 import { storm } from '../../copy/storm.ts';
+import { AppPage } from '../../shell/AppPage.tsx';
 import { useDismissStorm, useRedraftStorm, useStorm } from './api.ts';
+import { count, hailName, hailSize, stormDay, stormDayLong } from './format.ts';
+import { planTag } from './planTag.ts';
 import { StormResults } from './StormResults.tsx';
 import { StormSwathMap } from './StormSwathMap.tsx';
 import styles from './StormDetail.module.css';
 
-/** One storm: where hail fell, who it hit, the plan, and the results so far. */
+/** The one sentence under the plan's tag: where the plan stands. */
+function planLine(status: string | undefined): string {
+  switch (status) {
+    case undefined:
+      return storm.planPanelNone;
+    case 'draft':
+    case 'awaiting_owner':
+      return storm.planPanelWaiting;
+    case 'approved':
+    case 'running':
+      return storm.planPanelRunning;
+    case 'declined':
+    case 'expired':
+      return storm.planPanelOver;
+    default:
+      return storm.planPanelDone;
+  }
+}
+
+/** The page while a storm loads, or when it cannot be found: the Storm page's own head, then the message. */
+function Shell({ children }: { children: ReactNode }) {
+  return (
+    <AppPage app="storm" crumbs={[{ label: storm.crumbStorm, href: '/storm' }]}>
+      {children}
+    </AppPage>
+  );
+}
+
+/**
+ * One storm: where hail fell (a map with its key), who it hit (the strip of numbers), the plan and what its results are so
+ * far. The owner and office can draft a plan again and dismiss the storm.
+ */
 export function StormDetail() {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -25,8 +59,20 @@ export function StormDetail() {
     toast.show(error instanceof ApiError ? error.message : errors.generic, 'error');
   }
 
-  if (q.isPending) return <Skeleton lines={4} />;
-  if (q.isError || !q.data) return <EmptyState title={storm.notFound} />;
+  if (q.isPending) {
+    return (
+      <Shell>
+        <Skeleton lines={4} />
+      </Shell>
+    );
+  }
+  if (q.isError || !q.data) {
+    return (
+      <Shell>
+        <EmptyState title={storm.notFound} />
+      </Shell>
+    );
+  }
 
   const data = q.data;
   const role = me.data?.role;
@@ -36,74 +82,117 @@ export function StormDetail() {
   /** An expired or declined plan is over: only a new one makes sense. */
   const plansReplaced = planStatus === 'expired' || planStatus === 'declined';
   const canRedraft = data.plan === null || planStatus === 'draft' || plansReplaced;
+  const waiting = planStatus === 'draft' || planStatus === 'awaiting_owner';
+  const name = item.placeName ?? stormDay(item.day);
+  const tag = planTag(data.plan === null ? null : (planStatus ?? null));
+  const showOpen = data.plan !== null && !plansReplaced;
 
   return (
-    <div className={styles.page}>
-      <h1 className={styles.title}>{item.placeName ?? item.day}</h1>
-      <p className={styles.size}>{storm.upTo(item.maxIn.toFixed(2))}</p>
-      <div className={styles.stats}>
-        <StatCard label={storm.customersHitLabel} value={item.customersHit} />
-        <StatCard label={storm.homesHitLabel} value={item.homesHit} />
-      </div>
-      <StormSwathMap swath={data.swath} />
-      <Card as="section" aria-label={storm.planHeadingDetail} className={styles.plan}>
-        {data.plan && !plansReplaced ? (
-          <Button href={'/storm/plans/' + encodeURIComponent(data.plan.taskId)}>{storm.openPlan}</Button>
-        ) : null}
-        {canAct && canRedraft ? (
-          <Button
-            variant="primary"
-            disabled={redraft.isPending}
-            onClick={() => {
-              redraft.mutate(id, { onError: showError });
-            }}
-          >
-            {redraft.isPending ? storm.redrafting : storm.redraft}
-          </Button>
-        ) : null}
-      </Card>
-      <StormResults results={data.results} running={data.plan?.status === 'running'} />
-      {canAct && !confirming ? (
-        <div className={styles.actions}>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setConfirming(true);
-            }}
-          >
-            {storm.dismiss}
-          </Button>
+    <AppPage
+      app="storm"
+      heading={name}
+      eyebrow={stormDayLong(item.day)}
+      subtitle={false}
+      crumbs={[
+        { label: storm.crumbStorm, href: '/storm' },
+        { label: name },
+      ]}
+      stats={
+        <div className={styles.stats}>
+          <KpiTile
+            label={storm.hailSizeLabel}
+            value={hailSize(item.maxIn)}
+            unit={storm.hailUnit}
+            meta={storm.hailSizeMeta(hailName(item.maxIn))}
+          />
+          <KpiTile label={storm.customersHitLabel} value={count(item.customersHit)} meta={storm.insideSwath} />
+          <KpiTile label={storm.homesHitLabel} value={count(item.homesHit)} meta={storm.insideSwath} />
         </div>
-      ) : null}
-      {canAct && confirming ? (
-        <div role="alertdialog" aria-label={storm.dismissConfirmTitle} className={styles.confirm}>
-          <h2>{storm.dismissConfirmTitle}</h2>
-          <p>{storm.dismissConfirmBody}</p>
-          <div className={styles.actions}>
+      }
+    >
+      <div className={styles.page}>
+        <div className={styles.top}>
+          <div className={styles.map}>
+            <StormSwathMap swath={data.swath} />
+          </div>
+          <Panel
+            as="section"
+            title={storm.planPanelTitle}
+            aria-label={storm.planHeadingDetail}
+            tag={
+              <Tag tone={tag.tone} icon={tag.icon}>
+                {tag.label}
+              </Tag>
+            }
+          >
+            <div className={styles.plan}>
+              <p className={styles.line}>{planLine(planStatus)}</p>
+              {showOpen || (canAct && canRedraft) ? (
+                <div className={styles.buttons}>
+                  {showOpen && data.plan ? (
+                    <Button variant={waiting ? 'primary' : 'default'} href={'/storm/plans/' + encodeURIComponent(data.plan.taskId)}>
+                      {storm.openPlan}
+                    </Button>
+                  ) : null}
+                  {canAct && canRedraft ? (
+                    <Button
+                      variant={data.plan === null || plansReplaced ? 'primary' : 'default'}
+                      disabled={redraft.isPending}
+                      onClick={() => {
+                        redraft.mutate(id, { onError: showError });
+                      }}
+                    >
+                      {redraft.isPending ? storm.redrafting : storm.redraft}
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </Panel>
+        </div>
+        <StormResults results={data.results} running={planStatus === 'running'} />
+        {canAct && !confirming ? (
+          <div className={styles.footer}>
             <Button
-              disabled={dismiss.isPending}
+              variant="quiet"
               onClick={() => {
-                dismiss.mutate(id, {
-                  onSuccess: () => {
-                    void navigate('/storm');
-                  },
-                  onError: showError,
-                });
+                setConfirming(true);
               }}
             >
-              {storm.dismissConfirm}
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setConfirming(false);
-              }}
-            >
-              {storm.dismissCancel}
+              {storm.dismiss}
             </Button>
           </div>
-        </div>
-      ) : null}
-    </div>
+        ) : null}
+        {canAct && confirming ? (
+          <Panel role="alertdialog" title={storm.dismissConfirmTitle} className={styles.confirm}>
+            <p className={styles.line}>{storm.dismissConfirmBody}</p>
+            <div className={styles.buttons}>
+              <Button
+                variant="ink"
+                busy={dismiss.isPending}
+                onClick={() => {
+                  dismiss.mutate(id, {
+                    onSuccess: () => {
+                      void navigate('/storm');
+                    },
+                    onError: showError,
+                  });
+                }}
+              >
+                {storm.dismissConfirm}
+              </Button>
+              <Button
+                variant="quiet"
+                onClick={() => {
+                  setConfirming(false);
+                }}
+              >
+                {storm.dismissCancel}
+              </Button>
+            </div>
+          </Panel>
+        ) : null}
+      </div>
+    </AppPage>
   );
 }

@@ -1,27 +1,13 @@
-/* Crew weather, as the reference draws it: six day tiles, the risky day lit amber, and the Scheduler's offer under them. */
-.card {
-  composes: card from './glass.module.css';
-}
-
-.head {
-  composes: head from './glass.module.css';
-}
-
-.title {
-  composes: title from './glass.module.css';
-}
-
-.chip {
-  composes: chip from './glass.module.css';
-  background: var(--ds-accent-tint, #fff1d1);
-  color: var(--ds-accent-ink, #8a5a00);
+/* Crew weather: six day tiles in a row, a risky day flagged and tinted, and the Scheduler's offer beneath */
+.panel {
+  min-width: 0;
 }
 
 .days {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 4px;
-  margin: 12px 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
@@ -30,84 +16,67 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  min-width: 0;
-  padding: 8px 0;
-  border-radius: 12px;
-  color: var(--ds-text-label, #505b64);
-  font-size: var(--font-size-min);
+  gap: 4px;
+  padding: 8px 2px;
+  border-radius: var(--r-2);
+  background: var(--surface-2);
+  color: var(--ink-2);
 }
 
 .day[data-risky="true"] {
-  background: var(--ds-accent-tint, #fff1d1);
-  box-shadow: inset 0 0 0 1px rgba(250, 178, 25, 0.5);
-  color: var(--ds-accent-ink, #8a5a00);
+  background: var(--warn-tint);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 45%, transparent);
+  color: var(--warn-text);
 }
 
 .name {
-  color: var(--ds-text-label, #505b64);
-  font-weight: 600;
+  font: 600 var(--font-size-min)/1 var(--f-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .icon {
   display: inline-flex;
-  color: var(--ds-text-label, #505b64);
-}
-
-.icon svg {
-  width: 20px;
-  height: 20px;
-}
-
-.day[data-icon="sun"] .icon {
-  color: #b8662f;
+  color: var(--ink-3);
 }
 
 .day[data-risky="true"] .icon {
-  color: var(--ds-info-ink, #1f55b3);
+  color: var(--warn-text);
 }
 
 .high {
-  color: var(--ds-text-1, #151c22);
-  font-size: 14px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  font: 600 14px/1 var(--f-mono);
+}
+
+.day[data-risky="true"] .high {
+  color: var(--warn-text);
 }
 
 .rain {
-  color: var(--ds-text-3, #6b7680);
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font: 500 var(--font-size-min)/1 var(--f-mono);
 }
 
-.day[data-risky="true"] .rain {
-  color: var(--ds-accent-ink, #8a5a00);
-  font-weight: 600;
+.flag {
+  width: 12px;
+  height: 12px;
 }
 
-/* What the Scheduler can move: an amber note with a yellow mark */
 .move {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  margin: 12px 0 0;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: #fff3cf;
-  box-shadow: inset 0 0 0 1px rgba(217, 158, 0, 0.35);
-  color: var(--ds-text-1, #151c22);
-  font-size: 13px;
-  line-height: 1.375;
+  gap: 8px;
+  margin-top: 12px;
 }
 
-.moveMark {
-  display: inline-grid;
-  flex: none;
-  width: 18px;
-  height: 18px;
-  place-items: center;
-  border-radius: 5px;
-  background: var(--ds-accent, #ffc21a);
-  box-shadow: inset 0 0 0 1px rgba(217, 158, 0, 0.6);
-  color: var(--ds-text-1, #151c22);
+.moveText {
+  flex: 1 1 180px;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.35;
 }

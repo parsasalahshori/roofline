@@ -1,0 +1,79 @@
+.tile {
+  position: relative;
+  display: flex;
+  /* The words start at the top, so every label in a strip sits on one line even when a tile has no note under its number */
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+}
+
+.label {
+  color: var(--ink-3);
+  font: 600 var(--font-size-min)/1.2 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+
+.value {
+  margin: 0;
+  color: var(--ink);
+  font: 750 28px/1 var(--f-display);
+  font-stretch: 112%;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.unit {
+  margin-left: 4px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.meta {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+/* The bars sit in the bottom right corner, over no text: the label and the number keep the tile's whole line, and only
+   the note under them leaves room for the bars. A narrow tile no longer wraps its label to make space. */
+.spark {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  width: 104px;
+  height: 36px;
+}
+
+.tile[data-spark="true"] .meta {
+  padding-right: 116px;
+}
+
+.bar {
+  flex: 1 1 0;
+  min-width: 3px;
+  border-radius: 2px 2px 0 0;
+  background: var(--line-2);
+}
+
+.bar[data-current="true"] {
+  background: var(--brand);
+}

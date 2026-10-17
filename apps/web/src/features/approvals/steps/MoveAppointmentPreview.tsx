@@ -10,14 +10,14 @@ import type { EditFieldSpec, EditValues, StepKit, StepKitContext, StepPreviewPro
 const HOUR_MS = 3_600_000;
 const KEY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
-function dateOf(value: unknown): Date | null {
+export function dateOf(value: unknown): Date | null {
   if (typeof value !== 'string' || value === '') return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
 /** The move is a whole-day one when it starts at the zone's midnight and lasts at least 20 hours. */
-function isAllDay(start: Date, end: Date | null, zone: string): boolean {
+export function isAllDay(start: Date, end: Date | null, zone: string): boolean {
   if (end === null) return true;
   return startOfZonedDay(start, zone).getTime() === start.getTime() && end.getTime() - start.getTime() >= 20 * HOUR_MS;
 }

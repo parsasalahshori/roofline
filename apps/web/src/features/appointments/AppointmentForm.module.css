@@ -1,24 +1,120 @@
-/* One column, gaps from the spacing scale; controls are 40px tall on a phone. Nothing scrolls sideways at 375px. */
+/*
+ * The form is a grid: the title on the left and the Cancel / Save buttons at the right of it, then a message if there is one, then
+ * who it is for, and when, with the suggested times in a column beside them. Two fields to a row inside a panel (three for a timed
+ * visit's day, time and length). On a phone it is one column with the suggested times right under who it is for, so the times that
+ * are open are seen before the time is typed, and the buttons are a bar that stays at the bottom edge, so Save is always under the thumb.
+ * The rows are spaced by margins, not a gap, so an area with nothing in it (no message) takes no room.
+ */
 .form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+  grid-template-rows: auto auto auto 1fr;
+  grid-template-areas:
+    "head actions"
+    "banner banner"
+    "who side"
+    "rest side";
+  align-items: start;
+  column-gap: 24px;
+  min-width: 0;
+  max-width: 1100px;
+}
+
+/* An install is a set of days and has no suggested times: the panels keep a readable width and the buttons sit at their edge */
+.form[data-side="false"] {
+  grid-template-columns: minmax(0, 720px) auto;
+}
+
+.head {
+  grid-area: head;
+  min-width: 0;
+  margin-bottom: 16px;
+}
+
+.title {
+  margin: 0;
+  /* The size and width of every page's title (the kit's Page head): this page draws its own head beside its buttons */
+  font: 750 26px/1.05 var(--f-display);
+  font-stretch: 118%;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.sub {
+  margin: 6px 0 0;
+  color: var(--ink-3);
+  overflow-wrap: anywhere;
+}
+
+.who {
+  grid-area: who;
+  min-width: 0;
+  margin-bottom: 16px;
+}
+
+.rest {
   display: flex;
+  grid-area: rest;
   flex-direction: column;
   gap: 16px;
   min-width: 0;
 }
 
-.title {
-  margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
-  color: var(--text);
-  overflow-wrap: anywhere;
+.side {
+  grid-area: side;
+  min-width: 0;
 }
 
-.dates {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
+.banner {
+  grid-area: banner;
+  margin-bottom: 16px;
+  /* Room for the bars that stay on screen (the buttons, the tab bar) when it is scrolled to */
+  scroll-margin: 16px 0 144px;
+}
+
+.actions {
+  display: flex;
+  grid-area: actions;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
   min-width: 0;
+  margin-bottom: 16px;
+}
+
+/* One line that says what Save is waiting for; it goes when the form is complete */
+.hint {
+  margin: 0;
+  min-width: 0;
+  color: var(--ink-2);
+  font-size: var(--font-size-min);
+}
+
+/* Two fields to a row; the customer line and anything that must be wide take both */
+.fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  min-width: 0;
+}
+
+/* A timed visit has three fields in its row: the day, the time and how long */
+.fields[data-cols="3"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+}
+
+.wide {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+/* The browser's own date and time boxes come out two pixels taller than the other controls: one height down the row (a phone's 44px is the kit's) */
+@media (min-width: 768px) {
+  .fields input[type="date"],
+  .fields input[type="time"] {
+    height: calc(1.45em + 16px);
+  }
 }
 
 .typeahead {
@@ -29,16 +125,20 @@
 }
 
 .results {
-  list-style: none;
-  margin: 0;
-  padding: 4px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
   min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--surface);
+  max-height: 288px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-3);
+  background: var(--raised);
+  box-shadow: var(--e-2);
 }
 
 .option {
@@ -51,24 +151,23 @@
 
 .optionName {
   font-weight: 600;
-  color: var(--text);
 }
 
+/* The customer already chosen: who, where, and a way to change it */
 .picked {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  padding: 12px;
   min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  padding: 10px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-3);
   background: var(--surface-2);
 }
 
 .pickedText {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
@@ -76,34 +175,105 @@
 }
 
 .pickedName {
-  font-weight: 600;
-  color: var(--text);
+  font-weight: 650;
 }
 
 .muted {
+  color: var(--ink-3);
   font-size: var(--font-size-min);
-  color: var(--text-muted);
   overflow-wrap: anywhere;
 }
 
-.actions {
+.skeleton {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 720px;
 }
 
-@media (min-width: 768px) {
-  .dates {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+@media (max-width: 1099.98px) {
+  /* One column, the suggested times right after who the visit is for, so the times that are open are seen before one is typed */
+  .form,
+  .form[data-side="false"] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-template-areas:
+      "head"
+      "actions"
+      "banner"
+      "who"
+      "side"
+      "rest";
+  }
+
+  .actions {
+    justify-content: flex-start;
+  }
+
+  .side {
+    margin-bottom: 16px;
   }
 }
 
 @media (max-width: 767.98px) {
-  .option,
-  .actions > *,
-  .picked > * {
-    min-height: 40px;
+  .fields,
+  .fields[data-cols="3"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The buttons come last and stay at the bottom edge; the message sits right above them so a failed save is seen */
+  .form,
+  .form[data-side="false"] {
+    grid-template-areas:
+      "head"
+      "who"
+      "side"
+      "rest"
+      "banner"
+      "actions";
+  }
+
+  .banner {
+    margin-top: 16px;
+  }
+
+  .actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    flex-wrap: wrap;
+    margin: 0 -16px;
+    /* Air below the bar for the raised Measure tab */
+    padding: 10px 16px 20px;
+    background: var(--ground);
+  }
+
+  /* The rows scrolling under the bar fade into the page instead of being cut by a bare edge */
+  .actions::before {
+    content: "";
+    position: absolute;
+    right: 0;
+    bottom: 100%;
+    left: 0;
+    height: 18px;
+    background: linear-gradient(to bottom, color-mix(in srgb, var(--ground) 0%, transparent), var(--ground));
+    pointer-events: none;
+  }
+
+  .actions > button:last-child,
+  .actions > a:last-child {
+    flex: 1 1 0;
+  }
+
+  /* What is missing sits over the buttons, on a line of its own */
+  .hint {
+    flex: 1 1 100%;
+    order: -1;
+    text-align: left;
+  }
+
+  .title {
+    font-size: 26px;
+    font-stretch: 112%;
   }
 }

@@ -1,0 +1,36 @@
+/* The card is the kit's. These are its states in the queue: the one the focus is in, and the one under the pointer. */
+.card {
+  /* In the queue's grid the card takes its row's height (the li is a flex column); anywhere else this has no parent to act on */
+  flex: 1 1 auto;
+  transition: box-shadow var(--t-fast) var(--ease);
+}
+
+.card:hover {
+  box-shadow: var(--e-2);
+}
+
+/* The current card: the keys 1, E and H act on the card the focus is in, so it must be plain which one that is */
+.card:focus-within {
+  box-shadow:
+    0 0 0 2px var(--brand),
+    var(--e-2);
+}
+
+/* A refusal or a failure stands under the card it is about */
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-radius: var(--r-2);
+  background: var(--bad-tint);
+  color: var(--bad-text);
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.error > svg {
+  margin-top: 1px;
+}

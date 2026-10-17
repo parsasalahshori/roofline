@@ -1,62 +1,44 @@
-/* The editor: two groups stacked, each a grid of fields. One column at phone width, two when there is room. */
+/* The editor: a panel for the measurements and one for the scope, each a grid of fields: three across, two on a phone */
 .editor {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 14px;
   min-width: 0;
-}
-
-.group {
-  border: 0;
-  margin: 0;
-  padding: 0;
-  min-width: 0;
-}
-
-.heading {
-  padding: 0;
-  margin-bottom: 8px;
-  font-size: var(--font-size-body);
-  font-weight: 600;
-  color: var(--text);
 }
 
 .grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
 }
 
-/* Each field fills its grid cell and keeps its 40px touch target. */
+/* Each field fills its grid cell */
 .cell {
   min-width: 0;
   max-width: 100%;
 }
 
-.cell input,
-.cell select,
-.cell textarea {
-  min-height: 40px;
-}
-
-/* Notes take both columns when the grid has two. */
+/* The notes take the whole row */
 .wide {
+  grid-column: 1 / -1;
   min-width: 0;
-  max-width: 100%;
 }
 
 .hint {
   margin: 0;
-  font-size: var(--font-size-min);
-  color: var(--danger);
+  color: var(--bad-text);
+  font-size: var(--font-size-body);
 }
 
-@media (min-width: 640px) {
+@media (max-width: 767.98px) {
   .grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 12px;
   }
 
-  .wide {
+  /* The material's name is long: it gets the row to itself on a phone */
+  .grid .material {
     grid-column: 1 / -1;
   }
 }

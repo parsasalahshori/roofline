@@ -8,13 +8,16 @@ import {
   windowSizeClass,
   type FacadePhoto,
   type MeasuredWindow,
+  type PhotoWindow,
   type WindowMeasurementView,
 } from '@roofline/shared';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { PageSlotsContext } from '@roofline/ui';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
-import { liftMeasure } from '../src/copy/liftMeasure.ts';
+import { liftProposal } from '../src/copy/liftMeasure.ts';
+import { measureGutters } from '../src/copy/measureGutters.ts';
 import { measureWindows as copy, windowPhotos as windowPhotosCopy } from '../src/copy/measureWindows.ts';
 import { wholeDollars } from '../src/features/measure/lift/proposalLines.ts';
 import { forgetRevealed } from '../src/features/measure/lift/scan.ts';
@@ -89,6 +92,9 @@ function view(over: Partial<WindowMeasurementView> = {}): WindowMeasurementView 
 type Call = { key: string; body: unknown };
 let calls: Call[];
 let current: WindowMeasurementView;
+/** The roof requests the list holds (the Gutters tab's place comes from them) and the company's own town. */
+let requestRows: unknown[];
+let companyBody: Record<string, unknown> | null;
 const sent = (key: string) => calls.filter((c) => c.key === key).map((c) => c.body as Record<string, unknown>);
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -125,36 +131,47 @@ function serverPatch(before: WindowMeasurementView, body: Record<string, unknown
   return { ...before, adjustments, windows, estimated, ruler };
 }
 
-function render_(path: string) {
+function render_(path: string, phone = false) {
   const queryClient = createQueryClient();
   queryClient.setDefaultOptions({ queries: { retry: false } });
   const router = createMemoryRouter(
     [
+      { path: 'estimator', element: <p>The roof screen</p> },
+      { path: 'estimator/measure/:measurementId/gutters', element: <p>The gutters screen</p> },
       { path: 'estimator/windows', element: <WindowsWindow /> },
       { path: 'estimator/windows/:windowMeasurementId', element: <WindowsWindow /> },
     ],
     { initialEntries: [path] },
   );
   render(
-    <Providers client={queryClient}>
-      <RouterProvider router={router} />
-    </Providers>,
+    <PageSlotsContext value={{ crumbs: null, actions: null, phone, trailing: null }}>
+      <Providers client={queryClient}>
+        <RouterProvider router={router} />
+      </Providers>
+    </PageSlotsContext>,
   );
   return router;
 }
 
 /** Opens a measurement and plays its scan to the end (the scan takes 0 ms here unless a test says otherwise). */
-async function open(over: Partial<WindowMeasurementView> = {}) {
+async function open(over: Partial<WindowMeasurementView> = {}, phone = false) {
   current = view(over);
-  const router = render_('/estimator/windows/w1');
+  const router = render_('/estimator/windows/w1', phone);
   fireEvent.click(await screen.findByRole('button', { name: copy.scanButton }));
-  await screen.findByRole('heading', { name: copy.measuredBy });
+  await waitFor(() => expect(card().dataset.phase).toBe('done'));
   return router;
 }
 
 const card = () => screen.getByRole('region', { name: copy.statsLabel });
-const adjust = () => fireEvent.click(within(card()).getByRole('button', { name: new RegExp(copy.adjust) }));
+/** The photo's Adjust (with the Street View tools on); not "Adjust counts". */
+const adjust = () => fireEvent.click(within(card()).getByRole('button', { name: copy.adjust }));
+/** The front of the house shows as the drawing, the street photo or the plan of the walls. */
+const showView = (name: string | RegExp) => fireEvent.click(within(card()).getByRole('radio', { name }));
 const frame = () => screen.getByRole('group', { name: copy.photoLabel });
+/** How many windows the table counts: its foot says "15 windows, all estimated" or "9 windows · 2 measured". */
+const total = () => card().querySelector('[data-windows-total]')?.textContent;
+const row = (key: string) => card().querySelector(`[data-row="${key}"]`) as HTMLElement;
+const openCounts = () => fireEvent.click(within(card()).getByRole('button', { name: copy.table.adjustCounts }));
 function stubRect(el: HTMLElement, w = 640, h = 640) {
   el.getBoundingClientRect = () => ({ left: 0, top: 0, right: w, bottom: h, width: w, height: h, x: 0, y: 0, toJSON: () => ({}) });
 }
@@ -162,6 +179,8 @@ function stubRect(el: HTMLElement, w = 640, h = 640) {
 beforeEach(() => {
   forgetRevealed();
   calls = [];
+  requestRows = [];
+  companyBody = null;
   vi.stubEnv('VITE_MEASURE_SCAN_MS', '0');
   vi.stubGlobal(
     'fetch',
@@ -170,6 +189,8 @@ beforeEach(() => {
       const body: unknown = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
       calls.push({ key, body });
       if (key === 'GET /api/auth/me') return json({ user: { id: 'u1', email: 'a@b.c', name: 'A', emailVerified: true }, company: { id: 'c1', name: 'C', slug: 'c', status: 'active' }, role: 'owner', companies: [] });
+      if (key.startsWith('GET /api/proposals')) return json({ proposals: requestRows, total: requestRows.length, totals: {} });
+      if (key === 'GET /api/company') return companyBody === null ? json({ error: 'No company' }, 404) : json(companyBody);
       if (key === 'GET /api/window-measurements/w1') return json(current);
       if (key === 'GET /api/window-measurements/w1/preview') return json({ quotes: priceWindows(windowCounts(current)) });
       if (key === 'PATCH /api/window-measurements/w1') {
@@ -263,24 +284,23 @@ describe('Measure windows: the scan', () => {
     await waitFor(
       () => {
         seen.add(document.querySelectorAll('[data-window]').length);
-        expect(screen.queryByRole('heading', { name: copy.measuredBy })).not.toBeNull();
+        expect(card().dataset.phase).toBe('done');
       },
       { timeout: 4000, interval: 40 },
     );
     expect([...seen].some((n) => n > 0 && n < 3)).toBe(true);
     expect(document.querySelectorAll('[data-window]')).toHaveLength(3);
-    expect(document.querySelector('[data-windows-card]')?.getAttribute('data-phase')).toBe('done');
     expect(document.querySelector('[data-scan-overlay]')).toBeNull();
-    expect(screen.getByText(liftMeasure.measuredIn(3.9))).toBeTruthy();
-    // The quote opens beside the photo once measured
-    expect(screen.getByRole('radiogroup')).toBeTruthy();
+    // The head says how long it took, and the quote opens beside the front once measured
+    expect(document.body.textContent).toContain(copy.headMeasured(3.9));
+    expect(screen.getByRole('radiogroup', { name: liftProposal.tiersLabel })).toBeTruthy();
   });
 
   it('plays straight away when opened by a Measure press (autoScan), and the address in the URL is measured once', async () => {
     const router = render_('/estimator/windows?measure=214%20Brookside%20Dr');
     await waitFor(() => expect(router.state.location.pathname).toBe('/estimator/windows/w1'));
     expect(sent('POST /api/window-measurements')).toEqual([{ address: '214 Brookside Dr' }]);
-    await screen.findByRole('heading', { name: copy.measuredBy });
+    await waitFor(() => expect(card().dataset.phase).toBe('done'));
     expect(screen.queryByRole('button', { name: copy.scanButton })).toBeNull();
   });
 
@@ -291,33 +311,125 @@ describe('Measure windows: the scan', () => {
   });
 
   it('the Roof | Windows switch carries the address to the roof screen', async () => {
+    const router = await open();
+    const group = screen.getByRole('radiogroup', { name: copy.switchLabel });
+    expect(within(group).getByRole('radio', { name: copy.switchWindows }).getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(within(group).getByRole('radio', { name: copy.switchRoof }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/estimator'));
+    expect(router.state.location.search).toBe(`?measure=${encodeURIComponent('214 Brookside Dr, Springdale, AR')}`);
+  });
+
+  it('the head is the street, with the rest of the address, the floors, the wall and how long it took under it', async () => {
     await open();
-    const nav = screen.getByRole('navigation', { name: copy.switchLabel });
-    expect(within(nav).getByRole('link', { name: copy.switchRoof }).getAttribute('href')).toBe(`/estimator?measure=${encodeURIComponent('214 Brookside Dr, Springdale, AR')}`);
-    expect(within(nav).getByRole('link', { name: copy.switchWindows }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('214 Brookside Dr');
+    expect(document.body.textContent).toContain(['Springdale, AR', copy.headFloors(1), copy.headWall(196), copy.headMeasured(3.9)].join(` ${copy.headDot} `));
+    const crumbs = screen.getByRole('navigation', { name: 'Breadcrumb' });
+    expect(within(crumbs).getAllByRole('link').map((a) => a.textContent)).toEqual(['Measure', 'Windows']);
+    expect(crumbs.textContent).toContain('214 Brookside Dr');
+  });
+
+  it('a house with windows photographed on site shows its work at once: there is nothing to press', async () => {
+    const photoWindow = {
+      id: 'pw1',
+      uploadId: 'up1',
+      label: 'Kitchen',
+      scale: { kind: 'reference', reference: 'letter', corners: [[0.1, 0.1], [0.2, 0.1], [0.2, 0.2], [0.1, 0.2]] },
+      widthIn: 36,
+      heightIn: 48,
+      sizeClass: 'standard',
+      quality: 'good',
+    } as unknown as PhotoWindow;
+    current = view({ photoWindows: [photoWindow], uploads: [] });
+    render_('/estimator/windows/w1');
+    await screen.findByRole('region', { name: copy.statsLabel });
+    expect(screen.queryByRole('button', { name: copy.scanButton })).toBeNull();
+    expect(card().dataset.phase).toBe('done');
+  });
+
+  it('with nothing drawn yet there is no ground line to poke out from under the card that asks for the scan', async () => {
+    // No street photo, so the front is the drawing
+    current = view({ photos: [] });
+    render_('/estimator/windows/w1');
+    const start = await screen.findByRole('button', { name: copy.scanButton });
+    expect(document.querySelector('[data-mode="house"]')).not.toBeNull();
+    expect(document.querySelector('[data-mode="house"] svg path[class*="ground"]')).toBeNull();
+    // Once it is drawn the ground is there
+    fireEvent.click(start);
+    await waitFor(() => expect(card().dataset.phase).toBe('done'));
+    expect(document.querySelector('[data-mode="house"] svg path[class*="ground"]')).not.toBeNull();
   });
 });
 
-describe('Measure windows: the card', () => {
-  it('leads with About N windows estimated from the walls, the walls basis and the size table', async () => {
+describe('Measure windows: the table and what it was worked out from', () => {
+  it('lists the estimate a row to a size, with the walls basis, the floors and the three grades', async () => {
     await open();
     const c = card();
-    expect(within(c).getByText(copy.fromWalls)).toBeTruthy();
-    expect(within(c).getByText(copy.about)).toBeTruthy();
-    expect(c.querySelector('[data-stat="windows"]')?.textContent).toBe('15');
+    // 15 windows, none measured: 3 small, 9 standard, 2 large, 1 picture, each a row that stands for a run
+    expect(total()).toBe(copy.table.summary(15, 0));
+    expect(['small', 'standard', 'large', 'picture'].map((cls) => row(`estimate:${cls}`).textContent)).toEqual([
+      expect.stringContaining('W1\u20133'),
+      expect.stringContaining('W4\u201312'),
+      expect.stringContaining('W13\u201314'),
+      expect.stringContaining('W15'),
+    ]);
+    expect(row('estimate:standard').textContent).toContain(copy.table.estimateRowName(9, copy.sizeClass.standard));
+    expect(row('estimate:standard').textContent).toContain(copy.table.united(copy.sizeClassHint.standard));
     // Each fact once (it used to repeat itself: the walls, then the server's own sentence about the same walls).
     const basis = c.querySelector('[data-fact="basis"] dd')!.textContent!;
     expect(basis).toBe('196 ft of wall, 1 floor (from the height map), eaves 9 ft up. About 15 windows');
     expect(basis.match(/196 ft/g)).toHaveLength(1);
     expect(c.querySelector('[data-fact="floors"] dd')?.textContent).toBe('1 floor (from the height map)');
-    expect(within(c).getByRole('columnheader', { name: copy.estimatedAll })).toBeTruthy();
-    const row = (cls: string) => c.querySelector(`[data-size-class="${cls}"]`)!;
-    expect([...row('standard').querySelectorAll('td')].map((td) => td.textContent)).toEqual(['0', '9', '9']);
-    expect([...row('picture').querySelectorAll('td')].map((td) => td.textContent)).toEqual(['0', '1', '1']);
-    expect(row('standard').querySelector('[data-col="estimated"]')?.hasAttribute('data-estimated')).toBe(true);
+    // The grades: every window is still an estimate
+    const grades = within(c).getByRole('list', { name: copy.ladder.label });
+    expect([...grades.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
+      expect.stringContaining(`${copy.ladder.estimate}${copy.ladder.estimateNote}15${copy.ladder.of(15)}`),
+      expect.stringContaining(`${copy.ladder.quote}${copy.ladder.quoteNote}0${copy.ladder.of(15)}`),
+      expect.stringContaining(`${copy.ladder.order}${copy.ladder.orderNote}0${copy.ladder.of(15)}`),
+    ]);
     expect(within(c).getByText(copy.reviewReason['estimated-from-size'])).toBeTruthy();
     expect(within(c).getByText('Jun 2025')).toBeTruthy();
     expect(within(c).getByText(copy.foundBy.none)).toBeTruthy();
+  });
+
+  it('names the first grade just Estimate on a phone, where its tile is too narrow for the long name, and keeps the long name elsewhere', async () => {
+    await open({}, true);
+    const first = () => within(card()).getByRole('list', { name: copy.ladder.label }).querySelectorAll('li')[0]!;
+    expect(first().textContent).toContain(copy.ladder.estimatePhone);
+    expect(first().textContent).not.toContain(copy.ladder.estimate);
+    cleanup();
+
+    // The scan is remembered as played for this measurement: forget it, to play it again
+    forgetRevealed();
+    await open();
+    expect(first().textContent).toContain(copy.ladder.estimate);
+  });
+
+  it('the scan-again button keeps its words for a screen reader and a tooltip when its card is too narrow to show them', async () => {
+    await open();
+    const again = within(card()).getByRole('button', { name: copy.replayScan });
+    expect(again).toHaveAttribute('title', copy.replayScan);
+    expect(again.className).toMatch(/replay/);
+  });
+
+  it('the drawing is the front wall to scale with its length and height, and every window numbered as the table numbers it', async () => {
+    await open({ photos: [], windows: [] });
+    const paper = card().querySelector('[data-mode]') as HTMLElement;
+    expect(paper.dataset.mode).toBe('house');
+    const svg = within(card()).getByRole('img', { name: copy.elevation.label(15) });
+    expect(svg.textContent).toContain(copy.elevation.feet(58));
+    expect(svg.textContent).toContain(copy.elevation.feet(9));
+    // (A window too narrow for its tag at this scale goes without: the three small ones)
+    const tags = [...svg.querySelectorAll('[data-drawn-window]')].map((g) => g.textContent).filter(Boolean);
+    expect(tags.slice(0, 3)).toEqual(['W4', 'W5', 'W6']);
+    // Picking a window in the drawing picks its row, and the row opens under itself
+    fireEvent.click(svg.querySelector('[data-drawn-row="estimate:standard"]')!);
+    expect(row('estimate:standard').dataset.selected).toBe('true');
+    expect(card().querySelector('[data-detail="estimate:standard"]')?.textContent).toContain(copy.table.estimateDetail('standard', 'all-sides'));
+  });
+
+  it('without the walls the windows are drawn alone, in a row', async () => {
+    await open({ photos: [], windows: [], walls: null, missing: { reason: 'no-footprint' } });
+    expect((card().querySelector('[data-mode]') as HTMLElement).dataset.mode).toBe('row');
   });
 
   it('front windows measured: the estimate covers the sides and back, and the totals add up', async () => {
@@ -328,21 +440,27 @@ describe('Measure windows: the card', () => {
       needsReview: { reasons: ['front-only'] },
     });
     const c = card();
-    expect(c.querySelector('[data-stat="windows"]')?.textContent).toBe('9');
-    expect(within(c).getByText(copy.measuredAndEstimated(2, 7))).toBeTruthy();
-    expect(within(c).getByRole('columnheader', { name: copy.estimatedSidesBack })).toBeTruthy();
-    expect([...c.querySelector('[data-size-class="standard"]')!.querySelectorAll('td')].map((td) => td.textContent)).toEqual(['1', '6', '7']);
+    expect(total()).toBe(copy.table.summary(9, 2));
+    // The two seen on the street photo are rows, sized from it; the rest are estimated runs
+    expect(row(`street:m1`).textContent).toContain(copy.table.methods.street);
+    expect(row(`street:d1`).textContent).toContain(copy.table.status.estimate);
+    expect(row('estimate:standard').textContent).toContain(copy.table.estimateRowName(6, copy.sizeClass.standard));
+    fireEvent.click(within(row('estimate:standard')).getByRole('button', { name: new RegExp(copy.table.estimateRowName(6, copy.sizeClass.standard)) }));
+    expect(c.querySelector('[data-detail="estimate:standard"]')?.textContent).toContain(copy.table.estimateDetail('standard', 'sides-and-back'));
     expect(within(c).getByText(copy.foundBy.marked)).toBeTruthy();
     // The detector's window carries the auto-found chip; the marked one does not
     expect(document.querySelector('[data-window="d1"]')?.textContent).toContain(copy.autoFound);
     expect(document.querySelector('[data-window="m1"]')?.textContent).not.toContain(copy.autoFound);
+    // On a narrow photo the chip is the short word, and the boxes take turns for the rows of their size labels (the css picks)
+    expect(document.querySelector('[data-window="d1"]')?.textContent).toContain(copy.autoFoundShort);
+    expect(Array.from(document.querySelectorAll('[data-window]')).map((box) => box.getAttribute('data-row'))).toEqual(['0', '1']);
     expect(screen.getByRole('button', { name: copy.windowLabel(1, copy.size(36, 60), true) })).toBeTruthy();
   });
 
   it.each(WINDOWS_MISS_REASONS)('says why no window was seen (%s) and still shows the estimate', async (reason) => {
     await open({ missing: { reason }, photos: reason === 'no-street-view' || reason === 'house-blurred' ? [] : [photo()] });
     expect(document.querySelector(`[data-missing="${reason}"]`)?.textContent).toBe(copy.missing[reason]);
-    expect(card().querySelector('[data-stat="windows"]')?.textContent).toBe('15');
+    expect(total()).toBe(copy.table.summary(15, 0));
   });
 
   it('no estimate and nothing seen: says to type the counts in', async () => {
@@ -374,20 +492,25 @@ describe('Measure windows: Street View tools off (the default)', () => {
 
   it('keeps the photo as an "is this the right house?" picture with its date; no wall, no marking, no ruler', async () => {
     await off();
+    // The drawing is what shows first; the photo is one choice away, dated
+    expect(within(card()).getByRole('radio', { name: copy.elevation.views.drawing }).getAttribute('aria-checked')).toBe('true');
+    showView(copy.elevation.photoWhen('Jun 2025'));
     expect(screen.getByText(copy.rightHouse('Jun 2025'))).toBeTruthy();
     expect(screen.queryByRole('img', { name: copy.wallOutlineLabel })).toBeNull();
     expect(document.querySelector('[data-fit="good"], [data-fit="off"], [data-fit="unknown"]')).toBeNull();
     // The review note points at on-site photos, not at marking the street photo.
     expect(within(card()).getByText(copy.estimatedFromSizeNoTools)).toBeTruthy();
     expect(within(card()).queryByText(copy.foundBy.none)).toBeNull();
-    adjust();
+    // Adjust is for the Street View tools: with them off there is nothing on the photo to adjust
+    expect(within(card()).queryByRole('button', { name: copy.adjust })).toBeNull();
     expect(document.querySelector('[data-wall-corner]')).toBeNull();
     expect(screen.queryByRole('heading', { name: copy.wallTitle })).toBeNull();
     expect(screen.queryByRole('heading', { name: copy.markTitle })).toBeNull();
     expect(screen.queryByRole('button', { name: copy.markStart })).toBeNull();
     expect(document.querySelector('[data-ruler-panel]')).toBeNull();
-    // On-site photos stay.
+    // On-site photos stay: in the head, and the counts can still be changed
     expect(screen.getAllByRole('button', { name: windowPhotosCopy.add }).length).toBeGreaterThan(0);
+    expect(within(card()).getByRole('button', { name: copy.table.adjustCounts })).toBeTruthy();
   });
 
   it('even a stale wall on the photo and a "walls" review are not shown', async () => {
@@ -405,8 +528,7 @@ describe('Measure windows: floors and ranges', () => {
       estimated: { covers: 'all-sides', bySizeClass: { small: 5, standard: 17, large: 3, picture: 1 }, range: { low: 26, high: 29 }, basis: 'x' },
     });
     const c = card();
-    expect(c.querySelector('[data-stat="windows"]')?.textContent).toBe(copy.range(26, 29));
-    expect(within(c).getByText(copy.mostLikely(26))).toBeTruthy();
+    expect(total()).toBe(copy.table.summaryRange(26, 29, 26));
     expect(c.querySelector('[data-fact="floors"] dd')?.textContent).toBe('2 floors (from the height map)');
     const basis = c.querySelector('[data-fact="basis"] dd')!.textContent!;
     expect(basis).toBe(
@@ -489,8 +611,9 @@ describe('Measure windows: Adjust', () => {
   it('a window clicked on the photo is left out, then back in: one PATCH, and the numbers follow at once', async () => {
     await open({ windows: [win('d1', 0.3, 36, 60)], needsReview: null });
     const box = screen.getByRole('button', { name: copy.windowLabel(1, copy.size(36, 60), true) });
+    expect(total()).toBe(copy.table.summary(16, 1));
     fireEvent.click(box);
-    expect(card().querySelector('[data-stat="windows"]')?.textContent).toBe('15');
+    expect(total()).toBe(copy.table.summary(15, 0));
     expect(screen.getByRole('button', { name: copy.windowLabel(1, copy.size(36, 60), false) })).toBeTruthy();
     await wait(200);
     expect(sent('PATCH /api/window-measurements/w1')).toHaveLength(0);
@@ -499,7 +622,7 @@ describe('Measure windows: Adjust', () => {
 
   it('the steppers change the estimated counts: several presses, one PATCH', async () => {
     await open();
-    adjust();
+    openCounts();
     const up = screen.getByRole('button', { name: copy.stepUp(copy.sizeClass.standard) });
     fireEvent.click(up);
     fireEvent.click(up);
@@ -533,7 +656,9 @@ describe('Measure windows: Adjust', () => {
     // The size comes back from the server
     await waitFor(() => expect(document.querySelector('[data-window]')?.textContent).toContain(copy.size(26, 38)));
     fireEvent.click(within(card()).getByRole('button', { name: copy.done }));
-    expect(within(card()).getByRole('columnheader', { name: copy.estimatedSidesBack })).toBeTruthy();
+    // The estimate now covers the sides and back only
+    fireEvent.click(within(row('estimate:standard')).getByRole('button', { name: new RegExp(copy.table.estimateRowName(9, copy.sizeClass.standard)) }));
+    expect(card().querySelector('[data-detail="estimate:standard"]')?.textContent).toContain(copy.table.estimateDetail('standard', 'sides-and-back'));
   });
 
   it('marking: Delete removes the selected window, and Undo brings it back', async () => {
@@ -700,7 +825,7 @@ describe('Measure windows: Adjust shows the whole photo, with zoom and pan', () 
   });
 
   it('the photo takes touches while Adjust is open (no page pan or zoom under a pinch or a drag)', () => {
-    const css = readFileSync([resolve(process.cwd(), 'src/features/measure/windows/WindowsWindow.module.css'), resolve(process.cwd(), 'apps/web/src/features/measure/windows/WindowsWindow.module.css')].find((p) => existsSync(p))!, 'utf8');
+    const css = readFileSync([resolve(process.cwd(), 'src/features/measure/windows/PhotoStage.module.css'), resolve(process.cwd(), 'apps/web/src/features/measure/windows/PhotoStage.module.css')].find((p) => existsSync(p))!, 'utf8');
     expect(css).toMatch(/\.photoFrame\[data-adjusting="true"\] \{[^}]*touch-action: none;/);
     expect(css).toMatch(/\.photoFrame\[data-dragging\] \{[^}]*touch-action: none;/);
   });
@@ -708,6 +833,16 @@ describe('Measure windows: Adjust shows the whole photo, with zoom and pan', () 
 
 describe('Measure windows: a door as a ruler', () => {
   const panel = () => document.querySelector('[data-ruler-panel]') as HTMLElement;
+  /** Opens one of the panel's pick lists and reads what it offers. */
+  const optionsOf = (label: string) => {
+    fireEvent.click(within(panel()).getByLabelText(label));
+    return screen.getAllByRole('option').map((o) => o.textContent);
+  };
+  /** Picks an option from one of the panel's lists (the list closes). */
+  const pickOption = (label: string, name: string) => {
+    fireEvent.click(within(panel()).getByLabelText(label));
+    fireEvent.click(screen.getByRole('option', { name }));
+  };
 
   it('garage door first (16 × 7 ft); the reliability note says why; Mark the door, drag, and every window is re-sized', async () => {
     const box = { x: 0.3, y: 0.45, w: 0.05, h: 0.08 };
@@ -716,12 +851,12 @@ describe('Measure windows: a door as a ruler', () => {
     expect(within(panel()).getByText(copy.rulerHint)).toBeTruthy();
     expect(copy.rulerHint).toMatch(/garage door[^.]*flush/i);
     expect(copy.rulerHint).toMatch(/front door[^.]*set back/i);
-    const kind = within(panel()).getByLabelText(copy.rulerKindLabel) as HTMLSelectElement;
-    expect(kind.value).toBe('garage-door');
-    const size = within(panel()).getByLabelText(copy.rulerSizeLabel) as HTMLSelectElement;
-    expect([...size.options].map((o) => o.textContent)).toEqual(['16 × 7 ft', '9 × 7 ft', '18 × 7 ft', '16 × 8 ft']);
-    fireEvent.change(kind, { target: { value: 'front-door' } });
-    expect([...(within(panel()).getByLabelText(copy.rulerSizeLabel) as HTMLSelectElement).options].map((o) => o.textContent)).toEqual(['36 × 80 in', '32 × 80 in', '72 × 80 in']);
+    expect(within(panel()).getByLabelText(copy.rulerKindLabel).textContent).toContain('Garage door');
+    expect(optionsOf(copy.rulerSizeLabel)).toEqual(['16 × 7 ft', '9 × 7 ft', '18 × 7 ft', '16 × 8 ft']);
+    fireEvent.click(screen.getByRole('option', { name: '16 × 7 ft' }));
+    pickOption(copy.rulerKindLabel, 'Front door');
+    expect(optionsOf(copy.rulerSizeLabel)).toEqual(['36 × 80 in', '32 × 80 in', '72 × 80 in']);
+    fireEvent.click(screen.getByRole('option', { name: '36 × 80 in' }));
     fireEvent.click(within(panel()).getByRole('button', { name: copy.rulerMark }));
     expect(frame().dataset.rulerMarking).toBe('true');
     stubRect(frame());
@@ -738,7 +873,10 @@ describe('Measure windows: a door as a ruler', () => {
     expect(copy.rulerUsed('Front door', '36 × 80 in')).toBe('Sized using the front door as a ruler (36 × 80 in)');
     expect(within(panel()).getByText(copy.rulerAssumption(16, 20.8))).toBeTruthy();
     expect(within(panel()).getByText(copy.rulerFrontDoorNote)).toBeTruthy();
-    expect(screen.getByRole('checkbox', { name: `${copy.includeWindow(1)} · ${copy.size(36, 60)} · ${copy.wasSize(28, 46)}` })).toBeTruthy();
+    // The window's row in the table says it was re-sized
+    expect(row('street:m1').querySelector('[data-size="36x60"]')).not.toBeNull();
+    fireEvent.click(within(row('street:m1')).getByRole('button', { name: /W1/ }));
+    expect(card().querySelector('[data-detail="street:m1"]')?.textContent).toContain(copy.table.streetWas(28, 46));
     expect(document.querySelector('[data-window="m1"]')?.textContent).toContain(copy.size(36, 60));
   });
 
@@ -746,10 +884,10 @@ describe('Measure windows: a door as a ruler', () => {
     await open({ adjustments: { excludedWindowIds: [], manualCounts: {}, marked: [], ruler: { photoId: 'ph1', box: { x: 0.2, y: 0.5, w: 0.3, h: 0.1 }, kind: 'garage-door', widthIn: 192, heightIn: 84 } } });
     adjust();
     expect(within(panel()).getByRole('button', { name: copy.rulerMarkAgain })).toBeTruthy();
-    fireEvent.change(within(panel()).getByLabelText(copy.rulerSizeLabel), { target: { value: '3' } });
+    pickOption(copy.rulerSizeLabel, '16 × 8 ft');
     await waitFor(() => expect(sent('PATCH /api/window-measurements/w1')).toHaveLength(1));
     expect(sent('PATCH /api/window-measurements/w1')[0]).toMatchObject({ ruler: { kind: 'garage-door', widthIn: 192, heightIn: 96 } });
-    fireEvent.change(within(panel()).getByLabelText(copy.rulerKindLabel), { target: { value: 'custom' } });
+    pickOption(copy.rulerKindLabel, copy.rulerKind.custom);
     await waitFor(() => expect(sent('PATCH /api/window-measurements/w1')).toHaveLength(2));
     expect(sent('PATCH /api/window-measurements/w1')[1]).toMatchObject({ ruler: { kind: 'custom', widthIn: 36, heightIn: 80 } });
     const width = within(panel()).getByLabelText(copy.rulerCustomWidth);
@@ -789,7 +927,7 @@ describe('Measure windows: the quote', () => {
     expect((send as HTMLButtonElement).disabled).toBe(true);
     expect(within(panel).getByText(copy.sendNext)).toBeTruthy();
     // One more standard window: Better goes up by its price straight away
-    adjust();
+    openCounts();
     fireEvent.click(screen.getByRole('button', { name: copy.stepUp(copy.sizeClass.standard) }));
     expect(within(panel).getByRole('radio', { checked: true }).textContent).toContain(wholeDollars(better.totalCents + 80_000));
     await act(() => wait(600));
@@ -799,7 +937,7 @@ describe('Measure windows: the quote', () => {
 describe('Measure windows: reduced motion and touch', () => {
   // Run from the repo or from apps/web
   const source = (path: string) => readFileSync([resolve(process.cwd(), path), resolve(process.cwd(), 'apps/web', path)].find((p) => existsSync(p))!, 'utf8');
-  const css = source('src/features/measure/windows/WindowsWindow.module.css');
+  const css = source('src/features/measure/windows/PhotoStage.module.css');
   const scanCss = source('src/features/measure/lift/ScanOverlay.module.css');
 
   it('turns the wall and window animations off, and the sweep stands still', () => {
@@ -812,5 +950,70 @@ describe('Measure windows: reduced motion and touch', () => {
     expect(css).toMatch(/\.photoFrame\[data-marking="true"\] \{[^}]*touch-action: none;/);
     expect(css).toMatch(/\.corner \{[^}]*touch-action: none;/);
     expect(css).toMatch(/\.handle \{[^}]*touch-action: none;/);
+  });
+});
+
+describe('Measure windows: the switch and the start page', () => {
+  const ROOF_ROW = {
+    id: 'p9',
+    number: 'P-0009',
+    status: 'draft',
+    jobId: 'j1',
+    customer: { id: 'c1', name: 'Dana Smith', phone: null },
+    address: '214 Brookside Dr, Springdale, AR',
+    measurementId: 'm9',
+    basis: 'estimate',
+    options: [],
+    messageBody: '',
+    validUntil: '2026-11-12',
+    sentAt: null,
+    views: { count: 0, first: null, last: null },
+    signed: null,
+    declined: null,
+    taskId: null,
+    replacedById: null,
+    canEdit: true,
+  };
+  const switchOf = () => within(screen.getByRole('radiogroup', { name: copy.switchLabel }));
+
+  it('has the Gutters tab, as the roof screen does, when this house has a measured roof on the list', async () => {
+    requestRows = [ROOF_ROW];
+    current = view();
+    const router = render_('/estimator/windows/w1');
+    await screen.findByRole('button', { name: copy.scanButton });
+    const gutters = await switchOf().findByRole('radio', { name: measureGutters.switchGutters });
+    fireEvent.click(gutters);
+    await waitFor(() => expect(router.state.location.pathname).toBe('/estimator/measure/m9/gutters'));
+  });
+
+  it('leaves Gutters out when there is no roof to measure them on', async () => {
+    current = view();
+    render_('/estimator/windows/w1');
+    await screen.findByRole('button', { name: copy.scanButton });
+    expect(switchOf().getAllByRole('radio').map((radio) => radio.textContent)).toEqual([copy.switchRoof, copy.switchWindows]);
+  });
+
+  it('opens the start page on the first roof request\'s gutters too, with no house open', async () => {
+    requestRows = [ROOF_ROW];
+    render_('/estimator/windows');
+    expect(await switchOf().findByRole('radio', { name: measureGutters.switchGutters })).toBeInTheDocument();
+  });
+
+  it('gives the example address in the company\'s own town, and says it once (no intro repeating the first step)', async () => {
+    companyBody = { addressCity: 'Little Rock', addressState: 'AR' };
+    render_('/estimator/windows');
+    const field = await screen.findByLabelText(copy.addressLabel);
+    await waitFor(() => expect(field).toHaveAttribute('placeholder', copy.addressPlaceholder('Little Rock', 'AR')));
+    expect(field).toHaveAttribute('placeholder', '12 Elm St, Little Rock, AR');
+    expect(screen.queryByText(copy.startSubtitle)).toBeNull();
+    expect(screen.getByText(copy.startSteps[0]!)).toBeInTheDocument();
+  });
+
+  it('gives a bare example when the company\'s town is not known', async () => {
+    render_('/estimator/windows');
+    const field = await screen.findByLabelText(copy.addressLabel);
+    expect(field).toHaveAttribute('placeholder', copy.addressPlaceholder(null, null));
+    expect(copy.addressPlaceholder(null, null)).toBe('12 Elm St');
+    expect(copy.addressPlaceholder('Omaha', null)).toBe('12 Elm St, Omaha');
   });
 });

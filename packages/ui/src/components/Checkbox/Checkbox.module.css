@@ -10,8 +10,8 @@
   align-items: center;
   gap: 12px;
   min-height: 40px;
-  color: var(--text);
-  font-family: var(--font);
+  color: var(--ink);
+  font-family: var(--f-ui);
   font-size: var(--font-size-body);
   cursor: pointer;
 }
@@ -21,19 +21,65 @@
   cursor: not-allowed;
 }
 
+/* The box is drawn here, not by the browser: a native box goes grey with a 1.6:1 fill in the dark theme. Its edge is
+   --line-ctl (3:1), it fills with the company's colour when checked and the tick is --brand-ink. */
 .input {
   flex: none;
+  display: inline-grid;
+  place-content: center;
   width: 20px;
   height: 20px;
   min-width: 20px;
   margin: 0;
-  accent-color: var(--accent);
+  appearance: none;
+  border: 1.5px solid var(--line-ctl);
+  border-radius: 5px;
+  background: var(--surface);
   cursor: inherit;
 }
 
+/* A box that is not ticked darkens its edge under the pointer; a ticked one keeps its fill's edge (hovering it must not
+   put a grey ring round the fill) */
+.input:hover:not(:disabled, :checked) {
+  border-color: var(--ink-3);
+}
+
+/* The fill is the company's colour. A page that keeps its colour for the main button (the homeowner's pages) sets
+   --checkbox-fill and --checkbox-tick on itself, and its ticked boxes are ink like every other selection there. */
+.input:checked {
+  border-color: var(--checkbox-fill, var(--brand));
+  background: var(--checkbox-fill, var(--brand));
+}
+
+.input:checked::after {
+  content: "";
+  width: 12px;
+  height: 12px;
+  background: var(--checkbox-tick, var(--brand-ink));
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5' fill='none' stroke='currentColor' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
 .input:focus-visible {
-  outline: 2px solid var(--text);
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
+}
+
+/* A thumb: the whole row is the target */
+@media (max-width: 767.98px) {
+  .row {
+    min-height: 44px;
+  }
+}
+
+/* Forced colours (high-contrast mode) take back the browser's own box, which it draws in the system colours */
+@media (forced-colors: active) {
+  .input {
+    appearance: auto;
+  }
+
+  .input:checked::after {
+    content: none;
+  }
 }
 
 .text {
@@ -45,7 +91,7 @@
 .description {
   margin: 0;
   padding-left: 32px;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-min);
 }
 
@@ -54,8 +100,8 @@
   margin: 0;
   margin-left: 32px;
   padding-left: 8px;
-  border-left: 3px solid var(--danger);
-  color: var(--text);
+  border-left: 3px solid var(--bad);
+  color: var(--ink);
   font-size: var(--font-size-min);
   font-weight: 600;
 }

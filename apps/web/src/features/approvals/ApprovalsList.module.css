@@ -1,55 +1,153 @@
-/* The plans waiting for a yes: a column of cards, each one a link to its review screen. */
-.list {
+/* The plans waiting for a yes: the key strip, then the cards two to a row on a wide screen, one on a phone. */
+.page {
   display: flex;
   flex-direction: column;
+  gap: 16px;
+}
+
+/* The keys are for a keyboard: a phone has none to show */
+.keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  margin: 0;
+  padding: 0;
+  color: var(--ink-3);
+  font-size: 13px;
+  list-style: none;
+}
+
+.key {
+  display: inline-flex;
+  align-items: center;
   gap: 4px;
+}
+
+.key > span {
+  margin-left: 4px;
+}
+
+.key kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-1);
+  background: var(--surface);
+  color: var(--ink-2);
+  font: 600 var(--font-size-min)/1 var(--f-mono);
+}
+
+/* The cards of a row are as tall as the tallest of them and keep their buttons on the bottom edge, so the gaps between rows are one gap */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr));
+  gap: 16px;
+  align-items: stretch;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-/* The whole card is the link. It keeps a 40px touch target and a visible focus ring. */
-.link {
-  display: block;
-  min-height: 40px;
-  border-radius: var(--radius-card);
-  color: inherit;
+.item {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* While the plans load: two cards of the same anatomy */
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+}
+
+.skeletonHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.skeletonButtons {
+  display: flex;
+  gap: 8px;
+}
+
+/* Nothing waits: the words, the way on, and the outline of the cards that will come */
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* The same columns as the cards that will come (.grid above), with the empty tracks folded away: two outlines take two real columns */
+.ghosts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr));
+  gap: 12px;
+}
+
+.ghost {
+  height: 96px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-3);
+}
+
+/* Plans that ran out of time */
+.expiredList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.expiredList > li + li {
+  border-top: 1px solid var(--line);
+}
+
+.expiredRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 10px 16px;
+  color: var(--ink);
   text-decoration: none;
 }
 
-.link:focus-visible {
-  outline: 2px solid var(--text);
-  outline-offset: 2px;
+.expiredRow:hover {
+  background: var(--surface-2);
 }
 
-.card {
+.expiredText {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
+  min-width: 0;
 }
 
-.agent {
-  display: block;
-  font-size: 0.75rem;
-  color: var(--text-muted);
-}
-
-.title {
-  display: block;
-  font-size: 1rem;
-}
-
-/* Two lines at most, then an ellipsis */
-.summary {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+.expiredTitle {
   overflow: hidden;
-  font-size: 0.875rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.status {
-  display: block;
-  font-size: 0.875rem;
-  color: var(--text-muted);
+.expiredMeta {
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+@media (max-width: 767.98px) {
+  .keys {
+    display: none;
+  }
 }

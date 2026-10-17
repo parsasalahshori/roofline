@@ -1,197 +1,64 @@
-/* The Front Desk window: today's tiles, then the call list beside the selected call. Flex and grid children get min-width: 0. */
-.root {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-width: 0;
-  color: var(--ds-text-1, #151c22);
-  font-family: var(--ds-font, "Archivo Variable", ui-sans-serif, system-ui, sans-serif);
-  font-size: 14px;
-}
-
-.tiles {
-  min-width: 0;
-}
-
+/*
+ * The two panes. On a desktop the page is exactly the height of the screen: the list and the open call each scroll inside their own
+ * pane. On a phone they take turns (the page decides which to draw) and the page itself scrolls. Grid children get min-width: 0.
+ */
 .split {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
+  gap: 16px;
   min-width: 0;
 }
 
-.listPane,
 .detailPane {
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  border: 0;
-  border-radius: var(--ds-r-card, 14px);
-  background: var(--ds-surface, #fff);
-  box-shadow:
-    0 0 0 1px var(--ds-hairline-soft, rgb(21 28 34 / 8%)),
-    0 6px 16px -8px rgb(21 28 34 / 30%);
+  /* The open call lays itself out by the pane's width, not the screen's: a small laptop gives it less room */
+  container-type: inline-size;
 }
 
-.listPane {
-  overflow: hidden;
-}
-
-.detailPane {
-  gap: 8px;
-  padding: 0;
-}
-
-.listHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-  padding: 14px 16px 0;
-}
-
-.listTitle {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 20px;
-}
-
-.listHint {
-  color: var(--ds-text-3, #6b7680);
-  font-size: 13px;
-}
-
-/* A segmented control: the four tabs share the width on a desktop and sit two by two on a phone */
-.tabs {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
-  min-width: 0;
-  margin: 10px 16px 12px;
-  padding: 4px;
-  border-radius: 10px;
-  background: var(--ds-surface-2, #eceff1);
-}
-
-.tabs .tab[data-variant] {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  min-width: 0;
-  min-height: 40px;
-  padding: 0 6px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--ds-text-2, #505b64);
-  font-size: 12.5px;
-  font-weight: 600;
-  line-height: 18px;
-  white-space: nowrap;
-}
-
-.tabs .tab[data-variant]:hover {
-  background: transparent;
-  color: var(--ds-text-1, #151c22);
-}
-
-.tabs .tab[data-variant][aria-pressed="true"] {
-  background: var(--ds-surface, #fff);
-  box-shadow:
-    0 0 0 1px var(--ds-hairline-soft, rgb(21 28 34 / 8%)),
-    0 6px 16px -8px rgb(21 28 34 / 30%);
-  color: var(--ds-text-1, #151c22);
-}
-
-.tabs .tab[data-variant]:focus-visible {
-  outline: 2px solid var(--ds-text-1, #151c22);
-  outline-offset: 1px;
-}
-
-.count {
-  color: var(--ds-text-3, #6b7680);
-  font-weight: 500;
-}
-
-.list {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 auto;
-  min-height: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  min-width: 0;
-  border-top: 1px solid var(--ds-hairline-soft, rgb(21 28 34 / 8%));
-  overflow-y: auto;
-}
-
-.more {
-  align-self: center;
-  margin: 8px 0;
-}
-
-.note,
-.pick {
-  margin: 0;
-  padding: 16px;
-  color: var(--ds-text-3, #6b7680);
-}
-
-.back {
-  display: none;
-  align-self: flex-start;
-}
-
-/* A phone shows the list or the call, never both: choosing a row opens the call, "All calls" returns to the list */
-@media (max-width: 767.98px) {
-  .root[data-detail="open"] .listPane,
-  .root[data-detail="open"] .tiles {
-    display: none;
-  }
-
-  .root[data-detail="closed"] .detailPane {
-    display: none;
-  }
-
-  /* On a phone the call fills the window: no second card inside the window */
-  .detailPane {
-    border: 0;
-    background: transparent;
-    box-shadow: none;
-  }
-
-  .back {
-    display: inline-flex;
-  }
-}
-
-/* A desktop: the window's body is the frame and the two panes scroll on their own inside it (the window pads its body by 20px, the reference by 16px) */
 @media (min-width: 768px) {
-  .root {
-    height: calc(100% + 8px);
-    margin: -4px;
-  }
-
   .split {
     flex: 1 1 auto;
-    grid-template-columns: clamp(300px, 28%, 380px) minmax(0, 1fr);
+    grid-template-columns: clamp(340px, 34%, 420px) minmax(0, 1fr);
+    min-height: 420px;
+  }
+
+  /* A grid track takes the height the page gives it: the panes fill it and scroll inside */
+  .split > * {
     min-height: 0;
   }
+}
 
-  .tabs {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
+/* Nothing picked yet: the sentence, over the shape of a conversation, in the middle of the pane */
+.pick {
+  flex: 1 1 auto;
+}
 
-  .tabs .tab[data-variant] {
-    min-height: 28px;
-  }
+.pick > :last-child {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
 
-  .detailPane {
-    overflow: hidden;
-  }
+.ghostBubbles {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 440px;
+  margin: 8px auto 0;
+  width: 100%;
+}
+
+.ghostBubble {
+  display: block;
+  width: 62%;
+  height: 40px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-3);
+}
+
+.ghostBubble[data-side="right"] {
+  align-self: flex-end;
 }

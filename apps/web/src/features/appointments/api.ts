@@ -25,7 +25,12 @@ function invalidateAfterChange(queryClient: ReturnType<typeof useQueryClient>): 
 }
 
 /** GET /api/appointments/:id -> AppointmentView. queryKey ['appointments','one',id]. */
-export function useAppointment(id: string | undefined): { data: AppointmentView | undefined; isPending: boolean; isError: boolean } {
+export function useAppointment(id: string | undefined): {
+  data: AppointmentView | undefined;
+  isPending: boolean;
+  isError: boolean;
+  refetch: () => Promise<unknown>;
+} {
   return useQuery({
     queryKey: id === undefined ? ['appointments', 'one', ''] : oneKey(id),
     queryFn: ({ signal }) => apiFetch<AppointmentView>(`/api/appointments/${encodeURIComponent(id ?? '')}`, { signal }),
@@ -82,7 +87,12 @@ export function useAvailability({
   userId,
   propertyId,
   enabled = true,
-}: AvailabilityQuery & { enabled?: boolean }): { data: { slots: Slot[] } | undefined; isPending: boolean; isError: boolean } {
+}: AvailabilityQuery & { enabled?: boolean }): {
+  data: { slots: Slot[] } | undefined;
+  isPending: boolean;
+  isError: boolean;
+  refetch: () => Promise<unknown>;
+} {
   let url = `/api/calendar/availability?kind=${kind}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
   if (userId !== undefined) url += `&userId=${encodeURIComponent(userId)}`;
   if (propertyId !== undefined) url += `&propertyId=${encodeURIComponent(propertyId)}`;

@@ -47,7 +47,7 @@ describe('claims board', () => {
   it('shows a column per status in order', async () => {
     board({ body: { claims: ROWS } });
     await screen.findByText('Pat Doe');
-    const headings = screen.getAllByRole('heading', { level: 4 }).map((h) => h.textContent);
+    const headings = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
     expect(headings).toEqual(CLAIM_STATUSES.map((s) => claims.status[s]));
     expect(api.unexpected).toEqual([]);
   });
@@ -57,10 +57,21 @@ describe('claims board', () => {
     const link = await screen.findByRole('link', { name: /Pat Doe/ });
     expect(link).toHaveAttribute('href', '/jobs/j1');
     expect(link).toHaveTextContent(claims.since('Oct 12'));
-    const column = screen.getByRole('heading', { level: 4, name: claims.status.filed }).closest('section');
+    const column = screen.getByRole('heading', { level: 3, name: claims.status.filed }).closest('section');
     expect(column).not.toBeNull();
     expect(within(column as HTMLElement).getByRole('link', { name: /Pat Doe/ })).toBe(link);
     expect(screen.getByRole('link', { name: /Lee Kim/ })).toHaveAttribute('href', '/jobs/j2');
+  });
+
+  it('is a panel titled for the board, with how many claims each column holds', async () => {
+    board({ body: { claims: ROWS } });
+    await screen.findByText('Pat Doe');
+    const panel = screen.getByRole('region', { name: claims.boardTitle });
+    const filed = within(panel).getByRole('heading', { level: 3, name: claims.status.filed }).closest('section') as HTMLElement;
+    expect(within(filed).getByText('1')).toBeInTheDocument();
+    const closed = within(panel).getByRole('heading', { level: 3, name: claims.status.closed }).closest('section') as HTMLElement;
+    expect(within(closed).getByText('0')).toBeInTheDocument();
+    expect(api.unexpected).toEqual([]);
   });
 
   it('says so when there are no claims', async () => {

@@ -17,10 +17,12 @@ export function createQueryClient(): QueryClient {
 /**
  * The kit asks for links by `href`; the router's `Link` wants `to`. Defined here, at module level,
  * and not inline in `Providers`: the kit renders the component it is given, and a new function on
- * every render would remount every link. Download links and links to /api/ skip client-side navigation (the
+ * every render would remount every link. Links to other sites and to the phone's apps are plain anchors. Download links and links to /api/ skip client-side navigation (the
  * router's `Link` ignores `download`, and /api/ paths are server routes such as the calendar connect redirect).
  */
 function RouterLink({ href, ...rest }: UiLinkProps) {
+  // A link to another site, or to the phone's own apps (tel:, sms:, mailto:), is a plain anchor: the router has nothing to do with it
+  if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(href)) return <a href={href} {...rest} />;
   const isDownload = rest.download !== undefined && rest.download !== false;
   // The API is served by the server, not the router: a link to it (a file, an OAuth sign-in redirect) must be a full page load.
   const isApi = href.startsWith('/api/');

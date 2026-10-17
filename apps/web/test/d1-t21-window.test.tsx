@@ -87,7 +87,7 @@ function renderApp(path: string) {
 
 /** The filter chip group; the list sits beside it. */
 async function filterGroup() {
-  return screen.findByRole('group', { name: frontDeskInbox.lift.tabsLabel });
+  return screen.findByRole('group', { name: frontDeskInbox.tabsLabel });
 }
 
 const DANA = row({
@@ -113,7 +113,7 @@ describe('Front Desk window (Task 21)', () => {
   it("shows today's tiles to the owner", async () => {
     signedInApi({ 'GET /api/conversations?filter=all': () => ({ body: page([]) }) });
     renderApp('/front-desk');
-    expect(await screen.findByRole('region', { name: frontDeskInbox.lift.kpisLabel })).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: frontDeskInbox.kpisLabel })).toBeInTheDocument();
     await waitFor(() => expect(api.count('GET /api/front-desk/stats?day=today')).toBe(1));
   });
 
@@ -126,8 +126,8 @@ describe('Front Desk window (Task 21)', () => {
     expect(await screen.findByText(frontDeskInbox.empty)).toBeInTheDocument();
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(api.count('GET /api/front-desk/stats?day=today')).toBe(0);
-    expect(screen.queryByRole('region', { name: frontDeskInbox.lift.kpisLabel })).toBeNull();
-    expect(screen.queryByText(frontDeskInbox.lift.kpisError)).toBeNull();
+    expect(screen.queryByRole('region', { name: frontDeskInbox.kpisLabel })).toBeNull();
+    expect(screen.queryByText(frontDeskInbox.kpisError)).toBeNull();
   });
 
   it('renders name, outcome, unread badge, the link to the conversation, and the unknown caller', async () => {
@@ -136,7 +136,7 @@ describe('Front Desk window (Task 21)', () => {
 
     const dana = await screen.findByRole('link', { name: /Dana Ruiz/ });
     expect(dana).toHaveAttribute('href', '/front-desk/c-1');
-    expect(within(dana).getByText(frontDeskInbox.lift.chips.booked)).toBeInTheDocument();
+    expect(within(dana).getByText(frontDeskInbox.chips.booked)).toBeInTheDocument();
     expect(within(dana).getByRole('img', { name: frontDeskInbox.unread(2) })).toHaveTextContent('2');
     expect(within(dana).getByText(frontDeskInbox.urgent)).toBeInTheDocument();
     expect(within(dana).getByText(frontDeskInbox.needsAttention)).toBeInTheDocument();
@@ -145,7 +145,7 @@ describe('Front Desk window (Task 21)', () => {
     const unknown = screen.getByRole('link', { name: new RegExp(frontDeskInbox.unknownCaller) });
     expect(unknown).toHaveAttribute('href', '/front-desk/c-2');
     expect(within(unknown).queryByRole('img')).toBeNull();
-    expect(within(unknown).getByText(frontDeskInbox.lift.chips.message)).toBeInTheDocument();
+    expect(within(unknown).getByText(frontDeskInbox.chips.message)).toBeInTheDocument();
   });
 
   it('shows the four tabs, selects All by default, and asks for the chosen filter', async () => {
@@ -155,8 +155,8 @@ describe('Front Desk window (Task 21)', () => {
     });
     const { user } = renderApp('/front-desk');
 
-    const group = await screen.findByRole('group', { name: frontDeskInbox.lift.tabsLabel });
-    const tabs = frontDeskInbox.lift.tabs;
+    const group = await screen.findByRole('group', { name: frontDeskInbox.tabsLabel });
+    const tabs = frontDeskInbox.tabs;
     // A tab is its name, then today's count once the day's numbers arrive, so match the start of the name
     const tab = (label: string) => within(group).getByRole('button', { name: new RegExp('^' + label) });
     expect(within(group).getAllByRole('button').map((chip) => chip.textContent)).toEqual([
@@ -183,7 +183,7 @@ describe('Front Desk window (Task 21)', () => {
     });
     const { user } = renderApp('/front-desk');
     const group = await filterGroup();
-    await user.click(within(group).getByRole('button', { name: frontDeskInbox.lift.tabs.spam }));
+    await user.click(within(group).getByRole('button', { name: frontDeskInbox.tabs.spam }));
     expect(await screen.findByText(frontDeskInbox.filterEmpty)).toBeInTheDocument();
   });
 

@@ -1,8 +1,11 @@
-/* The map is the bottom layer: Window 20, dock 30, Sheet 40, toasts 50. */
+/* The map fills the panel it is put in (MapPanel): a frame of its own, with the page's chrome over it. */
 .root {
-  position: fixed;
+  position: absolute;
   inset: 0;
-  z-index: 0;
+  overflow: hidden;
+  background: var(--map-land);
+  /* The map's own width decides how the legend lays out (one row when wide), whatever the screen is */
+  container: map / inline-size;
 }
 
 .map {
@@ -10,10 +13,10 @@
   inset: 0;
 }
 
-/* Bottom center, a small pill above the dock and the hail legend, so it never hides behind the home cards. The status region is always on the page and empty (zero size, so it blocks no map clicks); a screen reader announces the banner when it is inserted. */
+/* Bottom centre, a small pill above the legend, so it never hides behind it. The status region is always on the page and empty (zero size, so it blocks no map clicks); a screen reader announces the banner when it is inserted. */
 .status {
   position: absolute;
-  bottom: 150px;
+  bottom: 64px;
   left: 50%;
   transform: translateX(-50%);
   max-width: calc(100% - 32px);
@@ -24,73 +27,58 @@
   margin: 0;
   padding: 4px 12px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--surface);
-  color: var(--text-muted);
-  box-shadow: var(--shadow-window);
+  color: var(--ink-3);
+  box-shadow: var(--e-2);
   font-size: var(--font-size-min);
   text-align: center;
 }
 
-/* Top right. The satellite switch is a ghost Button, so it gets a surface of its own to read over the map. */
+/* Top right: the layer switch, one floating surface holding three toggles (Jobs, Hail, Satellite). More than one can be on at once, so a pressed toggle is filled with the brand tint and its ink, the way a selection is, and an unpressed one is quiet. */
 .controls {
   position: absolute;
-  top: 72px;
-  right: 16px;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--r-2);
+  background: var(--surface);
+  box-shadow: var(--e-2);
 }
 
 .controls button[data-variant="ghost"] {
-  background: var(--surface);
-  border: 1px solid var(--line);
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-1);
+  color: var(--ink-3);
+  font-size: 13px;
+  font-weight: 600;
 }
 
-/* Above the dock on desktop and the bottom tab bar on phone. z-index 3 lifts it over MapLibre's control corners (z-index 2), so an open attribution never covers its text or buttons. .root is its own stacking context (z-index 0), so this stays under Window 20, dock 30, Sheet 40 and toasts 50. */
+.controls button[data-variant="ghost"][aria-pressed="true"] {
+  background: var(--brand-tint);
+  box-shadow: inset 0 0 0 1px var(--brand-line);
+  color: var(--brand-text);
+}
+
+/* A pin or roof card: a callout above the zoom control, at the right. z-index 3 lifts it over MapLibre's control corners (z-index 2), so an open attribution never covers its text or buttons. */
 .card {
   position: absolute;
-  bottom: 96px;
-  left: 16px;
-  width: min(360px, calc(100% - 32px));
+  right: 12px;
+  bottom: 112px;
   z-index: 3;
+  width: min(300px, calc(100% - 24px));
 }
 
-/* On phone the zoom control and the attribution clear the bottom tab bar. */
+/* Phone: the card spans the map's width at the bottom (the legend steps aside while it is open) */
 @media (max-width: 767.98px) {
-  .map :global(.maplibregl-ctrl-bottom-left),
-  .map :global(.maplibregl-ctrl-bottom-right) {
-    bottom: 72px;
-  }
-
-  /* Above the tab bar */
-  .status {
-    bottom: calc(var(--shell-bottom-inset, 64px) + 16px);
-  }
-
-  /* Clears the zoom control and the attribution button (the right 50px of the map) with a 16px gap: 16px left + 50px + 16px = 82px. */
   .card {
-    width: min(360px, calc(100% - 82px));
-  }
-
-  /* MapLibre's own buttons are 29px (zoom) and 24px (attribution); on phone they are 40px touch targets. */
-  .map :global(.maplibregl-ctrl-group button) {
-    width: 40px;
-    height: 40px;
-  }
-
-  .map :global(.maplibregl-ctrl-attrib.maplibregl-compact) {
-    padding: 10px 40px 10px 0;
-  }
-
-  .map :global(.maplibregl-ctrl-attrib.maplibregl-compact-show) {
-    padding: 10px 40px 10px 8px;
-  }
-
-  .map :global(.maplibregl-ctrl-attrib-button) {
-    width: 40px;
-    height: 40px;
-    background-position: center;
-    background-repeat: no-repeat;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    width: auto;
   }
 }

@@ -5,19 +5,24 @@ export const connections = {
   /** The names of the two ad accounts, one name each everywhere. */
   googleAds: 'Google Ads',
   meta: 'Facebook and Instagram (Meta)',
-  /** The two sides of the ad budget split (Settings, Storm). */
+  /** The ad budget slider (Settings, Storm): its label, and the short names of its two ends beside their shares. */
   googleShareLabel: 'Share for Google Ads',
-  metaShareLabel: 'Share for Facebook and Instagram (Meta)',
+  googleShareShort: 'Google Ads',
+  metaShareShort: 'Meta',
+  /** What a screen reader says for the slider: it holds Google's share only, so both shares are named. */
+  shareSplit: (google: number, meta: number) => `Google Ads ${google}%, Meta ${meta}%`,
 
   /** The words both ad account cards share. */
   stepsLabel: 'How to connect',
+  /** The tag beside a card's title while nothing is linked; the linked words are `statuses`. */
+  notConnected: 'Not connected',
   adConnect: 'Connect',
   checkAgain: 'Check again',
   remove: 'Remove',
-  statusLabel: 'Status',
   ownerOnly: 'Only the owner can connect or remove ad accounts.',
-  /** `id` is the account's ID as the platform names it. */
-  accountId: (id: string) => `Account ID ${id}`,
+  /** The label over a linked account's ID, as each platform names it. */
+  googleAccountIdLabel: 'Customer ID',
+  metaAccountIdLabel: 'Ad account ID',
   /** What a person reads beside an account's status, by its status. */
   statuses: {
     pending: 'Waiting for you to accept',
@@ -27,11 +32,11 @@ export const connections = {
   } satisfies Record<'pending' | 'active' | 'error' | 'revoked', string>,
   /** Google Ads: the steps and the customer ID field. */
   googleStepId: 'Type your Google Ads customer ID in the field below.',
-  /** `managerId` is Roofline's Google manager account ID. */
-  googleStepManager: (managerId: string) => `We send a link request from our manager account ${managerId}.`,
-  googleStepManagerSoon: 'We send a link request from our manager account. Its ID shows here once it is set up.',
+  /** Pressing Connect is what sends the link request, so it is said in the step that says so. `managerId` is Roofline's Google manager account ID. */
+  googleStepManager: (managerId: string) => `Press Connect. We send a link request from our manager account ${managerId}.`,
+  googleStepManagerSoon: 'Press Connect. We send a link request from our manager account. Its ID shows here once it is set up.',
   googleStepAccept: 'In Google Ads, open Access and security, then Accept the link request.',
-  googleStepCheck: 'Press Check again.',
+  googleStepCheck: 'Come back here and press Check again.',
   googleCustomerId: 'Google Ads customer ID',
   googleCustomerIdHelp: 'Ten digits, with or without dashes',
   googleIdInvalid: 'Enter the ten-digit customer ID from Google Ads.',
@@ -54,7 +59,7 @@ export const connections = {
   notConfigured: 'Calendar connections aren\'t set up yet.',
   account: 'Account',
   calendarLabel: 'Calendar',
-  lastSynced: (when: string) => `Last synced ${when}`,
+  lastSyncedLabel: 'Last synced',
   neverSynced: 'Not synced yet.',
   disconnect: 'Disconnect',
   disconnectConfirm: 'Your appointments stay in Roofline and on your calendar.',

@@ -1,5 +1,5 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Banner, Button, Checkbox, EmptyState, Field } from '@roofline/ui';
+import { Banner, Button, Checkbox, EmptyState, Field, Icon, Tag } from '@roofline/ui';
 import {
   DEFAULT_GUTTER_TIERS,
   gutterView,
@@ -27,6 +27,7 @@ import { liftProposal } from '../../../copy/liftMeasure.ts';
 import { measureGutters as copy } from '../../../copy/measureGutters.ts';
 import type { MapEnv } from '../../../shell/map/types.ts';
 import { useMeasurement } from '../api.ts';
+import { MeasureHost, MeasurePage, MeasureSteps, type MeasureLinks } from '../MeasurePage.tsx';
 import frame from '../MeasureWindow.module.css';
 import { measureStyle, usesFreeAerial } from '../lift/aerial.ts';
 import cardStyles from '../lift/MeasureCard.module.css';
@@ -36,12 +37,13 @@ import { wholeDollars } from '../lift/proposalLines.ts';
 import { RequestsList } from '../lift/RequestsList.tsx';
 import { usableRoof } from '../lift/roofModel.ts';
 import roofStyles from '../lift/RoofView.module.css';
+import { Credits } from '../lift/Credits.tsx';
 import { ScanBar } from '../lift/ScanBar.tsx';
 import { ScanCardHead } from '../lift/ScanCardHead.tsx';
 import { ScanOverlay } from '../lift/ScanOverlay.tsx';
 import { shownShare, stageAt, useScan, type ScanTimer } from '../lift/scan.ts';
 import type { MeasurementView } from '../types.ts';
-import { MeasureSwitch } from '../windows/MeasureSwitch.tsx';
+import { useMeasureHead } from '../useMeasureHead.tsx';
 import { useGutters, usePatchGutters } from './api.ts';
 import styles from './GuttersWindow.module.css';
 
@@ -342,9 +344,9 @@ function GutterMap({
           </li>
         </ul>
       ) : null}
-      <p className={roofStyles.credits}>
+      <Credits>
         <span>{usesFreeAerial(readMapEnv()) ? legal.imageryAttribution : legal.maptilerImageryAttribution}</span>
-      </p>
+      </Credits>
       {failed ? <span className={styles.mapFailed} data-map-failed="" /> : null}
     </div>
   );
@@ -353,13 +355,13 @@ function GutterMap({
 function Stepper({ name, n, set, off, onChange }: { name: string; n: number; set: boolean; off: boolean; onChange: (n: number) => void }) {
   return (
     <div className={styles.stepper} role="group" aria-label={copy.downspoutsFor(name)}>
-      <Button variant="ghost" className={styles.stepButton} aria-label={copy.fewer(name)} disabled={off || n <= 0} onClick={() => onChange(n - 1)}>
+      <Button variant="default" size="sm" className={styles.stepButton} aria-label={copy.fewer(name)} disabled={off || n <= 0} onClick={() => onChange(n - 1)}>
         {copy.minus}
       </Button>
       <output className={styles.stepValue} data-changed={set ? 'true' : undefined} aria-live="polite">
         {off ? 0 : n}
       </output>
-      <Button variant="ghost" className={styles.stepButton} aria-label={copy.more(name)} disabled={off || n >= MAX_DOWNSPOUTS_PER_RUN} onClick={() => onChange(n + 1)}>
+      <Button variant="default" size="sm" className={styles.stepButton} aria-label={copy.more(name)} disabled={off || n >= MAX_DOWNSPOUTS_PER_RUN} onClick={() => onChange(n + 1)}>
         {copy.plus}
       </Button>
     </div>
@@ -395,7 +397,7 @@ function AddedRow({ run, index, onRemove, onDownspouts }: { run: AddedGutterRunV
         <span className={styles.small}>{copy.addedDetail(run.lengthFt)}</span>
       </div>
       <Stepper name={name} n={run.downspouts} set={run.downspoutsSet} off={false} onChange={onDownspouts} />
-      <Button variant="ghost" className={styles.removeButton} aria-label={copy.removeAdded(name)} onClick={onRemove}>
+      <Button variant="default" size="sm" className={styles.removeButton} aria-label={copy.removeAdded(name)} onClick={onRemove}>
         {copy.remove}
       </Button>
     </li>
@@ -440,7 +442,7 @@ function AddRunForm({ full, onAdd }: { full: boolean; onAdd: (label: string, len
         }}
         className={styles.addLength}
       />
-      <Button type="submit" variant="ghost" className={styles.addButton} disabled={full}>
+      <Button type="submit" variant="default" className={styles.addButton} disabled={full}>
         {copy.addRun}
       </Button>
       {full ? <p className={styles.small}>{copy.addFull}</p> : null}
@@ -476,12 +478,12 @@ function TotalForm({ totalFt, runsFt, onTotal }: { totalFt: number | null; runsF
         }}
         className={styles.addLength}
       />
-      <Button type="submit" variant="ghost" className={styles.addButton}>
+      <Button type="submit" variant="default" className={styles.addButton}>
         {copy.totalSet}
       </Button>
       {totalFt !== null ? (
         <Button
-          variant="ghost"
+          variant="default"
           className={styles.addButton}
           onClick={() => {
             setValue('');
@@ -537,22 +539,18 @@ function GuttersCard({
       <div className={cardStyles.scroll}>
         {open ? null : (
           <>
-            <div className={cardStyles.big}>
-              <span className={cardStyles.label}>{copy.gutterLabel}</span>
-              <span className={cardStyles.squaresRow}>
-                <span className={cardStyles.squares} data-stat="gutter-ft">
-                  {Math.round(t.gutterFt * share).toLocaleString('en-US')}
+            <div className={cardStyles.body}>
+              <div className={cardStyles.big}>
+                <span className={cardStyles.label}>{copy.gutterLabel}</span>
+                <span className={cardStyles.squaresRow}>
+                  <span className={cardStyles.squares} data-stat="gutter-ft">
+                    {Math.round(t.gutterFt * share).toLocaleString('en-US')}
+                  </span>
+                  <span className={cardStyles.unit}>{copy.gutterUnit}</span>
                 </span>
-                <span className={cardStyles.unit}>{copy.gutterUnit}</span>
-              </span>
-              <span className={cardStyles.sqft}>{copy.runsLine(Math.round(t.runs * share), Math.round(corners * share))}</span>
-            </div>
-            {!scanning && t.lengthSource !== 'measured' ? (
-              <p className={styles.small} data-length-source={t.lengthSource}>
-                {copy.lengthFrom[t.lengthSource](t.measuredFt)}
-              </p>
-            ) : null}
-            <dl className={cardStyles.grid}>
+                <span className={cardStyles.sqft}>{copy.runsLine(Math.round(t.runs * share), Math.round(corners * share))}</span>
+              </div>
+              <dl className={`${cardStyles.grid} ${styles.cells}`}>
               <div className={cardStyles.cell}>
                 <dt>{copy.downspoutsCell}</dt>
                 <dd data-stat="downspouts">{placed ? copy.downspoutsValue(t.downspouts, t.downspoutFt) : copy.minus}</dd>
@@ -571,13 +569,19 @@ function GuttersCard({
                   {copy.heightValue(view.eave.heightFt, view.eave.floors)}
                 </dd>
               </div>
-            </dl>
+              </dl>
+            </div>
+            {!scanning && t.lengthSource !== 'measured' ? (
+              <p className={styles.small} data-length-source={t.lengthSource}>
+                {copy.lengthFrom[t.lengthSource](t.measuredFt)}
+              </p>
+            ) : null}
             {!scanning ? (
               <div className={styles.facts}>
                 {view.check.reasons.includes('gutters-check') ? (
                   <div data-review="gutters-check" className={styles.check}>
                     <Banner tone="warning">{copy.checkLow}</Banner>
-                    <Button variant="ghost" className={styles.checkButton} onClick={() => onEdit(true)}>
+                    <Button variant="default" size="sm" onClick={() => onEdit(true)}>
                       {copy.checkAddRuns}
                     </Button>
                   </div>
@@ -653,7 +657,7 @@ function GuttersCard({
                 ).map(([value, label]) => (
                   <Button
                     key={label}
-                    variant="ghost"
+                    variant="default"
                     className={styles.size}
                     aria-pressed={view.adjustments.size === value}
                     data-state={view.adjustments.size === value ? 'on' : 'off'}
@@ -664,7 +668,7 @@ function GuttersCard({
                 ))}
               </div>
             </section>
-            <Button variant="ghost" className={cardStyles.done} onClick={() => onEdit(false)}>
+            <Button variant="default" size="sm" className={cardStyles.done} onClick={() => onEdit(false)}>
               {copy.done}
             </Button>
           </div>
@@ -672,15 +676,11 @@ function GuttersCard({
       </div>
       {!scanning ? (
         <div className={cardStyles.foot}>
-          <Button variant="ghost" className={cardStyles.footButton} aria-expanded={open} aria-controls={open ? adjustId : undefined} onClick={() => onEdit(!editing)}>
+          <Button variant="ghost" size="sm" className={cardStyles.footButton} aria-expanded={open} aria-controls={open ? adjustId : undefined} onClick={() => onEdit(!editing)}>
             {copy.adjust}
-            <svg className={cardStyles.chevron} viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
-              <path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <Icon name="chevd" size={16} className={cardStyles.chevron} />
           </Button>
-          <span className={cardStyles.kind} data-kind={view.confidence}>
-            {copy.confidenceTag[view.confidence]}
-          </span>
+          <Tag data-kind={view.confidence}>{copy.confidenceTag[view.confidence]}</Tag>
         </div>
       ) : null}
     </section>
@@ -776,7 +776,7 @@ function Loaded({ m, server, onQuoteReady }: { m: MeasurementView; server: Gutte
   const t = view.totals;
   return (
     <>
-      <main className={frame.main}>
+      <div className={frame.main}>
         <div className={styles.stage}>
           <GutterMap m={m} view={view} scan={scan} canToggle={done} onToggle={toggle} />
           <div className={styles.overlay}>
@@ -800,7 +800,7 @@ function Loaded({ m, server, onQuoteReady }: { m: MeasurementView; server: Gutte
           </div>
           {scan.phase === 'idle' ? <ScanBar scan={scan} introName={copy.scanIntroName} introRest={copy.scanIntroRest} button={copy.scanButton} /> : null}
         </div>
-      </main>
+      </div>
       {done ? (
         <div className={frame.proposal}>
           <TierPanel
@@ -839,7 +839,6 @@ function Loaded({ m, server, onQuoteReady }: { m: MeasurementView; server: Gutte
 }
 
 type Step = 'requests' | 'gutters' | 'quote';
-const STEPS: Step[] = ['requests', 'gutters', 'quote'];
 
 /** Measure gutters: /estimator/measure/:measurementId/gutters, the roof measurement's eaves as gutter runs. */
 export function GuttersWindow() {
@@ -852,68 +851,60 @@ export function GuttersWindow() {
   const dataStep = active === 'requests' ? 'requests' : active === 'gutters' ? 'roof' : 'proposal';
   const m = measurement.data;
   const g = gutters.data;
+  const head = useMeasureHead(measurementId, m);
   const roofHref = `/estimator/measure/${encodeURIComponent(measurementId)}`;
+  const links: MeasureLinks = {
+    roof: roofHref,
+    windows: m !== undefined ? `/estimator/windows?property=${encodeURIComponent(m.propertyId)}` : '/estimator/windows',
+    gutters: `${roofHref}/gutters`,
+  };
 
   return (
-    <div className={frame.window} data-step={dataStep} data-proposal={quoteReady ? 'true' : 'false'} data-measure-gutters="">
-      <header className={frame.header}>
-        <span className={frame.appIcon} aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="14" height="14" focusable="false">
-            <path d="M3 7h18l-2 4H5zM17 11v9" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </span>
-        <h2 className={frame.heading}>{copy.title}</h2>
-        <MeasureSwitch
-          current="gutters"
-          roofHref={roofHref}
-          windowsHref={m !== undefined ? `/estimator/windows?property=${encodeURIComponent(m.propertyId)}` : '/estimator/windows'}
-          guttersHref={`${roofHref}/gutters`}
+    <MeasurePage
+      section="gutters"
+      layout="fill"
+      address={head.address}
+      title={copy.title}
+      subtitle={head.who ?? copy.subtitle}
+      actions={head.chips({ hail: false })}
+      links={links}
+    >
+      <MeasureHost step={dataStep} stepsBelow={980}>
+        <MeasureSteps
+          label={copy.steps.label}
+          value={active}
+          onChange={setStep}
+          steps={[
+            { key: 'requests', label: copy.steps.requests, done: true },
+            { key: 'gutters', label: copy.steps.gutters, done: quoteReady },
+            { key: 'quote', label: copy.steps.quote, disabled: !quoteReady },
+          ]}
         />
-        <span className={frame.subtitle}>{copy.subtitle}</span>
-      </header>
-      <div className={frame.steps} role="tablist" aria-label={copy.steps.label}>
-        {STEPS.map((s, i) => (
-          <Button
-            key={s}
-            variant="ghost"
-            role="tab"
-            aria-selected={active === s}
-            data-selected={active === s ? 'true' : undefined}
-            disabled={s === 'quote' && !quoteReady}
-            className={frame.step}
-            onClick={() => setStep(s)}
-          >
-            <span className={frame.stepNumber} aria-hidden="true">
-              {i + 1}
-            </span>
-            {copy.steps[s]}
-          </Button>
-        ))}
-      </div>
-      <div className={frame.body}>
-        <aside className={frame.list}>
-          <RequestsList selectedId={measurementId} />
-        </aside>
-        {m !== undefined && g !== undefined ? (
-          usableRoof(m.roof) === null && g.runs.length === 0 ? (
-            <main className={frame.main}>
-              <div className={frame.pick}>
-                <EmptyState title={copy.noRoof} />
+        <div className={frame.work} data-step={dataStep} data-proposal={quoteReady ? 'true' : 'false'} data-measure-gutters="">
+          <aside className={frame.list}>
+            <RequestsList selectedId={measurementId} />
+          </aside>
+          {m !== undefined && g !== undefined ? (
+            usableRoof(m.roof) === null && g.runs.length === 0 ? (
+              <div className={frame.main}>
+                <div className={frame.pick}>
+                  <EmptyState title={copy.noRoof} />
+                </div>
               </div>
-            </main>
+            ) : (
+              <Loaded key={m.id} m={m} server={g} onQuoteReady={setQuoteReady} />
+            )
+          ) : measurement.isError || gutters.isError ? (
+            <div className={frame.main}>
+              <EmptyState title={copy.loadFailed} />
+            </div>
           ) : (
-            <Loaded key={m.id} m={m} server={g} onQuoteReady={setQuoteReady} />
-          )
-        ) : measurement.isError || gutters.isError ? (
-          <main className={frame.main}>
-            <EmptyState title={copy.loadFailed} />
-          </main>
-        ) : (
-          <main className={frame.main}>
-            <p className={frame.loading}>{copy.loading}</p>
-          </main>
-        )}
-      </div>
-    </div>
+            <div className={frame.main}>
+              <p className={frame.loading}>{copy.loading}</p>
+            </div>
+          )}
+        </div>
+      </MeasureHost>
+    </MeasurePage>
   );
 }

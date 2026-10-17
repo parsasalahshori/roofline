@@ -1,23 +1,29 @@
-import { useId, useMemo, useState } from 'react';
-import { CLAIM_STATUSES, displayUsPhone, isTimeZone, type ClaimStatus, type JobClaimResponse } from '@roofline/shared';
-import { Banner, Button, Field, Select, Sheet, Skeleton, useToast, type SelectOption } from '@roofline/ui';
+import { useId, useMemo, useState, type ReactNode } from 'react';
+import { CLAIM_STATUSES, displayUsPhone, type ClaimStatus, type JobClaimResponse } from '@roofline/shared';
+import { Button, Field, Icon, Listbox, Panel, Sheet, Skeleton, Tag, useToast, type IconName, type ListboxOption, type TagTone } from '@roofline/ui';
 import { ApiError } from '../../api/client.ts';
 import { claims } from '../../copy/claims.ts';
+import { job } from '../../copy/job.ts';
 import { claimPacketUrl, useBuildClaimPacket, useJobClaim, useSaveClaim, type ClaimEdit } from '../claims/api.ts';
-import { formatDollars } from '../jobs/JobCardView.tsx';
-import { useCompany } from '../settings/api.ts';
+import { formatDollars } from '../jobs/format.ts';
+import { LoadError } from '../jobs/states.tsx';
+import { useCompanyZone } from '../jobs/useCompanyToday.ts';
 import styles from './ClaimSection.module.css';
 
-const FALLBACK_ZONE = 'America/Chicago';
+const statusOptions: ListboxOption<ClaimStatus>[] = CLAIM_STATUSES.map((s) => ({ value: s, label: claims.status[s] }));
 
-const statusOptions: SelectOption[] = CLAIM_STATUSES.map((s) => ({ value: s, label: claims.status[s] }));
-
-/** The company's zone when it is one Intl knows, the Chicago default otherwise. Never the browser's. */
-function useCompanyZone(): string {
-  const company = useCompany();
-  const zone = company.data?.timezone;
-  return zone !== undefined && isTimeZone(zone) ? zone : FALLBACK_ZONE;
-}
+/** The claim's status tag: its tone and glyph. The word is the status; the glyph and tone only back it up. */
+const STATUS_TAG: Record<ClaimStatus, { tone: TagTone; icon: IconName }> = {
+  not_filed: { tone: 'neutral', icon: 'doc' },
+  filed: { tone: 'info', icon: 'arrow' },
+  adjuster_scheduled: { tone: 'info', icon: 'cal' },
+  inspected: { tone: 'info', icon: 'check' },
+  approved: { tone: 'ok', icon: 'check' },
+  partly_approved: { tone: 'warn', icon: 'alert' },
+  denied: { tone: 'warn', icon: 'x' },
+  supplement_requested: { tone: 'warn', icon: 'doc' },
+  closed: { tone: 'neutral', icon: 'lock' },
+};
 
 /** Dollars typed by a person to cents. Empty is null; anything else that is not an amount (zero allowed) is 'invalid'. */
 function parseDollars(text: string): number | null | 'invalid' {
@@ -160,10 +166,10 @@ function ClaimSheet({ jobId, data, onClose }: ClaimSheetProps) {
 
   const footer = (
     <div className={styles.footer}>
-      <Button variant="ghost" onClick={onClose}>
+      <Button variant="quiet" onClick={onClose}>
         {claims.cancel}
       </Button>
-      <Button busy={save.isPending} onClick={() => void submit()}>
+      <Button variant="primary" busy={save.isPending} onClick={() => void submit()}>
         {claims.save}
       </Button>
     </div>
@@ -184,16 +190,16 @@ function ClaimSheet({ jobId, data, onClose }: ClaimSheetProps) {
 
   return (
     <Sheet open title={claims.formTitle} onClose={onClose} closeLabel={claims.close} footer={footer}>
-      <div className={styles.body}>
+      <div className={styles.sheetBody}>
         {textField('insurer', claims.insurerLabel)}
         {textField('claimNumber', claims.claimNumberLabel)}
         {textField('dateOfLoss', claims.dateOfLossLabel, { type: 'date' })}
-        <Select
+        <Listbox
           label={claims.statusLabel}
           value={values.status}
           options={statusOptions}
           error={errors.status}
-          onChange={(next) => setValue('status', next as ClaimStatus)}
+          onChange={(next) => setValue('status', next)}
         />
         {textField('adjusterName', claims.adjusterNameLabel)}
         {textField('adjusterPhone', claims.adjusterPhoneLabel)}
@@ -221,7 +227,7 @@ function PacketActions({ jobId, packet, dayFormat }: { jobId: string; packet: Jo
   }
   return (
     <>
-      <Button variant="ghost" busy={build.isPending} onClick={run}>
+      <Button variant="default" size="sm" busy={build.isPending} onClick={run}>
         {build.isPending ? claims.buildingPacket : claims.buildPacket}
       </Button>
       {packet != null ? (
@@ -233,9 +239,10 @@ function PacketActions({ jobId, packet, dayFormat }: { jobId: string; packet: Jo
   );
 }
 
+type Row = { label: string; value: string; wide?: boolean };
+
 /** The job's insurance claim: its status, details and history, with a form to add or edit them. */
-export function ClaimSection({ jobId }: { jobId: string }) {
-  const headingId = useId();
+export function ClaimSection({ jobId, className }: { jobId: string; className?: string }) {
   const zone = useCompanyZone();
   const query = useJobClaim(jobId);
   const [editing, setEditing] = useState(false);
@@ -251,89 +258,111 @@ export function ClaimSection({ jobId }: { jobId: string }) {
     return Number.isNaN(instant) ? ymd : dateFormat.format(new Date(instant));
   }
 
-  function content() {
-    if (query.isPending) {
-      return (
-        <div role="status" aria-label={claims.loading}>
-          <Skeleton lines={3} />
+  const data = query.data;
+  const claim = data?.claim ?? null;
+  let body: ReactNode;
+
+  if (query.isPending) {
+    body = (
+      <div role="status" aria-label={claims.loading}>
+        <Skeleton lines={3} />
+      </div>
+    );
+  } else if (data === undefined) {
+    body = <LoadError tag={job.errorTag} title={claims.loadError} retry={job.retry} busy={query.isFetching} onRetry={() => void query.refetch()} />;
+  } else if (claim === null) {
+    body = (
+      <>
+        <p className={styles.text}>{data.intake === null ? claims.none : claims.intakeLine(data.intake.insurer, data.intake.claimNumber)}</p>
+        <div className={styles.actions}>
+          <Button variant="default" size="sm" onClick={() => setEditing(true)}>
+            <Icon name="plus" size={16} />
+            {claims.addDetails}
+          </Button>
         </div>
-      );
-    }
-    if (query.isError) return <Banner tone="danger">{claims.loadError}</Banner>;
-    const { claim, intake } = query.data;
-    const sheet = editing ? <ClaimSheet jobId={jobId} data={query.data} onClose={() => setEditing(false)} /> : null;
-
-    if (claim === null) {
-      return (
-        <>
-          <p className={styles.text}>{intake === null ? claims.none : claims.intakeLine(intake.insurer, intake.claimNumber)}</p>
-          <div className={styles.actions}>
-            <Button variant="ghost" onClick={() => setEditing(true)}>
-              {claims.addDetails}
-            </Button>
-          </div>
-          {sheet}
-        </>
-      );
-    }
-
-    const rows: { label: string; value: string }[] = [];
+      </>
+    );
+  } else {
+    const rows: Row[] = [];
     if (claim.insurer !== null) rows.push({ label: claims.insurerLabel, value: claim.insurer });
     if (claim.claimNumber !== null) rows.push({ label: claims.claimNumberLabel, value: claim.claimNumber });
     if (claim.dateOfLoss !== null) rows.push({ label: claims.dateOfLossLabel, value: dateOfLossText(claim.dateOfLoss) });
+    if (claim.deductibleCents !== null) rows.push({ label: claims.deductibleLabel, value: formatDollars(claim.deductibleCents) });
     if (claim.adjusterName !== null) rows.push({ label: claims.adjusterNameLabel, value: claim.adjusterName });
     if (claim.adjusterPhone !== null) rows.push({ label: claims.adjusterPhoneLabel, value: displayUsPhone(claim.adjusterPhone) });
-    if (claim.adjusterEmail !== null) rows.push({ label: claims.adjusterEmailLabel, value: claim.adjusterEmail });
-    if (claim.deductibleCents !== null) rows.push({ label: claims.deductibleLabel, value: formatDollars(claim.deductibleCents) });
+    if (claim.adjusterEmail !== null) rows.push({ label: claims.adjusterEmailLabel, value: claim.adjusterEmail, wide: true });
 
-    return (
+    body = (
       <>
-        <span className={styles.chip}>{claims.status[claim.status]}</span>
         {rows.length > 0 ? (
           <dl className={styles.fields}>
             {rows.map((row) => (
-              <div key={row.label} className={styles.fieldRow}>
+              <div key={row.label} className={styles.fieldRow} data-wide={row.wide ? 'true' : undefined}>
                 <dt className={styles.term}>{row.label}</dt>
                 <dd className={styles.detail}>{row.value}</dd>
               </div>
             ))}
           </dl>
         ) : null}
-        {claim.notes !== null ? <p className={styles.detail}>{claim.notes}</p> : null}
+        {claim.notes !== null ? <p className={styles.notes}>{claim.notes}</p> : null}
+        {/* G1 Task 7 */}
         <div className={styles.actions}>
-          <Button variant="ghost" onClick={() => setEditing(true)}>
-            {claims.edit}
-          </Button>
-          {/* G1 Task 7 */}
-          <PacketActions jobId={jobId} packet={query.data.packet} dayFormat={dayFormat} />
+          <PacketActions jobId={jobId} packet={data.packet} dayFormat={dayFormat} />
         </div>
         {claim.events.length > 0 ? (
-          <>
-            <h3 className={styles.subheading}>{claims.historyTitle}</h3>
-            <ul className={styles.history}>
-              {claim.events.map((e) => (
-                <li key={`${e.at}-${e.to}`}>
-                  {claims.historyLine(
-                    claims.status[e.to],
-                    e.by === 'agent' ? claims.claimsAgent : (e.byName ?? claims.unknownPerson),
-                    dayFormat.format(new Date(e.at)),
-                  )}
-                </li>
-              ))}
-            </ul>
-          </>
+          <HistoryList>
+            {claim.events.map((e) => (
+              <li key={`${e.at}-${e.to}`}>
+                {claims.historyLine(
+                  claims.status[e.to],
+                  e.by === 'agent' ? claims.claimsAgent : (e.byName ?? claims.unknownPerson),
+                  dayFormat.format(new Date(e.at)),
+                )}
+              </li>
+            ))}
+          </HistoryList>
         ) : null}
-        {sheet}
       </>
     );
   }
 
+  const status = claim === null ? null : STATUS_TAG[claim.status];
   return (
-    <section aria-labelledby={headingId} className={styles.section} data-section="claim">
-      <h2 id={headingId} className={styles.heading}>
-        {claims.sectionTitle}
-      </h2>
-      {content()}
-    </section>
+    <Panel
+      title={claims.sectionTitle}
+      className={className}
+      data-section="claim"
+      tag={
+        claim !== null && status !== null ? (
+          <Tag tone={status.tone} icon={status.icon}>
+            {claims.status[claim.status]}
+          </Tag>
+        ) : undefined
+      }
+      actions={
+        claim !== null ? (
+          <Button variant="default" size="sm" onClick={() => setEditing(true)}>
+            <Icon name="pen" size={16} />
+            {claims.edit}
+          </Button>
+        ) : undefined
+      }
+    >
+      <div className={styles.body}>{body}</div>
+      {editing && data !== undefined ? <ClaimSheet jobId={jobId} data={data} onClose={() => setEditing(false)} /> : null}
+    </Panel>
+  );
+}
+
+/** The claim's history under its own small heading: each move of the status, who made it and the day. */
+function HistoryList({ children }: { children: ReactNode }) {
+  const headingId = useId();
+  return (
+    <div className={styles.history} role="group" aria-labelledby={headingId}>
+      <h3 id={headingId} className={styles.subheading}>
+        {claims.historyTitle}
+      </h3>
+      <ul className={styles.historyList}>{children}</ul>
+    </div>
   );
 }

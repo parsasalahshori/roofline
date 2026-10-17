@@ -1,78 +1,82 @@
-.section {
-  display: grid;
-  gap: 8px;
-  margin-top: 24px;
-}
-
-.title {
-  margin: 0;
-}
-
+/* The breakdown and the recent work on an agent's page: both are panels; the rows run edge to edge */
 .empty {
   margin: 0;
-  color: var(--text-muted);
-}
-
-.scroll {
-  overflow-x: auto;
-  max-width: 100%;
-}
-
-.table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.caption {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-.table th,
-.table td {
-  padding: 8px;
-  text-align: left;
-  border-bottom: 1px solid var(--line);
-  vertical-align: top;
-}
-
-.table th {
-  color: var(--text-muted);
-  font-weight: 600;
+  color: var(--ink-3);
 }
 
 .list {
-  display: grid;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.row {
-  border-bottom: 1px solid var(--line);
+.row + .row {
+  border-top: 1px solid var(--line);
 }
 
 .link {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "title status"
+    "meta saved";
   align-items: center;
   gap: 4px 12px;
-  min-height: 44px;
-  padding: 8px 0;
-  color: var(--text);
+  min-height: 52px;
+  padding: 10px 16px;
+  color: var(--ink);
   text-decoration: none;
   overflow-wrap: anywhere;
 }
 
-.kind {
+a.link:hover {
+  background: var(--surface-2);
+}
+
+/* What the task was: the words the server wrote for it, so rows of one kind can be told apart */
+.title {
+  grid-area: title;
   font-weight: 600;
-  text-transform: capitalize;
+  text-wrap: pretty;
+}
+
+.status {
+  grid-area: status;
+  justify-self: end;
 }
 
 .meta {
-  color: var(--text-muted);
+  grid-area: meta;
+  color: var(--ink-3);
+  font: 500 var(--font-size-min)/1.2 var(--f-mono);
+}
+
+/* What the work saved: the second line's right end, on every row that saved something */
+.saved {
+  grid-area: saved;
+  justify-self: end;
+  color: var(--ink-3);
+  font-size: 13px;
+  text-align: right;
+}
+
+/* Under the tenth row: the rest is in the Feed */
+.more {
+  margin: 0;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+}
+
+.moreLink {
+  color: var(--brand-text);
+  font-weight: 600;
+  text-underline-offset: 2px;
+}
+
+/*
+ * A figure and its words ("about 25 hours") stay on one line; it is the name of the work, on the left, that gives way and
+ * wraps when a name is long. The mark that it is an estimate is the "about", as it is everywhere else.
+ */
+.breakdown td[data-numeric="true"] {
+  white-space: nowrap;
 }

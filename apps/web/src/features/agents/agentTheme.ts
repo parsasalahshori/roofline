@@ -1,17 +1,19 @@
-import type { ScreenAgent } from '@roofline/shared';
+import type { Agent, ScreenAgent } from '@roofline/shared';
+import type { IconName } from '@roofline/ui';
 
-/** The order the dashboard lays the agents out, left to right along the roof. */
-export const DASH_ORDER: readonly ScreenAgent[] = ['storm_scout', 'front_desk', 'estimator', 'claims', 'scheduler', 'follow_up'];
-
-/** Each agent's own color (node ring, card tab, handoff dot). Tokens first, reference values as fallback. */
-export const AGENT_COLOR: Record<ScreenAgent, string> = {
-  storm_scout: 'var(--ds-agent-storm, #6b3fa0)',
-  front_desk: 'var(--ds-agent-desk, #138a8a)',
-  estimator: 'var(--ds-agent-estimator, #e0a100)',
-  claims: 'var(--ds-agent-claims, #1f7a5a)',
-  scheduler: 'var(--ds-agent-scheduler, #c0652a)',
-  follow_up: 'var(--ds-agent-follow, #2f6de0)',
+/** Each agent's glyph, from the kit's set. It is drawn ink on a sunken square wherever an agent is shown. */
+export const AGENT_ICON: Record<Agent, IconName> = {
+  storm_scout: 'storm',
+  front_desk: 'phone',
+  estimator: 'ruler',
+  claims: 'doc',
+  scheduler: 'cal',
+  follow_up: 'msg',
+  system: 'bolt',
 };
+
+/** The order the dashboard lays the agents out. */
+export const DASH_ORDER: readonly ScreenAgent[] = ['storm_scout', 'front_desk', 'estimator', 'claims', 'scheduler', 'follow_up'];
 
 /** Whole hours from minutes, never below zero. */
 export const wholeHours = (minutes: number): number => Math.max(0, Math.round(minutes / 60));
@@ -33,4 +35,17 @@ export function agoWords(iso: string, now: number): string {
   if (hours < 24) return `${hours} hr ago`;
   const days = Math.floor(hours / 24);
   return `${days} d ago`;
+}
+
+/**
+ * `hoursLabel`'s words in three parts, for a tile that sets the lead and the unit small beside a big number:
+ * "about 28 hours" is lead "about", number "28", unit "hours". Same rounding as `hoursLabel`: halves under ten hours,
+ * whole hours above; under a quarter of an hour it is "less than 0.5 hours".
+ */
+export function hoursParts(minutes: number): { lead: string; number: string; unit: string } {
+  const safe = Number.isFinite(minutes) ? Math.max(0, minutes) : 0;
+  if (safe < 15) return { lead: 'less than', number: '0.5', unit: 'hours' };
+  const hours = safe / 60;
+  const rounded = hours < 10 ? Math.round(hours * 2) / 2 : Math.round(hours);
+  return { lead: 'about', number: rounded.toLocaleString('en-US'), unit: rounded === 1 ? 'hour' : 'hours' };
 }

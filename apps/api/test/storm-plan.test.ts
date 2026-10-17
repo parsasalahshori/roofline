@@ -182,6 +182,8 @@ describe('recipients', () => {
     }
     const emailFields = payloadOf(email!).fields as Record<string, Record<string, string>>;
     expect(emailFields[a.customerId]).toMatchObject({ hail_size: '1.75"', street: a.street });
+    // The email's review sample says the same day as the text's
+    expect(emailFields[a.customerId]!.day).toBe(smsFields[a.customerId]!.day);
     // A home that is not a customer's contributes nothing: no key for it, and its street appears nowhere.
     expect(Object.keys(smsFields).sort()).toEqual(sorted([a.customerId, b.customerId]));
     expect(JSON.stringify(payloadOf(sms!))).not.toContain(stranger.street);

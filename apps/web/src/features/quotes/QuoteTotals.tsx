@@ -1,4 +1,5 @@
 import { money } from '@roofline/shared';
+import { Tag } from '@roofline/ui';
 import { quotes } from '../../copy/quotes.ts';
 import styles from './QuoteTotals.module.css';
 
@@ -10,7 +11,7 @@ export type QuoteTotalsProps = {
   totalCents: number;
 };
 
-/** The quote's totals: direct cost, overhead and profit, tax, then the emphasised total marked as an estimate. */
+/** The quote's totals under its lines: direct cost, overhead and profit, tax, then the total in Archivo, marked an estimate. */
 export function QuoteTotals({ subtotalCents, markupCents, markupPercent, taxCents, totalCents }: QuoteTotalsProps) {
   return (
     <dl className={styles.totals} aria-label={quotes.totalsLabel}>
@@ -29,10 +30,10 @@ export function QuoteTotals({ subtotalCents, markupCents, markupPercent, taxCent
       <div className={`${styles.row} ${styles.grand}`}>
         <dt>{quotes.total}</dt>
         <dd className={styles.grandValue}>
-          <span className={styles.num} data-part="total">
+          <span className={styles.total} data-part="total">
             {money(totalCents)}
           </span>
-          <span className={styles.caption}>{quotes.estimateLabel}</span>
+          <Tag>{quotes.estimateLabel}</Tag>
         </dd>
       </div>
     </dl>

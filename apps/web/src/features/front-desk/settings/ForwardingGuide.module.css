@@ -1,68 +1,25 @@
-/* The forwarding guide: a card under the Front Desk form. Codes are large, wrap at 375px, and every button is 40px tall. */
+/* The forwarding guide: a panel under the Front Desk form. Codes are large mono on a sunken box, wrap at 375px, and every button is 30px (phone 40px) or more. */
 .guide {
   scroll-margin-top: 16px;
+  min-width: 0;
 }
 
-.card {
+.stack {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-}
-
-.title {
-  margin: 0;
-  font-size: var(--font-size-stat);
-  font-weight: 600;
-  color: var(--text);
-}
-
-.numbers {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px 16px;
-  margin: 0;
-}
-
-.number {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.numberLabel {
-  font-size: var(--font-size-min);
-  color: var(--text-muted);
-}
-
-.numberValue {
-  margin: 0;
-  font-size: var(--font-size-body);
-  color: var(--text);
-  overflow-wrap: anywhere;
-}
-
-.hint {
-  margin: 0;
-  font-size: var(--font-size-min);
-  color: var(--text-muted);
-}
-
-.pickers {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px 16px;
+  gap: 20px;
 }
 
 .codes {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 
 .intro {
   margin: 0;
   font-size: var(--font-size-body);
-  color: var(--text);
+  color: var(--ink-2);
 }
 
 .group {
@@ -73,37 +30,45 @@
 
 .groupTitle {
   margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
-  color: var(--text);
+  color: var(--ink-3);
+  font: 600 var(--font-size-min)/1.2 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
+/* A code to dial: the code at the left on a sunken box, its Copy button at the right */
 .codeRow {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: 8px 12px;
+  padding: 10px 12px 10px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+  background: var(--sunken);
 }
 
-/* Codes are the thing to read and dial: large, monospace, and free to wrap on a narrow screen */
+/* Codes are the thing to read and dial: large, mono, and free to wrap on a narrow screen */
 .code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  min-width: 0;
+  color: var(--ink);
+  font-family: var(--f-mono);
   font-size: var(--font-size-stat);
+  font-variant-numeric: tabular-nums;
   font-weight: 600;
-  color: var(--text);
   overflow-wrap: anywhere;
   word-break: break-all;
-  min-width: 0;
 }
 
 .steps {
-  margin: 0;
-  padding-left: 24px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  margin: 0;
+  padding-left: 24px;
+  color: var(--ink);
   font-size: var(--font-size-body);
-  color: var(--text);
 }
 
 @media (max-width: 767.98px) {

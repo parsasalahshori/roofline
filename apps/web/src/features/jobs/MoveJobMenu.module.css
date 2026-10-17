@@ -1,19 +1,39 @@
-/* The compact form, for a table cell or a card: a small select whose label is kept for screen readers only */
-.compact {
-  position: relative;
+/* The split button on a card: the next step and the stage menu's chevron, one row */
+.split {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
 }
 
-.compact label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
+.quick {
+  flex: 1 1 auto;
+  justify-content: space-between;
+  gap: 4px;
+  min-width: 0;
 }
 
-.compact select {
-  min-height: 40px;
-  font-size: 14px;
+.quickText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The chevron beside a page head's quick move is as tall as the buttons around it */
+.tall[aria-haspopup] {
+  width: 36px;
+  height: 36px;
+}
+
+/* A thumb: the chevron on a card and the "Move to..." button of a job's bar are 44px each way */
+@media (max-width: 767.98px) {
+  .tall[aria-haspopup] {
+    width: 44px;
+    height: 44px;
+  }
+
+  .target[aria-haspopup] {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }

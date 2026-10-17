@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import type { JobStage, JobView } from '@roofline/shared';
-import { Button } from '@roofline/ui';
+import { Button, Icon, Tag } from '@roofline/ui';
 import { job as copy } from '../../copy/job.ts';
 import { jobs } from '../../copy/jobs.ts';
+import { useIsPhone } from '../../shell/useIsPhone.ts';
 import { MoveJobSheet } from '../jobs/MoveJobSheet.tsx';
 import { useMoveJob } from '../jobs/api.ts';
 import styles from './StageStepper.module.css';
@@ -13,13 +14,18 @@ const OPEN_STAGES = ['lead', 'inspection', 'proposal', 'won', 'installed'] as co
 export type StageStepperProps = { job: JobView['job']; canEdit: boolean };
 
 /**
- * The job's stage as a row of buttons. The current stage is highlighted; clicking another moves the
- * job. Won without a value, and Lost, open the sheet that asks for it. Installed is only reachable from Won.
+ * The job's stage as five segments, each a bar over its name: the stages behind it dark, the one it is in drawn in that
+ * stage's colour with the days it has been there, the ones ahead pale. A name is a button: it moves the job there. Won
+ * without a value, and Lost, open the sheet that asks for it. Installed is only reachable from Won. Lost is a way out of the
+ * pipeline and not a sixth stage: it has no bar, and stands apart from the five at the end of the row behind a hairline, with
+ * the glyph of an action. A phone has no Lost button here: the stage menu in its bar has it, with the L key.
  */
 export function StageStepper({ job, canEdit }: StageStepperProps) {
   const move = useMoveJob();
+  const phone = useIsPhone();
   const [sheet, setSheet] = useState<'lost' | 'won' | null>(null);
   const isLost = job.stage === 'lost';
+  const currentIndex = (OPEN_STAGES as readonly JobStage[]).indexOf(job.stage);
 
   async function choose(to: JobStage) {
     if (to === job.stage) return;
@@ -41,39 +47,49 @@ export function StageStepper({ job, canEdit }: StageStepperProps) {
   return (
     <div className={styles.wrap}>
       <div role="group" aria-label={copy.stepperLabel} className={styles.steps}>
-        {OPEN_STAGES.map((stage) => {
+        {OPEN_STAGES.map((stage, index) => {
           const current = stage === job.stage;
+          const state = current ? 'current' : currentIndex > index ? 'done' : 'todo';
           const blocked = stage === 'installed' && job.stage !== 'won';
+          // On a phone Inspection is written short; the button is still named in full
+          const short = phone ? copy.stageShort[stage] : undefined;
           return (
-            <Button
-              key={stage}
-              variant={current ? 'primary' : 'ghost'}
-              className={styles.step}
-              data-stage={stage}
-              data-current={current ? 'true' : 'false'}
-              aria-current={current ? 'step' : undefined}
-              disabled={!canEdit || blocked || move.isPending}
-              onClick={() => void choose(stage)}
-            >
-              {jobs.stage[stage]}
-            </Button>
+            <div key={stage} className={styles.segment} data-state={state} data-step={stage}>
+              <span className={styles.bar} aria-hidden="true" />
+              <div className={styles.label}>
+                <Button
+                  variant="ghost"
+                  className={styles.step}
+                  data-stage={stage}
+                  data-current={current ? 'true' : 'false'}
+                  aria-current={current ? 'step' : undefined}
+                  aria-label={short !== undefined ? jobs.stage[stage] : undefined}
+                  disabled={!canEdit || blocked || move.isPending}
+                  onClick={() => void choose(stage)}
+                >
+                  {short ?? jobs.stage[stage]}
+                </Button>
+                {current ? <span className={styles.days}>{copy.daysInStage(job.daysInStage)}</span> : null}
+              </div>
+            </div>
           );
         })}
-        {isLost ? null : (
+        {isLost || phone ? null : (
           <Button
             variant="ghost"
-            className={styles.step}
+            className={styles.lostButton}
             data-stage="lost"
             disabled={!canEdit || move.isPending}
             onClick={() => void choose('lost')}
           >
+            <Icon name="x" size={16} />
             {jobs.stage.lost}
           </Button>
         )}
       </div>
       {isLost ? (
         <div className={styles.lost} data-state="lost">
-          <span className={styles.chip}>{copy.lostChip}</span>
+          <Tag icon="x">{copy.lostChip}</Tag>
           {job.lostReason !== null ? <span className={styles.reason}>{copy.lostWhy(job.lostReason)}</span> : null}
         </div>
       ) : null}
@@ -89,3 +105,18 @@ export function StageStepper({ job, canEdit }: StageStepperProps) {
     </div>
   );
 }
+
+/** The steps while the job loads: five bars in the sunken colour. Decoration only. */
+export function StageStepperSkeleton() {
+  return (
+    <div className={styles.steps} aria-hidden="true">
+      {OPEN_STAGES.map((stage) => (
+        <div key={stage} className={styles.segment} data-state="todo" data-step={stage}>
+          <span className={styles.bar} />
+          <span className={styles.skeletonLabel} />
+        </div>
+      ))}
+    </div>
+  );
+}
+

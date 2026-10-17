@@ -1,11 +1,15 @@
 import { BOARD_STAGES, type BoardColumn, type JobCard, type JobStage } from '@roofline/shared';
-import { Button, EmptyState, Pill, Skeleton, UiLink } from '@roofline/ui';
+import { Avatar, Button, Icon, Table, Td, Th, Tr, UiLink } from '@roofline/ui';
+import { useSearchParams } from 'react-router';
 import { jobs } from '../../copy/jobs.ts';
 import { useIsPhone } from '../../shell/useIsPhone.ts';
-import { useBoardFilter } from './BoardFilters.tsx';
-import { formatDollars } from './JobCardView.tsx';
-import { type BoardFilterParams, useBoard, useColumnPages } from './api.ts';
+import { useBoard, useColumnPages, type BoardFilterParams } from './api.ts';
+import { useBoardFilter } from './filter.ts';
+import { formatDollars } from './format.ts';
+import { Aging } from './JobCardView.tsx';
 import { MoveJobMenu } from './MoveJobMenu.tsx';
+import { StageTag } from './StageTag.tsx';
+import { EmptyPanel, LoadError, RowsSkeleton } from './states.tsx';
 import styles from './JobsList.module.css';
 
 const STAGE_ORDER = BOARD_STAGES as readonly JobStage[];
@@ -13,18 +17,25 @@ const STAGE_ORDER = BOARD_STAGES as readonly JobStage[];
 /** The most recently updated job first. */
 const byUpdated = (a: JobCard, b: JobCard): number => Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
 
-const formatUpdated = (iso: string): string =>
-  new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(iso));
+const updatedFormat = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
+const formatUpdated = (iso: string): string => updatedFormat.format(new Date(iso));
 
-const stageChip = (job: JobCard) => <Pill tone="neutral">{jobs.stage[job.stage]}</Pill>;
-const valueText = (job: JobCard) => (job.valueCents === null ? '' : formatDollars(job.valueCents));
-const repText = (job: JobCard) => (job.assigned === null ? jobs.unassigned : job.assigned.name);
+/** The rep as an avatar and a name, or "Unassigned" in the quiet colour. */
+function Rep({ job }: { job: JobCard }) {
+  if (job.assigned === null) return <span className={styles.unassigned}>{jobs.unassigned}</span>;
+  return (
+    <span className={styles.rep}>
+      <Avatar name={job.assigned.name} size={24} />
+      <span>{job.assigned.name}</span>
+    </span>
+  );
+}
 
 type ListStageProps = { column: BoardColumn; filter: BoardFilterParams; phone: boolean };
 
 /**
  * One stage of the list: its loaded jobs, most recently updated first, and a 'Show N more' button
- * while the stage has jobs that are not loaded yet. A desktop stage is a table body; on a phone its rows are list items.
+ * while the stage has jobs that are not loaded yet. A desktop stage is a table body; on a phone its rows are cards.
  */
 function ListStage({ column, filter, phone }: ListStageProps) {
   const { visible, remaining, busy, more } = useColumnPages(column, filter);
@@ -32,7 +43,7 @@ function ListStage({ column, filter, phone }: ListStageProps) {
 
   const rows = [...visible].sort(byUpdated);
   const showMore = remaining > 0 ? (
-    <Button variant="ghost" busy={busy} onClick={more}>
+    <Button variant="ghost" size="sm" busy={busy} onClick={more}>
       {jobs.showMore(remaining)}
     </Button>
   ) : null;
@@ -41,18 +52,22 @@ function ListStage({ column, filter, phone }: ListStageProps) {
     return (
       <>
         {rows.map((job) => (
-          <li key={job.id} className={styles.row} data-stage={job.stage}>
-            <UiLink href={`/jobs/${job.id}`} className={styles.jobLink}>
-              <span className={styles.name}>{job.customerName}</span>
+          <li key={job.id} className={styles.card} data-stage={job.stage}>
+            <UiLink href={`/jobs/${job.id}`} className={styles.cardLink}>
+              <span className={styles.cardTop}>
+                <span className={styles.name}>{job.customerName}</span>
+                <StageTag stage={job.stage} />
+              </span>
               <span className={styles.address}>{job.addressLine}</span>
+              <span className={styles.cardFoot}>
+                {job.valueCents !== null ? <span className={styles.value}>{formatDollars(job.valueCents)}</span> : null}
+                <Rep job={job} />
+                <Aging days={job.daysInStage} stuck={job.stuck} />
+              </span>
             </UiLink>
-            <div className={styles.meta}>
-              {stageChip(job)}
-              <span>{valueText(job)}</span>
-              <span>{repText(job)}</span>
-              <span>{formatUpdated(job.updatedAt)}</span>
+            <div className={styles.cardMove}>
+              <MoveJobMenu job={job} compact />
             </div>
-            <MoveJobMenu job={job} compact />
           </li>
         ))}
         {showMore === null ? null : <li>{showMore}</li>}
@@ -61,62 +76,126 @@ function ListStage({ column, filter, phone }: ListStageProps) {
   }
 
   return (
-    <tbody data-stage={column.stage}>
+    <tbody data-stage={column.stage} className={styles.group}>
       {rows.map((job) => (
-        <tr key={job.id} data-stage={job.stage}>
-          <td>
+        <Tr key={job.id} data-stage={job.stage}>
+          <Td>
             <UiLink href={`/jobs/${job.id}`} className={styles.jobLink}>
               <span className={styles.name}>{job.customerName}</span>
               <span className={styles.address}>{job.addressLine}</span>
             </UiLink>
-          </td>
-          <td>{stageChip(job)}</td>
-          <td className={styles.num}>{valueText(job)}</td>
-          <td>{repText(job)}</td>
-          <td>{formatUpdated(job.updatedAt)}</td>
-          <td>
+          </Td>
+          <Td>
+            <StageTag stage={job.stage} />
+          </Td>
+          <Td numeric>
+            {job.valueCents === null ? (
+              <>
+                <span aria-hidden="true" className={styles.noValue}>
+                  {jobs.noValueDash}
+                </span>
+                <span className="visually-hidden">{jobs.noValueYet}</span>
+              </>
+            ) : (
+              formatDollars(job.valueCents)
+            )}
+          </Td>
+          <Td>
+            <Rep job={job} />
+          </Td>
+          <Td numeric>
+            <Aging days={job.daysInStage} stuck={job.stuck} />
+          </Td>
+          <Td className={styles.updated}>{formatUpdated(job.updatedAt)}</Td>
+          <Td className={styles.move}>
             <MoveJobMenu job={job} compact />
-          </td>
-        </tr>
+          </Td>
+        </Tr>
       ))}
       {showMore === null ? null : (
         <tr>
-          <td colSpan={6}>{showMore}</td>
+          <td colSpan={7} className={styles.moreCell}>
+            {showMore}
+          </td>
         </tr>
       )}
     </tbody>
   );
 }
 
-/** The jobs as a list: a table on a desktop, stacked rows on a phone. Each row has the Move-to menu. */
-export function JobsList() {
+export type JobsListProps = {
+  /** An assignee, a source or a search is narrowing the list. */
+  narrowed: boolean;
+};
+
+/** The jobs as a list: a table on a desktop, stacked cards on a phone. Each row has the Move-to menu. */
+export function JobsList({ narrowed }: JobsListProps) {
   const filter = useBoardFilter();
   const board = useBoard(filter);
   const phone = useIsPhone();
+  const [, setParams] = useSearchParams();
 
   if (board.isError) {
     return (
-      <EmptyState
+      <LoadError
+        tag={jobs.errorTag}
         title={jobs.loadFailed}
-        action={
-          <Button variant="ghost" onClick={() => void board.refetch()}>
-            {jobs.retry}
-          </Button>
-        }
+        retry={jobs.retry}
+        busy={board.isFetching}
+        onRetry={() => void board.refetch()}
       />
     );
   }
 
   if (board.data === undefined) {
     return (
-      <div role="status" aria-label={jobs.loading} className={styles.loading}>
-        <Skeleton lines={4} height="48px" />
+      <div role="status" aria-label={jobs.loading}>
+        <RowsSkeleton />
       </div>
     );
   }
 
   const columns = [...board.data.columns].sort((a, b) => STAGE_ORDER.indexOf(a.stage) - STAGE_ORDER.indexOf(b.stage));
-  if (columns.every((column) => column.count === 0)) return <EmptyState title={jobs.listEmpty} />;
+  if (columns.every((column) => column.count === 0)) {
+    if (narrowed) {
+      return (
+        <EmptyPanel
+          title={jobs.emptyFiltered}
+          body={jobs.emptyFilteredBody}
+          action={
+            <Button
+              variant="default"
+              onClick={() =>
+                setParams(
+                  (previous) => {
+                    const next = new URLSearchParams(previous);
+                    for (const key of ['assigned', 'source', 'q']) next.delete(key);
+                    return next;
+                  },
+                  { replace: true },
+                )
+              }
+            >
+              {jobs.clearFilters}
+            </Button>
+          }
+        />
+      );
+    }
+    if (filter.archived === true) return <EmptyPanel title={jobs.emptyArchived} body={jobs.emptyArchivedBody} />;
+    return (
+      <EmptyPanel
+        title={jobs.emptyBoard}
+        body={jobs.emptyBoardBody}
+        action={
+          <Button href="/jobs/new" variant="primary">
+            <Icon name="plus" size={16} />
+            {jobs.newJob}
+          </Button>
+        }
+      />
+    );
+  }
 
   if (phone) {
     return (
@@ -129,20 +208,25 @@ export function JobsList() {
   }
 
   return (
-    <table className={styles.table} aria-label={jobs.listLabel}>
-      <thead>
-        <tr>
-          <th scope="col">{jobs.listColumns.job}</th>
-          <th scope="col">{jobs.listColumns.stage}</th>
-          <th scope="col">{jobs.listColumns.value}</th>
-          <th scope="col">{jobs.listColumns.rep}</th>
-          <th scope="col">{jobs.listColumns.updated}</th>
-          <th scope="col">{jobs.listColumns.move}</th>
-        </tr>
-      </thead>
-      {columns.map((column) => (
-        <ListStage key={column.stage} column={column} filter={filter} phone={false} />
-      ))}
-    </table>
+    <div className={styles.panel}>
+      <Table aria-label={jobs.listLabel}>
+        <thead>
+          <tr>
+            <Th>{jobs.listColumns.job}</Th>
+            <Th>{jobs.listColumns.stage}</Th>
+            <Th numeric>{jobs.listColumns.value}</Th>
+            <Th>{jobs.listColumns.rep}</Th>
+            <Th numeric>{jobs.listColumns.age}</Th>
+            <Th>{jobs.listColumns.updated}</Th>
+            <Th>
+              <span className="visually-hidden">{jobs.listColumns.move}</span>
+            </Th>
+          </tr>
+        </thead>
+        {columns.map((column) => (
+          <ListStage key={column.stage} column={column} filter={filter} phone={false} />
+        ))}
+      </Table>
+    </div>
   );
 }

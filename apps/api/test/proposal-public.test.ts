@@ -3,7 +3,7 @@ import type { ProposalView, PublicProposalView } from '@roofline/shared';
 import { and, eq } from 'drizzle-orm';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import { customers, measurements, proposalEvents, proposals } from '@roofline/db';
+import { companies, companySettings, customers, measurements, proposalEvents, proposals } from '@roofline/db';
 import { addressFor, Actors, dbActivities, inCompany, mustCreate } from './crm-helpers.ts';
 import { proposalIpHashFor } from '../src/public/proposal-common.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
@@ -96,6 +96,23 @@ describe('reading the link', () => {
     const text = JSON.stringify(view);
     expect(text).not.toMatch(/unitPrice|unit_price|customerId|propertyId|jobId|companyId/);
     expect(text).not.toContain(s.proposal.id);
+  });
+
+  test("the view carries the company's brand colour and logo, null when it has none, and each company sees only its own", async () => {
+    const s = await sent();
+    expect((await get(s.token)).body).toMatchObject({ accentColor: null, logoUrl: null });
+    await inCompany(t, t.seed.a.companyId, async (tx) => {
+      await tx.update(companySettings).set({ quoteAccentColor: '#ED3A2B' }).where(eq(companySettings.companyId, t.seed.a.companyId));
+      await tx.update(companies).set({ logoUrl: 'https://cdn.example.test/logo.png' }).where(eq(companies.id, t.seed.a.companyId));
+    });
+    const branded = (await get(s.token)).body as PublicProposalView;
+    expect(branded.accentColor).toBe('#ED3A2B');
+    expect(branded.logoUrl).toBe('https://cdn.example.test/logo.png');
+    // Company B's settings are untouched, so B's own proposal link would still be the default
+    const other = await inCompany(t, t.seed.b.companyId, (tx) =>
+      tx.select({ accent: companySettings.quoteAccentColor }).from(companySettings).where(eq(companySettings.companyId, t.seed.b.companyId)),
+    );
+    expect(other[0]?.accent ?? null).toBeNull();
   });
 
   test('after valid_until it is readable as expired; 30 days later it is gone (410 with the phone)', async () => {

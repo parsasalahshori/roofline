@@ -1,5 +1,6 @@
-import { StatCard } from '@roofline/ui';
+import { KpiTile, Panel } from '@roofline/ui';
 import { storm } from '../../copy/storm.ts';
+import { count } from './format.ts';
 import type { StormResultsView } from './types.ts';
 import styles from './StormResults.module.css';
 
@@ -8,10 +9,12 @@ export type StormResultsProps = { results: StormResultsView; running: boolean };
 const dollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 const money = (cents: number): string => dollars.format(cents / 100);
 
-/** The live numbers of a storm plan: texts, emails, doors, ads and bookings. */
+/** The live numbers of a storm plan: texts, emails, doors, ads and bookings, each as a tile. */
 export function StormResults({ results, running }: StormResultsProps) {
-  const empty = Object.values(results).every((value) => value === 0) && !running;
-  const cards: { label: string; value: number }[] = [
+  // The ad budget is a ceiling, not a result: a plan that has done nothing yet has results of zero whatever its budget
+  const counted = Object.entries(results).filter(([key]) => key !== 'adMaxCents');
+  const empty = counted.every(([, value]) => value === 0) && !running;
+  const tiles: { label: string; value: number }[] = [
     { label: storm.textsSent, value: results.textsSent },
     { label: storm.textsDelivered, value: results.textsDelivered },
     { label: storm.replies, value: results.replies },
@@ -25,21 +28,21 @@ export function StormResults({ results, running }: StormResultsProps) {
     { label: storm.inspectionsBooked, value: results.inspectionsBooked },
   ];
   return (
-    <section className={styles.results} aria-label={storm.resultsHeading} aria-live={running ? 'polite' : undefined}>
-      <h2 className={styles.heading}>{storm.resultsHeading}</h2>
+    <Panel title={storm.resultsHeading} aria-live={running ? 'polite' : undefined}>
       {empty ? (
         <p className={styles.empty}>{storm.resultsEmpty}</p>
       ) : (
         <div className={styles.grid} data-testid="storm-results-grid">
-          {cards.map((card) => (
-            <StatCard key={card.label} label={card.label} value={card.value} />
+          {tiles.map((tile) => (
+            <KpiTile key={tile.label} label={tile.label} value={count(tile.value)} />
           ))}
-          <StatCard
-            label={storm.adSpend(money(results.adSpendCents), money(results.adMaxCents))}
+          <KpiTile
+            label={storm.adSpendLabel}
             value={money(results.adSpendCents)}
+            meta={storm.adSpendOf(money(results.adMaxCents))}
           />
         </div>
       )}
-    </section>
+    </Panel>
   );
 }

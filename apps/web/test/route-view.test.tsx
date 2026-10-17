@@ -68,6 +68,9 @@ function routeWith(stops: DoorStop[]): RouteDetailView {
   return { route: { ...ROUTE, stops: stops.length, doneStops: stops.filter((s) => s.outcome !== null).length }, stops };
 }
 
+/** The doors in order: the list inside its panel (the trail above the page is a list too). */
+const doorsList = async () => within(await screen.findByRole('region', { name: doors.stopsHeading })).getByRole('list');
+
 const GOOGLE = 'https://www.google.com/maps/dir/?api=1&destination=41.2565,-95.9345';
 const APPLE = 'https://maps.apple.com/?daddr=41.2565,-95.9345';
 
@@ -86,7 +89,7 @@ describe('route view', () => {
     api = stubApi({ 'GET /api/routes/r1': () => ({ body: routeWith(stops) }) });
     renderAt(<RouteView routeId="r1" />, '/storm/routes/r1');
 
-    const list = await screen.findByRole('list');
+    const list = await doorsList();
     const items = within(list).getAllByRole('listitem');
     expect(items).toHaveLength(3);
     expect(items[0]).toHaveTextContent(addressOf(1));
@@ -103,6 +106,21 @@ describe('route view', () => {
     expect(within(current).getByRole('link', { name: doors.navigate })).toHaveAttribute('rel', 'noopener noreferrer');
 
     expect(screen.getByTestId('outcome-stub')).toHaveTextContent(addressOf(2));
+  });
+
+  it('names the page by the route over a mono label, with the progress and the trail back', async () => {
+    const stops = [stop(1, { outcome: 'not_home' }), stop(2), stop(3)];
+    api = stubApi({ 'GET /api/routes/r1': () => ({ body: routeWith(stops) }) });
+    renderAt(<RouteView routeId="r1" />, '/storm/routes/r1');
+
+    expect(await screen.findByRole('heading', { level: 1, name: ROUTE.name })).toBeInTheDocument();
+    const main = screen.getByRole('main', { name: 'Storm' });
+    expect(within(main).getByText(doors.routeEyebrow)).toBeInTheDocument();
+    expect(within(main).getAllByText(doors.progress(1, 3)).length).toBeGreaterThan(0);
+    expect(within(main).getByRole('link', { name: 'Storm' })).toHaveAttribute('href', '/storm');
+    expect(within(main).getByRole('link', { name: doors.myRoutesLink })).toHaveAttribute('href', '/storm/routes');
+    // A bar for how far along the route is
+    expect(within(main).getByRole('progressbar', { name: doors.progress(1, 3) })).toBeInTheDocument();
   });
 
   it('shows the done state when every stop has an outcome', async () => {
@@ -122,7 +140,7 @@ describe('route view', () => {
 
     const current = await screen.findByRole('region', { name: doors.doorOf(2, 2) });
     expect(within(current).getByText(doors.noAddress, { selector: 'p' })).toBeInTheDocument();
-    expect(screen.getByRole('list')).toHaveTextContent(doors.noAddress);
+    expect(within(screen.getByRole('region', { name: doors.stopsHeading })).getByRole('list')).toHaveTextContent(doors.noAddress);
     expect(document.body).not.toHaveTextContent(/Radar-estimated hail/);
   });
 
@@ -140,7 +158,7 @@ describe('route view', () => {
     api = stubApi({ 'GET /api/routes/r1': () => ({ body: routeWith(stops) }) });
     renderAt(<RouteView routeId="r1" />, '/storm/routes/r1');
 
-    await screen.findByRole('list');
+    await doorsList();
     expect(document.body).not.toHaveTextContent('Pat Owner');
     expect(document.body).not.toHaveTextContent('Lee Owner');
   });
@@ -152,7 +170,7 @@ describe('route view', () => {
     api = stubApi({ 'GET /api/routes/r1': () => ({ body: routeWith([stop(1)]) }) });
     renderAt(<RouteView routeId="r1" />, '/storm/routes/r1');
 
-    await screen.findByRole('list');
+    await doorsList();
     expect(watchPosition).toHaveBeenCalledTimes(1);
     expect(clearWatch).not.toHaveBeenCalled();
     cleanup();
@@ -164,7 +182,7 @@ describe('route view', () => {
     api = stubApi({ 'GET /api/routes/r1': () => ({ body: routeWith([stop(1)]) }) });
     renderAt(<RouteView routeId="r1" />, '/storm/routes/r1');
 
-    expect(await screen.findByRole('list')).toBeInTheDocument();
+    expect(await doorsList()).toBeInTheDocument();
   });
 
   it('shows the loading skeleton while the route loads', () => {
@@ -190,7 +208,8 @@ describe('route view', () => {
     api = stubApi({ 'GET /api/routes/r1': () => ({ body: routeWith([stop(1)]) }) });
     renderAt(<RouteView routeId="r1" />, '/storm/routes/r1');
 
-    const list = await screen.findByRole('list');
-    expect(list.parentElement).toHaveClass(styles.view);
+    // The page is the one column, with the map, the door and the doors in it
+    const list = await doorsList();
+    expect(list.closest(`.${styles.view}`)).not.toBeNull();
   });
 });

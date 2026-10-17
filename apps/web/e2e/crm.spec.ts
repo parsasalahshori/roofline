@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import { test, expect } from './fixtures.ts';
+import { test, expect, moveJob, chooseOption } from './fixtures.ts';
 
 /*
  * Core CRM, start to finish: the pipeline board, the New job form, the job window's timeline and
@@ -29,15 +29,58 @@ test('the board shows the showcase pipeline', async ({ page, loginAs, markTodayS
   await markTodaySeen('owner@a.test');
   await page.goto('/jobs');
 
-  const jobsWindow = page.getByRole('dialog', { name: 'Jobs', exact: true });
+  const jobsWindow = page.getByRole('main', { name: 'Jobs', exact: true });
   await expect(jobsWindow).toBeVisible();
   await expect(jobsWindow.getByRole('region', { name: 'Pipeline board' })).toBeVisible();
 
   for (const heading of ['Lead (8)', 'Inspection (7)', 'Proposal (6)', 'Won (4)', 'Installed (2)']) {
     await expect(jobsWindow.getByRole('heading', { name: heading, exact: true })).toBeVisible();
   }
-  // Lost is a drawer under the columns, not a column
+  // Lost is a collapsed tab at the right of the lanes, not a lane of cards
   await expect(jobsWindow.getByRole('button', { name: 'Lost (1)', exact: true })).toBeVisible();
+});
+
+test('every card on the board stays inside its lane, and a lane with more cards than it shows fades at its foot', async ({
+  page,
+  loginAs,
+  markTodaySeen,
+}) => {
+  // Narrow enough that the lanes sit at their 200px floor, where a card's footer has the least room
+  await page.setViewportSize({ width: 1100, height: 900 });
+  // The first Inspection card is given what makes its footer widest: no value (so the rep's name shows), a long name
+  await page.route(/\/api\/jobs\/board(\?|$)/, async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { columns: { stage: string; jobs: Record<string, unknown>[] }[] };
+    const first = body.columns.find((column) => column.stage === 'inspection')?.jobs[0];
+    if (first !== undefined) {
+      first['valueCents'] = null;
+      first['assigned'] = { userId: '00000000-0000-4000-8000-000000000001', name: 'Maximilian Featherstonehaugh' };
+    }
+    await route.fulfill({ response, json: body });
+  });
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/jobs');
+  const board = page.getByRole('region', { name: 'Pipeline board' });
+  await expect(board.getByRole('heading', { name: 'Lead (8)', exact: true })).toBeVisible();
+
+  // A card's footer (avatar, rep, age) could once not shrink and pushed its card out over the lane's border
+  const outside = await page.evaluate(() =>
+    [...document.querySelectorAll('[data-card]')]
+      .filter((card) => {
+        const lane = card.closest('section')?.getBoundingClientRect();
+        const box = card.getBoundingClientRect();
+        // The lane keeps 8px each side of its cards; a card must leave at least half of that
+        return lane === undefined || box.left < lane.left + 4 || box.right > lane.right - 4;
+      })
+      .map((card) => card.querySelector('strong')?.textContent ?? ''),
+  );
+  expect(outside).toEqual([]);
+
+  // Eight leads do not fit a 900px window: that lane fades at its foot to say there is more; two installed jobs fit, so no fade
+  const cardsOf = (lane: string) => board.getByRole('region', { name: lane, exact: true }).locator(':scope > div').last();
+  await expect(cardsOf('Lead')).toHaveAttribute('data-more', 'true');
+  await expect(cardsOf('Installed')).not.toHaveAttribute('data-more');
 });
 
 test('drag a lead to Inspection, then Lost asks why', async ({ page, loginAs, markTodaySeen }) => {
@@ -56,13 +99,13 @@ test('drag a lead to Inspection, then Lost asks why', async ({ page, loginAs, ma
 
   // Moving a job to Lost opens the sheet that asks why; saving without a reason is refused
   const inspectionCard = board.locator('section[data-stage="inspection"] div[data-stage="inspection"]').first();
-  await inspectionCard.getByLabel('Move to…').selectOption('lost');
+  await moveJob(inspectionCard, 'Lost');
   const sheet = page.getByRole('dialog', { name: 'Why was the job lost?' });
   await expect(sheet).toBeVisible();
   await sheet.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(sheet.getByText('Pick why the job was lost.')).toBeVisible();
 
-  await sheet.getByLabel('Reason').selectOption('Price');
+  await chooseOption(sheet, 'Reason', 'Price');
   await sheet.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(sheet).toHaveCount(0);
   await expect(board.getByRole('button', { name: 'Lost (2)', exact: true })).toBeVisible();
@@ -84,7 +127,7 @@ test('a new job from the map home in 2 clicks to its form', async ({ page, login
   await click(search.getByRole('option', { name: new RegExp(`^${NEW_JOB_COPY}`) }));
 
   await expect(page).toHaveURL(/\/jobs\/new$/);
-  const form = page.getByRole('dialog', { name: 'Jobs', exact: true });
+  const form = page.getByRole('main', { name: 'New job', exact: true });
   await expect(form).toBeVisible();
   await expect(form.getByRole('button', { name: 'New customer', exact: true })).toBeVisible();
   expect(clicks.count).toBeLessThanOrEqual(2);
@@ -94,15 +137,15 @@ test('a new job from the map home in 2 clicks to its form', async ({ page, login
   await form.getByLabel('Name', { exact: true }).fill('Pat Newcomer');
   await form.getByLabel('Street address').fill('100 Test Lane');
   await form.getByLabel('City').fill('Omaha');
-  await form.getByLabel('State', { exact: true }).selectOption('NE');
+  await chooseOption(form, 'State', 'Nebraska');
   await form.getByLabel('ZIP code').fill('68102');
   await form.getByRole('button', { name: 'Create job', exact: true }).click();
 
   await expect(page).toHaveURL(/\/jobs\/[0-9a-f-]{36}$/);
-  await expect(page.getByRole('dialog').getByText('Pat Newcomer').first()).toBeVisible();
+  await expect(page.getByRole('main').getByText('Pat Newcomer').first()).toBeVisible();
 
-  // Back on the map, the new customer and the new open job are pins
-  await page.keyboard.press('Escape');
+  // Back on Home, the new customer and the new open job are pins
+  await page.getByRole('navigation', { name: 'Apps' }).getByRole('link', { name: 'Home', exact: true }).click();
   await expect(page).toHaveURL(/\/$/);
   const after = page.getByText('Map showing 71 customers and 26 open jobs.');
   await expect(after).toBeAttached({ timeout: 20_000 });
@@ -114,7 +157,7 @@ test('the timeline shows a note, a stage move and a quote', async ({ page, login
   const jobId = await jobWithoutQuote(db, scenario.a.companyId, 'lead');
   await page.goto(`/jobs/${jobId}`);
 
-  const win = page.getByRole('dialog').first();
+  const win = page.getByRole('main').first();
   const timeline = win.getByRole('list', { name: 'Timeline' });
 
   // 1. A note
@@ -133,7 +176,7 @@ test('the timeline shows a note, a stage move and a quote', async ({ page, login
   await page.goto(`/jobs/${jobId}`);
 
   // Newest first: the quote, then the move, then the note
-  const items = page.getByRole('dialog').first().getByRole('list', { name: 'Timeline' }).getByRole('listitem');
+  const items = page.getByRole('main').first().getByRole('list', { name: 'Timeline' }).getByRole('listitem');
   await expect(items.nth(0)).toContainText('Quote Q-0001 started');
   await expect(items.nth(1)).toContainText('Moved to Inspection');
   await expect(items.nth(2)).toContainText(note);
@@ -150,8 +193,9 @@ test('a quote prices, goes final and downloads a PDF', async ({ page, loginAs, m
 
   // The price is an estimate, not a promise
   await expect(page.getByLabel('Quote totals').getByText('Estimate')).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Quote summary' })).toContainText('Q-0001');
+  await expect(page.getByRole('heading', { level: 1, name: 'Quote Q-0001' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Quote summary' })).toContainText('Draft');
+  await expect(page.getByRole('region', { name: 'Quote summary' })).toContainText('Not final yet');
 
   // Mark final asks first, then freezes the quote
   await page.getByRole('group', { name: 'Quote actions' }).getByRole('button', { name: 'Mark final', exact: true }).click();
@@ -211,14 +255,13 @@ test('a rep sees only their jobs', async ({ page, loginAs, markTodaySeen, scenar
   const board = page.getByRole('region', { name: 'Pipeline board' });
   await expect(board).toBeVisible();
 
-  // The headings add up to exactly the rep's jobs (the Lost drawer holds the lost ones)
+  // The lane counts add up to exactly the rep's jobs (the Lost tab holds the lost ones)
   const expected = visible.rows.length;
   await expect
     .poll(
       async () => {
-        const headings = await board.getByRole('heading').allTextContents();
-        const counts = headings.map((h) => Number(/\((\d+)\)$/.exec(h)?.[1] ?? 0));
-        const lost = /\((\d+)\)$/.exec((await board.getByRole('button', { name: /^Lost \(/ }).textContent()) ?? '')?.[1];
+        const counts = (await board.locator('h2 [data-part="count"]').allTextContents()).map((n) => Number(n));
+        const lost = /\((\d+)\)$/.exec((await board.getByRole('button', { name: /^Lost \(/ }).getAttribute('aria-label')) ?? '')?.[1];
         return counts.reduce((a, b) => a + b, 0) + Number(lost ?? 0);
       },
       { timeout: 15_000 },
@@ -230,5 +273,5 @@ test('a rep sees only their jobs', async ({ page, loginAs, markTodaySeen, scenar
     await expect(board.locator(`a[href="/jobs/${row.id}"]`)).toHaveCount(1);
   }
   await expect(board.locator(`a[href="/jobs/${hidden.rows[0]!.id}"]`)).toHaveCount(0);
-  await expect(board.getByText(/\$[\d,]+ total/)).toHaveCount(0);
+  await expect(board.locator('[data-part="lane-total"]')).toHaveCount(0);
 });

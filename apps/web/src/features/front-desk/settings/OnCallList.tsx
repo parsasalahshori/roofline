@@ -1,5 +1,5 @@
 import type { OnCallMember } from '@roofline/shared';
-import { IconButton } from '@roofline/ui';
+import { IconButton, Panel } from '@roofline/ui';
 import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { frontDeskSettings } from '../../../copy/front-desk-settings.ts';
 import { formatPhone } from '../../../lib/phone.ts';
@@ -126,8 +126,7 @@ export function OnCallList({ members, order, onChange, disabled = false }: OnCal
   }
 
   return (
-    <section className={styles.root}>
-      <h3 className={styles.heading}>{copy.heading}</h3>
+    <Panel title={copy.heading} padded={false}>
       <p className={styles.help}>{copy.help}</p>
 
       <div ref={listRef} className={styles.listArea}>
@@ -177,7 +176,9 @@ export function OnCallList({ members, order, onChange, disabled = false }: OnCal
                   </span>
                   <div className={styles.who}>
                     <span className={styles.name}>{name}</span>
-                    <span className={styles.phone}>{member.transferPhoneE164 ? formatPhone(member.transferPhoneE164) : copy.noPhone}</span>
+                    <span className={member.transferPhoneE164 ? styles.phone : styles.noPhone}>
+                      {member.transferPhoneE164 ? formatPhone(member.transferPhoneE164) : copy.noPhone}
+                    </span>
                   </div>
                   <div className={styles.actions}>
                     <IconButton
@@ -210,13 +211,15 @@ export function OnCallList({ members, order, onChange, disabled = false }: OnCal
 
       {offList.length > 0 ? (
         <div className={styles.offSection}>
-          <h4 className={styles.subheading}>{copy.notOnList}</h4>
+          <h3 className={styles.subheading}>{copy.notOnList}</h3>
           <div className={styles.offList}>
             {offList.map((member) => (
               <div key={member.userId} className={styles.row}>
                 <div className={styles.who}>
                   <span className={styles.name}>{member.name}</span>
-                  <span className={styles.phone}>{member.transferPhoneE164 ? formatPhone(member.transferPhoneE164) : copy.noPhone}</span>
+                  <span className={member.transferPhoneE164 ? styles.phone : styles.noPhone}>
+                    {member.transferPhoneE164 ? formatPhone(member.transferPhoneE164) : copy.noPhone}
+                  </span>
                 </div>
                 <div className={styles.actions}>
                   <IconButton
@@ -235,6 +238,6 @@ export function OnCallList({ members, order, onChange, disabled = false }: OnCal
       <p className={styles.visuallyHidden} aria-live="polite">
         {announcement}
       </p>
-    </section>
+    </Panel>
   );
 }

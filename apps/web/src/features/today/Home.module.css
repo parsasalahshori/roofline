@@ -1,167 +1,48 @@
-/*
- * The map home page's floating cards. The overlay sits between the top bar and the screen's bottom edge and takes
- * no clicks itself, so the map stays usable around the cards. Desktop: a 372px column at the left, a 360px column
- * at the right, 20px from the edges and 16px under the bar. Phone: one scrolling column over the map.
- */
-.home {
-  position: fixed;
-  top: var(--shell-top-inset, 34px);
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 10;
-  pointer-events: none;
-  font-family: var(--ds-font, var(--font));
+/* The body of Home: the map at the left takes what is left, a 404px column at the right holds the cards */
+.grid {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(0, 1fr) clamp(340px, 28vw, 404px);
+  gap: 14px;
+  min-height: 520px;
 }
 
-.left,
-.right {
-  position: absolute;
-  top: 16px;
+.map {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The column scrolls by itself, so the map keeps its place; the 1px keeps the cards' hairlines from being cut */
+.column {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: calc(100% - 16px - 98px);
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.left {
-  left: 20px;
-  width: 372px;
-}
-
-.right {
-  right: 20px;
-  width: 360px;
-  gap: 16px;
-}
-
-/* Everything but the feed keeps its natural height; the feed takes what is left */
-.right > :not(:last-child) {
-  flex: none;
-}
-
-.left > *,
-.right > * {
-  pointer-events: auto;
-}
-
-/* The right column's last card (the feed) takes what is left and fades out at its bottom edge, as the reference does */
-.right > :last-child {
+  min-width: 0;
   min-height: 0;
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(#000 calc(100% - 16px), transparent);
-  mask-image: linear-gradient(#000 calc(100% - 16px), transparent);
+  margin: -1px;
+  padding: 1px;
+  overflow-y: auto;
 }
 
-.greeting {
-  box-sizing: border-box;
-  padding: 20px;
-  border-radius: var(--ds-r-widget, 20px);
-  background: var(--ds-glass-strong, rgba(246, 247, 248, 0.97));
-  box-shadow: var(--ds-shadow, 0 0 0 1px rgba(21, 28, 34, 0.08), 0 14px 34px -16px rgba(21, 28, 34, 0.35));
-  color: var(--ds-text-1, #151c22);
+/* While there is more to scroll to, the column fades at its bottom edge: a card cut there reads as "scroll", not as a fault */
+.column[data-more="true"] {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent);
 }
 
-.date {
-  margin: 0;
-  color: var(--ds-text-3, #6b7680);
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.heading {
-  margin: 4px 0 0;
-  font-size: 27px;
-  font-stretch: 125%;
-  font-weight: 700;
-  letter-spacing: -0.025em;
-  line-height: 1.1;
-}
-
-.briefing {
-  margin: 12px 0 0;
-  color: var(--ds-text-2, #3a444d);
-  font-size: 14.5px;
-  line-height: 1.55;
-}
-
-.briefing b {
-  color: var(--ds-text-1, #151c22);
-  font-weight: 600;
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 16px;
-}
-
-.primary,
-.secondary {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  height: 36px;
-  padding: 0 14px;
-  border-radius: 9px;
-  color: var(--ds-text-1, #151c22);
-  font-size: 13.5px;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.primary {
-  background: var(--ds-accent, #ffc21a);
-  box-shadow: inset 0 0 0 1px var(--ds-accent-line, rgba(217, 158, 0, 0.55));
-}
-
-.secondary {
-  background: #fff;
-  box-shadow: inset 0 0 0 1px var(--ds-hairline-strong, #c3cbd1);
-}
-
-.primary:hover {
-  filter: brightness(0.97);
-}
-
-.secondary:hover {
-  background: var(--ds-surface-2, #eceff1);
-}
-
-.primary:focus-visible,
-.secondary:focus-visible {
-  outline: 2px solid var(--ds-text-1, #151c22);
-  outline-offset: 2px;
-}
-
-/* Phone: one column that scrolls over the map. The tab bar's height is kept clear at the bottom. */
-@media (max-width: 767.98px) {
-  .home {
-    overflow-y: auto;
-    padding: 12px 12px calc(var(--shell-bottom-inset, 64px) + 12px);
-    pointer-events: auto;
-    -webkit-overflow-scrolling: touch;
+/* A narrower desktop: the map first, at a good height, then the cards under it; the page scrolls */
+@media (max-width: 1180px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
   }
 
-  .left,
-  .right {
-    position: static;
-    width: auto;
-    max-height: none;
+  .map {
+    height: 460px;
+  }
+
+  .column {
     overflow: visible;
-  }
-
-  .right {
-    margin-top: 12px;
-    gap: 12px;
-  }
-
-  .right > :last-child {
-    -webkit-mask-image: none;
     mask-image: none;
   }
 }

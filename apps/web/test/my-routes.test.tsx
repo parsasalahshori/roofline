@@ -83,7 +83,8 @@ describe('my routes', () => {
     renderAt(<MyRoutes />, '/storm/routes');
 
     expect(await screen.findByText(doors.myRoutesEmpty)).toBeInTheDocument();
-    expect(screen.queryByRole('link')).toBeNull();
+    // No routes to open, so the only way on is back to Storm, where the plans are
+    expect(screen.getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual(['/storm']);
   });
 
   it('shows the error line when the read fails', async () => {

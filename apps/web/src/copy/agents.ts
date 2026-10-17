@@ -7,6 +7,8 @@ import type { BaselineKey, ScreenAgent, TimePeriod } from '@roofline/shared';
 /** Words every Agents component shares (one source for the estimate mark and the placeholder). */
 export const agentsCommon = {
   estimate: '(estimate)',
+  /** Where a tile has no figure yet: a dash for the eye, these words for a screen reader. */
+  noFigure: 'No figure yet',
   comingSoon: 'Coming soon',
   // The money line: "≈ $870 of staff time at $28/hour (estimate)" then a link for the owner
   staffTime: 'of staff time at',
@@ -14,6 +16,8 @@ export const agentsCommon = {
   changeRate: 'Change the rate',
   changeRateHref: '/settings/company',
   retry: 'Try again',
+  /** The red tag over a page that could not be loaded. */
+  errorTag: "Couldn't load",
   refreshFailed: 'We could not refresh this. Showing what we had.',
 } as const;
 
@@ -34,6 +38,8 @@ export const agents = {
   feedLoadError: 'The record could not be loaded.',
   feedOpen: 'Open',
   waitingListLabel: 'Waiting',
+  waitingEmptyBody: 'When an agent needs a person to decide something, it waits here.',
+  waitingEmptyAction: 'See what your agents did',
   waitingGroupYou: 'You',
   waitingGroupOffice: 'Office',
   waitingEmpty: 'Nothing is waiting on anyone.',
@@ -72,7 +78,8 @@ export const agentPage = {
   loading: 'Loading this agent',
   pausedNote: 'This agent is paused, so it cannot be run now. Turn it back on first.',
   loadError: 'We could not load this agent. Try again in a moment.',
-  timeSaved: 'Time saved in this period:',
+  timeSaved: 'Time saved in this period',
+  controlsTitle: 'Controls',
   breakdownTitle: 'Where the time came from',
   breakdownCaption: 'Time saved by kind of work',
   colWork: 'Work',
@@ -82,7 +89,11 @@ export const agentPage = {
   rulesTitle: 'What it does',
   rulesEmpty: 'No rules to show yet.',
   recentTitle: 'Recent work',
+  recentSeeAll: 'See all in Feed',
   recentEmpty: 'Nothing here yet.',
+  /** The page's switch: on means the agent is running, as on its card. */
+  runningLabel: 'Running',
+  /** The read-only line for someone who cannot change it. */
   pauseLabel: 'Paused',
   pausedBy: 'Paused by',
   pauseTitle: 'Pause this agent?',
@@ -216,33 +227,32 @@ export const agentRules = {
   saved: 'Saved',
 } as const;
 
-// --- The Agents dashboard: header tiles, roof diagram, agent cards and side panel ---
+// --- The Agents dashboard: header tiles, handoffs, agent cards and side panel ---
 export const agentsDash = {
   tilesLabel: 'Totals for your agents',
   tasksToday: 'Tasks today',
   agentsRunning: 'agents running',
   agentsOf: 'of',
-  hoursWeek: 'Hours saved this week',
+  hoursWeek: 'Saved this week',
   hoursUnit: 'hrs',
+  hoursUnitOne: 'hr',
   hoursSub: 'Calls, measuring, claims, crews',
   fullTimeLead: 'Same as',
   fullTimeUnit: 'full-time staff',
   fullTimeSubPrefix: 'hours at',
   fullTimeSubSuffix: 'a week',
-  officeSaved: 'Office time saved this week',
+  officeSaved: 'Office time saved',
   /** The mark on every estimated hours and money figure (copy rule): "about 110 hrs", "about $514". */
   about: 'about',
   officeSub: 'This week at',
   officeSubSuffix: 'an hour (estimate)',
   perHourTitle: 'Tasks per hour, last 12 hours',
-  perHourStart: '12 hours ago',
-  perHourNow: 'Now',
   perHourChart: 'Tasks finished each hour, oldest first',
-  handoffsSuffix: 'handoffs today',
-  handoffOne: 'handoff today',
+  perHourUnit: 'this hour',
+  handoffsTitle: 'Handoffs today',
   handedTo: 'handed to',
-  handoffsHint: 'Jobs ride the roof from agent to agent',
-  diagramLabel: 'Jobs handed from one agent to the next',
+  handoffsEmpty: 'No job has moved from one agent to another yet today.',
+  handoffsListLabel: 'Jobs handed from one agent to the next',
   running: 'Running',
   paused: 'Paused',
   waiting: 'Waiting',
@@ -251,7 +261,6 @@ export const agentsDash = {
   tasksTodayLine: 'tasks today',
   successLine: 'success',
   savedLine: 'saved this week',
-  noSuccess: 'no runs yet',
   latestNone: 'Nothing yet today',
   cardSparkLabel: 'Tasks finished in the last 14 days',
   selectHint: 'Show details for',

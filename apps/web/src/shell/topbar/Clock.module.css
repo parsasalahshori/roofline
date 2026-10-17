@@ -1,16 +1,15 @@
-/* The reference's date and time: 13px medium ink in a 26px slot; gone below 1024px where the bar needs the room */
+/* The date and time: quiet, tabular, and gone below 1100px where the bar needs the room */
 .clock {
   flex: none;
-  padding: 0 8px;
-  color: var(--lift-bar-ink);
+  color: var(--ink-2);
   font-size: 13px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
-  line-height: 26px;
+  line-height: 1;
   white-space: nowrap;
 }
 
-@media (max-width: 1023.98px) {
+@media (max-width: 1099.98px) {
   .clock {
     display: none;
   }

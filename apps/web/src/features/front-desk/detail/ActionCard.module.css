@@ -1,0 +1,69 @@
+/* A small panel inside the transcript: a 3px edge (green when it worked, red when it did not), a glyph, the sentence, the link */
+.card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 12px 10px 14px;
+  border-radius: var(--r-2);
+  background: var(--surface);
+  box-shadow: inset 3px 0 0 var(--ok), var(--e-1);
+  list-style: none;
+}
+
+.card[data-ok="false"] {
+  box-shadow: inset 3px 0 0 var(--bad), var(--e-1);
+}
+
+.mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-2);
+  background: var(--ok-tint);
+  color: var(--ok-text);
+}
+
+.card[data-ok="false"] .mark {
+  background: var(--bad-tint);
+  color: var(--bad-text);
+}
+
+.text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.label {
+  color: var(--ink);
+  font-size: var(--font-size-body);
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.open {
+  flex: none;
+}
+
+/* On a phone the link wraps under the sentence rather than squeezing it */
+@media (max-width: 767.98px) {
+  .card {
+    flex-wrap: wrap;
+  }
+
+  .text {
+    flex-basis: calc(100% - 48px);
+  }
+
+  .open {
+    margin-left: 44px;
+  }
+}

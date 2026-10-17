@@ -1,0 +1,129 @@
+/* The trigger: a 28px square at the end of a card's footer, the chevron of a split button */
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-2);
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.trigger[data-labelled] {
+  width: auto;
+  gap: 6px;
+  padding: 0 10px 0 12px;
+  font: 600 13px/1 var(--f-ui);
+}
+
+.trigger:hover,
+.trigger[aria-expanded="true"] {
+  border-color: var(--line-ctl);
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.trigger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+@media (max-width: 767.98px) {
+  .trigger {
+    width: 40px;
+    height: 40px;
+  }
+
+  .trigger[data-labelled] {
+    width: auto;
+  }
+}
+
+.popover {
+  width: 220px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px;
+}
+
+.list:focus-visible {
+  outline: none;
+}
+
+/* A mono eyebrow over the stages */
+.heading {
+  margin: 0;
+  padding: 4px 8px 6px;
+  color: var(--ink-3);
+  font: 600 var(--font-size-min)/1 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 0 8px;
+  border-radius: var(--r-2);
+  color: var(--ink);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.option[data-active="true"] {
+  background: var(--surface-2);
+}
+
+.option[data-tone="bad"] {
+  color: var(--bad-text);
+}
+
+.dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ink-3);
+}
+
+.name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.check {
+  flex: none;
+  color: var(--brand-text);
+}
+
+.key {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border: 1px solid var(--line-2);
+  border-bottom-width: 2px;
+  border-radius: var(--r-1);
+  background: var(--surface);
+  color: var(--ink-3);
+  font: 500 var(--font-size-min)/1 var(--f-mono);
+}
+
+.rule {
+  margin: 4px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}

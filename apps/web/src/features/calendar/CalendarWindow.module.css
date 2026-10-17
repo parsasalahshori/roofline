@@ -1,18 +1,122 @@
-/* The calendar window: the toolbar above the active view. The page never scrolls sideways; the grid does. */
-.window {
+/*
+ * The calendar page. On a desktop the week and the day take the rest of the screen and the grid scrolls inside its panel;
+ * the list, and a phone, let the page scroll. Nothing here scrolls the page sideways.
+ */
+.controls {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   min-width: 0;
-  padding: 16px;
 }
 
-.body {
-  min-width: 0;
+.gridPanel {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The panel's body is the one flexible box, so the grid's own scroller gets the height that is left */
+.gridPanel > :last-child {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-radius: var(--r-3);
+  overflow: hidden;
+}
+
+@media (min-width: 768px) {
+  .gridPanel {
+    min-height: 420px;
+  }
 }
 
 @media (max-width: 767.98px) {
-  .window {
-    padding: 16px;
+  .gridPanel {
+    flex: none;
+  }
+}
+
+/* The grid that is on its way: the days across the head, hairlines down the page, a few ghost visits */
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  min-height: 420px;
+}
+
+.skeletonHead {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.skeletonBody {
+  position: relative;
+  flex: 1 1 auto;
+  background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 63px, var(--line) 63px, var(--line) 64px);
+}
+
+.skeletonBlock {
+  position: absolute;
+  height: 60px;
+  border-radius: var(--r-2);
+  background: var(--sunken);
+}
+
+.skeletonBlock[data-at="a"] {
+  top: 64px;
+  left: 4%;
+  width: 11%;
+}
+
+.skeletonBlock[data-at="b"] {
+  top: 128px;
+  left: 33%;
+  width: 11%;
+  height: 92px;
+}
+
+.skeletonBlock[data-at="c"] {
+  top: 32px;
+  left: 61%;
+  width: 11%;
+}
+
+.skeletonBlock[data-at="d"] {
+  top: 192px;
+  left: 78%;
+  width: 11%;
+}
+
+@media (max-width: 767.98px) {
+  .skeleton {
+    min-height: 320px;
+  }
+
+  .skeletonHead {
+    grid-template-columns: 1fr;
+  }
+
+  .skeletonHead > :not(:first-child) {
+    display: none;
+  }
+
+  .skeletonBlock[data-at="a"] {
+    left: 8%;
+    width: 60%;
+  }
+
+  .skeletonBlock[data-at="b"] {
+    left: 8%;
+    width: 60%;
+  }
+
+  .skeletonBlock[data-at="c"] {
+    left: 8%;
+    width: 60%;
+  }
+
+  .skeletonBlock[data-at="d"] {
+    display: none;
   }
 }

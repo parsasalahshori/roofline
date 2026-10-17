@@ -1,42 +1,98 @@
-.page {
+/*
+ * One agent's page: the numbers across the top, then two columns (where the time came from and the recent work; the
+ * controls and what the agent does) that stack on a narrow screen. A period change dims the old figures until the new ones arrive.
+ */
+.stats {
   display: grid;
-  gap: 20px;
+  grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
-.title {
-  margin: 0;
+/* The words start at the top of every tile, whatever the tile holds under its number */
+.stats > div {
+  align-items: flex-start;
 }
 
-.periods {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.stats[aria-busy="true"] {
+  opacity: 0.6;
 }
 
-.saved {
-  display: grid;
-  gap: 4px;
-  margin: 0;
-}
-
-.money {
-  color: var(--text-muted);
-}
-
-.section {
-  display: grid;
-  gap: 8px;
-}
-
-.heading {
-  margin: 0;
+.loading {
+  padding: 16px;
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: var(--e-1);
 }
 
 .content {
-  display: grid;
-  gap: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.dim {
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 22rem);
+  gap: 16px;
+  align-items: start;
+}
+
+.layout[data-dim="true"] {
   opacity: 0.6;
+}
+
+.main,
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.main {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.side {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.link {
+  display: inline-block;
+  color: var(--brand-text);
+  font-weight: 600;
+  text-underline-offset: 2px;
+}
+
+@media (max-width: 1023.98px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* One column: the controls, then the rules, then the figures and the work, as the page reads */
+  .main,
+  .side {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .stats > :first-child {
+    grid-column: 1 / -1;
+  }
 }

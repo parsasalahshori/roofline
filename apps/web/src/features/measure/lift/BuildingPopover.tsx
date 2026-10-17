@@ -188,7 +188,7 @@ export function BuildingPopover({
   const toggle = canToggle ? (
     <Button
       key="toggle"
-      variant={b.role === 'neighbour' ? 'ghost' : 'primary'}
+      variant={b.role === 'neighbour' ? 'default' : 'primary'}
       className={styles.action}
       disabled={lastOne}
       onClick={() => {
@@ -202,7 +202,7 @@ export function BuildingPopover({
   const measureButton = canMeasure ? (
     <Button
       key="measure"
-      variant={b === null || b.role === 'neighbour' || !canToggle ? 'primary' : 'ghost'}
+      variant={b === null || b.role === 'neighbour' || !canToggle ? 'primary' : 'default'}
       className={styles.action}
       busy={quote.measuringOther}
       onClick={() => {

@@ -7,6 +7,7 @@ import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { create } from '../src/copy/create.ts';
 import { ACCOUNT, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
+import { chooseFromListbox } from './crm-helpers.ts';
 
 // The real map loads maplibre-gl, which these tests never need. The stand-in has two pins that open a job and a customer.
 vi.mock('../src/shell/map/MapView.tsx', async () => {
@@ -77,7 +78,7 @@ describe('New customer', () => {
     await user.type(screen.getByLabelText(create.newCustomer.lastName), 'Lee');
     await user.type(screen.getByLabelText(create.address.street), '12 Oak St');
     await user.type(screen.getByLabelText(create.address.city), 'Dallas');
-    await user.selectOptions(screen.getByLabelText(create.address.state), 'TX');
+    await chooseFromListbox(user, create.address.state, 'Texas');
     await user.type(screen.getByLabelText(create.address.zip), '75201');
     await user.click(saveButton());
 
@@ -139,7 +140,7 @@ describe('New customer', () => {
     await user.type(screen.getByLabelText(create.newCustomer.lastName), 'Lee');
     await user.type(screen.getByLabelText(create.address.street), '12 Oak St');
     await user.type(screen.getByLabelText(create.address.city), 'Dallas');
-    await user.selectOptions(screen.getByLabelText(create.address.state), 'TX');
+    await chooseFromListbox(user, create.address.state, 'Texas');
     await user.type(screen.getByLabelText(create.address.zip), '75201');
     await user.click(saveButton());
 
@@ -183,6 +184,41 @@ describe('New customer', () => {
 
     const phoneMessage = await screen.findByText('That phone number is already on another customer.');
     expect(fieldBox(create.newCustomer.phone, 0)).toContainElement(phoneMessage);
+  });
+
+  it('says which fields may stay empty: the name to show is the one that is needed', async () => {
+    await renderNewCustomer();
+
+    // Everything but the name to show is marked optional, in the words the home panel uses
+    for (const label of [create.newCustomer.firstName, create.newCustomer.lastName, create.newCustomer.phone, create.newCustomer.email]) {
+      expect(label).toMatch(/\(optional\)$/);
+      expect(screen.getByLabelText(label)).toBeInTheDocument();
+    }
+    expect(create.newCustomer.displayName).not.toMatch(/optional/i);
+    expect(create.newCustomer.subtitle).toMatch(/name is enough/i);
+    expect(screen.getByText(create.newCustomer.subtitle)).toBeInTheDocument();
+
+    // The one needed field says where its value comes from
+    const display = screen.getByLabelText(create.newCustomer.displayName);
+    expect(display).toHaveAccessibleDescription(create.newCustomer.displayNameHelp);
+  });
+
+  it('names the phone and email rows added after the first "Another", not "optional" again', async () => {
+    const { user } = await renderNewCustomer();
+
+    await user.click(screen.getByRole('button', { name: create.newCustomer.addPhone }));
+    await user.click(screen.getByRole('button', { name: create.newCustomer.addEmail }));
+    expect(screen.getAllByLabelText(create.newCustomer.phone)).toHaveLength(1);
+    expect(screen.getAllByLabelText(create.newCustomer.anotherPhone)).toHaveLength(1);
+    expect(screen.getAllByLabelText(create.newCustomer.email)).toHaveLength(1);
+    expect(screen.getAllByLabelText(create.newCustomer.anotherEmail)).toHaveLength(1);
+  });
+
+  it('draws the two add buttons flush with the field edge, so their plus lines up with the fields', async () => {
+    await renderNewCustomer();
+    for (const name of [create.newCustomer.addPhone, create.newCustomer.addEmail]) {
+      expect(screen.getByRole('button', { name })).toHaveAttribute('data-flush', 'start');
+    }
   });
 
   it('display name follows first and last name until edited', async () => {

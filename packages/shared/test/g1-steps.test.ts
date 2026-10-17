@@ -149,6 +149,8 @@ describe('G1 previews', () => {
     const result = move.preview(p, FACTS);
     expect(result.title).toBe('Move an install');
     expect(result.lines.some((l) => l.includes('Rain likely Thursday (70%)'))).toBe(true);
+    // The new time as data, for a list of plans that never sees the payload
+    expect(result.moves).toEqual({ start: '2026-10-15T15:00:00Z', end: '2026-10-15T19:00:00Z' });
   });
 });
 

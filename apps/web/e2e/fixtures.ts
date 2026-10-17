@@ -38,7 +38,7 @@ export const E2E_POLICY_DOMAIN = 'roofline.test';
 
 /** A URL on Acme Roofing's company host; the browser maps `*.roofline.test` to the stack (playwright.config.ts). */
 export function companyHostUrl(path: string): string {
-  return `http://acme-roofing.${E2E_POLICY_DOMAIN}:4410${path}`;
+  return `http://acme-roofing.${E2E_POLICY_DOMAIN}:${process.env.E2E_PORT?.trim() || 4410}${path}`;
 }
 
 export type Who = 'owner' | 'office' | 'rep';
@@ -157,6 +157,30 @@ export async function waitForStormSteps(page: Page, taskId: string): Promise<voi
       { timeout: 60_000, intervals: [500, 1000] },
     )
     .toBe('done');
+}
+
+/**
+ * Moves a job through its "Move to…" menu: opens the menu inside `scope` (a board card, a list row or the job's
+ * header) and clicks the stage by its name ("Inspection", "Lost", "Archive"). The menu also takes the number keys
+ * and L / E; those are covered by the unit tests, so the specs click like a person with a mouse.
+ */
+export async function moveJob(scope: Locator, stage: string): Promise<void> {
+  await scope.getByRole('button', { name: 'Move to…' }).click();
+  await scope.page().getByRole('option', { name: stage, exact: true }).click();
+}
+
+/**
+ * Picks an option in a kit Listbox (the page's own select): opens it by its label and clicks the option by its name.
+ * A form field is found by its visible label ("Time zone"); with `chip: true` it is a filter chip, found by its name
+ * ("Assigned to: Everyone" is chosen with label "Assigned to"). `scope` is the page or the part of it to look in.
+ */
+export async function chooseOption(scope: Locator | Page, label: string, option: string, opts: { chip?: boolean } = {}): Promise<void> {
+  const page = 'goto' in scope ? scope : scope.page();
+  const trigger = opts.chip
+    ? scope.getByRole('button', { name: new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:`) })
+    : scope.getByLabel(label, { exact: true });
+  await trigger.click();
+  await page.getByRole('option', { name: option, exact: true }).click();
 }
 
 type Fixtures = {

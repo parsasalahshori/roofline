@@ -1,0 +1,81 @@
+/*
+ * The home from above: a 3:2 box the satellite tiles and the measured outline are laid out in. It takes its corner
+ * radius from the box it sits in (the quote page's scan frame, the estimate's small thumbnail, the proposal's roof card),
+ * and it is the same in light and dark: imagery is always dark under the guides.
+ */
+.thumb,
+.placeholder {
+  --photo: #46523f;
+  --photo-2: #3e4a3c;
+
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  overflow: hidden;
+  border-radius: inherit;
+  background: var(--photo);
+}
+
+/* Before the answer is in: stripes, with the tape's glow in the middle where the scan will draw */
+.placeholder {
+  background:
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--tape) 14%, transparent), transparent 60%),
+    repeating-linear-gradient(45deg, var(--photo) 0 12px, var(--photo-2) 12px 24px);
+}
+
+.tile {
+  position: absolute;
+  max-width: none;
+  opacity: 0;
+  transition: opacity var(--t-slow) ease-out;
+  user-select: none;
+  pointer-events: none;
+}
+
+.tile[data-loaded] {
+  opacity: 1;
+}
+
+/* While the photo's tiles come in: a soft sweep, never a blank box */
+.thumb[data-loading] {
+  background:
+    linear-gradient(100deg, transparent 30%, color-mix(in srgb, #ffffff 9%, transparent) 50%, transparent 70%) 0 0 / 200% 100%,
+    repeating-linear-gradient(45deg, var(--photo) 0 12px, var(--photo-2) 12px 24px);
+  animation: thumb-sweep 1.4s linear infinite;
+}
+
+@keyframes thumb-sweep {
+  from {
+    background-position: 100% 0, 0 0;
+  }
+
+  to {
+    background-position: -100% 0, 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thumb[data-loading] {
+    animation: none;
+  }
+
+  .tile {
+    transition: none;
+  }
+}
+
+/* The measured outline is tape yellow: it is a measuring guide */
+.outline {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.outline polygon {
+  fill: color-mix(in srgb, var(--tape) 22%, transparent);
+  stroke: var(--tape);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}

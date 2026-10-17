@@ -51,6 +51,18 @@ function ownerRoutes() {
 }
 
 describe('team tab', () => {
+  it('the person who is signed in is tagged You, and nobody else is', async () => {
+    api = stubApi(ownerRoutes());
+    renderAt(<TeamTab />);
+
+    const own = await screen.findByRole('row', { name: /Sam Roofer/ });
+    expect(within(own).getByText(settings.team.you)).toBeInTheDocument();
+    for (const other of [/Olive Office/, /Ray Rep/]) {
+      expect(within(screen.getByRole('row', { name: other })).queryByText(settings.team.you)).toBeNull();
+    }
+    expect(screen.getAllByText(settings.team.you)).toHaveLength(1);
+  });
+
   it('owner turns on spend approval for an office member', async () => {
     api = stubApi(ownerRoutes());
     const { user } = renderAt(<TeamTab />);
@@ -69,7 +81,8 @@ describe('team tab', () => {
     api = stubApi(ownerRoutes());
     const { user } = renderAt(<TeamTab />);
 
-    await user.selectOptions(await screen.findByLabelText(settings.team.roleFor('Ray Rep')), 'office');
+    await user.click(await screen.findByLabelText(settings.team.roleFor('Ray Rep')));
+    await user.click(screen.getByRole('option', { name: settings.roles.office }));
 
     await waitFor(() => expect(api.sent('PATCH /api/team/members/m3')).toEqual([{ role: 'office' }]));
   });
@@ -102,13 +115,14 @@ describe('team tab', () => {
     const { user } = renderAt(<TeamTab />);
 
     await user.type(await screen.findByLabelText(settings.team.inviteEmail), 'jo@example.com');
-    await user.selectOptions(screen.getByLabelText(settings.team.inviteRole), 'office');
+    await user.click(screen.getByLabelText(settings.team.inviteRole));
+    await user.click(screen.getByRole('option', { name: settings.roles.office }));
     await user.click(screen.getByRole('button', { name: settings.team.sendInvite }));
 
     await waitFor(() => expect(api.sent('POST /api/team/invites')).toEqual([{ email: 'jo@example.com', role: 'office' }]));
     await screen.findByText(settings.team.inviteSent('jo@example.com'));
     expect(screen.getByLabelText(settings.team.inviteEmail)).toHaveValue('');
-    expect(screen.getByLabelText(settings.team.inviteRole)).toHaveValue('office');
+    expect(screen.getByLabelText(settings.team.inviteRole)).toHaveTextContent(settings.roles.office);
   });
 
   it('last owner error shows as a toast', async () => {
@@ -178,8 +192,11 @@ describe('team tab', () => {
 
     expect(await screen.findByRole('heading', { name: settings.team.pendingHeading })).toBeInTheDocument();
     const expires = new Date('2026-10-18T12:00:00.000Z').toLocaleDateString('en-US', { dateStyle: 'medium' });
-    const item = (await screen.findByText('new@example.com')).closest('li');
-    expect(item).toHaveTextContent(settings.team.pendingExpires(expires));
+    const row = (await screen.findByText('new@example.com')).closest('tr');
+    expect(row).toHaveTextContent(settings.roles.rep);
+    expect(row).toHaveTextContent(expires);
+    // The expiry is a date the reader can sort and compare, so it is a time element
+    expect(within(row as HTMLElement).getByText(expires)).toHaveAttribute('datetime', '2026-10-18T12:00:00.000Z');
   });
 
   it('office sees a read-only list', async () => {
@@ -215,7 +232,8 @@ describe('team tab', () => {
     });
     const { user } = renderAt(<TeamTab />);
 
-    await user.selectOptions(await screen.findByLabelText(settings.team.roleFor('Sam Roofer')), 'office');
+    await user.click(await screen.findByLabelText(settings.team.roleFor('Sam Roofer')));
+    await user.click(screen.getByRole('option', { name: settings.roles.office }));
 
     await waitFor(() => expect(api.sent('PATCH /api/team/members/m1')).toEqual([{ role: 'office' }]));
     await waitFor(() => expect(screen.queryByLabelText(settings.team.roleFor('Sam Roofer'))).toBeNull());
@@ -231,8 +249,8 @@ describe('team tab', () => {
     await screen.findByRole('switch', { name: settings.team.spendFor('Olive Office') });
     expect(screen.getAllByRole('switch', { name: /^Can approve spending:/ })).toHaveLength(1);
     expect(within(screen.getByRole('row', { name: /Sam Roofer/ })).getByText(settings.team.spendAlways)).toBeInTheDocument();
-    // Both the spending and the storm alerts cells say Never for a rep: the spending cell is the fourth of six
-    expect(screen.getByRole('row', { name: /Ray Rep/ }).querySelectorAll('td')[3]).toHaveTextContent(settings.team.spendNever);
+    // Both the spending and the storm alerts cells say Never for a rep: the spending cell is the third of five
+    expect(screen.getByRole('row', { name: /Ray Rep/ }).querySelectorAll('td')[2]).toHaveTextContent(settings.team.spendNever);
   });
 
   it('storm alerts switch is shown for owner and office, not for a rep', async () => {
@@ -242,8 +260,8 @@ describe('team tab', () => {
     expect(await screen.findByRole('switch', { name: settings.team.stormAlertsFor('Sam Roofer') })).toBeInTheDocument();
     expect(screen.getByRole('switch', { name: settings.team.stormAlertsFor('Olive Office') })).toBeInTheDocument();
     expect(screen.queryByRole('switch', { name: settings.team.stormAlertsFor('Ray Rep') })).toBeNull();
-    // The storm alerts cell is the fifth of the row's six cells (name, email, role, spend, storm alerts, status)
-    expect(screen.getByRole('row', { name: /Ray Rep/ }).querySelectorAll('td')[4]).toHaveTextContent(settings.team.stormAlertsNever);
+    // The storm alerts cell is the fourth of the row's five cells (person, role, spend, storm alerts, status)
+    expect(screen.getByRole('row', { name: /Ray Rep/ }).querySelectorAll('td')[3]).toHaveTextContent(settings.team.stormAlertsNever);
   });
 
   it('the owner turns storm alerts off for an office member', async () => {
@@ -269,5 +287,32 @@ describe('team tab', () => {
 
     expect(await screen.findByRole('switch', { name: settings.team.stormAlertsFor('Olive Office') })).toBeDisabled();
     expect(screen.getByRole('switch', { name: settings.team.stormAlertsFor('Sam Roofer') })).toBeDisabled();
+  });
+
+  it('a phone shows each member as a card with the same controls', async () => {
+    api = stubApi(ownerRoutes());
+    // A phone is narrower than 768px: the page asks the browser, so the test answers for it
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
+    const { user } = renderAt(<TeamTab />);
+
+    const cards = await screen.findByRole('list', { name: settings.team.tableLabel });
+    expect(within(cards).getAllByRole('listitem')).toHaveLength(3);
+    expect(screen.queryByRole('row', { name: /Ray Rep/ })).toBeNull();
+
+    const ray = within(cards).getAllByRole('listitem')[2]!;
+    expect(ray).toHaveTextContent('ray@example.com');
+    expect(within(ray).getByText(settings.team.statusActive)).toBeInTheDocument();
+    // A rep has words ("Never", for spending and for storm alerts) where an office member has a switch
+    expect(within(ray).getAllByText(settings.team.spendNever)).toHaveLength(2);
+    expect(within(ray).queryByRole('switch')).toBeNull();
+    expect(within(ray).getByLabelText(settings.team.roleFor('Ray Rep'))).toHaveTextContent(settings.roles.rep);
+
+    await user.click(within(ray).getByRole('button', { name: settings.team.turnOffFor('Ray Rep') }));
+    await waitFor(() => expect(api.sent('PATCH /api/team/members/m3')).toEqual([{ status: 'disabled' }]));
   });
 });

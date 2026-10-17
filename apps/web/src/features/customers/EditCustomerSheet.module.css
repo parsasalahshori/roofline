@@ -20,7 +20,7 @@
 
 .heading {
   margin: 0;
-  color: var(--text);
+  color: var(--ink);
   font-size: var(--font-size-body);
   font-weight: 600;
 }
@@ -32,7 +32,7 @@
   min-width: 0;
   padding: 12px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: var(--surface);
 }
 
@@ -73,16 +73,11 @@
   display: inline-flex;
   align-items: center;
   min-height: 40px;
-  color: var(--danger);
+  color: var(--bad-text);
   font-size: var(--font-size-body);
 }
 
 .addRow {
-  justify-self: start;
-  min-height: 40px;
-}
-
-.save {
   justify-self: start;
   min-height: 40px;
 }

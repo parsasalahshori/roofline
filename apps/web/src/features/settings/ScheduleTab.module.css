@@ -1,49 +1,21 @@
-/* One section per block: company hours first, then the person's own hours */
-.section {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 0;
-  max-width: 720px;
-  margin-bottom: 32px;
-}
-
-.heading {
-  margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
-}
-
+/* The note about who may change the hours sits above the days, inside the panel's edge-to-edge list */
 .note {
   margin: 0;
-  color: var(--text-muted);
-  font-size: var(--font-size-body);
+  padding: 12px 16px 0;
 }
 
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  min-width: 0;
+/* The booking rules under the days: a heading and three numbers, set off by a rule */
+.rules {
+  padding: 16px;
+  border-top: 1px solid var(--line);
 }
 
-/* The three numbers, side by side on a desktop and one under another on a phone */
+/* The three numbers on the two-column grid every Settings form uses, and one under another on a phone */
 .numbers {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-}
-
-/* A switch as tall as a touch target, on a row of its own */
-.switchRow {
-  display: flex;
-  align-items: center;
-  min-height: 40px;
-}
-
-/* Only as wide as its word */
-.save {
-  justify-self: start;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 20px;
+  margin-top: 12px;
 }
 
 @media (max-width: 767.98px) {

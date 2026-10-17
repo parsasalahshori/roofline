@@ -1,0 +1,63 @@
+/*
+ * The bar that waits at the foot of a form with changes. It is sticky: inside the form it rides the bottom edge of the
+ * scrolling column, and on a phone that edge is the tab bar's top, so it always sits just above it.
+ */
+.bar {
+  position: sticky;
+  bottom: 16px;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-top: 16px;
+  padding: 10px 12px 10px 16px;
+  border-radius: var(--r-3);
+  background: var(--raised);
+  box-shadow: var(--e-2);
+}
+
+/* The message keeps its one line: when the buttons (a long label) leave it no room, they drop to a row of their own */
+.text {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.actions {
+  display: flex;
+  flex: 0 1 auto;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .bar {
+    animation: rise var(--t-mid) var(--ease);
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (max-width: 767.98px) {
+  .bar {
+    bottom: 8px;
+    padding: 8px;
+  }
+
+  .text {
+    padding-left: 4px;
+  }
+}

@@ -159,6 +159,7 @@ function handleBox(sizePx: number, layer: string): HTMLDivElement {
   return el;
 }
 
+// The outline's handles sit on the map over an aerial photo: their white ring and amber fill are literal, the same in light and dark
 function dot(size: number, fill: string): HTMLDivElement {
   const d = document.createElement('div');
   d.style.width = `${size}px`;

@@ -4,10 +4,10 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
-  height: 26px;
+  height: 32px;
   padding: 0 8px;
-  border-radius: 7px;
-  color: var(--lift-bar-ink);
+  border-radius: var(--r-2);
+  color: var(--ink-3);
   font-size: 13px;
   font-weight: 500;
   white-space: nowrap;
@@ -15,12 +15,8 @@
 }
 
 .agents:hover {
-  background: var(--lift-hover);
-}
-
-.agents:focus-visible {
-  outline: 2px solid var(--lift-bar-ink);
-  outline-offset: 2px;
+  background: var(--sunken);
+  color: var(--ink);
 }
 
 .dot {
@@ -29,11 +25,11 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--ds-fill, #c3cbd1);
+  background: var(--line-2);
 }
 
 .agents[data-state="working"] .dot {
-  background: var(--ds-success, #0ca30c);
+  background: var(--ok);
 }
 
 .agents[data-state="working"] .dot::after {
@@ -41,7 +37,7 @@
   position: absolute;
   inset: -2px;
   border-radius: 50%;
-  background: var(--ds-success, #0ca30c);
+  background: var(--ok);
   opacity: 0;
   animation: pulse 1.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }

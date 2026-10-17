@@ -2,11 +2,13 @@ import { Map as MapLibreMap } from 'maplibre-gl';
 import type { ExpressionSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef } from 'react';
-import { mapCopy } from '../../copy/map.ts';
 import { storm } from '../../copy/storm.ts';
 import { HAIL_FILL_OPACITY } from '../../shell/map/layers.ts';
+import chrome from '../../shell/map/MapChrome.module.css';
+import { MapLegend } from '../../shell/map/MapLegend.tsx';
 import { mapStyle } from '../../shell/map/mapStyle.ts';
-import { HAIL_LEVEL_SIZES_IN, hailFillExpression } from '../../shell/map/stormLayer.ts';
+import { hailFillExpression } from '../../shell/map/stormLayer.ts';
+import { useColorScheme } from '../../shell/useColorScheme.ts';
 import type { SwathCollection } from './types.ts';
 import styles from './StormSwathMap.module.css';
 
@@ -41,16 +43,20 @@ function readMapEnv() {
   return { maptilerKey: import.meta.env.VITE_MAPTILER_KEY, tiles: import.meta.env.VITE_MAP_TILES };
 }
 
-/** A small map of where hail fell, with the legend under it. Without WebGL only the legend shows. */
+/**
+ * A map of where one storm's hail fell, in the page's theme, with the key floating at its bottom left like the main map's.
+ * It fills the box it is put in. Without WebGL only the key shows.
+ */
 export function StormSwathMap({ swath }: StormSwathMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const scheme = useColorScheme();
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     let map: MapLibreMap;
     try {
-      map = new MapLibreMap({ container, style: mapStyle(readMapEnv(), 'streets'), center: [-96, 39], zoom: 3 });
+      map = new MapLibreMap({ container, style: mapStyle(readMapEnv(), 'streets', scheme), center: [-96, 39], zoom: 3 });
     } catch {
       return;
     }
@@ -77,20 +83,13 @@ export function StormSwathMap({ swath }: StormSwathMapProps) {
     return () => {
       map.remove();
     };
-  }, [swath]);
+    // A theme switch repaints the base map: the map is made again for it
+  }, [swath, scheme]);
 
   return (
     <div className={styles.root}>
-      <div ref={containerRef} className={styles.map} role="region" aria-label={storm.mapLabel} />
-      <h3 className={styles.legendHeading}>{mapCopy.hailLegend}</h3>
-      <ul className={styles.legend} aria-label={mapCopy.hailLegend}>
-        {HAIL_LEVEL_SIZES_IN.map((size, index) => (
-          <li key={size} className={styles.item}>
-            <span className={styles.swatch} data-level={index + 1} aria-hidden="true" />
-            {mapCopy.hailSizeLevels[index]}
-          </li>
-        ))}
-      </ul>
+      <div ref={containerRef} className={`${styles.map} ${chrome.chrome}`} role="region" aria-label={storm.mapLabel} />
+      <MapLegend hail pins={false} />
     </div>
   );
 }

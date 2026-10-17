@@ -491,7 +491,10 @@ async function seedAgentsHistory(q: Query, companyId: string, ownerId: string, n
     const taskId = await insertTask({ agent: a.agent, kind: a.kind, title: a.title, status: 'done', at: a.finished, minutes: total, approved: true });
     await q(`update agent_tasks set created_at = $2 where id = $1`, [taskId, created]);
     await insertEvent(taskId, null, 'created', 'agent', created);
-    if (a.approvedEvent) await insertEvent(taskId, null, 'approved', 'user', before(a.finished, 5));
+    // The counts a real approval writes, so the feed says "approved 1 step" and not "approved the plan with every step switched off"
+    if (a.approvedEvent) {
+      await insertEvent(taskId, null, 'approved', 'user', before(a.finished, 5), { totalSteps: a.steps.length, approvedSteps: a.steps.length, forwardedSteps: 0 });
+    }
     for (const [i, step] of a.steps.entries()) {
       const stepId = await insertStep(taskId, i + 1, a.finished, { type: step.type, approvalClass: a.approvalClass, status: 'done', step });
       await insertEvent(taskId, stepId, 'step_done', 'agent', before(a.finished, 1), { units: step.units });
@@ -555,7 +558,7 @@ const DASH_AGENTS = ['front_desk', 'storm_scout', 'estimator', 'follow_up', 'cla
 /** Finished tasks per hour for the last 12 hours, oldest first: a quiet night, a busy morning. */
 const DASH_HOURLY = [1, 1, 2, 3, 5, 6, 5, 4, 3, 4, 5, 6] as const;
 
-async function seedAgentsDashboardActivity(q: Query, companyId: string, now: Date): Promise<void> {
+export async function seedAgentsDashboardActivity(q: Query, companyId: string, now: Date): Promise<void> {
   const where = await q(
     `select j.id, p.address_line from jobs j join properties p on p.company_id = j.company_id and p.id = j.property_id
       where j.company_id = $1 and j.archived_at is null order by j.created_at, j.id limit 12`,
@@ -941,6 +944,9 @@ export async function seedDemoWorld(pools: Pools, ownerUrl: string, now: Date, o
       const install = await book({ kind: 'install', job: moveJob, title: `Roof install: ${moveJob.displayName}`, userId: jordanId, start: await localAt(3, '10:00'), end: await localAt(3, '14:00') });
       const newStart = await localAt(6, '10:00');
       const newEnd = await localAt(6, '14:00');
+      // Whose install moves, and where: the card and the review say it, so a move is never approved blind
+      const [moveHome] = await q(`select address_line from properties where id = $1`, [moveJob.propertyId]);
+      const whose = `${moveJob.displayName}'s install${moveHome ? ` at ${String(moveHome.address_line)}` : ''}`;
       await createTask(
         tx,
         ctx,
@@ -948,12 +954,12 @@ export async function seedDemoWorld(pools: Pools, ownerUrl: string, now: Date, o
           agent: 'scheduler',
           kind: 'weather_moves',
           title: 'Rain on the install day: move 1 install?',
-          summary: 'Heavy rain is forecast on the install day; this install can move to a clear day.',
+          summary: `Heavy rain is forecast on the install day for ${whose}; it can move to a clear day.`,
           expiresAt: install.startsAt,
           steps: [
             {
               type: 'move_appointment',
-              payload: { appointmentId: install.id, start: newStart.toISOString(), end: newEnd.toISOString(), userId: jordanId, reason: 'Rain is forecast on the install day, so it moves to a clear day.' },
+              payload: { appointmentId: install.id, start: newStart.toISOString(), end: newEnd.toISOString(), userId: jordanId, reason: `Rain is forecast on the install day, so ${whose} moves to a clear day.` },
             },
           ],
         },

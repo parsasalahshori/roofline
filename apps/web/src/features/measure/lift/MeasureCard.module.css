@@ -1,7 +1,7 @@
 /*
- * The measure card over the bottom left of the photo, matched to the reference (556px, glass, 14px corners). The roof
- * view stacks it under the notices at the bottom of the photo. Head, sections and foot stay put; the middle scrolls.
- * Open (Adjust), it is at most 45% of the photo's height, so the roof framed above it stays in sight.
+ * The measure card over the bottom left of the photo (556px, 14px corners). The roof view stacks it under the notices at
+ * the bottom of the photo. Head, sections and foot stay put; the middle scrolls. Open (Adjust), it is at most 45% of the
+ * photo's height, so the roof framed above it stays in sight. The big total is Archivo; every other number is mono.
  */
 .card {
   position: relative;
@@ -15,11 +15,11 @@
   overflow: hidden;
   padding: 12px 16px 14px;
   box-sizing: border-box;
-  border-radius: 14px;
-  background: var(--ds-glass-strong, rgba(246, 247, 248, 0.97));
-  color: var(--ds-text-1, #151c22);
-  font-family: var(--ds-font, var(--font));
-  box-shadow: var(--ds-shadow, 0 0 0 1px rgba(21, 28, 34, 0.08), 0 14px 34px -16px rgba(21, 28, 34, 0.35));
+  border-radius: var(--r-4);
+  background: var(--raised);
+  color: var(--ink);
+  font-family: var(--f-ui);
+  box-shadow: var(--e-2);
 }
 
 .card[data-editing="true"] {
@@ -38,7 +38,7 @@
   min-width: 0;
   margin: 0;
   overflow: hidden;
-  font-size: 13px;
+  font-size: var(--font-size-body);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -46,28 +46,15 @@
 
 .seconds {
   flex: none;
-  color: var(--ds-text-label, #505b64);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+  font: 500 var(--font-size-min) / 1 var(--f-mono);
 }
 
 .timer {
   flex: none;
   margin-left: auto;
-  color: var(--ds-accent-ink, #8a5a00);
-  font-size: 13px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.kind {
-  flex: none;
-  padding: 1px 6px;
-  border-radius: 6px;
-  background: var(--ds-surface-2, #eceff1);
-  color: var(--ds-text-2, #3a444d);
-  font-size: 12px;
-  font-weight: 600;
+  color: var(--tape-ink);
+  font: 600 13px / 1 var(--f-mono);
 }
 
 .spacer {
@@ -77,16 +64,6 @@
 .headButton {
   flex: none;
   gap: 6px;
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: var(--ds-r-ctl, 9px);
-  color: var(--ds-text-2, #3a444d);
-  font-size: 12.5px;
-}
-
-.headButton:hover {
-  background: var(--ds-surface-2, #eceff1);
-  color: var(--ds-text-1, #151c22);
 }
 
 .scroll {
@@ -107,22 +84,14 @@
   margin-top: 8px;
 }
 
-.footButton {
+.foot .footButton[data-variant] {
   gap: 4px;
-  min-height: 28px;
   margin-left: -8px;
-  padding: 0 8px;
-  border-radius: var(--ds-r-ctl, 9px);
-  color: var(--ds-info-ink, #1f55b3);
-  font-size: 12.5px;
-}
-
-.footButton:hover {
-  background: var(--ds-surface-2, #eceff1);
+  color: var(--brand-text);
 }
 
 .chevron {
-  transition: transform 0.15s ease;
+  transition: transform var(--t-fast) var(--ease);
 }
 
 .footButton[aria-expanded="true"] .chevron {
@@ -171,12 +140,12 @@
   flex-direction: column;
   width: 150px;
   padding-right: 16px;
-  border-right: 1px solid var(--line, #dde2e6);
+  border-right: 1px solid var(--line);
 }
 
 .label {
-  color: var(--ds-text-label, #505b64);
-  font-size: 12px;
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
 }
 
 .squaresRow {
@@ -187,25 +156,22 @@
 }
 
 .squares {
-  font-size: 34px;
-  font-stretch: 125%;
-  font-weight: 700;
+  font: 750 34px / 1 var(--f-display);
+  font-stretch: 112%;
   letter-spacing: -0.02em;
-  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
 .unit {
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 13px;
   font-weight: 500;
 }
 
 .sqft {
   margin-top: 6px;
-  color: var(--ds-text-label, #505b64);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+  font: 500 var(--font-size-min) / 1.3 var(--f-mono);
 }
 
 .grid {
@@ -225,8 +191,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--ds-text-label, #505b64);
-  font-size: 12px;
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
 }
 
 .cellLabel {
@@ -239,31 +205,28 @@
   flex: none;
   width: 12px;
   height: 3px;
-  border-radius: 999px;
-  box-shadow: 0 0 0 1px rgba(21, 28, 34, 0.18);
+  border-radius: var(--r-pill);
+  box-shadow: 0 0 0 1px var(--line-ctl);
 }
 
 .cell dd {
   margin: 2px 0 0;
-  color: var(--ds-text-1, #151c22);
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.25;
-  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  font: 600 15px / 1.25 var(--f-mono);
 }
 
 .cell dd[data-muted="true"] {
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
 }
 
 .note {
   margin: 10px 0 0;
-  color: var(--ds-text-label, #505b64);
-  font-size: 12px;
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
 }
 
 .note[data-tone="locked"] {
-  color: var(--ds-accent-ink, #8a5a00);
+  color: var(--tape-ink);
   font-weight: 600;
 }
 
@@ -272,14 +235,14 @@
   flex-direction: column;
   gap: 2px;
   padding: 8px 10px;
-  border: 1px solid var(--ds-accent-line, rgba(217, 158, 0, 0.55));
-  border-radius: 8px;
-  background: var(--ds-accent-tint, #fff1d1);
-  color: var(--ds-accent-ink, #8a5a00);
+  border-radius: var(--r-2);
+  background: var(--tape-tint);
+  box-shadow: inset 0 0 0 1px var(--tape-line);
+  color: var(--tape-ink);
 }
 
 .note[data-tone="edge-cue"] {
-  color: var(--ds-accent-ink, #8a5a00);
+  color: var(--tape-ink);
   font-weight: 600;
 }
 
@@ -289,7 +252,7 @@
   width: 18px;
   margin-right: 6px;
   vertical-align: middle;
-  border-top: 3px dashed var(--ds-accent, #ffb020);
+  border-top: 3px dashed var(--tape);
 }
 
 .reason {
@@ -298,7 +261,7 @@
 
 .note[data-tone="reset"] {
   flex: none;
-  color: var(--ds-info-ink, #1f55b3);
+  color: var(--info-text);
 }
 
 .adjust {
@@ -307,18 +270,11 @@
   gap: 12px;
   margin-top: 12px;
   padding: 12px 0 4px;
-  border-top: 1px solid var(--line, #dde2e6);
+  border-top: 1px solid var(--line);
 }
 
 .done {
   align-self: flex-end;
-  min-height: 36px;
-  padding: 0 16px;
-  border: 1px solid var(--line, #dde2e6);
-  border-radius: var(--ds-r-ctl, 9px);
-  background: var(--ds-surface, #fff);
-  font-size: 13px;
-  font-weight: 600;
 }
 
 /* "3 of 7 sections in the quote · Include all", or how to leave a section out */
@@ -329,30 +285,21 @@
   align-items: center;
   gap: 2px 10px;
   margin: 10px 0 0;
-  color: var(--ds-text-2, #3a444d);
-  font-size: 12.5px;
+  color: var(--ink-2);
+  font-size: 13px;
 }
 
 .sections strong {
-  color: var(--ds-text-1, #151c22);
+  color: var(--ink);
   font-weight: 650;
 }
 
 .sectionsHint {
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
 }
 
-.includeAll {
-  min-height: 26px;
-  padding: 0 8px;
-  border-radius: var(--ds-r-ctl, 9px);
-  color: var(--ds-info-ink, #1f55b3);
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
-.includeAll:hover {
-  background: var(--ds-surface-2, #eceff1);
+.sections .includeAll[data-variant] {
+  color: var(--brand-text);
 }
 
 @container (max-width: 520px) {
@@ -361,7 +308,7 @@
   }
 }
 
-@media (max-width: 640px) {
+@container (max-width: 640px) {
   .seconds {
     display: none;
   }

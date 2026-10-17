@@ -1,10 +1,13 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
-import { Button, Checkbox, Field, useToast } from '@roofline/ui';
+import { Button, Checkbox, Field, Icon, Panel, useToast } from '@roofline/ui';
 import { ApiError } from '../../api/client.ts';
 import { create } from '../../copy/create.ts';
 import { errors } from '../../copy/errors.ts';
+import { WINDOW_COPY } from '../../copy/rail.ts';
+import { DetailPage } from '../jobs/DetailPage.tsx';
 import { AddressFields, EMPTY_ADDRESS, type AddressValue } from './AddressFields.tsx';
+import { FormActions } from './FormActions.tsx';
 import { useMe } from '../../api/hooks.ts';
 import { useCreateCustomer, useCreateProperty, type CustomerInput, type CustomerRecord } from './api.ts';
 import styles from './NewCustomer.module.css';
@@ -160,110 +163,137 @@ export function NewCustomer() {
   };
 
   return (
-    <form className={styles.form} onSubmit={(event) => void submit(event)} noValidate>
-      <div className={styles.names}>
-        <Field
-          label={create.newCustomer.firstName}
-          name="firstName"
-          autoComplete="given-name"
-          value={firstName}
-          readOnly={locked}
-          onChange={(event) => changeName('first', event.target.value)}
-          error={fieldErrors.firstName}
-        />
-        <Field
-          label={create.newCustomer.lastName}
-          name="lastName"
-          autoComplete="family-name"
-          value={lastName}
-          readOnly={locked}
-          onChange={(event) => changeName('last', event.target.value)}
-          error={fieldErrors.lastName}
-        />
-        <Field
-          className={styles.wide}
-          label={create.newCustomer.displayName}
-          name="displayName"
-          value={displayName}
-          readOnly={locked}
-          onChange={(event) => {
-            setDisplayName(event.target.value);
-            setDisplayEdited(true);
-          }}
-          error={fieldErrors.displayName}
-        />
-      </div>
-
-      <div className={styles.contacts}>
-        <div className={styles.column}>
-          {phones.map((row) => (
+    <DetailPage
+      app="customers"
+      title={create.newCustomer.title}
+      crumbs={[{ label: WINDOW_COPY.customers.title, href: '/customers' }, { label: create.newCustomer.title }]}
+      subtitle={create.newCustomer.subtitle}
+    >
+      <form className={styles.form} onSubmit={(event) => void submit(event)} noValidate>
+        <Panel title={create.newCustomer.stepName}>
+          <div className={styles.names}>
             <Field
-              key={row.id}
-              className={styles.input}
-              label={create.newCustomer.phone}
-              name="phone"
-              type="tel"
-              value={row.value}
+              label={create.newCustomer.firstName}
+              name="firstName"
+              autoComplete="given-name"
+              value={firstName}
+              readOnly={locked}
+              onChange={(event) => changeName('first', event.target.value)}
+              error={fieldErrors.firstName}
+            />
+            <Field
+              label={create.newCustomer.lastName}
+              name="lastName"
+              autoComplete="family-name"
+              value={lastName}
+              readOnly={locked}
+              onChange={(event) => changeName('last', event.target.value)}
+              error={fieldErrors.lastName}
+            />
+            <Field
+              className={styles.wide}
+              label={create.newCustomer.displayName}
+              help={create.newCustomer.displayNameHelp}
+              name="displayName"
+              value={displayName}
               readOnly={locked}
               onChange={(event) => {
-                const value = event.target.value;
-                setPhones((rows) => rows.map((item) => (item.id === row.id ? { ...item, value } : item)));
+                setDisplayName(event.target.value);
+                setDisplayEdited(true);
               }}
-              error={fieldErrors[`phone:${row.id}`]}
+              error={fieldErrors.displayName}
             />
-          ))}
-          <Button
-            type="button"
-            variant="ghost"
-            className={styles.addRow}
-            disabled={locked || phones.length >= MAX_ROWS}
-            onClick={() => setPhones(addRow)}
-          >
-            {create.newCustomer.addPhone}
-          </Button>
-        </div>
+          </div>
+        </Panel>
 
-        <div className={styles.column}>
-          {emails.map((row) => (
-            <Field
-              key={row.id}
-              className={styles.input}
-              label={create.newCustomer.email}
-              name="email"
-              type="email"
-              value={row.value}
-              readOnly={locked}
-              onChange={(event) => {
-                const value = event.target.value;
-                setEmails((rows) => rows.map((item) => (item.id === row.id ? { ...item, value } : item)));
-              }}
-              error={fieldErrors[`email:${row.id}`]}
-            />
-          ))}
-          <Button
-            type="button"
-            variant="ghost"
-            className={styles.addRow}
-            disabled={locked || emails.length >= MAX_ROWS}
-            onClick={() => setEmails(addRow)}
-          >
-            {create.newCustomer.addEmail}
-          </Button>
-        </div>
-      </div>
+        <Panel title={create.newCustomer.stepContact}>
+          <div className={styles.contacts}>
+            <div className={styles.column}>
+              {phones.map((row, index) => (
+                <Field
+                  key={row.id}
+                  className={styles.input}
+                  label={index === 0 ? create.newCustomer.phone : create.newCustomer.anotherPhone}
+                  name="phone"
+                  type="tel"
+                  value={row.value}
+                  readOnly={locked}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setPhones((rows) => rows.map((item) => (item.id === row.id ? { ...item, value } : item)));
+                  }}
+                  error={fieldErrors[`phone:${row.id}`]}
+                />
+              ))}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                flush="start"
+                className={styles.addRow}
+                disabled={locked || phones.length >= MAX_ROWS}
+                onClick={() => setPhones(addRow)}
+              >
+                <Icon name="plus" size={16} />
+                {create.newCustomer.addPhone}
+              </Button>
+            </div>
 
-      <section className={styles.home}>
-        <h2 className={styles.heading}>{create.newCustomer.firstHome}</h2>
-        <AddressFields value={home} onChange={setHome} errors={homeErrors} />
-      </section>
+            <div className={styles.column}>
+              {emails.map((row, index) => (
+                <Field
+                  key={row.id}
+                  className={styles.input}
+                  label={index === 0 ? create.newCustomer.email : create.newCustomer.anotherEmail}
+                  name="email"
+                  type="email"
+                  value={row.value}
+                  readOnly={locked}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setEmails((rows) => rows.map((item) => (item.id === row.id ? { ...item, value } : item)));
+                  }}
+                  error={fieldErrors[`email:${row.id}`]}
+                />
+              ))}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                flush="start"
+                className={styles.addRow}
+                disabled={locked || emails.length >= MAX_ROWS}
+                onClick={() => setEmails(addRow)}
+              >
+                <Icon name="plus" size={16} />
+                {create.newCustomer.addEmail}
+              </Button>
+            </div>
+          </div>
+        </Panel>
 
-      {canConsent && (
-        <Checkbox checked={textConsent} onChange={setTextConsent} label={create.newCustomer.textConsent} disabled={locked} />
-      )}
+        <Panel title={create.newCustomer.firstHome}>
+          <AddressFields value={home} onChange={setHome} errors={homeErrors} />
+        </Panel>
 
-      <Button type="submit" variant="primary" className={styles.save} busy={pending}>
-        {pending ? create.saving : create.newCustomer.save}
-      </Button>
-    </form>
+        {canConsent && (
+          <Checkbox checked={textConsent} onChange={setTextConsent} label={create.newCustomer.textConsent} disabled={locked} />
+        )}
+
+        <FormActions
+          className={styles.actions}
+          save={
+            <Button type="submit" variant="primary" className={styles.save} busy={pending}>
+              {pending ? create.saving : create.newCustomer.save}
+            </Button>
+          }
+          cancel={
+            <Button href="/customers" variant="ghost">
+              {create.newCustomer.cancel}
+            </Button>
+          }
+        />
+      </form>
+    </DetailPage>
   );
 }

@@ -15,6 +15,7 @@ import {
   DEFAULT_STORM_EMAIL_BODY,
   DEFAULT_STORM_EMAIL_SUBJECT,
   DEFAULT_STORM_SMS,
+  hailInches,
   hailLabel,
   missingStormTokens,
   splitAdBudget,
@@ -90,7 +91,9 @@ function buildSteps(
   const emailFields: Record<string, Record<string, string>> = {};
   for (const id of recipients.emailIds) {
     const f = recipients.fields[id];
-    if (f) emailFields[id] = { hail_size: f.hail_size, street: f.street };
+    // The day is only for the review's sample (the send works it out again when the email goes): it keeps the email's
+    // sample saying the same "today" or "yesterday" as the text's
+    if (f) emailFields[id] = { hail_size: f.hail_size, street: f.street, day };
   }
 
   const smsPayload = {
@@ -202,7 +205,7 @@ export async function draftStormPlan(
     const recipients = await listStormPlanRecipients(tx, ctx, companyStormId);
     const day = stormDayLabel(facts.convectiveDay, now, facts.company.timezone);
     const steps = buildSteps(facts, recipients, companyStormId, day);
-    const summary = `${facts.customersHit} of your customers and ${facts.homesHit} homes were hit by radar-estimated hail up to ${hailLabel(facts.maxIn)}.`;
+    const summary = `${facts.customersHit} of your customers and ${facts.homesHit} homes were hit by radar-estimated hail up to ${hailInches(facts.maxIn)}.`;
     const { taskId } = await createTask(
       tx,
       ctx,

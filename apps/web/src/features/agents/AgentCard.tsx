@@ -1,12 +1,13 @@
-import { useId, type CSSProperties } from 'react';
-import { Button } from '@roofline/ui';
-import type { AgentCard as AgentCardData, RuleSentence } from '@roofline/shared';
-import { agentsDash } from '../../copy/agents.ts';
+import { useId } from 'react';
+import { Button, Tag, UiLink } from '@roofline/ui';
+import { hoursLabel, type AgentCard as AgentCardData, type RuleSentence } from '@roofline/shared';
+import { agentsDash, agentsWindow } from '../../copy/agents.ts';
 import { AGENT_LABEL } from '../../copy/status.ts';
-import { AgentIcon } from './AgentIcon.tsx';
-import { AGENT_COLOR, agoWords, wholeHours } from './agentTheme.ts';
+import { AgentGlyph } from './AgentGlyph.tsx';
+import { agentStatus } from './agentStatus.ts';
+import { agoWords } from './agentTheme.ts';
+import { DayBars } from './DayBars.tsx';
 import { PauseSwitch } from './PauseSwitch.tsx';
-import { Sparkline } from './Sparkline.tsx';
 import styles from './AgentCard.module.css';
 
 export type AgentCardProps = {
@@ -22,96 +23,86 @@ export type AgentCardProps = {
   rules?: RuleSentence[];
   /** The clock for "11 min ago", so a render is repeatable. */
   now: number;
+  /** Where the agent's own page is. Given on a phone, where the card opens that page: there is no panel beside the cards to pick for. */
+  href?: string;
 };
 
-const STATUS_WORD = {
-  on: agentsDash.running,
-  waiting: agentsDash.waiting,
-  paused: agentsDash.paused,
-  coming_soon: agentsDash.comingSoon,
-} as const;
-
-/** One agent on the dashboard: name, running state and switch, today's number, success, hours saved, trend and latest action. */
-export function AgentCard({ card, minutesThisWeek, latest, selected, onSelect, isOwner, rules, now }: AgentCardProps) {
+/**
+ * One agent on the dashboard: its glyph and name with the switch, its status, today's number, success and hours saved,
+ * the last two weeks and its latest action. The whole card picks the agent (a stretched button under the controls); on a
+ * phone it opens the agent's page instead.
+ */
+export function AgentCard({ card, minutesThisWeek, latest, selected, onSelect, isOwner, rules, now, href }: AgentCardProps) {
   const id = useId();
   const name = AGENT_LABEL[card.agent];
   const soon = card.status === 'coming_soon';
   const paused = card.status === 'paused';
   // Something waits on a person: the card says so, with the count, instead of "Running".
-  const waiting = !paused && !soon && card.waitingCount > 0;
-  const statusKey = waiting ? 'waiting' : card.status;
-  const series = card.last14Days.map((d) => d.finished);
+  const status = agentStatus(card);
   return (
-    <li className={styles.item} style={{ '--agent': AGENT_COLOR[card.agent] } as CSSProperties}>
-      <span className={styles.node} aria-hidden="true">
-        <AgentIcon agent={card.agent} size={20} />
-      </span>
+    <li className={styles.item}>
       <article className={styles.card} data-selected={selected ? 'true' : undefined} data-status={card.status} aria-labelledby={`${id}-name`}>
-        <span className={styles.tab} aria-hidden="true" />
         <div className={styles.head}>
+          <AgentGlyph agent={card.agent} size="md" />
           <h3 className={styles.name} id={`${id}-name`}>
-            <Button variant="ghost" className={styles.pick} aria-pressed={selected} onClick={onSelect}>
-              <span className="visually-hidden">{`${agentsDash.selectHint} `}</span>
-              <span>{name}</span>
-            </Button>
+            {href === undefined ? (
+              <Button variant="ghost" className={styles.pick} aria-pressed={selected} aria-label={`${agentsDash.selectHint} ${name}`} onClick={onSelect}>
+                {name}
+              </Button>
+            ) : (
+              <UiLink href={href} className={styles.pick} aria-label={`${agentsDash.openAgent} ${name}`}>
+                {name}
+              </UiLink>
+            )}
           </h3>
-        </div>
-        <div className={styles.statusRow}>
-          <span className={styles.status} data-status={statusKey}>
-            {STATUS_WORD[statusKey]}
-          </span>
           {soon ? null : (
             // Touching the switch also picks the card, so the panel (and the turn-on rules) are this agent's.
             <span className={styles.toggle} onFocusCapture={onSelect} onPointerDownCapture={onSelect}>
-              <PauseSwitch
-                variant="card"
-                agent={card.agent}
-                paused={paused ? { at: '', byName: null } : null}
-                isOwner={isOwner}
-                rules={rules}
-              />
+              <PauseSwitch variant="card" agent={card.agent} paused={paused ? { at: '', byName: null } : null} isOwner={isOwner} rules={rules} />
             </span>
           )}
         </div>
-        <p className={styles.big}>{card.finishedToday}</p>
-        <p className={styles.bigLabel}>{agentsDash.tasksTodayLine}</p>
-        {card.waitingCount > 0 ? <p className={styles.waiting}>{agentsDash.waitingCount(card.waitingCount)}</p> : null}
-        <dl className={styles.stats}>
-          <div className={styles.stat}>
+        <div className={styles.statusRow}>
+          <Tag tone={status.tone} icon={status.icon}>
+            {status.word}
+          </Tag>
+          {card.waitingCount > 0 ? <span className={styles.waiting}>{agentsDash.waitingCount(card.waitingCount)}</span> : null}
+        </div>
+        <p className={styles.count}>{card.finishedToday}</p>
+        <p className={styles.countLabel}>{agentsDash.tasksTodayLine}</p>
+        <dl className={styles.facts}>
+          <div className={styles.fact}>
             <dt className="visually-hidden">{agentsDash.successLine}</dt>
             <dd>
               {card.successRate === null ? (
-                <span className={styles.muted}>{agentsDash.noSuccess}</span>
+                <span className={styles.muted}>{agentsWindow.successRateNone}</span>
               ) : (
                 <>
-                  <span>{`${Math.round(card.successRate * 100)}%`}</span>
+                  <span className={styles.value}>{`${Math.round(card.successRate * 100)}%`}</span>
                   <span className={styles.muted}>{agentsDash.successLine}</span>
                 </>
               )}
             </dd>
           </div>
-          <div className={styles.stat}>
+          <div className={styles.fact}>
             <dt className="visually-hidden">{agentsDash.savedLine}</dt>
             <dd>
               {minutesThisWeek === null ? null : (
                 <>
-                  <span>{`${agentsDash.about} ${wholeHours(minutesThisWeek)} ${agentsDash.hoursUnit}`}</span>
+                  <span className={styles.value}>{hoursLabel(minutesThisWeek)}</span>
                   <span className={styles.muted}>{agentsDash.savedLine}</span>
                 </>
               )}
             </dd>
           </div>
         </dl>
-        <div className={styles.spark}>
-          <Sparkline values={series} label={agentsDash.cardSparkLabel} width={150} height={34} />
-        </div>
+        {card.last14Days.length > 0 ? <DayBars days={card.last14Days} label={agentsDash.cardSparkLabel} /> : null}
         <p className={styles.latest}>
           {latest === null ? (
             <span className={styles.muted}>{agentsDash.latestNone}</span>
           ) : (
             <>
-              <span className={styles.latestText}>{latest.text}</span>{' '}
-              <span className={styles.muted}>{agoWords(latest.at, now)}</span>
+              <span className={styles.latestText}>{latest.text}</span> <span className={styles.ago}>{agoWords(latest.at, now)}</span>
             </>
           )}
         </p>

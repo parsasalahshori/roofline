@@ -7,14 +7,20 @@ export type SignaturePadProps = {
   /** Called with the raw base64 of a PNG (no "data:image/png;base64," prefix), or null when empty or cleared. */
   onChange(png: string | null): void;
   disabled?: boolean;
+  /** A heading over the pad, with Clear at its right edge. */
+  heading?: string;
 };
 
 /** The drawing height on screen, in CSS pixels. Matches SignaturePad.module.css. */
-const CSS_HEIGHT = 160;
+const CSS_HEIGHT = 140;
 /** The backing store is capped so the exported PNG stays well under 200 KB. */
 const MAX_WIDTH = 600;
 const MAX_HEIGHT = 240;
 const MAX_DPR = 2;
+/*
+ * What the drawing is made of, in both themes: dark ink on white paper. The PNG that goes into the signed copy is
+ * those pixels, so it must not follow the theme; on screen in dark mode the whole canvas is inverted by CSS instead.
+ */
 const INK = '#2b2620';
 const PAPER = '#ffffff';
 const DATA_PREFIX = 'data:image/png;base64,';
@@ -46,7 +52,7 @@ function exportPng(canvas: HTMLCanvasElement): string | null {
   return png === '' ? null : png;
 }
 
-export function SignaturePad({ onChange, disabled = false }: SignaturePadProps) {
+export function SignaturePad({ onChange, disabled = false, heading }: SignaturePadProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const last = useRef<Point | null>(null);
 
@@ -124,22 +130,29 @@ export function SignaturePad({ onChange, disabled = false }: SignaturePadProps) 
 
   return (
     <div className={styles.pad}>
-      <canvas
-        ref={canvasRef}
-        className={styles.canvas}
-        data-testid="signature-pad"
-        role="img"
-        aria-label={homeowner.drawLabel}
-        aria-disabled={disabled ? true : undefined}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={endStroke}
-        onPointerCancel={endStroke}
-      />
-      <div className={styles.toolbar}>
+      <div className={styles.head}>
+        {heading ? <h3 className={styles.heading}>{heading}</h3> : <span />}
         <Button type="button" variant="ghost" className={styles.clear} disabled={disabled} onClick={clear}>
           {homeowner.clearDrawing}
         </Button>
+      </div>
+      <div className={styles.well}>
+        <canvas
+          ref={canvasRef}
+          className={styles.canvas}
+          data-testid="signature-pad"
+          role="img"
+          aria-label={homeowner.drawLabel}
+          aria-disabled={disabled ? true : undefined}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={endStroke}
+          onPointerCancel={endStroke}
+        />
+        <span className={styles.base} aria-hidden="true" />
+        <span className={styles.cross} aria-hidden="true">
+          {'\u00d7'}
+        </span>
       </div>
     </div>
   );

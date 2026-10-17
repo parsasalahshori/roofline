@@ -181,6 +181,31 @@ describe('PATCH /api/company', () => {
     expect(JSON.stringify(res.body)).not.toMatch(/stripe|plan/i);
   });
 
+  test('GET returns brandColor: null until the company has an accent colour, then that colour; the profile PATCH cannot set it', async () => {
+    const owner = await loginAs(t.app, t.seed.a.owner);
+    expect((await owner.get('/api/company')).body).toMatchObject({ brandColor: null });
+
+    // The colour is the instant quote page's accent colour, saved on its settings screen.
+    const saved = await owner.put('/api/instant-quote/settings').send({
+      enabled: false,
+      slug: null,
+      products: ['windows', 'roof'],
+      rangePct: 12,
+      dailyCap: 50,
+      embedOrigins: [],
+      booking: false,
+      accentColor: '#ED3A2B',
+    });
+    expect(saved.status).toBe(200);
+    expect((await owner.get('/api/company')).body).toMatchObject({ brandColor: '#ED3A2B' });
+    // Every member reads it (the whole app wears the company's colour), and the profile PATCH has no such field.
+    const rep = await loginAs(t.app, t.seed.a.rep);
+    expect((await rep.get('/api/company')).body).toMatchObject({ brandColor: '#ED3A2B' });
+    const refused = await owner.patch('/api/company').send({ brandColor: '#000000' });
+    expect(refused.status).toBeGreaterThanOrEqual(400);
+    expect((await owner.get('/api/company')).body).toMatchObject({ brandColor: '#ED3A2B' });
+  });
+
   test('saves the profile, turns the phone into E.164, and writes an audit row with before and after', async () => {
     const owner = await loginAs(t.app, t.seed.a.owner);
     t.clock.advance(2 * DAY);

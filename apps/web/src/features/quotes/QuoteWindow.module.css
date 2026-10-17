@@ -1,15 +1,12 @@
-/* The quote window: stat strip, actions, then the editor, lines and totals stacked on a phone */
-.window {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 0;
-}
-
-/* Three stat cards side by side; the labels and values wrap on a narrow window, never past its width */
+/*
+ * The quote page: the numbers that make the price in a strip under the title, the details to edit at the left and the
+ * price lines with the total at the right, held in view while the left side is edited. A phone is one column with the
+ * total pinned at the foot of the screen.
+ */
 .stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: 12px;
   margin: 0;
 }
@@ -18,50 +15,38 @@
   min-width: 0;
 }
 
-/* The actions wrap onto as many rows as needed; every control keeps a 40px touch target */
 .actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
-  align-items: center;
-}
-
-.actions > * {
-  min-height: 40px;
-}
-
-/* The PDF download: a link drawn like a ghost button */
-.pdf {
-  display: inline-flex;
-  align-items: center;
-  min-height: 40px;
-  padding: 0 16px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  color: var(--text);
-  background: transparent;
-  font-size: 0.875rem;
-  text-decoration: none;
-}
-
-.pdf:hover {
-  background: var(--surface-2);
-}
-
-.pdf:focus-visible {
-  outline: 2px solid var(--text);
-  outline-offset: 2px;
 }
 
 .note {
-  margin: 0;
-  color: var(--text-muted);
+  margin: 0 0 12px;
+  color: var(--ink-2);
   font-size: var(--font-size-body);
 }
 
-.loading {
-  margin: 0 0 8px;
-  color: var(--text-muted);
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 420px;
+  gap: 14px;
+  align-items: start;
+}
+
+.main,
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* The price lines follow the person down the page while they edit the numbers */
+.side {
+  position: sticky;
+  top: 16px;
 }
 
 .sheetActions {
@@ -71,9 +56,52 @@
   justify-content: flex-end;
 }
 
-/* On a phone the three stats stack, one per row */
-@media (max-width: 600px) {
-  .stats {
+.skeletonPanel {
+  padding: 16px;
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+}
+
+/* The total, pinned at the foot of a phone's screen: the label, the number in Archivo, the word Estimate */
+.pinned {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 12px -16px -24px;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--e-2);
+}
+
+.pinnedLabel {
+  color: var(--ink-3);
+  font: 600 var(--font-size-min)/1 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pinnedTotal {
+  margin-left: auto;
+  font: 750 22px/1 var(--f-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.pinnedHint {
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+@media (max-width: 1023.98px) {
+  .grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .side {
+    position: static;
   }
 }

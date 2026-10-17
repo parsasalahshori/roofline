@@ -1,5 +1,17 @@
-/* Sizing a photographed window: phone-first, the photo as large as the screen allows, the controls under it. */
+/*
+ * Sizing a photographed window: phone-first, the photo as large as the screen allows, the controls under it. The photo
+ * area and what is drawn on it (corners, loupe, outlines, letters) sit on a photograph, so their few marks are literal
+ * on purpose, in the first rule; every other colour is a token. Rules on a kit button name [data-variant] so they
+ * outrank the kit's variant rules.
+ */
 .measure {
+  /* literal: drawn over a photograph, the same in both themes */
+  --over-backdrop: #1d2329;
+  --over-white: #fff;
+  --over-ink: #151c22;
+  --over-black: #000;
+  --over-glow: rgb(255 255 255 / 0.18);
+  --over-shadow: rgb(0 0 0 / 0.45);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -14,8 +26,8 @@
   grid-auto-flow: column;
   gap: 4px;
   padding: 4px;
-  border-radius: 12px;
-  background: var(--ds-surface-2, #eceff1);
+  border-radius: var(--r-3);
+  background: var(--sunken);
 }
 
 .method {
@@ -23,20 +35,21 @@
   gap: 0;
   min-height: 44px;
   padding: 4px 6px;
-  border-radius: 9px;
-  color: var(--ds-text-label, #505b64);
+  border-radius: var(--r-2);
+  color: var(--ink-3);
   font-size: 14px;
   font-weight: 600;
 }
 
-.method[data-selected="true"] {
-  background: var(--ds-surface, #fff);
-  color: var(--ds-text-1, #151c22);
-  box-shadow: 0 1px 3px rgba(21, 28, 34, 0.15);
+.methods .method[data-selected="true"][data-variant],
+.methods .method[data-selected="true"][data-variant]:hover {
+  background: var(--raised);
+  color: var(--ink);
+  box-shadow: var(--e-1);
 }
 
 .recommended {
-  color: var(--ds-accent-ink, #8a5a00);
+  color: var(--tape-ink);
   font-size: 12px;
   font-weight: 600;
 }
@@ -55,7 +68,7 @@
 .hint {
   flex: none;
   margin: 0;
-  color: var(--ds-text-2, #3a444d);
+  color: var(--ink-2);
   font-size: 13px;
   line-height: 1.4;
 }
@@ -67,8 +80,8 @@
   place-items: center;
   min-height: 220px;
   padding: 12px;
-  border-radius: 12px;
-  background: #1d2329;
+  border-radius: var(--r-3);
+  background: var(--over-backdrop);
   container-type: size;
 }
 
@@ -120,14 +133,16 @@
 }
 
 .window {
-  fill: rgba(255, 194, 26, 0.14);
-  stroke: var(--ds-accent, #ffc21a);
+  fill: var(--tape);
+  fill-opacity: 0.14;
+  stroke: var(--tape);
   stroke-width: 2.5;
 }
 
 .paper {
-  fill: rgba(47, 111, 222, 0.18);
-  stroke: var(--ds-info, #2f6fde);
+  fill: var(--info);
+  fill-opacity: 0.18;
+  stroke: var(--info);
   stroke-width: 2.5;
 }
 
@@ -149,16 +164,16 @@
 
 .handle:hover,
 .handle:active {
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--over-glow);
 }
 
 .dot {
   width: 14px;
   height: 14px;
-  border: 3px solid var(--ds-accent, #ffc21a);
+  border: 3px solid var(--tape);
   border-radius: 50%;
-  background: var(--ds-text-1, #151c22);
-  box-shadow: 0 0 0 1.5px #fff;
+  background: var(--ink);
+  box-shadow: 0 0 0 1.5px var(--over-white);
 }
 
 .handle[data-which="paper"] {
@@ -166,11 +181,11 @@
 }
 
 .handle[data-which="paper"] .dot {
-  border-color: var(--ds-info, #2f6fde);
+  border-color: var(--info);
 }
 
 .handle:focus-visible .dot {
-  outline: 2px solid #fff;
+  outline: 2px solid var(--over-white);
   outline-offset: 3px;
 }
 
@@ -181,11 +196,11 @@
   top: 8px;
   width: 112px;
   height: 112px;
-  border: 3px solid #fff;
+  border: 3px solid var(--over-white);
   border-radius: 50%;
-  background-color: #000;
+  background-color: var(--over-black);
   background-repeat: no-repeat;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 4px 16px var(--over-shadow);
   pointer-events: none;
 }
 
@@ -204,12 +219,12 @@
   width: 18px;
   height: 18px;
   margin: -9px 0 0 -9px;
-  border: 2px solid var(--ds-accent, #ffc21a);
+  border: 2px solid var(--tape);
   border-radius: 50%;
 }
 
 .cross[data-which="paper"] {
-  border-color: var(--ds-info, #2f6fde);
+  border-color: var(--info);
 }
 
 .controls {
@@ -231,24 +246,24 @@
   align-items: baseline;
   gap: 4px 10px;
   padding: 10px 12px;
-  border-radius: 10px;
-  background: var(--ds-accent-tint, #fff1d1);
+  border-radius: var(--r-3);
+  background: var(--tape-tint);
+  color: var(--tape-ink);
   font-size: 14px;
 }
 
 .sizeLabel {
-  color: var(--ds-text-label, #505b64);
+  color: var(--tape-ink);
   font-size: 12px;
 }
 
 .sizeValue {
-  font-size: 20px;
-  font-variant-numeric: tabular-nums;
+  font: 600 20px / 1.2 var(--f-mono);
 }
 
 .sizeSource {
   margin-left: auto;
-  color: var(--ds-text-label, #505b64);
+  color: var(--tape-ink);
   font-size: 12px;
 }
 
@@ -264,7 +279,7 @@
 }
 
 .delete {
-  color: var(--ds-danger-ink, #a3201f);
+  color: var(--bad-text);
 }
 
 /* The measuring sheet: the page scrolls (more to read and choose), the photo keeps a phone-sized area */
@@ -294,13 +309,13 @@
   gap: 4px 10px;
   margin: 0;
   padding: 8px 12px;
-  border-radius: 10px;
-  background: var(--ds-surface-2, #eceff1);
+  border-radius: var(--r-3);
+  background: var(--surface-2);
   font-size: 14px;
 }
 
 .found {
-  color: var(--ds-success-ink, #1d6b3a);
+  color: var(--ok-text);
   font-weight: 700;
 }
 
@@ -308,7 +323,7 @@
   flex-basis: 100%;
   margin: 2px 0 0;
   padding-left: 18px;
-  color: var(--ds-warning-ink, #8a5a00);
+  color: var(--warn-text);
   font-weight: 600;
 }
 
@@ -319,9 +334,10 @@
   flex-direction: column;
   gap: 6px;
   padding: 10px 12px;
-  border: 1px solid var(--ds-danger, #d93a35);
-  border-radius: 10px;
-  background: var(--ds-danger-tint, #fdecea);
+  border-radius: var(--r-3);
+  background: var(--bad-tint);
+  box-shadow: inset 0 0 0 1px var(--bad);
+  color: var(--bad-text);
   font-size: 14px;
   line-height: 1.4;
 }
@@ -339,8 +355,9 @@
 }
 
 .sheet {
-  fill: rgba(31, 168, 90, 0.16);
-  stroke: var(--ds-success, #1fa85a);
+  fill: var(--ok);
+  fill-opacity: 0.16;
+  stroke: var(--ok);
   stroke-width: 2.5;
 }
 
@@ -350,12 +367,12 @@
 
 /* The fitted edges: sure ones in the accent, an edge to check in red, dashed */
 .edge {
-  stroke: var(--ds-accent, #ffc21a);
+  stroke: var(--tape);
   stroke-width: 3;
 }
 
 .edge[data-low="true"] {
-  stroke: var(--ds-danger, #d93a35);
+  stroke: var(--bad);
   stroke-dasharray: 10 6;
   stroke-width: 4;
 }
@@ -365,8 +382,8 @@
   z-index: 1;
   padding: 3px 8px;
   border-radius: 999px;
-  background: var(--ds-danger, #d93a35);
-  color: #fff;
+  background: var(--bad);
+  color: var(--bad-ink);
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
@@ -384,7 +401,7 @@
 }
 
 .snapState {
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 13px;
 }
 
@@ -410,26 +427,27 @@
   gap: 10px;
   min-height: 48px;
   padding: 6px 12px;
-  border: 1px solid var(--line, #dde2e6);
-  border-radius: 10px;
-  background: var(--ds-surface, #fff);
+  border: 1px solid var(--line-ctl);
+  border-radius: var(--r-3);
+  background: var(--surface);
   cursor: pointer;
 }
 
 .target[data-checked="true"] {
-  border-color: var(--ds-accent-ink, #8a5a00);
-  box-shadow: inset 0 0 0 1px var(--ds-accent-ink, #8a5a00);
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  box-shadow: inset 0 0 0 1px var(--brand);
 }
 
 .target input {
   width: 20px;
   height: 20px;
   margin: 0;
-  accent-color: var(--ds-accent-ink, #8a5a00);
+  accent-color: var(--brand);
 }
 
 .target:focus-within {
-  outline: 2px solid var(--ds-focus, #2f6fde);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
@@ -442,20 +460,20 @@
 }
 
 .targetHint {
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 12px;
   font-weight: 500;
 }
 
 .targetOffset {
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
 
 .practice {
   margin: 2px 0 0;
-  color: var(--ds-text-2, #3a444d);
+  color: var(--ink-2);
   font-size: 13px;
   line-height: 1.4;
 }
@@ -464,7 +482,7 @@
   display: flex;
   align-items: center;
   min-height: 44px;
-  color: var(--ds-text-2, #3a444d);
+  color: var(--ink-2);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -477,7 +495,8 @@
 }
 
 .size[data-retake="true"] {
-  background: var(--ds-danger-tint, #fdecea);
+  background: var(--bad-tint);
+  color: var(--bad-text);
 }
 
 .combined {
@@ -487,7 +506,7 @@
   align-items: baseline;
   gap: 2px 8px;
   padding-top: 6px;
-  border-top: 1px solid rgba(21, 28, 34, 0.12);
+  border-top: 1px solid var(--tape-line);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -512,9 +531,9 @@
   place-items: center;
   width: 22px;
   height: 22px;
-  border: 2px solid #fff;
+  border: 2px solid var(--over-white);
   border-radius: 50%;
-  color: #151c22;
+  color: var(--over-ink);
   font-size: 12px;
   font-weight: 800;
   transform: translate(-50%, -50%);
@@ -535,7 +554,7 @@
 }
 
 .candidateTag[data-picked="true"] {
-  box-shadow: 0 0 0 2px #151c22;
+  box-shadow: 0 0 0 2px var(--over-ink);
 }
 
 .pick {
@@ -545,9 +564,9 @@
   gap: 6px;
   margin: 0;
   padding: 10px 12px;
-  border: 2px solid var(--ds-accent-ink, #8a5a00);
-  border-radius: 12px;
-  background: var(--ds-surface, #fff);
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 2px var(--brand);
 }
 
 .pickOption {
@@ -556,18 +575,19 @@
   gap: 10px;
   min-height: 72px;
   padding: 4px 8px;
-  border: 1px solid var(--line, #dde2e6);
-  border-radius: 10px;
+  border: 1px solid var(--line-ctl);
+  border-radius: var(--r-3);
   cursor: pointer;
 }
 
 .pickOption[data-checked="true"] {
-  border-color: var(--ds-accent-ink, #8a5a00);
-  box-shadow: inset 0 0 0 1px var(--ds-accent-ink, #8a5a00);
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  box-shadow: inset 0 0 0 1px var(--brand);
 }
 
 .pickOption:focus-within {
-  outline: 2px solid var(--ds-focus, #2f6fde);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
@@ -575,7 +595,7 @@
   width: 20px;
   height: 20px;
   margin: 0;
-  accent-color: var(--ds-accent-ink, #8a5a00);
+  accent-color: var(--brand);
 }
 
 .pickLetter {
@@ -585,7 +605,7 @@
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  color: #151c22;
+  color: var(--over-ink);
   font-weight: 800;
 }
 
@@ -595,13 +615,13 @@
   height: 64px;
   border: 3px solid;
   border-radius: 50%;
-  background-color: #000;
+  background-color: var(--over-black);
   background-repeat: no-repeat;
 }
 
 .sizeNote {
   flex-basis: 100%;
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 12px;
 }
 

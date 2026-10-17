@@ -32,10 +32,11 @@ export function conversationPollInterval(conversation: ConversationDetail | unde
  * GET /api/conversations/:id. Asked for again like the inbox (5 s while a call is live, else 30 s), so
  * new texts and replies show up without a reload. Background polling is off.
  */
-export function useConversation(id: string) {
+export function useConversation(id: string | undefined) {
   return useQuery({
-    queryKey: conversationKey(id),
+    queryKey: conversationKey(id ?? ''),
     queryFn: ({ signal }) => apiFetch<ConversationDetail>(`/api/conversations/${id}`, { signal }),
+    enabled: id !== undefined && id !== '',
     refetchInterval: (query) => conversationPollInterval(query.state.data),
     refetchIntervalInBackground: false,
   });

@@ -14,6 +14,20 @@ import { seedOldLead, seedTextsPlan } from './g1-seeds.ts';
  * add `.exclude('.maplibregl-ctrl-attrib')` to the builder in scan() and name the axe rule id here.
  */
 
+/** One scheduled inspection tomorrow at 10 in the company's zone, for the owner. Returns its id. */
+async function seedCalendarVisit(db: import('pg').Client, companyId: string): Promise<string> {
+  const owner = await db.query<{ user_id: string }>(`select user_id from memberships where company_id = $1 and role = 'owner' order by user_id limit 1`, [companyId]);
+  const row = await db.query<{ id: string }>(
+    `insert into appointments (company_id, kind, title, assigned_user_id, starts_at, ends_at, status, source)
+     select $1, 'inspection', 'Roof inspection', $2,
+            (((now() at time zone c.timezone)::date + 1) + time '10:00') at time zone c.timezone,
+            (((now() at time zone c.timezone)::date + 1) + time '11:00') at time zone c.timezone, 'scheduled', 'manual'
+       from companies c where c.id = $1 returning id`,
+    [companyId, owner.rows[0]!.user_id],
+  );
+  return row.rows[0]!.id;
+}
+
 async function scan(page: Page): Promise<void> {
   const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
   const bad = results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
@@ -28,11 +42,20 @@ test('map home has no serious accessibility violations', async ({ page, loginAs,
   await scan(page);
 });
 
+test('my day has no serious accessibility violations', async ({ page, loginAs, markTodaySeen }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/today');
+  await expect(page.getByRole('main', { name: 'My day' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Your visits today' })).toBeVisible();
+  await scan(page);
+});
+
 test('approvals list has no serious accessibility violations', async ({ page, loginAs, markTodaySeen }) => {
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   await page.goto('/approvals');
-  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByRole('main')).toBeVisible();
   await scan(page);
 });
 
@@ -54,7 +77,7 @@ test('setup has no serious accessibility violations', async ({ page, loginAs, ma
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   await page.goto('/settings/setup');
-  await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
+  await expect(page.getByRole('main', { name: 'Settings' })).toBeVisible();
   await scan(page);
 });
 
@@ -62,7 +85,7 @@ test('estimator has no serious accessibility violations', async ({ page, loginAs
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   await page.goto('/estimator');
-  await expect(page.getByRole('dialog', { name: 'Measure' })).toBeVisible();
+  await expect(page.getByRole('main', { name: 'Measure' })).toBeVisible();
   await expect(page.getByRole('searchbox', { name: 'Search name or address' })).toBeVisible();
   await scan(page);
 });
@@ -100,7 +123,9 @@ test('homeowner page has no serious accessibility violations', async ({ page, br
   try {
     const home = await context.newPage();
     await home.goto(sent.link);
-    await expect(home.getByRole('button', { name: `Choose ${BETTER_NAME}`, exact: true })).toBeVisible();
+    // Better is the tile picked when the page opens: its panel is named for the option, and its button says the tier and the total
+    await expect(home.getByRole('region', { name: BETTER_NAME })).toBeVisible();
+    await expect(home.getByRole('button', { name: /^Choose Better \u00b7 \$[\d,]+$/ })).toBeVisible();
     await scan(home);
   } finally {
     await context.close();
@@ -142,6 +167,40 @@ test('calendar week has no serious accessibility violations', async ({ page, log
   await markTodaySeen('owner@a.test');
   await page.goto('/calendar?view=week');
   await expect(page.locator('[data-testid^="slot-"]').first()).toBeAttached({ timeout: 20_000 });
+  await scan(page);
+});
+
+test('calendar day has no serious accessibility violations', async ({ page, loginAs, markTodaySeen }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/calendar?view=day');
+  await expect(page.locator('[data-testid^="slot-"]').first()).toBeAttached({ timeout: 20_000 });
+  await scan(page);
+});
+
+test('calendar list has no serious accessibility violations', async ({ page, loginAs, markTodaySeen, db, scenario }) => {
+  await seedCalendarVisit(db, scenario.a.companyId);
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/calendar?view=list');
+  await expect(page.locator('[data-testid^="agenda-day-"]').first()).toBeVisible({ timeout: 20_000 });
+  await scan(page);
+});
+
+test('new appointment has no serious accessibility violations', async ({ page, loginAs, markTodaySeen }) => {
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto('/calendar/new?kind=inspection');
+  await expect(page.getByRole('list', { name: 'Suggested times' })).toBeVisible({ timeout: 20_000 });
+  await scan(page);
+});
+
+test('appointment has no serious accessibility violations', async ({ page, loginAs, markTodaySeen, db, scenario }) => {
+  const id = await seedCalendarVisit(db, scenario.a.companyId);
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  await page.goto(`/calendar/appointments/${id}`);
+  await expect(page.getByRole('group', { name: 'Appointment actions' })).toBeVisible({ timeout: 20_000 });
   await scan(page);
 });
 
@@ -235,7 +294,7 @@ test('Front Desk inbox has no serious accessibility violations', async ({ page, 
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   await page.goto('/front-desk');
-  await expect(page.getByRole('heading', { name: 'This week' })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('region', { name: "Today's numbers" })).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole('link', { name: /Maria Alvarez/ })).toBeVisible();
   await scan(page);
 });
@@ -245,7 +304,7 @@ test('Front Desk conversation has no serious accessibility violations', async ({
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   await page.goto(`/front-desk/${ids.maria}`);
-  await expect(page.getByRole('heading', { name: 'What was said' })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('heading', { name: 'Transcript' })).toBeVisible({ timeout: 20_000 });
   await scan(page);
 });
 

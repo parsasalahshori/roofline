@@ -2,18 +2,40 @@ import { act, fireEvent, render, renderHook, screen, within } from '@testing-lib
 import userEvent from '@testing-library/user-event';
 import { StrictMode, useRef, useState, type ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { TrapScopeContext, useScopedFocusTrap } from '../src/focus-trap.ts';
 import {
-  Dock,
+  Breadcrumb,
+  Page,
+  PageSlotsContext,
+  Rail,
   Sheet,
   ToastProvider,
   TopBar,
   UiLinkProvider,
-  Window,
   useFocusTrap,
   useToast,
-  type DockItem,
+  type RailGroup,
   type UiLinkProps,
 } from '../src/index.ts';
+
+/**
+ * A modal window, as the app's windows used to be (a title, a close button, a body): what a Sheet is opened over.
+ * The pages no longer trap focus; this is the trap's own test fixture, wired the way any container is.
+ */
+function Window({ title, closeLabel, onClose, children }: { title: string; closeLabel: string; onClose: () => void; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const scope = useScopedFocusTrap(ref, { active: true, onEscape: onClose });
+  return (
+    <TrapScopeContext value={scope}>
+      <div ref={ref} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1}>
+        <button type="button" aria-label={closeLabel} onClick={onClose}>
+          x
+        </button>
+        {children}
+      </div>
+    </TrapScopeContext>
+  );
+}
 
 /** The name of the focused element, so a Tab sequence reads as a list of names. */
 function focusedName(): string {
@@ -140,71 +162,6 @@ describe('Window and the focus trap', () => {
     rerender(<Page open={false} />);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(opener).toHaveFocus();
-  });
-
-  it('labels the dialog by its title and describes it by its description', () => {
-    render(
-      <Window title="Need your OK" description="Three jobs wait for you." closeLabel="Close window" onClose={() => {}}>
-        body
-      </Window>,
-    );
-    const dialog = screen.getByRole('dialog', { name: 'Need your OK' });
-    expect(dialog).toHaveAttribute('aria-modal', 'true');
-    expect(dialog).toHaveAccessibleDescription('Three jobs wait for you.');
-    expect(screen.getByRole('heading', { level: 1, name: 'Need your OK' })).toBeInTheDocument();
-  });
-
-  it('has no description attribute when there is no description', () => {
-    render(
-      <Window title="Need your OK" closeLabel="Close window" onClose={() => {}}>
-        body
-      </Window>,
-    );
-    expect(screen.getByRole('dialog')).not.toHaveAttribute('aria-describedby');
-  });
-
-  it('defaults to the floating variant and takes the page variant', () => {
-    const { rerender } = render(
-      <Window title="Need your OK" closeLabel="Close window" onClose={() => {}}>
-        body
-      </Window>,
-    );
-    expect(screen.getByRole('dialog')).toHaveAttribute('data-variant', 'floating');
-    rerender(
-      <Window title="Need your OK" closeLabel="Close window" onClose={() => {}} variant="page">
-        body
-      </Window>,
-    );
-    expect(screen.getByRole('dialog')).toHaveAttribute('data-variant', 'page');
-  });
-
-  it('closes from the close button', async () => {
-    const onClose = vi.fn();
-    render(
-      <Window title="Need your OK" closeLabel="Close window" onClose={onClose}>
-        body
-      </Window>,
-    );
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Close window' }));
-    expect(onClose).toHaveBeenCalledTimes(1);
-  });
-
-  it('shows the stats, the body and the footer', () => {
-    render(
-      <Window
-        title="Need your OK"
-        closeLabel="Close window"
-        onClose={() => {}}
-        stats={<p>12 open jobs</p>}
-        footer={<button type="button">Send all</button>}
-      >
-        <p>The list</p>
-      </Window>,
-    );
-    const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByText('12 open jobs')).toBeInTheDocument();
-    expect(within(dialog).getByText('The list')).toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: 'Send all' })).toBeInTheDocument();
   });
 
   it('keeps the page behind clickable and reachable: nothing outside is made inert', async () => {
@@ -657,68 +614,63 @@ describe('Sheet', () => {
   });
 });
 
-const ITEMS: DockItem[] = [
-  { key: 'jobs', label: 'Jobs', href: '/jobs', icon: <svg data-testid="icon-jobs" />, current: true },
-  { key: 'customers', label: 'Customers', href: '/customers', icon: <svg /> },
+const GROUPS: RailGroup[] = [
   {
-    key: 'inbox',
-    label: 'Inbox',
-    href: '/inbox',
-    icon: <svg />,
-    badge: { count: 3, label: '3 unread messages' },
+    key: 'core',
+    items: [
+      { key: 'jobs', label: 'Jobs', href: '/jobs', icon: <svg data-testid="icon-jobs" />, current: true },
+      { key: 'customers', label: 'Customers', href: '/customers', icon: <svg /> },
+    ],
   },
-  { key: 'calendar', label: 'Calendar', href: '/calendar', icon: <svg /> },
-  { key: 'money', label: 'Money', href: '/money', icon: <svg /> },
-  { key: 'reports', label: 'Reports', href: '/reports', icon: <svg />, comingSoon: 'Coming soon' },
+  {
+    key: 'ai',
+    title: 'AI team',
+    items: [
+      { key: 'ok', label: 'Need your OK', href: '/approvals', icon: <svg />, count: { value: 3, label: '3 need your OK', alert: true } },
+      { key: 'agents', label: 'Agents', href: '/agents', icon: <svg />, count: { value: 12, label: '12 jobs', alert: false } },
+      { key: 'storm', label: 'Storm', href: '/storm', icon: <svg />, tag: 'New' },
+    ],
+  },
+  { key: 'end', end: true, items: [{ key: 'settings', label: 'Settings', href: '/settings', icon: <svg /> }] },
 ];
 
-describe('Dock', () => {
-  it('keeps dock labels visible and marks the current app', () => {
-    render(<Dock label="Apps" items={ITEMS} />);
+describe('Rail', () => {
+  const rail = () => <Rail label="Apps" header={<b>Summit Ridge</b>} search={<button type="button">Search</button>} groups={GROUPS} footer={<span>Dana</span>} />;
+
+  it('is a labelled navigation of links that marks the current one', () => {
+    render(rail());
     const nav = screen.getByRole('navigation', { name: 'Apps' });
     const links = within(nav).getAllByRole('link');
     expect(links).toHaveLength(6);
-
-    for (const item of ITEMS) {
-      expect(within(nav).getByText(item.label)).toBeVisible();
-    }
-
     const current = within(nav).getByRole('link', { name: /^Jobs/ });
     expect(current).toHaveAttribute('aria-current', 'page');
     expect(current).toHaveAttribute('href', '/jobs');
     expect(links.filter((link) => link.hasAttribute('aria-current'))).toEqual([current]);
-
-    const soon = within(nav).getByRole('link', { name: /^Reports/ });
-    expect(soon).toHaveAttribute('data-state', 'soon');
-    expect(soon).toHaveAttribute('title', 'Coming soon');
-    // Still a working link, with the note available to a screen reader after the label
-    expect(soon).toHaveAttribute('href', '/reports');
-    expect(soon).toHaveAccessibleName('Reports Coming soon');
-    expect(links.filter((link) => link.getAttribute('data-state') === 'soon')).toEqual([soon]);
   });
 
-  it('lists the items in a list', () => {
-    render(<Dock label="Apps" items={ITEMS} />);
-    const list = within(screen.getByRole('navigation')).getByRole('list');
-    expect(within(list).getAllByRole('listitem')).toHaveLength(6);
+  it('shows the company, the search and the person around the navigation', () => {
+    render(rail());
+    expect(screen.getByText('Summit Ridge')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Search' })).toBeInTheDocument();
+    expect(screen.getByText('Dana')).toBeInTheDocument();
   });
 
-  it('shows a badge with its own label, and none at zero', () => {
-    render(<Dock label="Apps" items={ITEMS} />);
-    expect(screen.getByRole('img', { name: '3 unread messages' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Inbox 3 unread messages' })).toBeInTheDocument();
+  it('groups the links, naming a group by its title', () => {
+    render(rail());
+    expect(screen.getByRole('group', { name: 'AI team' })).toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'AI team' })).getAllByRole('link')).toHaveLength(3);
   });
 
-  it('draws no badge when the count is zero', () => {
-    const items: DockItem[] = [
-      { key: 'inbox', label: 'Inbox', href: '/inbox', icon: <svg />, badge: { count: 0, label: 'No unread messages' } },
-    ];
-    render(<Dock label="Apps" items={items} />);
-    expect(screen.queryByRole('img')).toBeNull();
+  it('shows a count with its own label, quiet unless it needs a person, and a tag instead of a count', () => {
+    render(rail());
+    expect(screen.getByRole('img', { name: '3 need your OK' })).toHaveAttribute('data-tone', 'alert');
+    expect(screen.getByRole('img', { name: '12 jobs' })).toHaveAttribute('data-tone', 'neutral');
+    expect(screen.getByRole('link', { name: 'Need your OK 3 need your OK' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Storm New' })).toBeInTheDocument();
   });
 
   it('hides the icon from assistive tech', () => {
-    render(<Dock label="Apps" items={ITEMS} />);
+    render(rail());
     expect(screen.getByTestId('icon-jobs').closest('[aria-hidden="true"]')).not.toBeNull();
   });
 
@@ -726,20 +678,201 @@ describe('Dock', () => {
     function RouterLink(props: UiLinkProps) {
       return <a {...props} data-provided="yes" />;
     }
-    render(
-      <UiLinkProvider component={RouterLink}>
-        <Dock label="Apps" items={ITEMS} />
-      </UiLinkProvider>,
-    );
-    for (const link of screen.getAllByRole('link')) {
-      expect(link).toHaveAttribute('data-provided', 'yes');
-    }
+    render(<UiLinkProvider component={RouterLink}>{rail()}</UiLinkProvider>);
+    for (const link of screen.getAllByRole('link')) expect(link).toHaveAttribute('data-provided', 'yes');
   });
 
-  it('is reachable by keyboard', async () => {
+  it('is reachable by keyboard in order, search first', async () => {
     const user = userEvent.setup();
-    render(<Dock label="Apps" items={ITEMS} />);
-    expect(await tabThrough(user, 2)).toEqual(['Jobs', 'Customers']);
+    render(rail());
+    expect(await tabThrough(user, 3)).toEqual(['Search', 'Jobs', 'Customers']);
+  });
+});
+
+describe('Breadcrumb', () => {
+  it('links up the trail and marks the last item as the current page', () => {
+    render(<Breadcrumb label="Breadcrumb" items={[{ label: 'Jobs', href: '/jobs' }, { label: 'Proposal' }, { label: 'Ashley Thomas', href: '/ignored' }]} />);
+    const nav = screen.getByRole('navigation', { name: 'Breadcrumb' });
+    expect(within(nav).getByRole('link', { name: 'Jobs' })).toHaveAttribute('href', '/jobs');
+    // An item without a link is plain text; the last one is the page itself, never a link
+    expect(within(nav).queryByRole('link', { name: 'Proposal' })).toBeNull();
+    expect(within(nav).queryByRole('link', { name: 'Ashley Thomas' })).toBeNull();
+    expect(within(nav).getByText('Ashley Thomas')).toHaveAttribute('aria-current', 'page');
+  });
+});
+
+describe('Page', () => {
+  it('is the main landmark, named by its h1', () => {
+    render(
+      <Page title="Jobs" crumbsLabel="Breadcrumb" subtitle="34 open" actions={<button type="button">New job</button>}>
+        <p>The board</p>
+      </Page>,
+    );
+    const main = screen.getByRole('main', { name: 'Jobs' });
+    expect(within(main).getByRole('heading', { level: 1, name: 'Jobs' })).toBeInTheDocument();
+    expect(within(main).getByText('34 open')).toBeInTheDocument();
+    expect(within(main).getByRole('button', { name: 'New job' })).toBeInTheDocument();
+    expect(within(main).getByText('The board')).toBeInTheDocument();
+  });
+
+  it('shows a heading that differs from the page name, and the landmark keeps the name', () => {
+    render(
+      <Page title="Home" heading="Good morning, Dana." eyebrow="Friday, October 16" crumbsLabel="Breadcrumb">
+        body
+      </Page>,
+    );
+    const main = screen.getByRole('main', { name: 'Home' });
+    expect(within(main).getByRole('heading', { level: 1, name: 'Good morning, Dana.' })).toBeInTheDocument();
+    expect(within(main).getByText('Friday, October 16')).toBeInTheDocument();
+    // The trail still says where the person is
+    expect(within(screen.getByRole('navigation', { name: 'Breadcrumb' })).getByText('Home')).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('keeps the h1 for screen readers when the content draws its own header', () => {
+    render(
+      <Page title="Measure" titleHidden crumbsLabel="Breadcrumb" subtitle="never shown" actions={<button type="button">never shown</button>}>
+        body
+      </Page>,
+    );
+    expect(screen.getByRole('heading', { level: 1, name: 'Measure' })).toHaveClass('visually-hidden');
+    expect(screen.queryByText('never shown')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'never shown' })).toBeNull();
+  });
+
+  it('draws the trail inline when there is no shell, defaulting to the title', () => {
+    render(
+      <Page title="Jobs" crumbsLabel="Breadcrumb">
+        body
+      </Page>,
+    );
+    const trail = screen.getByRole('navigation', { name: 'Breadcrumb' });
+    expect(within(trail).getByText('Jobs')).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('sends the trail and the bar controls to the shell top bar when it has one', () => {
+    function Shell() {
+      // The setters are stable, so they are fine as ref callbacks (an inline callback would re-run every render)
+      const [crumbs, setCrumbs] = useState<HTMLElement | null>(null);
+      const [actions, setActions] = useState<HTMLElement | null>(null);
+      return (
+        <PageSlotsContext value={{ crumbs, actions, phone: false, trailing: null }}>
+          <div data-testid="bar">
+            <span data-testid="crumbs" ref={setCrumbs} />
+            <span data-testid="actions" ref={setActions} />
+          </div>
+          <Page title="Ashley Thomas" crumbsLabel="Breadcrumb" crumbs={[{ label: 'Jobs', href: '/jobs' }, { label: 'Ashley Thomas' }]} barActions={<button type="button">Roof</button>}>
+            body
+          </Page>
+        </PageSlotsContext>
+      );
+    }
+    render(<Shell />);
+    expect(within(screen.getByTestId('crumbs')).getByRole('link', { name: 'Jobs' })).toBeInTheDocument();
+    expect(within(screen.getByTestId('actions')).getByRole('button', { name: 'Roof' })).toBeInTheDocument();
+    // Not drawn a second time inside the page
+    expect(within(screen.getByRole('main')).queryByRole('navigation')).toBeNull();
+  });
+});
+
+describe('Page on a phone', () => {
+  const phone = { crumbs: null, actions: null, phone: true, trailing: <button type="button">Shell controls</button> };
+
+  it('puts the shell controls beside the title of a top-level page, and draws no trail', () => {
+    render(
+      <PageSlotsContext value={phone}>
+        <Page title="My day" eyebrow="Friday, Oct 16" crumbsLabel="Breadcrumb">
+          body
+        </Page>
+      </PageSlotsContext>,
+    );
+    const main = screen.getByRole('main', { name: 'My day' });
+    expect(within(main).getByRole('button', { name: 'Shell controls' })).toBeInTheDocument();
+    expect(within(main).getByText('Friday, Oct 16')).toBeInTheDocument();
+    expect(within(main).queryByRole('navigation')).toBeNull();
+  });
+
+  it('opens a nested page with the way back and its own controls, and without the shell controls', () => {
+    render(
+      <PageSlotsContext value={phone}>
+        <Page
+          title="Ashley Thomas"
+          crumbsLabel="Breadcrumb"
+          crumbs={[{ label: 'Jobs', href: '/jobs' }, { label: 'Ashley Thomas' }]}
+          barActions={<button type="button">More actions</button>}
+        >
+          body
+        </Page>
+      </PageSlotsContext>,
+    );
+    const main = screen.getByRole('main', { name: 'Ashley Thomas' });
+    expect(within(main).getByRole('link', { name: 'Jobs' })).toHaveAttribute('href', '/jobs');
+    expect(within(main).getByRole('button', { name: 'More actions' })).toBeInTheDocument();
+    expect(within(main).queryByRole('button', { name: 'Shell controls' })).toBeNull();
+    expect(within(main).queryByRole('navigation')).toBeNull();
+  });
+
+  it('takes the eyebrow out of the title block on a phone, so the shell controls stay level with the title, and keeps it in on a desktop', () => {
+    const { unmount } = render(
+      <PageSlotsContext value={phone}>
+        <Page title="My day" eyebrow="Friday, Oct 16" subtitle="Two visits" crumbsLabel="Breadcrumb">
+          body
+        </Page>
+      </PageSlotsContext>,
+    );
+    const heading = screen.getByRole('heading', { name: 'My day' });
+    const titles = heading.parentElement as HTMLElement;
+    const head = titles.parentElement as HTMLElement;
+    // Phone: the eyebrow and the subtitle are rows of the head, the title block holds the title alone
+    expect(screen.getByText('Friday, Oct 16').parentElement).toBe(head);
+    expect(screen.getByText('Two visits').parentElement).toBe(head);
+    expect(titles.children).toHaveLength(1);
+    // The head says it has the shell's controls, which is what lets its subtitle tuck up under the centred title
+    expect(head).toHaveAttribute('data-trailing', 'true');
+    unmount();
+
+    render(
+      <PageSlotsContext value={{ crumbs: null, actions: null, phone: false, trailing: null }}>
+        <Page title="My day" eyebrow="Friday, Oct 16" subtitle="Two visits" crumbsLabel="Breadcrumb">
+          body
+        </Page>
+      </PageSlotsContext>,
+    );
+    const desktopTitles = screen.getByRole('heading', { name: 'My day' }).parentElement as HTMLElement;
+    expect(within(desktopTitles).getByText('Friday, Oct 16')).toBeInTheDocument();
+    expect(within(desktopTitles).getByText('Two visits')).toBeInTheDocument();
+    expect(desktopTitles.parentElement).not.toHaveAttribute('data-trailing');
+  });
+
+  it('does not mark a nested page head as having the shell controls: its title row is as tall as the title, so its subtitle keeps a gap', () => {
+    render(
+      <PageSlotsContext value={phone}>
+        <Page
+          title="Teresa Vaughn"
+          subtitle="Texts about their own jobs only"
+          crumbsLabel="Breadcrumb"
+          crumbs={[{ label: 'Customers', href: '/customers' }, { label: 'Teresa Vaughn' }]}
+        >
+          body
+        </Page>
+      </PageSlotsContext>,
+    );
+    const head = screen.getByRole('heading', { name: 'Teresa Vaughn' }).parentElement?.parentElement as HTMLElement;
+    expect(head).not.toHaveAttribute('data-trailing');
+    expect(within(head).getByText('Texts about their own jobs only')).toBeInTheDocument();
+  });
+
+  it('shows the page controls without a way back when the trail has no parent', () => {
+    render(
+      <PageSlotsContext value={phone}>
+        <Page title="Measure" crumbsLabel="Breadcrumb" barActions={<button type="button">Roof</button>}>
+          body
+        </Page>
+      </PageSlotsContext>,
+    );
+    expect(screen.getByRole('button', { name: 'Roof' })).toBeInTheDocument();
+    // A top-level page: the shell controls are there too
+    expect(screen.getByRole('button', { name: 'Shell controls' })).toBeInTheDocument();
+    expect(screen.queryByRole('link')).toBeNull();
   });
 });
 

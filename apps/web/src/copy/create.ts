@@ -1,7 +1,6 @@
 /** The New customer, New job and Add a home screens (Task 22). */
 export const create = {
   notOnMap: "Saved. We couldn't find that address on the map yet.",
-  save: 'Save',
   saving: 'Saving...',
   address: {
     street: 'Street address',
@@ -12,11 +11,20 @@ export const create = {
   },
   newCustomer: {
     title: 'New customer',
-    firstName: 'First name',
-    lastName: 'Last name',
+    subtitle: 'A name is enough to start. Add a phone or an email to reach them.',
+    stepName: 'Name',
+    stepContact: 'Contact',
+    cancel: 'Cancel',
+    // The name to show is the one thing a customer needs; everything else may stay empty
+    firstName: 'First name (optional)',
+    lastName: 'Last name (optional)',
     displayName: 'Name to show',
-    phone: 'Phone',
-    email: 'Email',
+    displayNameHelp: 'Fills in from the first and last name. This is how they show in your lists.',
+    phone: 'Phone (optional)',
+    email: 'Email (optional)',
+    /** The rows after the first: they are extras by nature, so they carry no "(optional)". */
+    anotherPhone: 'Another phone',
+    anotherEmail: 'Another email',
     addPhone: 'Add another phone',
     addEmail: 'Add another email',
     firstHome: 'First home (optional)',
@@ -25,10 +33,14 @@ export const create = {
   },
   newJob: {
     title: 'New job',
+    subtitle: 'Pick a customer, then the home and the details.',
+    cancel: 'Cancel',
     stepCustomer: 'Customer',
     stepHome: 'Home',
     stepDetails: 'Details',
     searchCustomer: 'Find a customer',
+    /** In the search box until something is typed: the customers list's search reads the same two things. */
+    searchPlaceholder: 'Name or phone number',
     noMatches: 'No customers match.',
     newCustomer: 'New customer',
     useExisting: 'Pick an existing customer',

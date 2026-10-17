@@ -5,7 +5,7 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { createPools, migrate } from '@roofline/db';
 import { APP_ROLES, roleUrl, setRolePasswords } from '@roofline/db/testing';
-import { DEMO_COMPANY_NAME, DEMO_LOGIN, DirObjectStore, seedDemoWorld } from '@roofline/api';
+import { DEMO_COMPANY_NAME, DEMO_LOGIN, DEMO_WINCHOICE_LOGIN, DEMO_WINCHOICE_NAME, DirObjectStore, seedDemoWorld, seedWinChoiceWorld } from '@roofline/api';
 import { dockerProblem, nodeProblem, portIsFree, portProblem } from './demo-preflight.ts';
 
 /*
@@ -14,7 +14,8 @@ import { dockerProblem, nodeProblem, portIsFree, portProblem } from './demo-pref
  *  1. Checks Node, Docker (on Linux it starts `dockerd` when Docker is not answering) and the ports.
  *  2. Starts the demo database with docker compose (docker-compose.demo.yml: multi-arch PostGIS on
  *     its own port and volume) and runs every migration.
- *  3. Seeds Summit Ridge Roofing (apps/api/src/scripts/demo-world.ts) unless it is already there.
+ *  3. Seeds Summit Ridge Roofing (apps/api/src/scripts/demo-world.ts) and WinChoice (demo) (demo-winchoice.ts, a windows-first
+ *     company in Arkansas with its own owner login and red brand) unless they are already there.
  *  4. Builds the web app when apps/web/dist was not built from this commit (DEMO_BUILD=1 forces it).
  *  5. Runs the API (which serves the web app) and the worker with DEMO_MODE=1, so every outside
  *     service is a fake: no text, email, call or charge leaves the machine.
@@ -196,6 +197,13 @@ try {
         ? `Seeded ${DEMO_COMPANY_NAME}: ${Object.entries(world.counts).filter(([name]) => !name.includes('.')).map(([name, n]) => `${n} ${name}`).join(', ')}.`
         : `${DEMO_COMPANY_NAME} is already seeded (npm run demo:reset starts fresh).`,
     );
+    // The second company, a windows-first one in Arkansas with its own owner and brand colour (an older demo database gets it here too).
+    const winchoice = await seedWinChoiceWorld(pools, OWNER_URL, new Date(), { encryptionKey: ENCRYPTION_KEY, objectStore: new DirObjectStore(FILES_DIR) });
+    log(
+      winchoice.created
+        ? `Seeded ${DEMO_WINCHOICE_NAME}: ${Object.entries(winchoice.counts).filter(([name]) => !name.includes('.')).map(([name, n]) => `${n} ${name}`).join(', ')}.`
+        : `${DEMO_WINCHOICE_NAME} is already seeded (npm run demo:reset starts fresh).`,
+    );
   } finally {
     await pools.end();
   }
@@ -294,8 +302,12 @@ if (!up) {
 log('');
 log('==============================================================');
 log(`  Roofline demo is running: ${BASE_URL}`);
-log(`  Email:    ${DEMO_LOGIN.email}`);
-log(`  Password: ${DEMO_LOGIN.password}`);
+log(`  ${DEMO_COMPANY_NAME} (default blue brand)`);
+log(`    Email:    ${DEMO_LOGIN.email}`);
+log(`    Password: ${DEMO_LOGIN.password}`);
+log(`  ${DEMO_WINCHOICE_NAME} (red brand, windows first)`);
+log(`    Email:    ${DEMO_WINCHOICE_LOGIN.email}`);
+log(`    Password: ${DEMO_WINCHOICE_LOGIN.password}`);
 log('  Click the Demo badge (top bar) to simulate a text, a call,');
 log('  a hail storm or a signature. Ctrl+C stops the demo.');
 log('==============================================================');

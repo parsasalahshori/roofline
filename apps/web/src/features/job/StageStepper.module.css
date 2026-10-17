@@ -1,19 +1,107 @@
+/*
+ * The job's stage: five segments in a row. Each is a bar over the stage's name; the stages behind the job are dark,
+ * the one it is in takes that stage's colour and says how many days it has been there, the ones ahead are pale.
+ */
 .wrap {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
 }
 
 .steps {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
+  gap: 0 12px;
+  align-items: start;
+  min-width: 0;
 }
 
-/* Every stage button is a 40px touch target */
-.step {
-  min-height: 40px;
+.segment {
+  --seg: var(--st-lead);
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.segment[data-step='lead'] {
+  --seg: var(--st-lead);
+}
+
+.segment[data-step='inspection'] {
+  --seg: var(--st-insp);
+}
+
+.segment[data-step='proposal'] {
+  --seg: var(--st-prop);
+}
+
+.segment[data-step='won'] {
+  --seg: var(--st-won);
+}
+
+.segment[data-step='installed'] {
+  --seg: var(--st-inst);
+}
+
+.bar {
+  display: block;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--line-2);
+}
+
+.segment[data-state='done'] .bar {
+  background: var(--ink);
+}
+
+.segment[data-state='current'] .bar {
+  background: var(--seg);
+}
+
+.label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 6px;
+  min-width: 0;
+}
+
+/* A stage's name is a button that is drawn as a label: left edge in line with the bar */
+.steps .step {
+  min-height: 36px;
+  margin-left: -6px;
+  padding: 0 6px;
+  justify-content: flex-start;
+  color: var(--ink-3);
+  font-weight: 600;
+}
+
+.segment[data-state='done'] .step {
+  color: var(--ink-2);
+}
+
+.segment[data-state='current'] .step {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.days {
+  color: var(--ink-3);
+  font: 500 var(--font-size-min)/1 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Lost is a way out of the five stages, not a sixth: no bar over it, and a hairline sets it apart from the row */
+.steps .lostButton {
+  align-self: end;
+  min-height: 36px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line-2);
+  border-radius: 0 var(--r-2) var(--r-2) 0;
+  color: var(--ink-3);
 }
 
 .lost {
@@ -24,21 +112,31 @@
 }
 
 .reason {
-  font-size: 0.875rem;
-  color: var(--text-muted);
+  color: var(--ink-2);
+  font-size: var(--font-size-body);
   overflow-wrap: anywhere;
 }
 
-/* The Lost state, shown in place of the Lost button: a read-only chip, not a control */
-.chip {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text);
-  font-size: 0.875rem;
-  font-weight: 600;
+.skeletonLabel {
+  display: block;
+  width: 60%;
+  height: 12px;
+  margin: 12px 0;
+  border-radius: var(--r-1);
+  background: var(--sunken);
+}
+
+@media (max-width: 767.98px) {
+  .steps {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0 6px;
+  }
+
+  /* A stage's name is a button, so on a phone it is 44px tall like every other */
+  .steps .step {
+    min-height: 44px;
+    margin-left: -4px;
+    padding: 0 4px;
+    font-size: 13px;
+  }
 }

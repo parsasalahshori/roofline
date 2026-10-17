@@ -2,6 +2,7 @@ import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import { DEFAULT_TIER_TEMPLATES, TierTemplateSchema, type SetupItemView, type TierTemplate } from '@roofline/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { setup } from '../src/copy/setup.ts';
+import { settings as settingsCopy } from '../src/copy/settings.ts';
 import { tiers } from '../src/copy/tiers.ts';
 import { proposals } from '../src/copy/proposals.ts';
 import { tierEditor } from '../src/copy/tiersEditor.ts';
@@ -241,5 +242,69 @@ describe('Settings Setup: prices row', () => {
 
     const link = await screen.findByRole('link', { name: setup.actions.setPrices });
     expect(link).toHaveAttribute('href', '/settings/prices');
+  });
+});
+
+describe('Settings Prices: the save bar', () => {
+  const bar = () => screen.queryByRole('group', { name: settingsCopy.saveBar.label });
+
+  it('Good, Better, Best: the bar waits for a change, and Discard puts the templates back', async () => {
+    settingsApi();
+    const { user } = renderAt(<TiersSection />, '/settings/prices');
+
+    const good = await tierRegion('good');
+    const name = await within(good).findByLabelText(proposals.fieldName);
+    const before = (name as HTMLInputElement).value;
+    expect(bar()).toBeNull();
+    expect(screen.queryByRole('button', { name: tiers.save })).toBeNull();
+
+    await user.type(name, ' plus');
+    expect(bar()).not.toBeNull();
+    await user.click(within(bar() as HTMLElement).getByRole('button', { name: settingsCopy.saveBar.discard }));
+
+    expect(within(await tierRegion('good')).getByLabelText(proposals.fieldName)).toHaveValue(before);
+    expect(bar()).toBeNull();
+    expect(api.count(TIERS_PUT)).toBe(0);
+  });
+
+  it('Good, Better, Best: a saved change leaves nothing to save', async () => {
+    settingsApi();
+    const { user } = renderAt(<TiersSection />, '/settings/prices');
+
+    const name = await within(await tierRegion('good')).findByLabelText(proposals.fieldName);
+    await user.type(name, ' plus');
+    await user.click(screen.getByRole('button', { name: tiers.save }));
+
+    await waitFor(() => expect(api.count(TIERS_PUT)).toBe(1));
+    await waitFor(() => expect(bar()).toBeNull());
+  });
+
+  it('Financing: the bar waits for a change, and Discard empties what was typed', async () => {
+    settingsApi();
+    const { user } = renderAt(<FinancingSection />, '/settings/prices');
+
+    const apr = await screen.findByLabelText(financeCopy.aprLabel);
+    expect(bar()).toBeNull();
+    await user.type(apr, '9.99');
+    await user.click(within(bar() as HTMLElement).getByRole('button', { name: settingsCopy.saveBar.discard }));
+
+    expect(screen.getByLabelText(financeCopy.aprLabel)).toHaveValue(null);
+    expect(bar()).toBeNull();
+  });
+
+  it('Estimates: the bar waits for a change, and goes once it is saved', async () => {
+    settingsApi();
+    const { user } = renderAt(<EstimateSection />, '/settings/prices');
+
+    const days = await screen.findByLabelText(estimateCopy.validDays);
+    expect(bar()).toBeNull();
+    await user.clear(days);
+    await user.type(days, '45');
+    expect(bar()).not.toBeNull();
+    await user.click(screen.getByRole('button', { name: tiers.save }));
+
+    await waitFor(() => expect(api.count(SETTINGS_PUT)).toBe(1));
+    await waitFor(() => expect(bar()).toBeNull());
+    expect(screen.getByLabelText(estimateCopy.validDays)).toHaveValue(45);
   });
 });

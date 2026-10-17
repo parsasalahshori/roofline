@@ -5,6 +5,8 @@
   align-items: flex-start;
   gap: 8px;
   min-width: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
 }
 
 .done,
@@ -15,18 +17,18 @@
 }
 
 .done {
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .error {
-  color: var(--danger);
+  color: var(--bad-text);
 }
 
 .sheetBody {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  color: var(--text);
+  color: var(--ink);
   font-size: var(--font-size-body);
 }
 
@@ -43,6 +45,6 @@
 
 .hint {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-body);
 }

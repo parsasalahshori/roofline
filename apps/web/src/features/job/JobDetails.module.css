@@ -1,0 +1,64 @@
+/* Details: a label column and a value column, the way the mockup draws them */
+.facts {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 10px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.facts dt {
+  color: var(--ink-3);
+}
+
+/* The rep's row holds an avatar, so it is centred, label and value together */
+.facts dt:has(+ dd.person),
+.facts dd.person {
+  align-self: center;
+}
+
+.facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.link {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.link:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--r-1);
+}
+
+.mono {
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.muted {
+  color: var(--ink-3);
+}
+
+.person {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The rep is changed from a chip under the facts: it names itself ("Rep: Sam") so it needs no row of its own */
+.rep {
+  display: flex;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}

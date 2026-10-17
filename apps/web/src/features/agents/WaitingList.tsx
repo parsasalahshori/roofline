@@ -1,9 +1,12 @@
 import { useId } from 'react';
 import type { WaitingItem } from '@roofline/shared';
-import { Banner, Button, EmptyState, Skeleton } from '@roofline/ui';
+import { Banner, Button, EmptyState, Panel, Skeleton, Tag } from '@roofline/ui';
 import { agents, agentsCommon } from '../../copy/agents.ts';
-import { AGENT_LABEL } from '../../copy/status.ts';
+import { AGENT_LABEL, TASK_STATUS_LABEL } from '../../copy/status.ts';
+import { InlineError } from '../approvals/InlineError.tsx';
 import { useCompany } from '../settings/api.ts';
+import { keepAddressTogether } from './addressText.ts';
+import { AgentGlyph } from './AgentGlyph.tsx';
 import { useWaiting } from './api.ts';
 import { agentTimeLabel } from './time.ts';
 import styles from './WaitingList.module.css';
@@ -29,29 +32,36 @@ function groupItems(items: WaitingItem[]): Group[] {
 }
 
 function WaitingGroup({ group, zone }: { group: Group; zone: string | undefined }) {
-  const headingId = useId();
   return (
-    <section aria-labelledby={headingId}>
-      <h2 id={headingId} className={styles.heading}>
-        {group.title}
-      </h2>
+    <Panel title={group.title} tag={group.items.length} padded={false}>
       <ul className={styles.list}>
         {group.items.map((item) => (
           <li key={item.id} className={styles.row}>
-            <span className={styles.agent}>{AGENT_LABEL[item.agent]}</span>
-            <span className={styles.text}>{item.text}</span>
-            <time dateTime={item.since} className={styles.time}>
-              {agentTimeLabel(item.since, zone)}
-            </time>
+            <AgentGlyph agent={item.agent} />
+            <div className={styles.text}>
+              <p className={styles.sentence}>{keepAddressTogether(item.text)}</p>
+              <p className={styles.meta}>
+                <span className={styles.agent}>{AGENT_LABEL[item.agent]}</span>
+                <time dateTime={item.since} className={styles.time}>
+                  {agentTimeLabel(item.since, zone)}
+                </time>
+                {/* A task that needs help is told apart from the drafts waiting for a yes: a glyph, the words, a colour */}
+                {item.kind === 'attention' ? (
+                  <Tag tone="warn" icon="alert">
+                    {TASK_STATUS_LABEL.needs_attention}
+                  </Tag>
+                ) : null}
+              </p>
+            </div>
             {item.href ? (
-              <Button href={item.href} variant="ghost" className={styles.open}>
+              <Button href={item.href} variant="default" size="sm" className={styles.open}>
                 {agents.waitingOpen}
               </Button>
             ) : null}
           </li>
         ))}
       </ul>
-    </section>
+    </Panel>
   );
 }
 
@@ -59,18 +69,19 @@ function WaitingGroup({ group, zone }: { group: Group; zone: string | undefined 
 export function WaitingList() {
   const query = useWaiting();
   const zone = useCompany().data?.timezone;
+  const listId = useId();
   if (!query.data) {
     if (query.isError) {
-      return (
-        <EmptyState
-          title={agents.waitingLoadError}
-          action={<Button onClick={() => void query.refetch()}>{agentsCommon.retry}</Button>}
-        />
-      );
+      return <InlineError tag={agentsCommon.errorTag} message={agents.waitingLoadError} retryLabel={agentsCommon.retry} onRetry={() => void query.refetch()} />;
     }
     return (
-      <div role="status" aria-label={agents.waitingLoading}>
-        <Skeleton lines={3} />
+      <div className={styles.loading} role="status" aria-label={agents.waitingLoading}>
+        {[0, 1, 2].map((index) => (
+          <div key={index} className={styles.skeletonRow}>
+            <Skeleton width="22px" height="22px" />
+            <Skeleton width={index === 1 ? '45%' : '60%'} height="0.875rem" />
+          </div>
+        ))}
       </div>
     );
   }
@@ -80,14 +91,24 @@ export function WaitingList() {
     return (
       <>
         {stale}
-        <EmptyState title={agents.waitingEmpty} />
+        <Panel as="div">
+          <EmptyState
+            title={agents.waitingEmpty}
+            body={agents.waitingEmptyBody}
+            action={
+              <Button variant="default" href="/agents/feed">
+                {agents.waitingEmptyAction}
+              </Button>
+            }
+          />
+        </Panel>
       </>
     );
   }
   return (
     <>
       {stale}
-      <section aria-label={agents.waitingListLabel} className={styles.groups}>
+      <section id={listId} aria-label={agents.waitingListLabel} className={styles.groups}>
         {groups.map((group) => (
           <WaitingGroup key={group.key} group={group} zone={zone} />
         ))}

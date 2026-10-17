@@ -4,7 +4,8 @@ import { createMemoryRouter, RouterProvider } from 'react-router';
 import type { StepView, TaskView } from '../src/api/types.ts';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { approvals } from '../src/copy/approvals.ts';
-import { WINDOW_COPY } from '../src/copy/dock.ts';
+import { errors } from '../src/copy/errors.ts';
+import { WINDOW_COPY } from '../src/copy/rail.ts';
 import { review } from '../src/copy/review.ts';
 import { shell } from '../src/copy/shell.ts';
 import { stepAds } from '../src/copy/stepAds.ts';
@@ -168,7 +169,10 @@ describe('the review screen', () => {
 
     await user.click(await screen.findByRole('switch', { name: 'Door-knock routes for 4 reps' }));
 
-    expect(await screen.findByText(message)).toBeInTheDocument();
+    // The refusal stands under the step whose switch it was
+    const refusal = await screen.findByText(message);
+    expect(refusal.closest('li')).toBe(screen.getByRole('switch', { name: 'Door-knock routes for 4 reps' }).closest('li'));
+    expect(refusal.closest('[role="alert"]')).not.toBeNull();
     expect(screen.getByRole('switch', { name: 'Door-knock routes for 4 reps' })).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByRole('button', { name: 'Approve 3 steps' })).toBeInTheDocument();
   });
@@ -184,7 +188,9 @@ describe('the review screen', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Approve 3 steps' }));
 
-    expect(await screen.findByText(message)).toBeInTheDocument();
+    // A change under the screen is a notice over the decision, not a red error: the person did nothing wrong
+    const notice = await screen.findByText(message);
+    expect(notice.closest('[data-tone="notice"]')).not.toBeNull();
     expect(screen.getByRole('switch', { name: 'Door-knock routes for 4 reps' })).toHaveAttribute('aria-checked', 'false');
     expect(screen.getByRole('button', { name: 'Approve 2 steps' })).toBeInTheDocument();
     expect(api.count('GET /api/approvals/t1')).toBe(1);
@@ -313,7 +319,7 @@ describe('the review screen', () => {
     renderAt(<Review taskId="t1" />, '/approvals/t1');
 
     expect(await screen.findByText(shell.notFoundTitle)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: shell.backToMap })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('link', { name: shell.backHome })).toHaveAttribute('href', '/');
   });
 
   it('the route shows the plan named in the address', async () => {
@@ -572,16 +578,133 @@ describe('the review screen', () => {
     expect(api.count('POST /api/approvals/t1/steps/s1/retry')).toBe(1);
   });
 
-  it('the window shows the agent, the status and when it was drafted', async () => {
+  it('the page is named by the plan, with its summary, its status and the way back', async () => {
     const plan = planOne();
     api = stubApi({ 'GET /api/approvals/t1': () => ({ body: plan }) });
     renderAt(<Review taskId="t1" />, '/approvals/t1');
 
-    // The window opens while the plan loads, so the stat strip is awaited, not just the window
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.approvals.title });
-    expect(await within(dialog).findByText('Storm Scout')).toBeInTheDocument();
-    expect(within(dialog).getByText('Waiting for your OK')).toBeInTheDocument();
-    expect(within(dialog).getByText(review.drafted(plan.createdAt))).toBeInTheDocument();
+    const page = await screen.findByRole('main', { name: plan.title });
+    expect(within(page).getByRole('heading', { level: 1, name: plan.title })).toBeInTheDocument();
+    expect(within(page).getByText(plan.summary!)).toBeInTheDocument();
+    // The same words the plan's card on the queue carries: one state, one phrase
+    expect(within(page).getByText(approvals.tagNeedsOk)).toBeInTheDocument();
+    // The trail: Need your OK, then the plan. The first is the way back on a phone
+    const trail = within(page).getByRole('navigation', { name: shell.crumbsLabel });
+    expect(within(trail).getByRole('link', { name: WINDOW_COPY.approvals.title })).toHaveAttribute('href', '/approvals');
+    expect(within(trail).getByText(plan.title)).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('a storm plan goes back to Storm', async () => {
+    api = stubApi({ 'GET /api/approvals/t1': () => ({ body: planOne() }) });
+    renderAt(<Review taskId="t1" app="storm" />, '/storm/plans/t1');
+
+    const trail = await screen.findByRole('navigation', { name: shell.crumbsLabel });
+    expect(within(trail).getByRole('link', { name: WINDOW_COPY.storm.title })).toHaveAttribute('href', '/storm');
+  });
+
+  it('says who drafted the plan, when, and when it ends, in a panel beside the steps', async () => {
+    const plan = { ...planOne(), expiresAt: '2026-10-13T22:00:00.000Z' };
+    api = stubApi({ 'GET /api/approvals/t1': () => ({ body: plan }) });
+    renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    const about = await screen.findByRole('region', { name: review.aboutTitle });
+    expect(within(about).getByRole('link', { name: 'Storm Scout' })).toHaveAttribute('href', '/agents/storm-scout');
+    expect(within(about).getByText(review.drafted(plan.createdAt))).toBeInTheDocument();
+    expect(within(about).getByText(review.expiresAt(plan.expiresAt))).toBeInTheDocument();
+    // The steps are in a panel of their own, with how many are on
+    const steps = screen.getByRole('region', { name: review.stepsTitle });
+    expect(within(steps).getByText(review.stepsOn(3, 3))).toBeInTheDocument();
+  });
+
+  it('counts the steps that are on as they are switched', async () => {
+    api = stubApi({
+      'GET /api/approvals/t1': () => ({ body: planOne() }),
+      'PATCH /api/approvals/t1/steps/s2': () => ({ body: { ...stepOf(planOne(), 's2'), enabled: false, version: 2 } }),
+    });
+    const { user } = renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    const steps = await screen.findByRole('region', { name: review.stepsTitle });
+    await user.click(within(steps).getByRole('switch', { name: 'Door-knock routes for 4 reps' }));
+
+    expect(await within(steps).findByText(review.stepsOn(2, 3))).toBeInTheDocument();
+    // The step says so in words, with its glyph, as well as in the switch
+    expect(within(steps).getByText('Turned off')).toBeInTheDocument();
+  });
+
+  it('keeps Approve in a bar of its own, with Not now', async () => {
+    api = stubApi({ 'GET /api/approvals/t1': () => ({ body: planTwo() }) });
+    renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    const bar = await screen.findByRole('group', { name: review.barLabel });
+    expect(within(bar).getByRole('button', { name: 'Approve 3 steps · up to $270' })).toBeInTheDocument();
+    expect(within(bar).getByRole('button', { name: review.notNow })).toBeInTheDocument();
+    expect(within(bar).getByText(review.footerNoteSpend)).toBeInTheDocument();
+    // Not in the list of steps
+    expect(within(screen.getByRole('region', { name: review.stepsTitle })).queryByRole('button', { name: /^Approve/ })).toBeNull();
+  });
+
+  it('a plan at work has no decision bar', async () => {
+    api = stubApi({
+      'GET /api/approvals/t1': () => ({
+        body: makeTask({ id: 't1', status: 'running', steps: [step('s1', 1, 'Text 31 customers', { status: 'running' })] }),
+      }),
+    });
+    renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    // The plan says so over the steps, and the step says so in its row
+    expect(await screen.findAllByText('Working on it')).toHaveLength(2);
+    expect(screen.queryByRole('group', { name: review.barLabel })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Approve/ })).toBeNull();
+  });
+
+  it('shows what each step looks like in its own panel, when a step has a preview', async () => {
+    const plan = makeTask({
+      id: 't1',
+      status: 'draft',
+      steps: [
+        step('s1', 1, 'Google ads on the hail area', {
+          type: 'create_ad_campaign',
+          approvalClass: 'spend',
+          preview: { title: 'Google ads on the hail area', lines: ['$21.42 a day for 7 days'], maxSpendCents: 15000 },
+          payload: {
+            companyStormId: STORM,
+            platform: 'google',
+            maxSpendCents: 15000,
+            days: 7,
+            headline: 'Hail damage? Free roof check',
+            description: 'Local roofers on your street.',
+            keywords: ['roof repair'],
+          },
+        }),
+      ],
+    });
+    api = stubApi({
+      'GET /api/approvals/t1': () => ({ body: plan }),
+      [`GET /api/storms/${STORM}`]: () => ({ status: 404, body: { error: 'Not found' } }),
+    });
+    renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    const details = await screen.findByRole('region', { name: review.detailsTitle });
+    expect(within(details).getByText('Hail damage? Free roof check')).toBeInTheDocument();
+  });
+
+  it('a plan with nothing to preview has no panel for it', async () => {
+    api = stubApi({ 'GET /api/approvals/t1': () => ({ body: planOne() }) });
+    renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    await screen.findByRole('region', { name: review.aboutTitle });
+    expect(screen.queryByRole('region', { name: review.detailsTitle })).toBeNull();
+  });
+
+  it('shows a labelled loading state, and an error inline with Try again', async () => {
+    api = stubApi({ 'GET /api/approvals/t1': () => ({ status: 500, body: { error: 'Something broke on our side.' } }) });
+    const { user } = renderAt(<Review taskId="t1" />, '/approvals/t1');
+
+    const message = await screen.findByText('Something broke on our side.');
+    expect(message.closest('[role="alert"]')).not.toBeNull();
+    expect(screen.getByRole('button', { name: errors.tryAgain })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: errors.tryAgain }));
+    await waitFor(() => expect(api.count('GET /api/approvals/t1')).toBe(2));
   });
 
   it('shows the results of a finished plan', async () => {

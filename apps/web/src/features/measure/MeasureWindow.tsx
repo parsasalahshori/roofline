@@ -1,7 +1,8 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Banner, Button, Checkbox, EmptyState, Field } from '@roofline/ui';
+import { Banner, Button, Checkbox, EmptyState, Field, Icon } from '@roofline/ui';
 import { instantEstimate, measureRoof, quoteFacets, type ProposalView, type Ring } from '@roofline/shared';
 import { Map as MapLibreMap } from 'maplibre-gl';
+import type { UseQueryResult } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ApiError } from '../../api/client.ts';
@@ -12,17 +13,17 @@ import { measure } from '../../copy/measure.ts';
 import { makeFailureMessage, useBuildProposal, useEstimateFromFootprint, useEstimateFromPoint, useSendProposal } from '../estimator/api.ts';
 import type { MapEnv } from '../../shell/map/types.ts';
 import type { NewCustomerInput } from '../estimator/types.ts';
-import { useExactReport, useMeasurement, useMeasurementPreview, usePatchMeasurement } from './api.ts';
+import { useExactReport, useMeasurement, usePatchMeasurement } from './api.ts';
 import { CustomerStep, customerReady } from './CustomerStep.tsx';
 import { EstimateChoice, type PriceChoice } from './EstimateChoice.tsx';
 import { readHandoff, type MeasureHandoff } from './handoff.ts';
+import { MeasureHost, MeasurePage, MeasureSteps, type MeasureLinks } from './MeasurePage.tsx';
 import styles from './MeasureWindow.module.css';
-import { MeasureSwitch } from './windows/MeasureSwitch.tsx';
 import { measureStyle, useImageryDate, usesFreeAerial } from './lift/aerial.ts';
 import { buildingDetail } from './lift/BuildingPopover.tsx';
-import { PropertyStrip } from './lift/PropertyStrip.tsx';
 import { ProposalPanel } from './lift/ProposalPanel.tsx';
 import { RequestsList } from './lift/RequestsList.tsx';
+import { RoofQuoteBar } from './lift/RoofQuoteBar.tsx';
 import { useRequestRows } from './lift/requests.ts';
 import { addRoofLayers, facetName, readRoof, usableRoof } from './lift/roofModel.ts';
 import { googlePhotoFailure } from './googlePhoto.ts';
@@ -32,7 +33,8 @@ import { useRoofScan } from './lift/scan.ts';
 import { MeasureSlotsContext, type QuoteSession, type RoofSession } from './lift/slots.ts';
 import { addStructureLayers, describeBuildings, onlyIncluded } from './lift/structures.ts';
 import { createOutlineEditor, type EditResult, type OutlineEditor } from './OutlineEditor.ts';
-import type { MeasurementPatch, MeasurementView, OutlineProblem } from './types.ts';
+import { useMeasureHead } from './useMeasureHead.tsx';
+import type { MeasurementPatch, MeasurementPreview, MeasurementView, OutlineProblem } from './types.ts';
 
 const SAVE_DEBOUNCE_MS = 500;
 // The free aerial photos are sharp to zoom 19: the camera starts there and fitting never goes past 19.5
@@ -73,11 +75,15 @@ const MIN_ROOF_PX = 120;
 /** The card's distance from the photo's bottom edge, and the gap kept above it. */
 const CARD_INSET_PX = 14;
 const CARD_GAP_PX = 18;
+/** On a map wider than this the credits are a strip along the bottom edge, under the card: the card's inset leaves them this much room (narrower, they fold into an "i" in the corner). */
+const CREDITS_FOLD_PX = 640;
+const CREDITS_ROOM_PX = 16;
 
 /** The free room for the roof, as fitBounds padding: what the measure card covers stays out of it. */
 export function roofPadding(w: number, h: number, cardPx: number, editing: boolean): { top: number; bottom: number; left: number; right: number } {
   const top = editing ? Math.round(h * 0.1) + 12 : Math.round(h * 0.18);
-  const wanted = Math.max(Math.round(h * 0.27), cardPx > 0 ? cardPx + CARD_INSET_PX + CARD_GAP_PX : 0);
+  const inset = CARD_INSET_PX + (w > CREDITS_FOLD_PX ? CREDITS_ROOM_PX : 0);
+  const wanted = Math.max(Math.round(h * 0.27), cardPx > 0 ? cardPx + inset + CARD_GAP_PX : 0);
   const bottom = Math.max(0, Math.min(wanted, h - top - MIN_ROOF_PX));
   return { top, bottom, left: Math.round(w * 0.22), right: Math.round(w * 0.22) };
 }
@@ -131,7 +137,7 @@ function format(value: number): string {
   return value.toLocaleString();
 }
 
-function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (ready: boolean) => void }) {
+function Loaded({ m, preview, onProposalReady }: { m: MeasurementView; preview: UseQueryResult<MeasurementPreview>; onProposalReady: (ready: boolean) => void }) {
   const navigate = useNavigate();
   const [lng, lat] = m.center;
   const patch = usePatchMeasurement(m.id);
@@ -155,8 +161,6 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
   useEffect(() => {
     if (autoScan) startScan.current();
   }, [autoScan]);
-  const e = m.estimate;
-  const preview = useMeasurementPreview(m.id, [e.surfaceSqFt, e.pitchX12, e.edgeFt, e.ridgeFt, e.valleyFt].join(':'));
   const [editing, setEditing] = useState(false);
   const [making, setMaking] = useState(false);
   const [makeFailed, setMakeFailed] = useState<string | null>(null);
@@ -572,7 +576,8 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
                     />
                     {canMeasureOther && b.role !== 'main' ? (
                       <Button
-                        variant="ghost"
+                        variant="default"
+                        size="sm"
                         className={styles.measureOther}
                         aria-label={liftMeasure.measureRowLabel(name)}
                         busy={quote.measuringOther}
@@ -602,7 +607,7 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
           {PITCHES.map((x) => (
             <Button
               key={x}
-              variant="ghost"
+              variant="default"
               className={styles.pitch}
               aria-pressed={pitch === x}
               data-state={pitch === x ? 'on' : 'off'}
@@ -646,7 +651,7 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
       </section>
 
       {!mapFailed && !locked && !drawMode ? (
-        <Button variant="ghost" className={styles.wide} onClick={redraw}>
+        <Button variant="default" className={styles.wide} onClick={redraw}>
           {measure.redraw}
         </Button>
       ) : null}
@@ -664,7 +669,7 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
     <div className={styles.actions}>
       {!ordering ? null : exact.isSuccess ? (
         <div className={styles.waiting} role="status">
-          <Button variant="ghost" className={styles.wide} href={`/approvals/${exact.data.taskId}`}>
+          <Button variant="default" className={styles.wide} href={`/approvals/${exact.data.taskId}`}>
             {measure.waitingForOk}
           </Button>
         </div>
@@ -680,15 +685,12 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
       )}
       {exact.isError ? <Banner tone="danger">{measure.exactFailed}</Banner> : null}
       {ordering ? null : locked && sentRow !== undefined ? (
-        <Button variant="ghost" className={styles.sent} href={`/estimator/proposals/${sentRow.proposalId}`}>
+        <Button variant="default" className={styles.sent} href={`/estimator/proposals/${sentRow.proposalId}`}>
           {liftProposal.sentView(sentRow.status === 'signed')}
         </Button>
       ) : (
         <Button className={styles.send} busy={making} disabled={proposalBlocked} onClick={() => void makeProposal()}>
-          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-            <path d="m22 2-7 20-4-9-9-4Z" />
-            <path d="M22 2 11 13" />
-          </svg>
+          <Icon name="arrow" size={18} />
           {measure.makeProposal}
         </Button>
       )}
@@ -728,10 +730,9 @@ function Loaded({ m, onProposalReady }: { m: MeasurementView; onProposalReady: (
         quote,
       }}
     >
-      <main className={styles.main}>
-        <PropertyStrip measurementId={m.id} preview={preview.data} />
+      <div className={styles.main}>
         <RoofView measurementId={m.id} captured={captured} />
-      </main>
+      </div>
       {done ? (
         <div className={styles.proposal}>
           <ProposalPanel
@@ -776,43 +777,15 @@ function NothingOpen() {
 }
 
 type Step = 'requests' | 'roof' | 'proposal';
-const STEPS: Step[] = ['requests', 'roof', 'proposal'];
-
-/** The phone's three steps, as the reference numbers them: Requests, Roof, Proposal. */
-function Steps({ step, onStep, proposalReady, roofReady }: { step: Step; onStep: (s: Step) => void; proposalReady: boolean; roofReady: boolean }) {
-  return (
-    <div className={styles.steps} role="tablist" aria-label={liftMeasureSteps.label}>
-      {STEPS.map((s, i) => {
-        const disabled = (s === 'roof' && !roofReady) || (s === 'proposal' && !proposalReady);
-        return (
-          <Button
-            key={s}
-            variant="ghost"
-            role="tab"
-            aria-selected={step === s}
-            data-selected={step === s ? 'true' : undefined}
-            disabled={disabled}
-            className={styles.step}
-            onClick={() => onStep(s)}
-          >
-            <span className={styles.stepNumber} aria-hidden="true">
-              {i + 1}
-            </span>
-            {liftMeasureSteps[s]}
-          </Button>
-        );
-      })}
-    </div>
-  );
-}
 
 /** The measuring screen: the requests on the left, the roof in the middle, the proposal on the right once measured. */
 export function MeasureWindow() {
   const { measurementId = '' } = useParams();
   const query = useMeasurement(measurementId);
+  const m = query.data;
   const [step, setStep] = useState<Step>(measurementId === '' ? 'requests' : 'roof');
   const [proposalReady, setProposalReady] = useState(false);
-  // Opening another roof shows it (on a phone the requests step gives way to the roof)
+  // Opening another roof shows it (where the three are steps, the requests step gives way to the roof)
   const [shownId, setShownId] = useState(measurementId);
   if (shownId !== measurementId) {
     setShownId(measurementId);
@@ -821,52 +794,57 @@ export function MeasureWindow() {
   }
   const activeStep: Step = step === 'proposal' && !proposalReady ? 'roof' : step;
 
+  const head = useMeasureHead(measurementId, m);
+  const links: MeasureLinks = {
+    roof: '/estimator',
+    windows: m !== undefined ? `/estimator/windows?property=${encodeURIComponent(m.propertyId)}` : '/estimator/windows',
+    gutters: m !== undefined && m.roof !== null ? `/estimator/measure/${encodeURIComponent(m.id)}/gutters` : null,
+  };
+
   return (
-    <div className={styles.window} data-step={activeStep} data-proposal={proposalReady ? 'true' : 'false'}>
-      <header className={styles.header}>
-        <span className={styles.appIcon} aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="14" height="14" focusable="false">
-            <path
-              d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0ZM14.5 12.5l2-2M11.5 9.5l2-2M8.5 6.5l2-2M17.5 15.5l2-2"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.1"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </span>
-        <h2 className={styles.heading}>{measure.title}</h2>
-        <MeasureSwitch
-          current="roof"
-          roofHref="/estimator"
-          windowsHref={query.data !== undefined ? `/estimator/windows?property=${encodeURIComponent(query.data.propertyId)}` : '/estimator/windows'}
-          guttersHref={query.data !== undefined && query.data.roof !== null ? `/estimator/measure/${encodeURIComponent(query.data.id)}/gutters` : null}
+    <MeasurePage
+      section="roof"
+      layout="fill"
+      address={head.address}
+      title={measure.title}
+      subtitle={head.address === null ? measure.subtitle : (head.who ?? undefined)}
+      actions={head.chips()}
+      links={links}
+    >
+      <MeasureHost step={activeStep} stepsBelow={980}>
+        <MeasureSteps
+          label={liftMeasureSteps.label}
+          value={activeStep}
+          onChange={setStep}
+          steps={[
+            { key: 'requests', label: liftMeasureSteps.requests, done: measurementId !== '' },
+            { key: 'roof', label: liftMeasureSteps.roof, disabled: measurementId === '', done: proposalReady },
+            { key: 'proposal', label: liftMeasureSteps.proposal, disabled: !proposalReady },
+          ]}
         />
-        <span className={styles.subtitle}>{measure.subtitle}</span>
-      </header>
-      <Steps step={activeStep} onStep={setStep} roofReady={measurementId !== ''} proposalReady={proposalReady} />
-      <div className={styles.body}>
-        <aside className={styles.list}>
-          <RequestsList selectedId={measurementId} onPick={() => setStep('roof')} />
-        </aside>
-        {measurementId === '' ? (
-          <main className={styles.main}>
-            <NothingOpen />
-          </main>
-        ) : query.data ? (
-          // A failed refetch keeps the roof on screen: only a measurement that never loaded shows the failure
-          <Loaded key={query.data.id} m={query.data} onProposalReady={setProposalReady} />
-        ) : query.isError ? (
-          <main className={styles.main}>
-            <EmptyState title={measure.loadFailed} />
-          </main>
-        ) : (
-          <main className={styles.main}>
-            <p className={styles.loading}>{measure.loading}</p>
-          </main>
-        )}
-      </div>
-    </div>
+        <div className={styles.work} data-step={activeStep} data-proposal={proposalReady ? 'true' : 'false'}>
+          <aside className={styles.list}>
+            <RequestsList selectedId={measurementId} onPick={() => setStep('roof')} />
+          </aside>
+          {measurementId === '' ? (
+            <div className={styles.main}>
+              <NothingOpen />
+            </div>
+          ) : m ? (
+            // A failed refetch keeps the roof on screen: only a measurement that never loaded shows the failure
+            <Loaded key={m.id} m={m} preview={head.preview} onProposalReady={setProposalReady} />
+          ) : query.isError ? (
+            <div className={styles.main}>
+              <EmptyState title={measure.loadFailed} />
+            </div>
+          ) : (
+            <div className={styles.main}>
+              <p className={styles.loading}>{measure.loading}</p>
+            </div>
+          )}
+        </div>
+        {proposalReady && activeStep === 'roof' ? <RoofQuoteBar preview={head.preview.data} onOpen={() => setStep('proposal')} /> : null}
+      </MeasureHost>
+    </MeasurePage>
   );
 }

@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent, type ReactNode } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import {
   DEFAULT_WINDOW_ORDER_SETTINGS,
   ORDER_ROUNDING_STEPS,
@@ -9,7 +9,7 @@ import {
   type WindowOrderSettingsPatch,
   type WindowStyle,
 } from '@roofline/shared';
-import { Banner, Button, EmptyState, Field, Select, Skeleton, useToast, type SelectOption } from '@roofline/ui';
+import { Banner, Button, EmptyState, Field, Icon, Listbox, Panel, Skeleton, useToast, type ListboxOption } from '@roofline/ui';
 import { useMe } from '../../api/hooks.ts';
 import { factoryOrders as copy } from '../../copy/factoryOrders.ts';
 import { settings as settingsCopy } from '../../copy/settings.ts';
@@ -17,6 +17,8 @@ import { tiers } from '../../copy/tiers.ts';
 import { formErrors } from '../auth/formErrors.ts';
 import shared from './FinanceEstimate.module.css';
 import styles from './FactoryOrdersSection.module.css';
+import form from './form.module.css';
+import { SaveBar } from './SaveBar.tsx';
 import { useSaveWindowOrderSettings, useWindowOrderSettings } from './window-order-settings-api.ts';
 
 /** The four plain number settings, by the key the API takes, with the range the API accepts. */
@@ -49,8 +51,8 @@ type Form = Record<NumberKey, string> & { roundingIn: string; limits: Record<Win
 const limitField = (style: WindowStyle, key: LimitKey) => `limits.${style}.${key}`;
 const SERVER_FIELDS: readonly string[] = [...NUMBER_KEYS, 'roundingIn'];
 
-const ROUNDING_OPTIONS: readonly SelectOption[] = ORDER_ROUNDING_STEPS.map((step) => ({ value: String(step), label: copy.roundingOption(step) }));
-const STYLE_OPTIONS: readonly SelectOption[] = WINDOW_STYLES.map((style) => ({ value: style, label: copy.styleOption(style) }));
+const ROUNDING_OPTIONS: readonly ListboxOption[] = ORDER_ROUNDING_STEPS.map((step) => ({ value: String(step), label: copy.roundingOption(step) }));
+const STYLE_OPTIONS: readonly ListboxOption<WindowStyle>[] = WINDOW_STYLES.map((style) => ({ value: style, label: copy.styleOption(style) }));
 
 function toForm(s: WindowOrderSettings): Form {
   const limits = Object.fromEntries(
@@ -122,17 +124,13 @@ export function patchOf(s: WindowOrderSettings): WindowOrderSettingsPatch {
   return patch;
 }
 
-/** The titled block of the Prices tab. Every state of the section sits inside it. */
+/** The panel of the Prices tab the loading line and the failure sit in. The form brings its own panel. */
 function Section({ children }: { children: ReactNode }) {
-  const headingId = useId();
   return (
-    <section className={shared.section} aria-labelledby={headingId}>
-      <h2 id={headingId} className={shared.heading}>
-        {copy.title}
-      </h2>
-      <p className={shared.note}>{copy.intro}</p>
+    <Panel title={copy.title}>
+      <p className={shared.lead}>{copy.intro}</p>
       {children}
-    </section>
+    </Panel>
   );
 }
 
@@ -174,23 +172,22 @@ export function FactoryOrdersSection() {
     );
   }
 
-  return (
-    <Section>
-      <FactoryOrdersForm settings={settings.data} canEdit={me.data.role === 'owner'} />
-    </Section>
-  );
+  return <FactoryOrdersForm settings={settings.data} canEdit={me.data.role === 'owner'} />;
 }
 
 function FactoryOrdersForm({ settings, canEdit }: { settings: WindowOrderSettings; canEdit: boolean }) {
-  const [form, setForm] = useState(() => toForm(settings));
+  const [values, setValues] = useState(() => toForm(settings));
+  // What the form was last loaded or saved as: only a difference makes it saveable
+  const [baseline, setBaseline] = useState(() => toForm(settings));
   const [style, setStyle] = useState<WindowStyle>(WINDOW_STYLES[0]);
   // Problems in the form are shown once the owner has tried to save, then follow the edits as they are made
   const [submitted, setSubmitted] = useState(false);
   const save = useSaveWindowOrderSettings();
   const toast = useToast();
   const problems = formErrors(save.error, SERVER_FIELDS);
-  const current = check(form);
+  const current = check(values);
   const clientErrors: Record<string, string> = submitted && !current.ok ? current.errors : {};
+  const changed = JSON.stringify(values) !== JSON.stringify(baseline);
   // A wrong limit of a style not on screen has no field to sit beside, so it is named at the top
   const otherStyle = WINDOW_STYLES.find((s) => s !== style && LIMIT_KEYS.some((key) => clientErrors[limitField(s, key)] !== undefined));
 
@@ -198,7 +195,9 @@ function FactoryOrdersForm({ settings, canEdit }: { settings: WindowOrderSetting
     save.mutate(patch, {
       onSuccess: (answer) => {
         // The answer is what the server kept: show that, not what was typed
-        setForm(toForm(answer));
+        const next = toForm(answer);
+        setValues(next);
+        setBaseline(next);
         setSubmitted(false);
         toast.show(saved, 'success');
       },
@@ -209,14 +208,14 @@ function FactoryOrdersForm({ settings, canEdit }: { settings: WindowOrderSetting
     event.preventDefault();
     if (!canEdit) return;
     setSubmitted(true);
-    const checked = check(form);
+    const checked = check(values);
     if (!checked.ok) return;
     send(patchOf(checked.settings), tiers.saved);
   }
 
-  const setNumber = (key: NumberKey, value: string) => setForm((previous) => ({ ...previous, [key]: value }));
+  const setNumber = (key: NumberKey, value: string) => setValues((previous) => ({ ...previous, [key]: value }));
   const setLimit = (key: LimitKey, value: string) =>
-    setForm((previous) => ({ ...previous, limits: { ...previous.limits, [style]: { ...previous.limits[style], [key]: value } } }));
+    setValues((previous) => ({ ...previous, limits: { ...previous.limits, [style]: { ...previous.limits[style], [key]: value } } }));
 
   const numberField = (key: NumberKey, label: string, step: string, help?: string) => (
     <Field
@@ -228,7 +227,7 @@ function FactoryOrdersForm({ settings, canEdit }: { settings: WindowOrderSetting
       step={step}
       min={String(NUMBER_RANGE[key][0])}
       max={String(NUMBER_RANGE[key][1])}
-      value={form[key]}
+      value={values[key]}
       onChange={(event) => setNumber(key, event.target.value)}
       disabled={!canEdit}
       help={help}
@@ -237,9 +236,24 @@ function FactoryOrdersForm({ settings, canEdit }: { settings: WindowOrderSetting
   );
 
   return (
-    <>
-      {canEdit ? null : <p className={shared.note}>{tiers.officeReadOnly}</p>}
-      <form className={shared.form} onSubmit={submit} noValidate aria-label={copy.title}>
+    <form className={form.form} onSubmit={submit} noValidate>
+      <Panel
+        title={copy.title}
+        actions={
+          canEdit ? (
+            <Button variant="default" size="sm" disabled={save.isPending} onClick={() => send({}, copy.defaultsRestored)}>
+              {copy.useDefaults}
+            </Button>
+          ) : undefined
+        }
+      >
+        <p className={shared.lead}>{copy.intro}</p>
+        {canEdit ? null : (
+          <p className={form.note}>
+            <Icon name="lock" size={16} />
+            {tiers.officeReadOnly}
+          </p>
+        )}
         {problems.general ? (
           <div className={shared.banner}>
             <Banner tone="danger">{problems.general}</Banner>
@@ -250,58 +264,55 @@ function FactoryOrdersForm({ settings, canEdit }: { settings: WindowOrderSetting
             <Banner tone="danger">{copy.otherStyleWrong(otherStyle)}</Banner>
           </div>
         ) : null}
-        {numberField('widthDeductionIn', copy.widthDeduction, '0.0625', copy.deductionHelp)}
-        {numberField('heightDeductionIn', copy.heightDeduction, '0.0625')}
-        <Select
-          label={copy.rounding}
-          value={form.roundingIn}
-          onChange={(value) => setForm((previous) => ({ ...previous, roundingIn: value }))}
-          options={ROUNDING_OPTIONS}
-          disabled={!canEdit}
-          error={problems.forField('roundingIn')}
-        />
-        {numberField('uncertaintyFactor', copy.uncertaintyFactor, '0.1', copy.uncertaintyHelp)}
-        {numberField('checkUncertaintyIn', copy.checkUncertainty, '0.0625')}
-
-        <div className={styles.full}>
-          <h3 className={styles.subheading}>{copy.limitsTitle}</h3>
-          <p className={shared.help}>{copy.limitsHelp}</p>
-        </div>
-        <Select
-          className={styles.full}
-          label={copy.style}
-          value={style}
-          onChange={(value) => setStyle(value as WindowStyle)}
-          options={STYLE_OPTIONS}
-        />
-        {LIMIT_KEYS.map((key) => (
-          <Field
-            key={`${style}-${key}`}
-            label={copy.limit[key]}
-            name={limitField(style, key)}
-            type="number"
-            inputMode="decimal"
-            step="0.125"
-            min={String(LIMIT_RANGE[key][0])}
-            max={String(LIMIT_RANGE[key][1])}
-            value={form.limits[style][key]}
-            onChange={(event) => setLimit(key, event.target.value)}
+        <div className={form.grid}>
+          {numberField('widthDeductionIn', copy.widthDeduction, '0.0625', copy.deductionHelp)}
+          {numberField('heightDeductionIn', copy.heightDeduction, '0.0625')}
+          <Listbox
+            label={copy.rounding}
+            value={values.roundingIn}
+            onChange={(value) => setValues((previous) => ({ ...previous, roundingIn: value }))}
+            options={ROUNDING_OPTIONS}
             disabled={!canEdit}
-            error={clientErrors[limitField(style, key)]}
+            error={problems.forField('roundingIn')}
           />
-        ))}
+          {numberField('uncertaintyFactor', copy.uncertaintyFactor, '0.1', copy.uncertaintyHelp)}
+          {numberField('checkUncertaintyIn', copy.checkUncertainty, '0.0625')}
 
-        {canEdit ? (
-          <div className={styles.actions}>
-            <Button type="submit" variant="primary" busy={save.isPending}>
-              {tiers.save}
-            </Button>
-            <Button variant="ghost" disabled={save.isPending} onClick={() => send({}, copy.defaultsRestored)}>
-              {copy.useDefaults}
-            </Button>
+          <div className={`${form.span} ${styles.limits}`}>
+            <h3 className={form.group}>{copy.limitsTitle}</h3>
+            <p className={shared.help}>{copy.limitsHelp}</p>
           </div>
-        ) : null}
-      </form>
-    </>
+          <Listbox className={form.span} label={copy.style} value={style} onChange={setStyle} options={STYLE_OPTIONS} />
+          {LIMIT_KEYS.map((key) => (
+            <Field
+              key={`${style}-${key}`}
+              label={copy.limit[key]}
+              name={limitField(style, key)}
+              type="number"
+              inputMode="decimal"
+              step="0.125"
+              min={String(LIMIT_RANGE[key][0])}
+              max={String(LIMIT_RANGE[key][1])}
+              value={values.limits[style][key]}
+              onChange={(event) => setLimit(key, event.target.value)}
+              disabled={!canEdit}
+              error={clientErrors[limitField(style, key)]}
+            />
+          ))}
+        </div>
+      </Panel>
+      {canEdit ? (
+        <SaveBar
+          dirty={changed}
+          saving={save.isPending}
+          saveLabel={tiers.save}
+          onDiscard={() => {
+            save.reset();
+            setValues(baseline);
+            setSubmitted(false);
+          }}
+        />
+      ) : null}
+    </form>
   );
 }

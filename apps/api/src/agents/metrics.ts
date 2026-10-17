@@ -243,6 +243,7 @@ function recentTaskOf(row: RecentTaskRow, href: string | null): RecentTask {
     href,
     id: row.id,
     kind: row.kind,
+    title: row.title,
     status: row.status,
     mode: row.mode,
     createdAt: row.createdAt.toISOString(),

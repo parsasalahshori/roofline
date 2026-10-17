@@ -1,152 +1,298 @@
+/*
+ * One option of a proposal. On a desktop the three options are stacked rows and each row is a radio that picks it: its
+ * tier, name and what it is made of at the left, its price in Archivo at the right. The picked row opens out under its
+ * heading into what it includes, what can be changed and its price lines, and the total stays pinned at the foot while
+ * those lines scroll. The picked option has the company's ring and its filled radio; the recommended one has the tint and
+ * says so in a tag. On a phone the tabs pick, and the row is only a heading.
+ */
 .card {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
   min-width: 0;
   max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+}
+
+/* The picked option has the company's ring (selection is the brand colour, as on the roof's quote); the recommended one has its tint and its tag */
+.card[data-open='true'] {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 1px var(--brand), var(--e-1);
 }
 
 .header {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 40px;
+  gap: 14px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: var(--r-3);
 }
 
-.title {
+/* A row that picks the option: the whole row is the hit area */
+.header[data-pick='true'] {
+  cursor: pointer;
+}
+
+.header[data-pick='true']:hover {
+  background: var(--surface-2);
+}
+
+.header:has(.input:focus-visible) {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.card[data-recommended='true'] .header,
+.card[data-recommended='true'] .header[data-pick='true']:hover {
+  background: var(--brand-tint);
+}
+
+.card[data-open='true'] .header {
+  border-radius: var(--r-3) var(--r-3) 0 0;
+}
+
+/* The native radio stays, invisible and over the whole row, for the pointer, the keyboard and screen readers; the ring after it is what is drawn */
+.input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   margin: 0;
-  font-size: var(--font-size-stat);
-  line-height: 1.2;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* The radio: an empty ring, with a dot in the company's colour when the row is the picked one */
+.radio {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  box-sizing: border-box;
+  border: 2px solid var(--line-ctl);
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.input:checked + .radio {
+  border-color: var(--brand);
+}
+
+.input:checked + .radio::after {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--brand);
+}
+
+.titles {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tierLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.tier {
+  color: var(--ink-3);
+  font: 600 var(--font-size-min)/1 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.card[data-recommended='true'] .tier {
+  color: var(--brand-text);
+}
+
+.name {
+  font: 700 17px/1.25 var(--f-display);
   overflow-wrap: anywhere;
 }
 
-.state {
-  font-size: var(--font-size-body);
-  color: var(--text-muted);
+.spec {
+  color: var(--ink-2);
+  font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
-.highlights {
-  margin: 0;
-  padding-left: 20px;
-  font-size: var(--font-size-body);
-  color: var(--text);
+.price {
+  flex: none;
+  font: 750 24px/1 var(--f-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.detail[hidden] {
+  display: none;
+}
+
+.body {
+  display: grid;
+  gap: 18px;
+  padding: 16px 16px 28px;
+  border-top: 1px solid var(--line);
+}
+
+.block {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
 }
 
 .heading {
   margin: 0;
+  color: var(--ink-3);
+  font: 600 var(--font-size-min)/1 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.highlights {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
   font-size: var(--font-size-body);
-  font-weight: 600;
-  color: var(--text-muted);
+  list-style: none;
 }
 
-.totalRow {
+.highlights li {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 12px;
+  align-items: flex-start;
+  gap: 8px;
 }
 
-.total {
-  font-size: var(--font-size-stat);
-  font-weight: 700;
-}
-
-.monthly {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  font-size: var(--font-size-body);
-}
-
-.estimate {
-  font-size: var(--font-size-min);
-  color: var(--text-muted);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 2px 8px;
+.highlights svg {
+  margin-top: 2px;
+  color: var(--ok-text);
 }
 
 .note {
   margin: 0;
+  color: var(--ink-3);
   font-size: var(--font-size-min);
-  color: var(--text-muted);
 }
 
 .fields {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+  align-items: start;
 }
 
-.readList {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 4px;
-  margin: 0;
-  font-size: var(--font-size-body);
-}
-
-.readItem {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.readItem dt {
-  color: var(--text-muted);
-}
-
-.readItem dd {
-  margin: 0;
-}
-
-.lines {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: var(--font-size-body);
-}
-
-.line {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
+.wide {
+  grid-column: 1 / -1;
   min-width: 0;
 }
 
-.lineName {
-  min-width: 0;
-  overflow-wrap: anywhere;
+/* The price lines: a table of the kit's, flush with the card's edges inside the body's padding */
+.flush {
+  margin: 0 -16px;
 }
 
 .addOns {
-  list-style: none;
+  display: grid;
+  gap: 12px;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  list-style: none;
 }
 
 .addOn {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1.4fr) minmax(0, 1fr) auto;
   gap: 12px;
   align-items: end;
   padding: 12px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: var(--r-3);
   background: var(--surface-2);
+}
+
+.addOnName {
+  min-width: 0;
 }
 
 .addOnActions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   min-height: 40px;
+}
+
+.addButton {
+  justify-self: start;
+}
+
+/* The total, pinned to the card's foot and tinted: the label, the number, the word Estimate, the monthly figure */
+.foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 var(--r-3) var(--r-3);
+  background: var(--surface-2);
+}
+
+/* Lines scrolling under the bar fade out into it, so a row is never cut through by a hard edge (the body's bottom padding keeps the last row clear of the fade) */
+.foot::before {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  left: 0;
+  height: 20px;
+  background: linear-gradient(to top, var(--surface), transparent);
+  pointer-events: none;
+}
+
+.footLabel {
+  color: var(--ink-2);
+  font-weight: 650;
+}
+
+.total {
+  font: 750 22px/1 var(--f-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.monthly {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  color: var(--ink-2);
+  font: 500 13px/1.2 var(--f-mono);
+}
+
+@media (max-width: 767.98px) {
+  /* One field to a row: the unit ("Per foot of edge") does not fit half of a 360px phone's row */
+  .addOn {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .addOnActions {
+    justify-content: space-between;
+  }
+
+  .monthly {
+    margin-left: 0;
+  }
 }

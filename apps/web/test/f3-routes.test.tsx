@@ -9,7 +9,7 @@ import { createAppRouter } from '../src/app/router.tsx';
 import { auth } from '../src/copy/auth.ts';
 import { billing } from '../src/copy/billing.ts';
 import { connections } from '../src/copy/connections.ts';
-import { WINDOW_COPY } from '../src/copy/dock.ts';
+import { WINDOW_COPY } from '../src/copy/rail.ts';
 import { importCopy } from '../src/copy/import.ts';
 import { settings } from '../src/copy/settings.ts';
 import { setup } from '../src/copy/setup.ts';
@@ -115,7 +115,7 @@ function signedInApi(overrides: Routes = {}) {
 }
 
 /** The Settings window, found by its title from the copy. */
-const settingsWindow = () => screen.findByRole('dialog', { name: WINDOW_COPY.settings.title });
+const settingsWindow = () => screen.findByRole('main', { name: WINDOW_COPY.settings.title });
 
 /** The row of tab links in the Settings window. */
 const tabsNav = () => screen.findByRole('navigation', { name: settings.tabsLabel });

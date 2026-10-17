@@ -1,12 +1,13 @@
 import { useEffect, useRef } from 'react';
 import type { BillingView } from '@roofline/shared';
-import { Button, Card, EmptyState, useToast } from '@roofline/ui';
+import { Button, EmptyState, Panel, Skeleton, Tag, useToast, type IconName, type TagTone } from '@roofline/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
 import { useMe } from '../../api/hooks.ts';
 import { keys } from '../../api/keys.ts';
 import { billing } from '../../copy/billing.ts';
 import { errors } from '../../copy/errors.ts';
+import { settings } from '../../copy/settings.ts';
 import { billingKey, useBilling, usePortal } from './api.ts';
 import styles from './BillingTab.module.css';
 import { PlanPicker } from './PlanPicker.tsx';
@@ -17,7 +18,7 @@ function formatDay(iso: string): string {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(iso));
 }
 
-/** The line under the plan name: the trial's end day, or the status. */
+/** The words for the company's billing status: the trial's end day, or the status. */
 function statusText(view: BillingView): string {
   switch (view.status) {
     case 'trial':
@@ -32,6 +33,15 @@ function statusText(view: BillingView): string {
       return billing.statusLabel.canceled;
   }
 }
+
+/** How each status looks as a tag: a colour and a glyph, beside its words. */
+const STATUS_LOOK: Record<BillingView['status'], { tone: TagTone; icon: IconName }> = {
+  trial: { tone: 'info', icon: 'clock' },
+  active: { tone: 'ok', icon: 'check' },
+  past_due: { tone: 'bad', icon: 'alert' },
+  trial_ended: { tone: 'warn', icon: 'alert' },
+  canceled: { tone: 'neutral', icon: 'minus' },
+};
 
 /** The Billing settings tab. Only the owner sees the plan; everyone else sees a note. */
 export function BillingTab() {
@@ -62,25 +72,47 @@ export function BillingTab() {
     return <EmptyState title={billing.ownerOnly} />;
   }
   if (view.data === undefined) {
-    return view.isError ? <EmptyState title={errors.generic} /> : null;
+    if (view.isError) return <EmptyState title={errors.generic} />;
+    return (
+      <Panel>
+        <div role="status">
+          <Skeleton lines={3} />
+          <span className="visually-hidden">{settings.loading}</span>
+        </div>
+      </Panel>
+    );
   }
 
   const data = view.data;
+  const look = STATUS_LOOK[data.status];
+  // A company with no meters and no invoices page has only its status to show: a strip, not a panel with an empty body
+  const hasBody = data.usage.length > 0 || data.canOpenPortal;
   return (
-    <div className={styles.page}>
-      <Card as="section" className={styles.summary}>
-        <h2 className={styles.planName}>{data.planName ?? billing.noPlan}</h2>
-        <p className={styles.status}>{statusText(data)}</p>
-      </Card>
-      <UsageMeters usage={data.usage} />
+    <>
+      <Panel
+        title={data.planName ?? billing.noPlan}
+        padded={hasBody}
+        className={hasBody ? undefined : styles.statusOnly}
+        actions={
+          <Tag tone={look.tone} icon={look.icon}>
+            {statusText(data)}
+          </Tag>
+        }
+      >
+        <UsageMeters usage={data.usage} />
+        {data.canOpenPortal ? (
+          <div className={styles.footer}>
+            <Button
+              variant="default"
+              onClick={() => portal.mutate(undefined, { onError: (error) => toast.show(error.message, 'error') })}
+              busy={portal.isPending}
+            >
+              {billing.invoicesAndCard}
+            </Button>
+          </div>
+        ) : null}
+      </Panel>
       <PlanPicker view={data} />
-      {data.canOpenPortal ? (
-        <div>
-          <Button variant="ghost" onClick={() => portal.mutate(undefined, { onError: (error) => toast.show(error.message, 'error') })} busy={portal.isPending}>
-            {billing.invoicesAndCard}
-          </Button>
-        </div>
-      ) : null}
-    </div>
+    </>
   );
 }

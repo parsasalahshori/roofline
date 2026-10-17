@@ -26,7 +26,7 @@
 .confirmText {
   margin: 0;
   font-size: 0.875rem;
-  color: var(--text);
+  color: var(--ink);
 }
 
 .confirmActions {

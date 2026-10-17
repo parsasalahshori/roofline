@@ -1,0 +1,13 @@
+/* A tag that wraps inside its column and grows taller instead of running out of it (the kit's tag is one nowrap line).
+   The attribute selector outranks the kit's own class, whichever stylesheet loads last. */
+.tag[data-tone] {
+  flex: 0 1 auto;
+  height: auto;
+  min-height: 22px;
+  max-width: 100%;
+  padding-block: 3px;
+  line-height: 1.25;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

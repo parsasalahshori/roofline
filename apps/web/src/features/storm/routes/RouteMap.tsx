@@ -2,7 +2,9 @@ import { Map as MapLibreMap, Marker } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef } from 'react';
 import { doors } from '../../../copy/doors.ts';
+import chrome from '../../../shell/map/MapChrome.module.css';
 import { mapStyle } from '../../../shell/map/mapStyle.ts';
+import { useColorScheme } from '../../../shell/useColorScheme.ts';
 import type { DoorStop } from './types.ts';
 import styles from './RouteMap.module.css';
 
@@ -40,6 +42,9 @@ export function RouteMap({ stops, currentStopId, position }: RouteMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const dotRef = useRef<Marker | null>(null);
+  const scheme = useColorScheme();
+  // The theme the map was last painted for: its first style is made for the theme at mount
+  const appliedScheme = useRef(scheme);
 
   // The map itself: made once, removed on unmount.
   useEffect(() => {
@@ -47,7 +52,7 @@ export function RouteMap({ stops, currentStopId, position }: RouteMapProps) {
     if (!container) return;
     let map: MapLibreMap;
     try {
-      map = new MapLibreMap({ container, style: mapStyle(readMapEnv(), 'streets'), center: [-96, 39], zoom: 3 });
+      map = new MapLibreMap({ container, style: mapStyle(readMapEnv(), 'streets', appliedScheme.current), center: [-96, 39], zoom: 3 });
     } catch {
       return;
     }
@@ -57,6 +62,14 @@ export function RouteMap({ stops, currentStopId, position }: RouteMapProps) {
       map.remove();
     };
   }, []);
+
+  // A theme switch repaints the base map; the door markers are page elements and stay where they are
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || appliedScheme.current === scheme) return;
+    appliedScheme.current = scheme;
+    map.setStyle(mapStyle(readMapEnv(), 'streets', scheme));
+  }, [scheme]);
 
   // Fit the view to the doors when the route changes, not on every move of the rep.
   const box = boundsOf(stops);
@@ -72,7 +85,8 @@ export function RouteMap({ stops, currentStopId, position }: RouteMapProps) {
         [west, south],
         [east, north],
       ],
-      { padding: 32, maxZoom: 17, animate: false },
+      // The attribution sits along the foot of the map: the doors stay clear of it (a door is a 31px disc)
+      { padding: { top: 32, right: 32, bottom: 72, left: 32 }, maxZoom: 17, animate: false },
     );
   }, [west, south, east, north]);
 
@@ -120,5 +134,5 @@ export function RouteMap({ stops, currentStopId, position }: RouteMapProps) {
     [],
   );
 
-  return <div ref={containerRef} className={styles.map} role="region" aria-label={doors.routeMapLabel} />;
+  return <div ref={containerRef} className={`${styles.map} ${chrome.chrome}`} role="region" aria-label={doors.routeMapLabel} />;
 }

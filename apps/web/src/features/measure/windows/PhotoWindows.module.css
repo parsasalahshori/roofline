@@ -1,20 +1,25 @@
-/* "Photograph windows": a full-screen sheet on a phone, a large one on a desktop. */
+/*
+ * "Photograph windows": a full-screen sheet on a phone, a large one on a desktop. The dimming round the sheet is a scrim
+ * over the whole page, so its colour is literal on purpose; every other colour is a token.
+ */
 .overlay {
+  /* literal: a scrim over the page, dark in both themes */
+  --over-scrim: rgb(21 28 34 / 0.45);
   position: fixed;
   z-index: 1000;
   inset: 0;
   display: flex;
   flex-direction: column;
-  background: var(--ds-bg, #f6f7f8);
-  color: var(--ds-text-1, #151c22);
-  font-family: var(--ds-font, var(--font));
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--f-ui);
 }
 
 @media (min-width: 900px) {
   .overlay {
     inset: 32px max(32px, calc(50% - 420px));
-    border-radius: 16px;
-    box-shadow: 0 0 0 100vmax rgba(21, 28, 34, 0.45), var(--ds-shadow, 0 20px 50px rgba(21, 28, 34, 0.35));
+    border-radius: var(--r-4);
+    box-shadow: 0 0 0 100vmax var(--over-scrim), var(--e-2);
   }
 }
 
@@ -25,7 +30,7 @@
   gap: 8px;
   min-height: 56px;
   padding: 0 8px 0 16px;
-  border-bottom: 1px solid var(--line, #dde2e6);
+  border-bottom: 1px solid var(--line);
 }
 
 .title {
@@ -65,7 +70,8 @@
   margin: 0;
   padding: 12px 14px;
   border-radius: 12px;
-  background: var(--ds-accent-tint, #fff1d1);
+  background: var(--tape-tint);
+  color: var(--tape-ink);
   font-size: 14px;
   line-height: 1.45;
 }
@@ -83,13 +89,13 @@
 
 .empty {
   margin: 0;
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 14px;
 }
 
 .waiting {
   margin: 0;
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 14px;
   font-weight: 600;
 }
@@ -109,8 +115,8 @@
   gap: 12px;
   padding: 8px;
   border-radius: 12px;
-  background: var(--ds-surface, #fff);
-  box-shadow: 0 0 0 1px var(--line, #dde2e6);
+  background: var(--surface);
+  box-shadow: var(--e-1);
 }
 
 .thumb {
@@ -118,7 +124,7 @@
   width: 56px;
   height: 56px;
   border-radius: 8px;
-  background: var(--ds-surface-2, #eceff1);
+  background: var(--surface-2);
   object-fit: cover;
 }
 
@@ -147,7 +153,7 @@
 }
 
 .measured {
-  color: var(--ds-success-ink, #0a6e1d);
+  color: var(--ok-text);
   font-weight: 600;
 }
 
@@ -163,9 +169,10 @@
   margin: 0;
   font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
+  font-family: var(--f-mono);
 }
 
 .rows {
@@ -183,7 +190,7 @@
   align-items: center;
   gap: 0 8px;
   padding: 4px 0;
-  border-bottom: 1px solid var(--line, #dde2e6);
+  border-bottom: 1px solid var(--line);
 }
 
 /* Name and size on the first line; the quote checkbox and Remove under it, so nothing is squeezed on a phone */
@@ -213,7 +220,7 @@
   height: 40px;
   border-radius: 6px;
   object-fit: cover;
-  background: var(--ds-surface-2, #eceff1);
+  background: var(--surface-2);
 }
 
 .rowText {
@@ -232,7 +239,7 @@
 }
 
 .rowSize {
-  color: var(--ds-text-2, #3a444d);
+  color: var(--ink-2);
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
@@ -240,15 +247,15 @@
 .chip {
   padding: 0 6px;
   border-radius: 6px;
-  background: var(--ds-info-tint, #e3ecfb);
-  color: var(--ds-info-ink, #1f55b3);
+  background: var(--info-tint);
+  color: var(--info-text);
   font-size: 12px;
   font-weight: 600;
 }
 
 .rowDelete {
   min-height: 44px;
-  color: var(--ds-danger-ink, #a3201f);
+  color: var(--bad-text);
 }
 
 
@@ -258,9 +265,9 @@
   flex-direction: column;
   gap: 8px;
   padding: 12px 14px;
-  border: 1px solid var(--line, #dde2e6);
+  border: 1px solid var(--line);
   border-radius: 12px;
-  background: var(--ds-surface, #fff);
+  background: var(--surface);
 }
 
 .howToTitle {
@@ -282,25 +289,25 @@
 .printButton,
 .another {
   min-height: 48px;
-  border: 1px solid var(--line, #dde2e6);
+  border: 1px solid var(--line);
   font-weight: 600;
 }
 
 .rowDetail {
-  color: var(--ds-text-label, #505b64);
+  color: var(--ink-3);
   font-size: 12px;
 }
 
 .bigWindow {
   margin: 0;
-  color: var(--ds-text-2, #3a444d);
+  color: var(--ink-2);
   font-size: 13px;
   line-height: 1.4;
 }
 
 .arNote {
   margin: 8px 0 0;
-  color: var(--ds-text-2, #3a444d);
+  color: var(--ink-2);
   font-size: 13px;
   line-height: 1.4;
 }

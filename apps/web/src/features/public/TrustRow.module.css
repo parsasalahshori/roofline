@@ -1,0 +1,80 @@
+/* Facts the company gave: two or three columns under a hairline, the value in Archivo and the caption quiet. */
+.facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+
+.facts[data-count="2"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.fact {
+  display: grid;
+  gap: 3px;
+  justify-items: center;
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
+  text-align: center;
+}
+
+.value {
+  color: var(--ink);
+  font-family: var(--f-display);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.caption {
+  overflow-wrap: anywhere;
+}
+
+/* Fewer than two facts: what happens at the visit, two checks */
+.visit {
+  display: grid;
+  gap: 10px;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--line);
+}
+
+.visitTitle {
+  margin: 0;
+  color: var(--ink-3);
+  font-family: var(--f-mono);
+  font-size: var(--font-size-min);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.checks {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.check {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 8px;
+  color: var(--ink-2);
+  font-size: 0.875rem;
+  line-height: 1.35;
+}
+
+.check svg {
+  margin-top: 1px;
+  color: var(--ok-text);
+}
+
+.check b {
+  color: var(--ink);
+  font-weight: 600;
+}

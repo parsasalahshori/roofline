@@ -4,7 +4,8 @@ vi.hoisted(() => {
 });
 
 import type { AppointmentView } from '@roofline/shared';
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import type { UserEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppointmentForm, zonedWallToInstant } from '../src/features/appointments/AppointmentForm.tsx';
 import type { Slot } from '../src/features/appointments/types.ts';
@@ -114,6 +115,12 @@ function setup(extra: Routes = {}, options: { slots?: Slot[]; role?: 'owner' | '
 
 const SAVE_OK = () => ({ status: 201, body: { appointment: SAVED, warnings: [], jobMoved: false } });
 
+/** Opens the Listbox with this label and picks the option with these words. */
+async function choose(user: UserEvent, label: string, option: string) {
+  await user.click(screen.getByLabelText(label));
+  await user.click(await screen.findByRole('option', { name: option }));
+}
+
 describe('zonedWallToInstant', () => {
   it('turns a Chicago wall clock on a normal day into the instant', () => {
     expect(zonedWallToInstant('2026-10-13', '14:00', 'America/Chicago').toISOString()).toBe('2026-10-13T19:00:00.000Z');
@@ -135,7 +142,7 @@ describe('Appointment form', () => {
 
     expect(await screen.findByText('Dana Price')).toBeInTheDocument();
     expect(screen.getByText('12 Oak St')).toBeInTheDocument();
-    expect(screen.getByLabelText(appointments.kindLabel)).toHaveValue('inspection');
+    expect(screen.getByLabelText(appointments.kindLabel)).toHaveTextContent(appointments.kind.inspection);
     expect(api.count('GET /api/jobs/j1/view')).toBe(1);
   });
 
@@ -145,7 +152,34 @@ describe('Appointment form', () => {
 
     expect(await screen.findByLabelText(appointments.dateLabel)).toHaveValue('2026-10-13');
     expect(screen.getByLabelText(appointments.timeLabel)).toHaveValue('14:00');
-    await waitFor(() => expect(screen.getByLabelText(appointments.personLabel)).toHaveValue('u2'));
+    await waitFor(() => expect(screen.getByLabelText(appointments.personLabel)).toHaveTextContent('Lee Office'));
+  });
+
+  it('says what Save is waiting for, and goes quiet once the form is complete', async () => {
+    setup();
+    renderAt(<AppointmentForm onDone={vi.fn()} />, '/appointments/new?jobId=j1&kind=inspection');
+    await screen.findByText('Dana Price');
+
+    const save = screen.getByRole('button', { name: appointments.save });
+    expect(save).toBeDisabled();
+    expect(screen.getByText(appointments.saveWaiting.time)).toBeInTheDocument();
+    expect(save).toHaveAccessibleDescription(appointments.saveWaiting.time);
+
+    fireEvent.change(screen.getByLabelText(appointments.timeLabel), { target: { value: '14:00' } });
+    await waitFor(() => expect(screen.queryByText(appointments.saveWaiting.time)).toBeNull());
+    expect(save).toBeEnabled();
+  });
+
+  it('names the missing start date of an install, and an end date before the start', async () => {
+    setup();
+    renderAt(<AppointmentForm onDone={vi.fn()} />, '/appointments/new?jobId=j1&kind=install');
+    await screen.findByText('Dana Price');
+
+    fireEvent.change(screen.getByLabelText(appointments.startDateLabel), { target: { value: '' } });
+    expect(await screen.findByText(appointments.saveWaiting.start)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(appointments.startDateLabel), { target: { value: '2026-10-20' } });
+    fireEvent.change(screen.getByLabelText(appointments.endDateLabel), { target: { value: '2026-10-19' } });
+    expect(await screen.findByText(appointments.saveWaiting.end)).toBeInTheDocument();
   });
 
   it('shows the server message when a save fails with an ApiError', async () => {
@@ -155,6 +189,38 @@ describe('Appointment form', () => {
     fireEvent.change(screen.getByLabelText(appointments.timeLabel), { target: { value: '14:00' } });
     await user.click(screen.getByRole('button', { name: appointments.save }));
     expect(await screen.findByText('That time is outside the work week.')).toBeInTheDocument();
+  });
+
+  it('brings a failed save into view, since on a phone it is below the fold', async () => {
+    const scroll = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      setup({ 'POST /api/appointments': () => ({ status: 422, body: { error: 'That time is outside the work week.' } }) });
+      const { user } = renderAt(<AppointmentForm onDone={vi.fn()} />, '/appointments/new?jobId=j1&kind=inspection');
+      await screen.findByText('Dana Price');
+      fireEvent.change(screen.getByLabelText(appointments.timeLabel), { target: { value: '14:00' } });
+      expect(scroll).not.toHaveBeenCalled();
+      await user.click(screen.getByRole('button', { name: appointments.save }));
+      const message = (await screen.findByText('That time is outside the work week.')).closest('[role="alert"]');
+      expect(message).not.toBeNull();
+      await waitFor(() => expect(scroll).toHaveBeenCalledTimes(1));
+      expect(scroll.mock.contexts[0]).toBe(message?.parentElement);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it('puts the suggested times after who the visit is for and before the time, in reading order', async () => {
+    setup({}, { slots: [{ start: '2026-10-13T19:00:00.000Z', end: '2026-10-13T19:30:00.000Z', userIds: ['u1'] }] });
+    renderAt(<AppointmentForm onDone={vi.fn()} />, '/appointments/new?jobId=j1&kind=inspection');
+    await screen.findByText('Dana Price');
+    const who = screen.getByRole('region', { name: appointments.groupWho });
+    const suggestions = await screen.findByRole('region', { name: appointments.suggestedTitle });
+    const when = screen.getByRole('region', { name: appointments.groupWhen });
+    // One column on a phone, in this order, and so the order Tab takes; on a desktop the grid areas set the suggestions beside them
+    expect(who.compareDocumentPosition(suggestions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(suggestions.compareDocumentPosition(when) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('picking a suggestion fills date, time and person', async () => {
@@ -167,7 +233,9 @@ describe('Appointment form', () => {
 
     expect(screen.getByLabelText(appointments.dateLabel)).toHaveValue('2026-10-13');
     expect(screen.getByLabelText(appointments.timeLabel)).toHaveValue('14:00');
-    expect(screen.getByLabelText(appointments.personLabel)).toHaveValue('u1');
+    expect(screen.getByLabelText(appointments.personLabel)).toHaveTextContent('Sam Roofer');
+    // The suggestion that matches the form is the one marked as picked
+    expect(screen.getByRole('button', { name: /2:00 PM/ })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('save posts the right body with ISO instants from company-zone input', async () => {
@@ -281,8 +349,104 @@ describe('Appointment form', () => {
     renderAt(<AppointmentForm onDone={vi.fn()} />, '/appointments/new?kind=other');
 
     const person = await screen.findByLabelText(appointments.personLabel);
-    expect(person.querySelectorAll('option')).toHaveLength(1);
     expect(person).toBeDisabled();
-    expect(person).toHaveValue('u1');
+    expect(person).toHaveTextContent('Sam Roofer');
+  });
+
+  it('the person list offers Anyone and each active person, and not the one who left', async () => {
+    setup();
+    const { user } = renderAt(<AppointmentForm onDone={vi.fn()} />, '/appointments/new?kind=other');
+
+    await user.click(await screen.findByLabelText(appointments.personLabel));
+    const options = within(await screen.findByRole('listbox', { name: appointments.personLabel })).getAllByRole('option');
+    expect(options.map((option) => option.textContent)).toEqual([appointments.anyone, 'Sam Roofer', 'Lee Office']);
+  });
+
+  it('the duration starts at the length of the kind, can be changed, and says when the visit ends', async () => {
+    setup({ 'POST /api/appointments': SAVE_OK });
+    const { user } = renderAt(<AppointmentForm onDone={vi.fn()} />, '/appointments/new?kind=inspection');
+    const duration = await screen.findByLabelText(appointments.durationLabel);
+    expect(duration).toHaveTextContent(appointments.duration(60));
+
+    fireEvent.change(screen.getByLabelText(appointments.dateLabel), { target: { value: '2026-10-13' } });
+    fireEvent.change(screen.getByLabelText(appointments.timeLabel), { target: { value: '14:00' } });
+    expect(screen.getByText(appointments.endsAt('3:00 PM'))).toBeInTheDocument();
+
+    await choose(user, appointments.durationLabel, appointments.duration(120));
+    expect(screen.getByText(appointments.endsAt('4:00 PM'))).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: appointments.save }));
+
+    await waitFor(() => expect(api.count('POST /api/appointments')).toBe(1));
+    expect(api.sent('POST /api/appointments')[0]).toMatchObject({
+      startsAt: '2026-10-13T19:00:00.000Z',
+      endsAt: '2026-10-13T21:00:00.000Z',
+    });
+  });
+
+  it('changing the kind sets the length of the new kind', async () => {
+    setup();
+    const { user } = renderAt(<AppointmentForm onDone={vi.fn()} />, '/appointments/new?kind=inspection');
+    await screen.findByLabelText(appointments.durationLabel);
+
+    await choose(user, appointments.kindLabel, appointments.kind.other);
+    expect(screen.getByLabelText(appointments.durationLabel)).toHaveTextContent(appointments.duration(30));
+  });
+
+  it('a moved appointment keeps its own length even when it is not one of the usual ones', async () => {
+    const odd: AppointmentView = { ...SAVED, endsAt: '2026-10-13T20:20:00.000Z' };
+    setup();
+    renderAt(<AppointmentForm existing={odd} onDone={vi.fn()} />, '/appointments/new');
+    expect(await screen.findByLabelText(appointments.durationLabel)).toHaveTextContent(appointments.duration(80));
+  });
+
+  it('searching picks a job, which fills the customer and home, and Change takes it back', async () => {
+    setup({
+      'GET /api/search?q=Dana': () => ({
+        body: {
+          customers: [{ id: 'c1', displayName: 'Dana Price' }],
+          jobs: [{ id: 'j1', customerId: 'c1', customerName: 'Dana Price', propertyId: 'p1', addressLine: '12 Oak St' }],
+        },
+      }),
+    });
+    const { user } = renderAt(<AppointmentForm onDone={vi.fn()} />, '/appointments/new?kind=other');
+
+    fireEvent.change(await screen.findByLabelText(appointments.customerLabel), { target: { value: 'Dana' } });
+    const matches = await screen.findByRole('list', { name: appointments.customerResults });
+    await user.click(within(matches).getAllByRole('button')[1]!);
+
+    expect(screen.getByText('Dana Price')).toBeInTheDocument();
+    expect(screen.getByText('12 Oak St')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: appointments.customerClear }));
+    expect(await screen.findByLabelText(appointments.customerLabel)).toHaveValue('');
+  });
+
+  it('says the customer line and the notes are optional: Save asks only for the day and the time', async () => {
+    setup();
+    renderAt(<AppointmentForm onDone={vi.fn()} />, '/appointments/new?kind=other');
+    expect(await screen.findByLabelText('Customer or job (optional)')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Notes (optional)' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Notes (optional)' })).toBeInTheDocument();
+  });
+
+  it('Cancel goes back to the calendar', async () => {
+    setup();
+    renderAt(<AppointmentForm onDone={vi.fn()} />, '/appointments/new?kind=other');
+    expect((await screen.findByRole('link', { name: appointments.leaveForm })).getAttribute('href')).toBe('/calendar');
+  });
+
+  it('Cancel runs onCancel when the page gives one', async () => {
+    const onCancel = vi.fn();
+    setup();
+    const { user } = renderAt(<AppointmentForm existing={SAVED} onDone={vi.fn()} onCancel={onCancel} />, '/appointments/new');
+    await user.click(await screen.findByRole('button', { name: appointments.leaveForm }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('an install has no suggested times and no duration', async () => {
+    setup();
+    renderAt(<AppointmentForm onDone={vi.fn()} />, '/appointments/new?kind=install');
+    await screen.findByLabelText(appointments.startDateLabel);
+    expect(screen.queryByRole('list', { name: appointments.suggestedTitle })).toBeNull();
+    expect(screen.queryByLabelText(appointments.durationLabel)).toBeNull();
   });
 });

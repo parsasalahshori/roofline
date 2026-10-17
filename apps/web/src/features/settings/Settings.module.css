@@ -1,22 +1,18 @@
-/* The row of tab links under the window title. It scrolls sideways on a phone rather than wrapping. */
-.tabs {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 8px;
-  overflow-x: auto;
-  margin: -4px -4px 16px;
-  padding: 4px;
-  border-bottom: 1px solid var(--line);
-}
-
-/* A tab is a whole target on a phone: at least 40px tall, and never squeezed to fit the row */
-.tab {
-  flex: none;
-  white-space: nowrap;
-  min-height: 40px;
-}
-
-/* A tab's panel may be narrower than its content, so long text inside it wraps instead of pushing the window wide */
+/* A tab's panels, one under another. They may be narrower than their content, so long text wraps instead of pushing the page wide. */
 .panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   min-width: 0;
+  max-width: 960px;
+}
+
+/* A panel's title wraps rather than being cut with an ellipsis: some are long ("Facebook and Instagram (Meta)").
+   Balanced, so the second line is never a word of its own. */
+.panel h2,
+.panel h3 {
+  overflow: visible;
+  text-overflow: clip;
+  text-wrap: balance;
+  white-space: normal;
 }

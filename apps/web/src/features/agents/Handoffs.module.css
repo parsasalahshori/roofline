@@ -1,0 +1,76 @@
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 56px;
+  padding: 10px 16px;
+}
+
+.row + .row {
+  border-top: 1px solid var(--line);
+}
+
+/* Who passed it, an arrow, who took it */
+.pair {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink-3);
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.job {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+/* The time follows the sentence, set apart by a middle dot that is not text */
+.when {
+  margin-left: 8px;
+  font-family: var(--f-mono);
+  font-size: var(--font-size-min);
+  white-space: nowrap;
+}
+
+.when::before {
+  content: "\00b7";
+  margin-right: 8px;
+}
+
+@media (max-width: 767.98px) {
+  .when {
+    display: block;
+    margin-left: 0;
+    margin-top: 2px;
+  }
+
+  .when::before {
+    display: none;
+  }
+}
+
+.empty {
+  margin: 0;
+  padding: 16px;
+  color: var(--ink-3);
+}

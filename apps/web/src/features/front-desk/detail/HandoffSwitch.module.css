@@ -1,0 +1,42 @@
+/* "HANDLED BY" and the two-choice switch on one line; the time the team has it until follows in mono */
+.handoff {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
+}
+
+.eyebrow {
+  color: var(--ink-3);
+  font: 600 var(--font-size-min)/1.2 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.until {
+  color: var(--ink-2);
+  font: 500 13px/1.2 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A phone: the label over a switch that takes the full width, each half a 40px thumb target */
+@media (max-width: 767.98px) {
+  .row > :nth-child(2) {
+    display: flex;
+    flex: 1 1 100%;
+    order: 2;
+  }
+
+  .row > :nth-child(2) > * {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+}

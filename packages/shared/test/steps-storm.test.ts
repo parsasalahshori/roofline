@@ -361,3 +361,77 @@ describe('create_ad_campaign', () => {
     expect(ads.userCreatable).toBe(true);
   });
 });
+
+describe('the storm text sample on the review screen', () => {
+  const stormText =
+    "Hi {first_name}, it's {company}. Radar shows hail up to {hail_size} hit near your home on {street} {day}. Reply STOP to opt out.";
+  const smsPayload = (overrides: Record<string, unknown> = {}) => ({
+    purpose: 'marketing',
+    body: stormText,
+    customerIds: [ID, ID2],
+    dedupePrefix: `storm:${ID3}`,
+    ...overrides,
+  });
+
+  test('a storm text with no details for the customer shows the stand-ins, with no raw token left', () => {
+    const p = sms.payload.parse(smsPayload());
+    const sample = sms.preview(p, { ...FACTS, sampleFirstName: 'Susan' }).messageSample ?? '';
+    expect(sample).toBe("Hi Susan, it's Acme Roofing. Radar shows hail up to 1.75\" hit near your home on Maple St yesterday. Reply STOP to opt out.");
+    expect(sample).not.toMatch(/\{[a-z_]+\}/);
+  });
+
+  test("a storm text shows the first customer's own hail size and street", () => {
+    const fields = { [ID]: { hail_size: '1.5"', street: '2406 Harney St' }, [ID2]: { hail_size: '1"', street: '9 Elm St' } };
+    const p = sms.payload.parse(smsPayload({ fields }));
+    const sample = sms.preview(p, { ...FACTS, sampleFirstName: 'Susan' }).messageSample ?? '';
+    expect(sample).toContain('hail up to 1.5" hit near your home on 2406 Harney St yesterday');
+    expect(sample).not.toContain('Maple St');
+  });
+
+  test('the email sample reads the first customer details too', () => {
+    const fields = { [ID]: { hail_size: '1.5"', street: '2406 Harney St' } };
+    const p = email.payload.parse({
+      purpose: 'marketing',
+      subject: 'Hail near {street}',
+      body: 'Hail up to {hail_size} hit {street}. {company} {unsubscribe}',
+      customerIds: [ID],
+      fields,
+    });
+    const sample = email.preview(p, FACTS).messageSample ?? '';
+    expect(sample).toContain('Hail up to 1.5" hit 2406 Harney St.');
+  });
+
+  test('a plain text with no storm batch leaves other braces exactly as written', () => {
+    const p = sms.payload.parse({
+      purpose: 'marketing',
+      body: "Hi {first_name}, it's {company}. Our {day} special is here. Reply STOP to opt out.",
+      customerIds: [ID],
+    });
+    const sample = sms.preview(p, FACTS).messageSample ?? '';
+    expect(sample).toContain('{day}');
+  });
+});
+
+describe('the storm email subject sample', () => {
+  test('the subject is filled in with the first customer details and has no raw token', () => {
+    const fields = { [ID]: { hail_size: '1.5"', street: '2406 Harney St' } };
+    const p = email.payload.parse({
+      purpose: 'marketing',
+      subject: 'Hail near your home on {street}',
+      body: '{company} {company_address} {unsubscribe}',
+      customerIds: [ID],
+      fields,
+    });
+    expect(email.preview(p, FACTS).subjectSample).toBe('Hail near your home on 2406 Harney St');
+  });
+
+  test('without details the subject shows the stand-in street', () => {
+    const p = email.payload.parse({
+      purpose: 'marketing',
+      subject: 'Hail near your home on {street}',
+      body: '{company} {company_address} {unsubscribe}',
+      customerIds: [ID],
+    });
+    expect(email.preview(p, FACTS).subjectSample).toBe('Hail near your home on Maple St');
+  });
+});

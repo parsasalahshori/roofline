@@ -72,6 +72,38 @@ describe('Button', () => {
     expect(button).toHaveAttribute('type', 'submit');
   });
 
+  it.each(['primary', 'ink', 'default', 'quiet', 'ghost', 'danger'] as const)('takes the %s variant', (variant) => {
+    render(<Button variant={variant}>Go</Button>);
+    expect(screen.getByRole('button', { name: 'Go' })).toHaveAttribute('data-variant', variant);
+  });
+
+  it.each(['sm', 'md', 'lg'] as const)('takes the %s size, and md is the default', (size) => {
+    render(<Button size={size}>Go</Button>);
+    expect(screen.getByRole('button', { name: 'Go' })).toHaveAttribute('data-size', size);
+  });
+
+  it('is medium by default', () => {
+    render(<Button>Go</Button>);
+    expect(screen.getByRole('button', { name: 'Go' })).toHaveAttribute('data-size', 'md');
+  });
+
+  it('is flush on a side only when asked to be', () => {
+    render(
+      <>
+        <Button variant="ghost" flush="start">
+          Add
+        </Button>
+        <Button variant="ghost" flush="end">
+          Remove
+        </Button>
+        <Button variant="ghost">Plain</Button>
+      </>,
+    );
+    expect(screen.getByRole('button', { name: 'Add' })).toHaveAttribute('data-flush', 'start');
+    expect(screen.getByRole('button', { name: 'Remove' })).toHaveAttribute('data-flush', 'end');
+    expect(screen.getByRole('button', { name: 'Plain' })).not.toHaveAttribute('data-flush');
+  });
+
   it('is disabled and aria-busy while busy, and ignores clicks', async () => {
     const onClick = vi.fn();
     render(
@@ -107,6 +139,17 @@ describe('Button', () => {
     expect(link).toHaveAttribute('data-provided', 'yes');
     expect(seen[0]).toMatchObject({ href: '/jobs' });
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('passes target and rel to a link, for one that opens another site in a new tab', () => {
+    render(
+      <Button href="https://maps.example/dir" target="_blank" rel="noopener noreferrer">
+        Directions
+      </Button>,
+    );
+    const link = screen.getByRole('link', { name: 'Directions' });
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
   });
 
   it('keeps a busy link from navigating', () => {
@@ -188,6 +231,12 @@ describe('Card and StatCard', () => {
   it('leaves out the hint when there is none', () => {
     const { container } = render(<StatCard label="Open jobs" value="12" />);
     expect(container.querySelector('[data-part="hint"]')).toBeNull();
+  });
+
+  it('is a description list of one pair, so a screen reader hears the number with its name', () => {
+    const { container } = render(<StatCard label="Open jobs" value="12" />);
+    expect(container.querySelector('dl')).not.toBeNull();
+    expect(container.querySelector('dt')).toHaveTextContent('Open jobs');
   });
 });
 
@@ -379,22 +428,25 @@ describe('Badge', () => {
   });
 });
 
-describe('Pill', () => {
-  it('is a button without an href', async () => {
+describe('Pill (the older name for a Tag or a Chip)', () => {
+  it('is a plain label: a Tag, neutral or in the company colour', () => {
+    const { rerender } = render(<Pill tone="neutral">Archived</Pill>);
+    expect(screen.getByText('Archived')).toHaveAttribute('data-tone', 'neutral');
+    expect(screen.queryByRole('button')).toBeNull();
+    rerender(<Pill>Open</Pill>);
+    expect(screen.getByText('Open')).toHaveAttribute('data-tone', 'brand');
+  });
+
+  it('is a button chip with an onClick', async () => {
     const onClick = vi.fn();
-    render(
-      <Pill onClick={onClick} tone="neutral">
-        Hail
-      </Pill>,
-    );
+    render(<Pill onClick={onClick}>Hail</Pill>);
     const pill = screen.getByRole('button', { name: 'Hail' });
     expect(pill).toHaveAttribute('type', 'button');
-    expect(pill).toHaveAttribute('data-tone', 'neutral');
     await userEvent.setup().click(pill);
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
-  it('is a link with an href, through the provided link component', () => {
+  it('is a link chip with an href, through the provided link component', () => {
     const { RecordingLink } = recordingLink();
     render(
       <UiLinkProvider component={RecordingLink}>
@@ -404,7 +456,6 @@ describe('Pill', () => {
     const pill = screen.getByRole('link', { name: 'Jobs' });
     expect(pill).toHaveAttribute('href', '/jobs');
     expect(pill).toHaveAttribute('data-provided', 'yes');
-    expect(pill).toHaveAttribute('data-tone', 'accent');
   });
 });
 

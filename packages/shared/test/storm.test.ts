@@ -5,6 +5,7 @@ import {
   DEFAULT_STORM_SMS,
   HAIL_LEVELS_IN,
   dailyBudgetCents,
+  hailInches,
   hailLabel,
   hexCenterSpacingM,
   isYesReply,
@@ -35,6 +36,7 @@ describe('storm exports', () => {
       'renderStormTemplate',
       'missingStormTokens',
       'hailLabel',
+      'hailInches',
       'stormTitle',
       'isYesReply',
       'splitAdBudget',
@@ -157,12 +159,20 @@ describe('hailLabel and stormTitle', () => {
     expect(hailLabel(inches)).toBe(label);
   });
 
+  test.each([
+    [1.75, '1.75 in'],
+    [1, '1 in'],
+    [0.75, '0.75 in'],
+  ])('hailInches(%s) is %j', (inches, label) => {
+    expect(hailInches(inches)).toBe(label);
+  });
+
   test('stormTitle with a place name', () => {
-    expect(stormTitle('Omaha, NE', 1.75)).toBe('Storm plan for hail near Omaha, NE (up to 1.75")');
+    expect(stormTitle('Omaha, NE', 1.75)).toBe('Storm plan for hail near Omaha, NE (up to 1.75 in)');
   });
 
   test('stormTitle without a place name', () => {
-    expect(stormTitle(null, 1)).toBe('Storm plan for hail (up to 1")');
+    expect(stormTitle(null, 1)).toBe('Storm plan for hail (up to 1 in)');
   });
 });
 

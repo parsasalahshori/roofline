@@ -46,7 +46,7 @@ export function RecountSection({ canRecount, blocked = false }: { canRecount: bo
   return (
     <div className={styles.section}>
       <Button
-        variant="primary"
+        variant="default"
         disabled={mutation.isPending || preview !== null || blocked}
         aria-describedby={blocked ? hintId : undefined}
         onClick={start}

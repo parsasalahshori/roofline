@@ -4,12 +4,12 @@ import type { TaskStatus } from '@roofline/shared';
 export const storm = {
   /** The name of the card that offers the newest storm plan. */
   planHeading: 'A storm plan is ready for you',
-  approve: 'Approve storm plan',
 
   /** Storm window. */
   loading: 'Loading your storms',
   listHeading: 'Storms in your area',
-  empty: 'No hail in your area in the last 30 days. We check every 30 minutes.',
+  empty: 'No hail in your area in the last 30 days',
+  emptyHelp: 'We check every 30 minutes.',
   loadFailed: 'We could not load your storms. Try again in a minute.',
   staleBanner: 'Hail data is a little behind',
   radarEstimated: 'Radar-estimated',
@@ -22,8 +22,9 @@ export const storm = {
   seePlan: 'See plan',
   viewStorm: 'See this storm',
   planStatus: {
-    draft: 'Plan waiting for your OK',
-    awaiting_owner: 'Plan waiting for your OK',
+    // The same words as the plan's card, so one plan is never called two things on one screen
+    draft: 'Needs your OK',
+    awaiting_owner: 'Waiting for owner',
     approved: 'Plan approved',
     declined: 'Plan declined',
     expired: 'Plan expired',
@@ -35,8 +36,37 @@ export const storm = {
   noPlan: 'No plan yet',
   dismissed: 'Dismissed',
 
+  /** The storms table: heads, the count beside the title, and the card that stands in when no plan waits. */
+  count: (n: number) => (n === 1 ? '1 storm' : `${n} storms`),
+  colStorm: 'Storm',
+  colHail: 'Hail',
+  colCustomers: 'Customers hit',
+  colHomes: 'Homes hit',
+  colPlan: 'Plan',
+  colActions: 'Actions',
+  hailUnit: 'in',
+  radarNote: 'Hail sizes are estimated from radar.',
+  /** The way on from an empty Storms list, for the people who can change when hail alerts: Settings > Storm. */
+  emptyAction: 'Storm alert settings',
+  noPlanWaiting: 'No storm plan is waiting for you',
+  noPlanWaitingHelp: 'When hail crosses your area, Storm Scout drafts a plan here for your OK.',
+  /** The name of the card with the swaths while the Storm page is open. */
+  mapPanelLabel: 'Hail in your area',
+
   /** Storm detail. */
   detailHeading: 'Storm details',
+  crumbStorm: 'Storm',
+  hailSizeLabel: 'Hail size',
+  /** The word under the size in the strip: how big that is in a hand, then where the number comes from. */
+  hailSizeMeta: (name: string) => `${name} · from radar`,
+  /** Under the customers and homes hit: where they are. */
+  insideSwath: 'Inside the swath',
+  planPanelTitle: 'The plan',
+  planPanelNone: 'No plan has been made for this storm yet.',
+  planPanelWaiting: 'Storm Scout drafted a plan. It sends nothing until you say yes.',
+  planPanelRunning: 'The plan is running. The numbers below update every minute.',
+  planPanelDone: 'The plan has run.',
+  planPanelOver: 'The last plan is over. You can draft a new one.',
   notFound: 'We could not find that storm.',
   mapLabel: 'Map of where hail fell (radar-estimated)',
   planHeadingDetail: 'The plan',
@@ -60,7 +90,9 @@ export const storm = {
   unsubscribes: 'Unsubscribes',
   doorsKnocked: 'Doors knocked',
   wantsCheck: 'Want a check',
-  adSpend: (spent: string, max: string) => `Ad spend ${spent} of ${max}`,
+  adSpendLabel: 'Ad spend',
+  /** Under the spend: the most the ads may cost. */
+  adSpendOf: (max: string) => `of ${max} budget`,
   adClicks: 'Ad clicks',
   landingRequests: 'Landing page requests',
   inspectionsBooked: 'Inspections booked',
@@ -74,7 +106,6 @@ export const storm = {
     thresholdHeading: 'When a storm starts a plan',
     thresholdLabel: 'Hail size that starts a plan',
     thresholdHelp: 'Radar-estimated hail at or above this size starts a storm plan.',
-    thresholdOption: (inches: number) => `${inches.toFixed(2)} inches`,
 
     budgetHeading: 'Ad budget for a storm',
     budgetLabel: 'Budget in dollars',
@@ -107,7 +138,6 @@ export const storm = {
     photosFull: (max: number) => `You have the most photos allowed, ${max}. Remove one to add another.`,
     photoPickLabel: 'Add a photo',
     photoChoose: 'Choose a photo',
-    photoDrop: 'Or drop a photo here',
     photoType: 'Photos must be a JPEG or PNG.',
     photoSize: 'Photos must be 5 MB or smaller.',
     photoAlt: (n: number) => `Ad photo ${n}`,

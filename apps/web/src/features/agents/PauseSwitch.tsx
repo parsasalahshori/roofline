@@ -60,10 +60,10 @@ export function PauseSwitch({ agent, paused, isOwner, rules = [], variant = 'pag
     mutation.reset();
   };
 
-  // The page switch is "paused"; the card switch is "running", so its value is the other way round.
+  // The switch means the same on the page and on the card: on is running. Turning it off pauses (after a confirmation),
+  // turning it on resumes.
   const onToggle = (value: boolean) => {
-    const next = card ? !value : value;
-    if (next) {
+    if (!value) {
       setFailed(false);
       mutation.reset();
       setConfirming(true);
@@ -80,9 +80,9 @@ export function PauseSwitch({ agent, paused, isOwner, rules = [], variant = 'pag
   return (
     <div className={styles.controls}>
       <Toggle
-        checked={card ? paused === null : paused !== null}
+        checked={paused === null}
         onChange={onToggle}
-        label={card ? `${AGENT_LABEL[agent]} ${agentsDash.running}` : agentPage.pauseLabel}
+        label={card ? `${AGENT_LABEL[agent]} ${agentsDash.running}` : agentPage.runningLabel}
         labelHidden={card}
         disabled={mutation.isPending && !confirming}
       />

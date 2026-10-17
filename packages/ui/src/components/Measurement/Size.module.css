@@ -1,0 +1,102 @@
+/*
+ * The measurement readout. Whole inches in IBM Plex Mono 500; the eighth stacked: the numerator raised, a light slash,
+ * the denominator lowered, never under 12px (--font-size-frac in tables, --font-size-frac-lg on cards and readouts).
+ */
+.size {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  color: var(--ink);
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  --font-size-size-main: 16px;
+  --font-size-size-frac: var(--font-size-frac);
+  --raise: -5px;
+  --drop: 4px;
+}
+
+.size[data-scale="card"] {
+  --font-size-size-main: 17px;
+  --font-size-size-frac: var(--font-size-frac-lg);
+  --raise: -6px;
+  --drop: 5px;
+}
+
+.size[data-scale="readout"] {
+  --font-size-size-main: 26px;
+  --font-size-size-frac: 16px;
+  --raise: -9px;
+  --drop: 7px;
+}
+
+.visual {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0 6px;
+  font-size: var(--font-size-size-main);
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.size[data-estimate="true"] .visual {
+  font-weight: 400;
+}
+
+.tilde {
+  color: var(--ink-3);
+}
+
+.inches {
+  display: inline-flex;
+  align-items: baseline;
+}
+
+.frac {
+  display: inline-flex;
+  align-items: baseline;
+  margin-left: 2px;
+  font-size: var(--font-size-size-frac);
+  font-weight: 500;
+  line-height: 1;
+}
+
+.num {
+  position: relative;
+  top: var(--raise);
+}
+
+.slash {
+  margin: 0 1px;
+  color: var(--ink-3);
+  font-weight: 400;
+}
+
+.den {
+  position: relative;
+  top: var(--drop);
+}
+
+.times {
+  color: var(--ink-3);
+  font-weight: 400;
+}
+
+/* The tolerance sits after the size in the quiet ink, lighter than the size */
+.pm {
+  margin-left: 4px;
+  color: var(--ink-3);
+  font-size: var(--font-size-size-frac);
+  font-weight: 400;
+}
+
+.method {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink-3);
+  font-family: var(--f-ui);
+  font-size: var(--font-size-min);
+  font-weight: 500;
+}

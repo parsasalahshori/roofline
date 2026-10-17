@@ -1,107 +1,48 @@
-/* The ad account cards under the Connections line: one card per platform, one under another */
-.cards {
-  display: flex;
-  flex-direction: column;
+/* The body of a platform's panel: the steps, the account, the controls, one under another */
+.body {
+  display: grid;
   gap: 16px;
-  margin-top: 16px;
-}
-
-.card {
-  border-radius: 12px;
   min-width: 0;
 }
 
-.heading {
+/* The steps as a numbered list: mono numerals in the margin, the words in the UI face */
+.steps p {
   margin: 0 0 8px;
-  font-size: var(--font-size-body);
-  font-weight: 600;
 }
 
-.stepsLabel {
-  margin: 0 0 4px;
-  font-size: var(--font-size-min);
-  color: var(--text-muted);
-}
-
-.steps {
-  margin: 0 0 12px;
-  padding-left: 20px;
+.steps ol {
+  margin: 0;
+  padding-left: 24px;
   font-size: var(--font-size-body);
   overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+.steps li::marker {
+  color: var(--ink-3);
+  font-family: var(--f-mono);
+  font-weight: 600;
 }
 
 .steps li + li {
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
+/* The ID and the Connect button, one under the other, in the first column of the same two-column grid as every Settings form */
 .form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: flex-end;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 20px;
+  justify-items: start;
+}
+
+.form > * {
+  grid-column: 1;
 }
 
 .form > :first-child {
-  flex: 1 1 220px;
+  width: 100%;
   min-width: 0;
-}
-
-.account {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.accountId {
-  margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
-.statusRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-}
-
-.statusLabel {
-  font-size: var(--font-size-min);
-  color: var(--text-muted);
-}
-
-/* The status is a chip: green when connected, the accent while it waits, the danger colour when it needs attention */
-.status {
-  display: inline-block;
-  padding: 2px 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  font-size: var(--font-size-min);
-  font-weight: 600;
-  color: var(--text);
-  background: var(--surface-2);
-}
-
-.status[data-status='active'] {
-  border-color: var(--success);
-}
-
-.status[data-status='pending'] {
-  border-color: var(--accent);
-}
-
-.status[data-status='error'] {
-  border-color: var(--danger);
-  color: var(--danger);
-}
-
-.reason {
-  margin: 0;
-  font-size: var(--font-size-body);
-  color: var(--text-muted);
-  overflow-wrap: anywhere;
 }
 
 .actions {
@@ -110,12 +51,9 @@
   gap: 8px;
 }
 
-.note {
-  margin: 0;
-  font-size: var(--font-size-body);
-  color: var(--text-muted);
-}
-
-.loading {
-  margin-top: 16px;
+@media (max-width: 767.98px) {
+  .form {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: stretch;
+  }
 }

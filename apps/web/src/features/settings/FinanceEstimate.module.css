@@ -1,60 +1,25 @@
-/* One section of the Prices tab: a heading, the words that explain it, then its form */
-.section {
-  max-width: 720px;
-  margin: 0 0 32px;
-  min-width: 0;
-}
-
-.heading {
-  margin: 0 0 8px;
-  font-size: var(--font-size-body);
-  font-weight: 600;
-  color: var(--text);
-}
-
-/* Who may change the values, shown above the read-only fields */
-.note {
+/* The words that explain a panel, above its fields */
+.lead {
   margin: 0 0 16px;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-body);
 }
 
 /* Words under a field or a switch: what the value does on a proposal */
 .help {
   margin: 4px 0 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-body);
 }
 
-/* Two details to a row on a desktop, the Save button on a row of its own under them */
-.form {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  min-width: 0;
-}
-
-/* A switch and its help text, spanning both columns */
+/* A switch and its help text */
 .switch {
-  grid-column: 1 / -1;
   min-width: 0;
 }
 
-/* Spans both columns and is only as wide as its word */
-.save {
-  grid-column: 1 / -1;
-  justify-self: start;
-}
-
-/* The banner for a failed save sits above the fields and spans both columns */
+/* The banner for a failed save sits above the fields */
 .banner {
-  grid-column: 1 / -1;
-}
-
-@media (max-width: 767.98px) {
-  .form {
-    grid-template-columns: minmax(0, 1fr);
-  }
+  margin-bottom: 16px;
 }
 
 /* The embed code's buttons: copy, and the page's preview opened in a new tab */
@@ -63,20 +28,22 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  margin-top: 8px;
+  margin-top: 12px;
 }
 
 .previewLink {
-  color: var(--ds-info-ink, #1f55b3);
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  color: var(--brand-text);
   font-weight: 600;
 }
 
-/* A group of checkboxes spanning both columns, without the browser's fieldset frame */
+/* A group of checkboxes, without the browser's fieldset frame */
 .group {
-  grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
   min-width: 0;
   margin: 0;
   padding: 0;

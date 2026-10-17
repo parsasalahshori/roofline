@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { create } from '../src/copy/create.ts';
+import { chooseFromListbox } from './crm-helpers.ts';
 import { ACCOUNT, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
 
 // The real map loads maplibre-gl, which these tests never need. The stand-in has two pins that open a job and a customer.
@@ -85,7 +86,7 @@ describe('New job screen', () => {
     const { router, user } = await renderNewJob('/jobs/new?customerId=c7');
 
     // The home list loads and its first home is the default
-    expect(await screen.findByLabelText(create.newJob.pickHome)).toHaveValue('p3');
+    expect(await screen.findByLabelText(create.newJob.pickHome)).toHaveTextContent('12 Oak St, Austin');
 
     await user.click(submitButton());
 
@@ -117,7 +118,7 @@ describe('New job screen', () => {
     await user.type(screen.getByLabelText(create.address.street), '40 Pine Rd');
     await user.type(screen.getByLabelText(create.address.city), 'Dallas');
     await user.type(screen.getByLabelText(create.address.zip), '75201');
-    await user.selectOptions(screen.getByLabelText(create.address.state), 'TX');
+    await chooseFromListbox(user, create.address.state, 'Texas');
 
     await user.click(submitButton());
 
@@ -190,15 +191,16 @@ describe('New job screen', () => {
 
     // The first home is the default; the person picks the second one for Ann
     const homeSelect = await screen.findByLabelText(create.newJob.pickHome);
-    expect(homeSelect).toHaveValue('p3');
-    await user.selectOptions(homeSelect, 'p4');
+    expect(homeSelect).toHaveTextContent('12 Oak St, Austin');
+    await chooseFromListbox(user, create.newJob.pickHome, '8 Elm St, Austin');
+    expect(screen.getByLabelText(create.newJob.pickHome)).toHaveTextContent('8 Elm St, Austin');
 
     // Changing the customer drops p4, and the new customer's only home is the one that is chosen
     await user.click(screen.getByRole('button', { name: create.newJob.changeCustomer }));
     await user.type(screen.getByLabelText(create.newJob.searchCustomer), 'bo');
     await user.click(await screen.findByRole('button', { name: 'Bo Diaz' }, { timeout: 15000 }));
 
-    await waitFor(() => expect(screen.getByLabelText(create.newJob.pickHome)).toHaveValue('b1'));
+    await waitFor(() => expect(screen.getByLabelText(create.newJob.pickHome)).toHaveTextContent('5 Ash Ln, Austin'));
     await user.click(submitButton());
 
     await waitFor(() => expect(where(router)).toBe('/jobs/j7'));
@@ -210,25 +212,54 @@ describe('New job screen', () => {
 
   it('all seven sources are offered as words', async () => {
     signedInApi(ACCOUNT, ANN_ROUTES);
-    await renderNewJob('/jobs/new?customerId=c7');
+    const { user } = await renderNewJob('/jobs/new?customerId=c7');
 
     const source = await screen.findByLabelText(create.newJob.source);
-    const names = within(source)
+    expect(source).toHaveTextContent('Manual');
+    await user.click(source);
+    const names = within(await screen.findByRole('listbox', { name: create.newJob.source }))
       .getAllByRole('option')
       .map((option) => option.textContent);
     expect(names).toEqual(['Storm', 'Call', 'Text', 'Web', 'Referral', 'Import', 'Manual']);
-    expect(source).toHaveValue('manual');
   });
 
-  it('the stage select offers only Lead, Inspection and Proposal', async () => {
+  it('the stage list offers only Lead, Inspection and Proposal', async () => {
     signedInApi(ACCOUNT, ANN_ROUTES);
-    await renderNewJob('/jobs/new?customerId=c7');
+    const { user } = await renderNewJob('/jobs/new?customerId=c7');
 
     const stage = await screen.findByLabelText(create.newJob.stage);
-    const names = within(stage)
+    expect(stage).toHaveTextContent('Lead');
+    await user.click(stage);
+    const names = within(await screen.findByRole('listbox', { name: create.newJob.stage }))
       .getAllByRole('option')
       .map((option) => option.textContent);
     expect(names).toEqual(['Lead', 'Inspection', 'Proposal']);
-    expect(stage).toHaveValue('lead');
+  });
+
+  it('a lane\'s plus opens the form with that stage chosen, and only a stage a job can start in', async () => {
+    signedInApi(ACCOUNT, { ...ANN_ROUTES, 'POST /api/jobs': () => ({ body: { id: 'j5' } }) });
+    const { user } = await renderNewJob('/jobs/new?customerId=c7&stage=proposal');
+
+    expect(await screen.findByLabelText(create.newJob.stage)).toHaveTextContent('Proposal');
+    await user.click(submitButton());
+    await waitFor(() => expect(api.sent('POST /api/jobs')).toHaveLength(1));
+    expect(api.sent('POST /api/jobs')[0]).toMatchObject({ stage: 'proposal' });
+  });
+
+  it('a stage that a job cannot start in falls back to Lead', async () => {
+    signedInApi(ACCOUNT, ANN_ROUTES);
+    await renderNewJob('/jobs/new?customerId=c7&stage=won');
+
+    expect(await screen.findByLabelText(create.newJob.stage)).toHaveTextContent('Lead');
+  });
+
+  it('is its own page: the title is New job, with Jobs as the way back', async () => {
+    signedInApi(ACCOUNT, ANN_ROUTES);
+    await renderNewJob('/jobs/new?customerId=c7');
+
+    expect(await screen.findByRole('heading', { level: 1, name: create.newJob.title })).toBeInTheDocument();
+    const trail = screen.getByRole('navigation', { name: 'Breadcrumb' });
+    expect(within(trail).getByRole('link', { name: 'Jobs' })).toHaveAttribute('href', '/jobs');
+    expect(await screen.findByRole('link', { name: create.newJob.cancel })).toHaveAttribute('href', '/jobs');
   });
 });

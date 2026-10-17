@@ -12,7 +12,7 @@ import {
   slugFromArgs,
   USAGE,
 } from '../src/scripts/seed-demo.ts';
-import { demoTask } from '../src/tasks/demo.ts';
+import { demoSendTime, demoTask } from '../src/tasks/demo.ts';
 import { dbAudit, inCompany } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 import { dbSteps, dbTask } from './task-helpers.ts';
@@ -24,6 +24,17 @@ const ACME_SAMPLE =
   "Hi Maria, it's Acme Roofing. Tuesday's hail hit your street. Want a free roof check this week? Reply YES to book. Reply STOP to opt out.";
 
 describe('the demo plan itself', () => {
+  test('the text goes out at 10:00 AM today while that is ahead in the Chicago day, tomorrow once it has come', () => {
+    // 8:55 AM and 9:59 AM CDT (UTC-5): still ahead. 10:00 AM, noon and 9:55 PM CDT: tomorrow.
+    expect(demoSendTime(new Date('2026-10-12T13:55:00.000Z'))).toBe('today at 10:00 AM');
+    expect(demoSendTime(new Date('2026-10-12T14:59:00.000Z'))).toBe('today at 10:00 AM');
+    expect(demoSendTime(new Date('2026-10-12T15:00:00.000Z'))).toBe('tomorrow at 10:00 AM');
+    expect(demoSendTime(new Date('2026-10-12T17:00:00.000Z'))).toBe('tomorrow at 10:00 AM');
+    expect(demoSendTime(new Date('2026-10-13T02:55:00.000Z'))).toBe('tomorrow at 10:00 AM');
+    // The hour is read in the company's zone, not the server's: 15:00 UTC is 8:00 AM in Los Angeles
+    expect(demoSendTime(new Date('2026-10-12T15:00:00.000Z'), 'America/Los_Angeles')).toBe('today at 10:00 AM');
+  });
+
   test('without a company name the sample says "your roofer"', () => {
     expect(demoTask(NOW).steps[0]?.payload).toMatchObject({ sample: expect.stringContaining("it's your roofer.") });
   });
@@ -56,7 +67,7 @@ describe('the demo seed', () => {
           label: 'Text 31 customers',
           sample: ACME_SAMPLE,
           recipientCount: 31,
-          sendTime: 'today at 10:00 AM',
+          sendTime: 'tomorrow at 10:00 AM',
         },
         'pending',
       ],
@@ -81,11 +92,11 @@ describe('the demo seed', () => {
       title: 'Text 31 customers',
       messageSample: ACME_SAMPLE,
       recipientCount: 31,
-      sendTime: 'today at 10:00 AM',
+      sendTime: 'tomorrow at 10:00 AM',
     });
     expect(steps[2]!.preview).toMatchObject({
       title: 'Google + Facebook ads on the swath',
-      lines: ['Spends up to $270.00', 'North side swath · 4.2 sq mi'],
+      lines: ['Spends up to $270', 'North side swath · 4.2 sq mi'],
     });
   });
 

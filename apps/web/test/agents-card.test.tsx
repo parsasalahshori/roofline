@@ -2,9 +2,9 @@ import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AgentCard as AgentCardData } from '@roofline/shared';
+import { hoursLabel, type AgentCard as AgentCardData } from '@roofline/shared';
 import { Providers, createQueryClient } from '../src/app/providers.tsx';
-import { agentsDash } from '../src/copy/agents.ts';
+import { agentsDash, agentsWindow } from '../src/copy/agents.ts';
 import { AgentCard } from '../src/features/agents/AgentCard.tsx';
 import { ACCOUNT, SHELL_ROUTES, stubApi } from './helpers.tsx';
 
@@ -24,7 +24,7 @@ function fixture(over: Partial<AgentCardData> = {}): AgentCardData {
   };
 }
 
-function show(card: AgentCardData, over: { isOwner?: boolean; selected?: boolean; onSelect?: () => void; minutes?: number | null; latest?: { text: string; at: string } | null } = {}) {
+function show(card: AgentCardData, over: { isOwner?: boolean; selected?: boolean; onSelect?: () => void; minutes?: number | null; latest?: { text: string; at: string } | null; href?: string } = {}) {
   stubApi({ ...SHELL_ROUTES, 'GET /api/auth/me': () => ({ body: ACCOUNT }) });
   const router = createMemoryRouter([
     {
@@ -39,6 +39,7 @@ function show(card: AgentCardData, over: { isOwner?: boolean; selected?: boolean
             onSelect={over.onSelect ?? (() => undefined)}
             isOwner={over.isOwner ?? true}
             now={NOW}
+            href={over.href}
           />
         </ul>
       ),
@@ -62,7 +63,7 @@ describe('AgentCard', () => {
     expect(screen.getByText('636')).toBeTruthy();
     expect(screen.getByText(agentsDash.tasksTodayLine)).toBeTruthy();
     expect(screen.getByText('92%')).toBeTruthy();
-    expect(screen.getByText(`${agentsDash.about} 18 ${agentsDash.hoursUnit}`)).toBeTruthy();
+    expect(screen.getByText(hoursLabel(1080))).toBeTruthy();
     expect(screen.getAllByText(agentsDash.savedLine).length).toBeGreaterThan(0);
     expect(screen.queryByText(/Waiting/)).toBeNull();
     expect(screen.getByText('Scored 636 roofs in last night’s hail path')).toBeTruthy();
@@ -71,10 +72,21 @@ describe('AgentCard', () => {
     expect(screen.getByRole('img', { name: new RegExp(agentsDash.cardSparkLabel) })).toBeTruthy();
   });
 
-  it('says no runs yet when the success rate is not known', () => {
+  it('says there are not enough runs yet when the success rate is not known, as the agent page does', () => {
     show(fixture({ successRate: null }));
-    expect(screen.getByText(agentsDash.noSuccess)).toBeTruthy();
+    expect(screen.getByText(agentsWindow.successRateNone)).toBeTruthy();
     expect(screen.queryByText(/%/)).toBeNull();
+    // Not "no runs yet": the card also says how many tasks the agent finished today
+    expect(screen.queryByText(/no runs/i)).toBeNull();
+  });
+
+  it.each([
+    [60, 'about 1 hour'],
+    [30, 'about 0.5 hours'],
+    [10, 'less than half an hour'],
+  ])('writes %i minutes saved as "%s", never "1 hrs"', (minutes, words) => {
+    show(fixture(), { minutes });
+    expect(screen.getByText(words)).toBeTruthy();
   });
 
   it('says nothing yet when there is no latest action', () => {
@@ -109,6 +121,34 @@ describe('AgentCard', () => {
   it('shows no switch to someone who cannot change it', () => {
     show(fixture(), { isOwner: false });
     expect(screen.queryByRole('switch')).toBeNull();
+  });
+
+  it('draws its state as a tag with a word and a glyph, and a tone for each state', () => {
+    const tone = (word: string) => screen.getByText(word).closest('[data-tone]')?.getAttribute('data-tone');
+    show(fixture());
+    expect(tone(agentsDash.running)).toBe('ok');
+    expect(screen.getByText(agentsDash.running).querySelector('svg')).not.toBeNull();
+    cleanup();
+    show(fixture({ status: 'waiting', waitingCount: 1 }));
+    expect(tone(agentsDash.waiting)).toBe('tape');
+    cleanup();
+    show(fixture({ status: 'paused' }));
+    expect(tone(agentsDash.paused)).toBe('neutral');
+    cleanup();
+    show(fixture({ status: 'coming_soon', agent: 'claims' }));
+    expect(tone(agentsDash.comingSoon)).toBe('neutral');
+  });
+
+  it('keeps the number first in the card, ahead of the words under it', () => {
+    show(fixture());
+    expect(screen.getByRole('article').querySelector('p')?.textContent).toBe('636');
+  });
+
+  it('on a phone the name is a link to the agent page, not a button that picks it', () => {
+    show(fixture(), { href: '/agents/storm-scout' });
+    const link = screen.getByRole('link', { name: `${agentsDash.openAgent} Storm Scout` });
+    expect(link.getAttribute('href')).toBe('/agents/storm-scout');
+    expect(screen.queryByRole('button', { name: /Storm Scout/ })).toBeNull();
   });
 
   it('a coming soon card has no switch and no numbers beyond zero', () => {

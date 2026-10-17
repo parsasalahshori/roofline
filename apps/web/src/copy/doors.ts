@@ -4,6 +4,9 @@ export const doors = {
   myRoutesLink: 'My routes',
 
   // My routes
+  myRoutesHelp: 'The doors to knock after a storm, in order. Open a route to start.',
+  backToStorm: 'Back to Storm',
+  routeEyebrow: 'Door-knock route',
   myRoutesEmpty: 'No routes yet. When a storm plan builds routes for you, they show up here.',
   myRoutesLoading: 'Loading your routes',
   myRoutesError: "We couldn't load your routes.",

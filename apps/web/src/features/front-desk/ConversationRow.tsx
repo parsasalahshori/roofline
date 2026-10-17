@@ -1,15 +1,10 @@
 import type { ConversationListItem } from '@roofline/shared';
-import { Badge, UiLink } from '@roofline/ui';
+import { Avatar, Badge, Icon, Tag, UiLink } from '@roofline/ui';
 import { frontDeskInbox } from '../../copy/front-desk-inbox.ts';
-import { durationLabel, initialsOf, outcomeChip, relativeTime } from './lift/format.ts';
-import { OutcomeChipView } from './lift/OutcomeChipView.tsx';
+import { durationLabel, outcomeChip, relativeTime } from './format.ts';
 import styles from './ConversationRow.module.css';
 
-const AVATAR_ICONS = {
-  // a shield with a slash for an unknown (blocked) caller, a speech bubble for a text thread
-  shield: 'M8 1.8l5 1.8v4c0 3-2.1 5-5 6.4C5.1 12.6 3 10.6 3 7.6v-4zM6 6l4 4M10 6l-4 4',
-  text: 'M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2zM5 6.2h6M5 8.2h4',
-} as const;
+const copy = frontDeskInbox;
 
 export type ConversationRowProps = {
   item: ConversationListItem;
@@ -19,11 +14,15 @@ export type ConversationRowProps = {
   now: number;
 };
 
-/** One line of "Latest calls": a link to the conversation, with an avatar, outcome chip, how long ago and how long it ran. */
+/**
+ * One line of "Latest calls": a link to the conversation. A person's initials (or a phone or speech glyph for a number
+ * nobody knows), the name, an unread count, how long ago, the outcome as a tag with its glyph and word, and how long it ran.
+ */
 export function ConversationRow({ item, selected = false, now }: ConversationRowProps) {
   const live = item.liveCall !== null;
   const unread = item.unreadCount > 0;
   const chip = outcomeChip(item);
+  const text = item.channel === 'sms';
   return (
     <li className={styles.item}>
       <UiLink
@@ -33,40 +32,49 @@ export function ConversationRow({ item, selected = false, now }: ConversationRow
         data-selected={selected ? 'true' : undefined}
         aria-current={selected ? 'true' : undefined}
       >
-        <span className={styles.avatar} aria-hidden="true" data-unknown={item.name === null ? 'true' : undefined}>
-          {item.name === null || item.channel === 'sms' ? (
-            <svg className={styles.avatarIcon} viewBox="0 0 16 16" focusable="false">
-              <path d={item.name === null ? AVATAR_ICONS.shield : AVATAR_ICONS.text} />
-            </svg>
-          ) : (
-            initialsOf(item.name)
-          )}
-        </span>
+        {item.name === null ? (
+          <span className={styles.glyph} aria-hidden="true">
+            <Icon name={text ? 'msg' : 'phone'} size={18} />
+          </span>
+        ) : (
+          <Avatar name={item.name} size={40} />
+        )}
         <span className={styles.body}>
           <span className={styles.titleRow}>
             <span className={styles.name} data-unread={unread ? 'true' : undefined}>
-              {item.name ?? frontDeskInbox.unknownCaller}
+              {item.name ?? copy.unknownCaller}
             </span>
-            <Badge count={item.unreadCount} label={frontDeskInbox.unread(item.unreadCount)} />
+            <Badge count={item.unreadCount} label={copy.unread(item.unreadCount)} />
             <time className={styles.time} dateTime={item.lastMessageAt}>
               {relativeTime(item.lastMessageAt, now)}
             </time>
           </span>
           <span className={styles.meta}>
-            <span className={styles.chips}>
+            <span className={styles.tags}>
               {live ? (
-                <span className={styles.live}>
-                  <span className={styles.dot} aria-hidden="true" />
-                  {frontDeskInbox.live}
-                </span>
+                <Tag tone="ok">
+                  <span className={styles.liveDot} aria-hidden="true" />
+                  {copy.live}
+                </Tag>
               ) : null}
-              <OutcomeChipView chip={chip} />
-              {item.urgent ? <span className={styles.urgent}>{frontDeskInbox.urgent}</span> : null}
-              {/* Needs-attention and team-handled are read out, not drawn: the unread count already marks the row */}
-              {item.needsAttention ? <span className={styles.sr}>{frontDeskInbox.needsAttention}</span> : null}
-              {item.handledBy === 'team' ? <span className={styles.sr}>{frontDeskInbox.handledByTeam}</span> : null}
+              <Tag tone={chip.tone} icon={chip.icon}>
+                {chip.label}
+              </Tag>
+              {item.urgent ? (
+                <Tag tone="bad" icon="alert">
+                  {copy.urgent}
+                </Tag>
+              ) : null}
+              {item.handledBy === 'team' ? (
+                <Tag icon="users">{copy.handledByTeam}</Tag>
+              ) : null}
+              {/* Needs-attention is read out, not drawn: the unread count and the tags already mark the row */}
+              {item.needsAttention ? <span className={styles.sr}>{copy.needsAttention}</span> : null}
             </span>
-            <span className={styles.duration}>{durationLabel(item)}</span>
+            <span className={styles.duration}>
+              <Icon name={text ? 'msg' : 'phone'} size={16} />
+              {durationLabel(item)}
+            </span>
           </span>
         </span>
       </UiLink>

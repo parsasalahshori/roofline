@@ -43,11 +43,15 @@ describe('phone number setup row', () => {
     expect(within(row).queryByText('Coming with Front Desk')).toBeNull();
   });
 
-  it('a done phone number step shows no action', () => {
+  it('a done phone number step shows no action to do, only a Review of the guide', () => {
     renderRow(phoneItem({ status: 'done' }), true);
 
     const row = screen.getByText(setupItems.phone_number.title).closest('li') as HTMLElement;
     expect(within(row).queryByRole('link', { name: setup.actions.forwardCalls })).toBeNull();
     expect(within(row).getByText(setup.chips.done)).toBeInTheDocument();
+    expect(within(row).getByRole('link', { name: setup.actions.reviewFor(setupItems.phone_number.title) })).toHaveAttribute(
+      'href',
+      '/settings/front-desk#forwarding',
+    );
   });
 });

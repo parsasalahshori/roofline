@@ -145,5 +145,5 @@ export const measureGutters = {
   accessories: (endCaps: number, hangers: number, outlets: number, elbows: number) =>
     `Includes ${plural(endCaps, 'end cap', 'end caps')}, ${plural(hangers, 'hanger', 'hangers')}, ${plural(outlets, 'outlet', 'outlets')} and ${plural(elbows, 'elbow', 'elbows')}`,
   send: 'Send gutter proposal',
-  sendNext: 'Sending gutter proposals comes next. For now, share the price from this screen.',
+  sendNext: 'Gutter proposals cannot be sent from here yet. Share the price from this screen with the customer yourself.',
 };

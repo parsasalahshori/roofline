@@ -8,7 +8,7 @@ import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import type { CompanyBody } from '../src/api/types.ts';
 import { createAppRouter } from '../src/app/router.tsx';
 import { agents, agentsWindow } from '../src/copy/agents.ts';
-import { WINDOW_COPY } from '../src/copy/dock.ts';
+import { WINDOW_COPY } from '../src/copy/rail.ts';
 import { AGENT_LABEL } from '../src/copy/status.ts';
 import { agentFromSlug, agentSlug, PAGE_AGENTS } from '../src/features/agents/slugs.ts';
 import { ACCOUNT, AGENTS_DASH_ROUTES, type Routes, SHELL_ROUTES, stubApi } from './helpers.tsx';
@@ -87,7 +87,7 @@ describe('A1 windows', () => {
     });
     renderApp('/agents');
 
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
+    const dialog = await screen.findByRole('main', { name: WINDOW_COPY.agents.title });
     expect(within(dialog).getByRole('navigation', { name: agents.tabsLabel })).toBeInTheDocument();
     expect(await within(dialog).findByRole('region', { name: agentsWindow.gridLabel })).toBeInTheDocument();
   });
@@ -99,7 +99,7 @@ describe('A1 windows', () => {
     signedInApi(ACCOUNT, AGENTS_EMPTY);
     renderApp(path);
 
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
+    const dialog = await screen.findByRole('main', { name: WINDOW_COPY.agents.title });
     expect(await within(dialog).findByText(line)).toBeInTheDocument();
   });
 
@@ -114,8 +114,9 @@ describe('A1 windows', () => {
     });
     renderApp('/agents/' + agentSlug(agent));
 
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
-    expect(await within(dialog).findByRole('heading', { name: AGENT_LABEL[agent] })).toBeInTheDocument();
+    // The page is named for the agent, with the Agents page one step back in the trail
+    const dialog = await screen.findByRole('main', { name: AGENT_LABEL[agent] });
+    expect(await within(dialog).findByRole('heading', { level: 1, name: AGENT_LABEL[agent] })).toBeInTheDocument();
     if (!isLaunched(agent)) {
       expect(await within(dialog).findByText(agents.agentComingSoon)).toBeInTheDocument();
       expect(api.count('GET /api/agents/' + agent + '?period=month')).toBe(0);
@@ -126,7 +127,7 @@ describe('A1 windows', () => {
     signedInApi(ACCOUNT, AGENTS_EMPTY);
     renderApp('/agents/feed');
 
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
+    const dialog = await screen.findByRole('main', { name: WINDOW_COPY.agents.title });
     expect(await within(dialog).findByText(agents.feedEmpty)).toBeInTheDocument();
     expect(within(dialog).queryByText(agents.agentComingSoon)).not.toBeInTheDocument();
   });
@@ -135,15 +136,15 @@ describe('A1 windows', () => {
     signedInApi();
     renderApp(path);
 
-    expect(await screen.findByRole('dialog', { name: WINDOW_COPY.notFound.title })).toBeInTheDocument();
-    expect(screen.queryByRole('dialog', { name: WINDOW_COPY.agents.title })).not.toBeInTheDocument();
+    expect(await screen.findByRole('main', { name: WINDOW_COPY.notFound.title })).toBeInTheDocument();
+    expect(screen.queryByRole('main', { name: WINDOW_COPY.agents.title })).not.toBeInTheDocument();
   });
 
   it('marks the current tab and links the others', async () => {
     signedInApi(ACCOUNT, AGENTS_EMPTY);
     renderApp('/agents/feed');
 
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
+    const dialog = await screen.findByRole('main', { name: WINDOW_COPY.agents.title });
     const tabs = within(dialog).getByRole('navigation', { name: agents.tabsLabel });
     expect(within(tabs).getByRole('link', { name: agents.tabs.feed })).toHaveAttribute('aria-current', 'page');
     expect(within(tabs).getByRole('link', { name: agents.tabs.waiting })).toHaveAttribute('href', '/agents/waiting');

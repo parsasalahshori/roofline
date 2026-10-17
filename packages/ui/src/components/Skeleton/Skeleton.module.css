@@ -1,7 +1,7 @@
 .bar {
   display: block;
-  border-radius: 6px;
-  background: var(--line);
+  border-radius: var(--r-1);
+  background: var(--sunken);
   animation: pulse 1.4s ease-in-out infinite;
 }
 
@@ -17,6 +17,12 @@
 
 @keyframes pulse {
   50% {
-    opacity: 0.5;
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar {
+    animation: none;
   }
 }

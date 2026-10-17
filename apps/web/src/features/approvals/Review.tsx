@@ -1,24 +1,25 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { Button, EmptyState, ReviewSteps, Skeleton, StatCard, useToast } from '@roofline/ui';
+import { hoursLabel } from '@roofline/shared';
+import { Button, EmptyState, Icon, Page, Panel, ReviewSteps, Skeleton, summarizeApproval, Tag, UiLink } from '@roofline/ui';
 import { useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { ApiError } from '../../api/client.ts';
-import type { StepView } from '../../api/types.ts';
 import { approvals } from '../../copy/approvals.ts';
 import { errors } from '../../copy/errors.ts';
+import { WINDOW_COPY } from '../../copy/rail.ts';
 import { review } from '../../copy/review.ts';
 import { shell } from '../../copy/shell.ts';
 import { AGENT_LABEL, taskStatusLabel } from '../../copy/status.ts';
-import { AppWindow } from '../../shell/AppWindow.tsx';
-import { pathAfterDecline, useApprove, useDecline, useEditStep, useRerun, useRetryStep, useTask } from './api.ts';
-import { editableText } from './editable.ts';
-import { EditStepSheet } from './EditStepSheet.tsx';
-import { NotNowSheet } from './NotNowSheet.tsx';
-import { StepFieldsSheet } from './StepFieldsSheet.tsx';
+import { agentSlug } from '../agents/slugs.ts';
+import { pathAfterDecline, useApprove, useEditStep, useRerun, useRetryStep, useTask } from './api.ts';
+import { InlineError } from './InlineError.tsx';
 import { POLL_AFTER_APPROVE_MS } from './polling.ts';
+import { ReviewBar, type BarNotice } from './ReviewBar.tsx';
 import styles from './Review.module.css';
 import { kitFor } from './steps/index.ts';
+import { TASK_TAG } from './taskStatus.ts';
 import { isOpen, reviewMode, seenSteps, toReviewStep } from './toReviewStep.ts';
+import { errorSentence, useNotNowSheet, useStepSheet } from './useSheets.tsx';
 
 /** Which window the review screen sits in: the approvals window, or the Storm window (`/storm/plans/:taskId`). */
 export type ReviewApp = 'approvals' | 'storm';
@@ -26,9 +27,39 @@ export type ReviewApp = 'approvals' | 'storm';
 /** Where a plan's own address is, per window. A plan run again opens at the same kind of address. */
 const PLAN_BASE: Record<ReviewApp, string> = { approvals: '/approvals', storm: '/storm/plans' };
 
-/** The review screen for one plan, in its own window. `app` defaults to `approvals`. */
+/** The page above the plan: where the way back leads. */
+const PARENT: Record<ReviewApp, { label: string; href: string }> = {
+  approvals: { label: WINDOW_COPY.approvals.title, href: '/approvals' },
+  storm: { label: WINDOW_COPY.storm.title, href: '/storm' },
+};
+
+/** While the plan loads: the shape of the two columns, in the place the real panels will take. */
+function ReviewSkeleton() {
+  return (
+    <div className={styles.layout} role="status" aria-label={review.loading}>
+      <div className={styles.main}>
+        <Panel as="div" padded>
+          <div className={styles.skeleton}>
+            <Skeleton width="40%" height="1rem" />
+            <Skeleton lines={3} height="0.875rem" />
+            <Skeleton width="55%" height="1rem" />
+            <Skeleton lines={2} height="0.875rem" />
+          </div>
+        </Panel>
+      </div>
+      <div className={styles.side}>
+        <Panel as="div" padded>
+          <div className={styles.skeleton}>
+            <Skeleton lines={3} height="0.875rem" />
+          </div>
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+/** The review screen for one plan, as a page of its own. `app` defaults to `approvals`. */
 export function Review({ taskId, app = 'approvals' }: { taskId: string; app?: ReviewApp }) {
-  const toast = useToast();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   // Set when an approval goes through: the plan is asked for again for a while, so its results show up
@@ -36,16 +67,14 @@ export function Review({ taskId, app = 'approvals' }: { taskId: string; app?: Re
   const task = useTask(taskId, pollUntil);
   const edit = useEditStep(taskId);
   const approve = useApprove(taskId);
-  const decline = useDecline(taskId);
   const retry = useRetryStep(taskId);
   const rerun = useRerun(taskId);
 
   // Steps whose switch is on its way to the server
   const [pending, setPending] = useState<ReadonlySet<string>>(() => new Set<string>());
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editError, setEditError] = useState<string | undefined>(undefined);
-  const [notNowOpen, setNotNowOpen] = useState(false);
-  const [notNowError, setNotNowError] = useState<string | undefined>(undefined);
+  // What went wrong, next to what it is about: under a step, or over the decision
+  const [notice, setNotice] = useState<BarNotice | null>(null);
+  const [rowErrors, setRowErrors] = useState<Readonly<Record<string, string>>>({});
   // Set at once on a click, before React draws the disabled button, so a fast second click does nothing
   const approvingRef = useRef(false);
 
@@ -53,14 +82,20 @@ export function Review({ taskId, app = 'approvals' }: { taskId: string; app?: Re
   const data = task.data;
   const loadedStep = (stepId: string) => data?.steps.find((item) => item.id === stepId);
 
-  const editingStep = editingId === null ? undefined : loadedStep(editingId);
-  const editable = editingStep === undefined ? null : editableText(editingStep);
-  // A step type with a review kit is edited through the generic sheet (fields from the kit)
-  const kit = editingStep === undefined ? undefined : kitFor(editingStep);
-
-  function showError(error: Error) {
-    toast.show(error instanceof ApiError ? error.message : errors.generic, 'error');
+  /** A refusal over the decision. A 409 is not the person's mistake: the plan changed, and the screen has the latest. */
+  function fail(error: Error) {
+    setNotice({ tone: error instanceof ApiError && error.status === 409 ? 'notice' : 'error', text: errorSentence(error) });
   }
+
+  const stepSheet = useStepSheet(taskId, loadedStep, { onError: fail });
+  const notNow = useNotNowSheet(taskId, {
+    onDeclined: () => {
+      void pathAfterDecline(queryClient, taskId).then((to) => {
+        void navigate(to);
+      });
+    },
+    onError: fail,
+  });
 
   function markPending(stepId: string, on: boolean) {
     setPending((current) => {
@@ -71,63 +106,39 @@ export function Review({ taskId, app = 'approvals' }: { taskId: string; app?: Re
     });
   }
 
+  function clearRowError(stepId: string) {
+    setRowErrors((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== stepId)));
+  }
+
   function onToggle(stepId: string, enabled: boolean) {
     const step = loadedStep(stepId);
     if (step === undefined) return;
+    setNotice(null);
+    clearRowError(stepId);
     markPending(stepId, true);
     // mutateAsync, not mutate: a second switch can start before this one answers, and mutate() drops the
     // callbacks of every call it has replaced, which would leave this switch disabled for good
     void edit
       .mutateAsync({ stepId, version: step.version, enabled })
-      .catch(showError)
+      .catch((error: Error) => {
+        // The refusal's sentence stands under the step whose switch it was; any other failure over the decision
+        if (error instanceof ApiError && error.status === 400) setRowErrors((current) => ({ ...current, [stepId]: error.message }));
+        else fail(error);
+      })
       .finally(() => {
         markPending(stepId, false);
       });
   }
 
-  function onEdit(stepId: string) {
-    setEditingId(stepId);
-    setEditError(undefined);
-  }
-
-  function closeEdit() {
-    setEditingId(null);
-    setEditError(undefined);
-  }
-
-  /** Sends the step's new payload. A 400 keeps the sheet open with the server's sentence; a 409 closes it. */
-  function sendEdit(step: StepView, payload: Record<string, unknown>) {
-    void edit
-      .mutateAsync({ stepId: step.id, version: step.version, payload })
-      .then(closeEdit, (error: Error) => {
-        if (error instanceof ApiError && error.status === 400) {
-          // The sentence belongs on the field, and the sheet stays open so the text can be fixed
-          setEditError(error.message);
-          return;
-        }
-        if (error instanceof ApiError && error.status === 409) closeEdit();
-        showError(error);
-      });
-  }
-
-  function saveEdit(text: string) {
-    if (editingStep === undefined || editable === null) return;
-    sendEdit(editingStep, { ...(editingStep.payload ?? {}), [editable.key]: text });
-  }
-
-  function saveKitEdit(payload: Record<string, unknown>) {
-    if (editingStep === undefined) return;
-    sendEdit(editingStep, payload);
-  }
-
   /** A change made from a step's own preview (a text removed): the same edit as the sheet's, and Approve waits for it. */
-  function savePayload(step: StepView, payload: Record<string, unknown>) {
-    markPending(step.id, true);
+  function savePayload(stepId: string, version: number, payload: Record<string, unknown>) {
+    setNotice(null);
+    markPending(stepId, true);
     void edit
-      .mutateAsync({ stepId: step.id, version: step.version, payload })
-      .catch(showError)
+      .mutateAsync({ stepId, version, payload })
+      .catch(fail)
       .finally(() => {
-        markPending(step.id, false);
+        markPending(stepId, false);
       });
   }
 
@@ -135,13 +146,15 @@ export function Review({ taskId, app = 'approvals' }: { taskId: string; app?: Re
     // A switch still on its way would be approved at the version from before it, so Approve waits for it
     if (data === undefined || approvingRef.current || approve.isPending || pending.size > 0) return;
     approvingRef.current = true;
+    setNotice(null);
+    setRowErrors({});
     approve.mutate(
       { steps: seenSteps(data) },
       {
         onSuccess: () => {
           setPollUntil(Date.now() + POLL_AFTER_APPROVE_MS);
         },
-        onError: showError,
+        onError: fail,
         onSettled: () => {
           approvingRef.current = false;
         },
@@ -149,166 +162,200 @@ export function Review({ taskId, app = 'approvals' }: { taskId: string; app?: Re
     );
   }
 
-  function openNotNow() {
-    setNotNowOpen(true);
-    setNotNowError(undefined);
-  }
-
-  function closeNotNow() {
-    setNotNowOpen(false);
-    setNotNowError(undefined);
-  }
-
-  function confirmNotNow(reason: string) {
-    if (decline.isPending) return;
-    decline.mutate(
-      { reason },
-      {
-        onSuccess: () => {
-          setNotNowOpen(false);
-          toast.show(approvals.declined, 'success');
-          void pathAfterDecline(queryClient, taskId).then((to) => {
-            void navigate(to);
-          });
-        },
-        onError: (error) => {
-          if (error instanceof ApiError && error.status === 400) {
-            setNotNowError(error.message);
-            return;
-          }
-          if (error instanceof ApiError && error.status === 409) setNotNowOpen(false);
-          showError(error);
-        },
-      },
-    );
-  }
-
   function onRetry(stepId: string) {
-    void retry.mutateAsync({ stepId }).catch(showError);
+    setNotice(null);
+    void retry.mutateAsync({ stepId }).catch(fail);
   }
 
   function runAgain() {
     if (rerun.isPending) return;
+    setNotice(null);
     rerun.mutate(undefined, {
       onSuccess: (next) => {
         void navigate(`${PLAN_BASE[app]}/${encodeURIComponent(next.id)}`);
       },
-      onError: showError,
+      onError: fail,
     });
   }
 
-  const stats =
-    data === undefined ? undefined : (
-      <div className={styles.stats}>
-        <StatCard label={review.statAgent} value={AGENT_LABEL[data.agent]} />
-        <StatCard label={review.statStatus} value={taskStatusLabel(data)} />
-        <StatCard label={review.statDrafted} value={review.drafted(data.createdAt)} />
-      </div>
-    );
-
+  const parent = PARENT[app];
   let body: ReactNode;
+  // A plan with a decision to make keeps the decision on the bottom edge, however short the plan is
+  let pinned = false;
   if (data === undefined) {
     if (task.error === null) {
-      body = (
-        <div className={styles.loading}>
-          <p>{review.loading}</p>
-          <Skeleton lines={4} />
-        </div>
-      );
+      body = <ReviewSkeleton />;
     } else if (task.error instanceof ApiError && task.error.status === 404) {
-      body = <EmptyState title={shell.notFoundTitle} action={<Button variant="primary" href="/">{shell.backToMap}</Button>} />;
+      body = (
+        <Panel as="div">
+          <EmptyState
+            title={shell.notFoundTitle}
+            action={
+              <Button variant="primary" href="/">
+                {shell.backHome}
+              </Button>
+            }
+          />
+        </Panel>
+      );
     } else {
       body = (
-        <EmptyState
-          title={task.error instanceof ApiError ? task.error.message : errors.generic}
-          action={
-            <Button variant="primary" onClick={() => void task.refetch()}>
-              {errors.tryAgain}
-            </Button>
-          }
+        <InlineError
+          tag={approvals.errorTag}
+          message={task.error instanceof ApiError ? task.error.message : errors.generic}
+          retryLabel={errors.tryAgain}
+          onRetry={() => void task.refetch()}
         />
       );
     }
   } else if (data.expired) {
     body = (
-      <EmptyState
-        title={review.expiredTitle}
-        action={
-          <Button variant="primary" busy={rerun.isPending} onClick={runAgain}>
-            {review.runAgain}
-          </Button>
-        }
-      />
+      <Panel as="div">
+        <EmptyState
+          title={review.expiredTitle}
+          body={review.expiredBody}
+          action={
+            <Button variant="primary" busy={rerun.isPending} onClick={runAgain}>
+              {review.runAgain}
+            </Button>
+          }
+        />
+        {notice !== null ? (
+          <p className={styles.refusal} role="alert">
+            <Icon name="alert" size={16} />
+            {notice.text}
+          </p>
+        ) : null}
+      </Panel>
     );
   } else {
     const mode = reviewMode(data);
     const ordered = [...data.steps].sort((a, b) => a.position - b.position);
+    const reviewSteps = ordered.map((item) => toReviewStep(item, data));
+    const open = reviewSteps.filter((item) => item.open);
+    const previews = ordered.flatMap((item) => {
+      const kit = kitFor(item);
+      return kit === undefined ? [] : [{ item, kit }];
+    });
+    const live = data.status === 'draft' || data.status === 'awaiting_owner';
+    const approving = approve.isPending || pending.size > 0;
+
+    pinned = mode === 'review';
     body = (
-      <section className={styles.plan} data-mode={mode}>
-        <h2 className={styles.title}>{data.title}</h2>
-        {data.summary ? <p className={styles.summary}>{data.summary}</p> : null}
-        <ReviewSteps
-          mode={mode}
-          steps={ordered.map((item) => toReviewStep(item, data))}
-          copy={review}
-          approving={approve.isPending || pending.size > 0}
-          pendingStepIds={pending}
-          onToggle={onToggle}
-          onEdit={onEdit}
-          onRetry={onRetry}
-          onApprove={onApprove}
-          onNotNow={openNotNow}
-        />
-        {ordered.map((item) => {
-          const itemKit = kitFor(item);
-          if (itemKit === undefined) return null;
-          return (
-            <div className={styles.detail} key={item.id}>
-              <itemKit.Preview
-                step={item}
-                canApprove={item.canApprove}
-                taskId={taskId}
-                {...(mode === 'review' && isOpen(item, data) && !pending.has(item.id) && {
-                  onSavePayload: (payload: Record<string, unknown>) => {
-                    savePayload(item, payload);
-                  },
-                })}
+      <>
+        <div className={styles.layout}>
+          <div className={styles.main}>
+            <Panel
+              title={review.stepsTitle}
+              tag={mode === 'review' ? review.stepsOn(open.filter((item) => item.enabled).length, open.length) : undefined}
+              padded={false}
+            >
+              <ReviewSteps
+                mode={mode}
+                steps={reviewSteps}
+                copy={review}
+                approving={approving}
+                pendingStepIds={pending}
+                errors={rowErrors}
+                footer={false}
+                onToggle={onToggle}
+                onEdit={stepSheet.open}
+                onRetry={onRetry}
+                onApprove={onApprove}
+                onNotNow={notNow.open}
               />
-            </div>
-          );
-        })}
-      </section>
+            </Panel>
+          </div>
+          <div className={styles.side}>
+            <Panel title={review.aboutTitle}>
+              <dl className={styles.facts}>
+                <div className={styles.fact}>
+                  <dt>{review.statAgent}</dt>
+                  <dd>
+                    {data.agent === 'system' ? (
+                      AGENT_LABEL[data.agent]
+                    ) : (
+                      <UiLink href={`/agents/${agentSlug(data.agent)}`}>{AGENT_LABEL[data.agent]}</UiLink>
+                    )}
+                  </dd>
+                </div>
+                <div className={styles.fact}>
+                  <dt>{review.statDrafted}</dt>
+                  <dd data-mono="true">{review.drafted(data.createdAt)}</dd>
+                </div>
+                {live && data.expiresAt !== null ? (
+                  <div className={styles.fact}>
+                    <dt>{review.statExpires}</dt>
+                    <dd data-mono="true">{review.expiresAt(data.expiresAt)}</dd>
+                  </div>
+                ) : null}
+                {data.minutesSaved ? (
+                  <div className={styles.fact}>
+                    <dt>{review.statSaved}</dt>
+                    <dd>{review.saved(hoursLabel(data.minutesSaved))}</dd>
+                  </div>
+                ) : null}
+              </dl>
+            </Panel>
+            {previews.length > 0 ? (
+              <Panel title={review.detailsTitle} padded={false}>
+                {previews.map(({ item, kit }) => (
+                  <div className={styles.detail} key={item.id}>
+                    <kit.Preview
+                      step={item}
+                      canApprove={item.canApprove}
+                      taskId={taskId}
+                      {...(mode === 'review' && isOpen(item, data) && !pending.has(item.id) && {
+                        onSavePayload: (payload: Record<string, unknown>) => {
+                          savePayload(item.id, item.version, payload);
+                        },
+                      })}
+                    />
+                  </div>
+                ))}
+              </Panel>
+            ) : null}
+          </div>
+        </div>
+        {mode === 'review' ? (
+          <ReviewBar
+            summary={summarizeApproval(reviewSteps)}
+            spends={reviewSteps.some((item) => item.approvalClass === 'spend')}
+            approving={approving}
+            notice={notice}
+            onApprove={onApprove}
+            onNotNow={notNow.open}
+          />
+        ) : notice !== null ? (
+          <p className={styles.refusal} role="alert">
+            <Icon name="alert" size={16} />
+            {notice.text}
+          </p>
+        ) : null}
+      </>
     );
   }
 
+  const status = data === undefined ? null : TASK_TAG[data.status];
   return (
-    <AppWindow app={app} stats={stats}>
+    <Page
+      title={data?.title ?? WINDOW_COPY[app].title}
+      subtitle={data?.summary ?? undefined}
+      actions={
+        data !== undefined && status !== null ? (
+          <Tag tone={status.tone} icon={status.icon}>
+            {taskStatusLabel(data)}
+          </Tag>
+        ) : undefined
+      }
+      crumbs={[parent, { label: data?.title ?? review.crumbFallback }]}
+      crumbsLabel={shell.crumbsLabel}
+      className={pinned ? styles.pinned : undefined}
+    >
       {body}
-      {editingStep !== undefined && kit !== undefined ? (
-        <StepFieldsSheet
-          key={editingStep.id}
-          step={editingStep}
-          kit={kit}
-          saving={edit.isPending}
-          error={editError}
-          onSave={saveKitEdit}
-          onClose={closeEdit}
-        />
-      ) : editingStep !== undefined && editable !== null ? (
-        <EditStepSheet
-          key={editingStep.id}
-          fieldLabel={review.messageLabel}
-          initialText={editable.value}
-          saving={edit.isPending}
-          error={editError}
-          onSave={saveEdit}
-          onClose={closeEdit}
-        />
-      ) : null}
-      {notNowOpen ? (
-        <NotNowSheet saving={decline.isPending} error={notNowError} onConfirm={confirmNotNow} onClose={closeNotNow} />
-      ) : null}
-    </AppWindow>
+      {stepSheet.sheet}
+      {notNow.sheet}
+    </Page>
   );
 }
 

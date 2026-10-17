@@ -1,58 +1,100 @@
-.card {
+/* The callout over the map: a floating card with the name and the stage on one line, the address, two small buttons.
+   The attribute selectors outweigh the kit Card's own padding and border, whatever order the files load in. */
+.card[data-kind][data-padded] {
   display: flex;
   flex-direction: column;
   gap: 8px;
   width: 100%;
-  box-shadow: var(--shadow-window);
+  padding: 12px;
+  border: 0;
+  border-radius: var(--r-2);
+  box-shadow: var(--e-2);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
 }
 
 .name {
+  flex: 1 1 auto;
+  min-width: 0;
   margin: 0;
-  font-size: 1rem;
-  font-weight: 700;
-  line-height: 1.3;
+  font: 650 14px/1.25 var(--f-ui);
 }
 
-.address {
-  margin: 0;
-  color: var(--text-muted);
-}
-
+/* A stage tag: the stage colour as a dot, ink for the word, a faint tint of the colour behind both */
 .stage {
-  margin: 0;
   display: inline-flex;
+  flex: none;
   align-items: center;
-  gap: 8px;
-  font-weight: 600;
+  gap: 6px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: var(--r-1);
+  background: color-mix(in srgb, var(--ink-3) 14%, var(--surface));
+  color: var(--ink);
+  font: 600 var(--font-size-min)/1 var(--f-ui);
+  white-space: nowrap;
 }
 
 .stage::before {
   content: "";
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: var(--text-muted);
+  background: var(--ink-3);
+}
+
+.stage[data-stage="lead"] {
+  background: color-mix(in srgb, var(--st-lead) 14%, var(--surface));
 }
 
 .stage[data-stage="lead"]::before {
-  background: var(--stage-lead);
+  background: var(--st-lead);
+}
+
+.stage[data-stage="inspection"] {
+  background: color-mix(in srgb, var(--st-insp) 14%, var(--surface));
 }
 
 .stage[data-stage="inspection"]::before {
-  background: var(--stage-inspection);
+  background: var(--st-insp);
+}
+
+.stage[data-stage="proposal"] {
+  background: color-mix(in srgb, var(--st-prop) 14%, var(--surface));
 }
 
 .stage[data-stage="proposal"]::before {
-  background: var(--stage-proposal);
+  background: var(--st-prop);
+}
+
+.stage[data-stage="won"],
+.stage[data-stage="installed"] {
+  background: color-mix(in srgb, var(--st-won) 14%, var(--surface));
 }
 
 .stage[data-stage="won"]::before,
 .stage[data-stage="installed"]::before {
-  background: var(--stage-won);
+  background: var(--st-won);
+}
+
+.close {
+  flex: none;
+  align-self: flex-start;
+  margin: -6px -6px 0 0;
+}
+
+.address {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 13px;
 }
 
 .actions {
   display: flex;
-  gap: 8px;
   flex-wrap: wrap;
+  gap: 6px;
 }

@@ -33,7 +33,13 @@ export const windowOrder = {
   refresh: 'Bring in new photo windows',
   refreshing: 'Bringing in photo windows…',
 
-  // Header
+  // The ticket at the top: what the order is, where, its PO and how many lines
+  ticketLabel: 'Order details',
+  ticket: { address: 'Address', lines: 'Lines', noPo: 'None' },
+  /** The rule the order size follows, from the company's own settings (the fit allowance and the rounding step). */
+  rule: (fit: string, step: string) => `Order size = the smallest photo reading, less its error and ${fit} in for fit, rounded down to ${step} in.`,
+  ruleSplit: (width: string, height: string, step: string) =>
+    `Order size = the smallest photo reading, less its error and ${width} in wide and ${height} in high for fit, rounded down to ${step} in.`,
   statusLabel: 'Order status',
   status: { draft: 'Draft', ready: 'Ready', sent: 'Sent' } satisfies Record<WindowOrderStatus, string>,
   poLabel: 'PO number',
@@ -46,16 +52,25 @@ export const windowOrder = {
   saveFailed: (why: string) => `Could not save: ${why}`,
 
   // The lines table
+  linesTitle: 'Windows to order',
   tableCaption: 'Windows to order. Sizes come from the on-site photos and cannot be typed.',
   columns: {
     select: 'Select',
+    line: 'Ln',
     photo: 'Photo',
     location: 'Location',
     measured: 'Measured',
     order: 'Order size',
+    spec: 'Spec',
     quantity: 'Qty',
     status: 'Status',
   },
+  /** The spec column's head says so once when every window has the same frame colours. */
+  allColors: (ext: string, int: string) => `all ${ext} / ${int}`,
+  colorsSlash: (ext: string, int: string) => `${ext} / ${int}`,
+  glassShort: { 'lowe-argon': 'Low-E argon', 'triple-lowe-argon': 'Triple Low-E argon' } satisfies Record<GlassPackage, string>,
+  lineName: (n: number) => String(n).padStart(2, '0'),
+  openLine: (n: number, location: string) => `Open window ${n}, ${location}`,
   windowNumber: (n: number) => `Window ${n}`,
   selectLine: (n: number, location: string) => `Select window ${n}, ${location}`,
   selectAll: 'Select all windows',
@@ -65,6 +80,12 @@ export const windowOrder = {
   optionsFor: (n: number, location: string) => `Options for window ${n}, ${location}`,
   size: (w: number, h: number) => `${inches(w)} × ${inches(h)} in`,
   plusMinus: (u: number) => `± ${inches(u)}`,
+  /** What a reading's error takes off the order size, per side: "±3/4" when both sides have the same, "±3/4 × ±5/8" when they differ. */
+  errors: {
+    line: (width: number, height: number): string => (inches(width) === inches(height) ? `±${inches(width)}` : `±${inches(width)} × ±${inches(height)}`),
+    speech: (width: number, height: number): string =>
+      inches(width) === inches(height) ? `plus or minus ${inches(width)}` : `plus or minus ${inches(width)} wide and ${inches(height)} high`,
+  },
   photosCount: (n: number) => plural(n, 'photo', 'photos'),
   noSize: 'No size',
   orderHint: 'Smallest measured, less the fit allowance, rounded down',
@@ -113,10 +134,26 @@ export const windowOrder = {
   temperedChosen: 'Tempered glass chosen.',
 
   // Line status
-  lineStatus: { ready: 'Ready', check: 'Check', error: 'Error' } satisfies Record<OrderLineStatus, string>,
+  lineStatus: { ready: 'Ready', check: 'Check', error: 'Hold' } satisfies Record<OrderLineStatus, string>,
   lineStatusLabel: (status: string) => `Status: ${status}`,
   reasonsLabel: 'What to fix',
   confirm: 'I checked this window',
+
+  // The picked line
+  detailTitle: (n: number, location: string) => `Line ${String(n).padStart(2, '0')} · ${location}`,
+  detailLabel: 'Window details',
+  noPhoto: 'No photo for this window.',
+  nothingPicked: 'Pick a window to see its photo and readings and to change how it is built.',
+  readings: {
+    title: 'Photo readings',
+    head: { photo: 'Photo', size: 'Size' },
+    photo: (n: number) => `Photo ${n}`,
+    roomScan: 'Room scan, quote only',
+    /** What the order takes from a reading: its side or sides that are the smallest over the photos. */
+    smallest: { width: 'Smallest width', height: 'Smallest height', both: 'Smallest width and height' },
+    note: 'The order uses the smallest reading of each side, highlighted.',
+  },
+  optionsTitle: 'How it is built',
 
   // Bulk apply
   bulkLabel: 'Change selected windows',
@@ -143,8 +180,10 @@ export const windowOrder = {
   sheetGrid: (type: string, patterns: string) => (patterns === '' ? type : `${type} ${patterns}`),
   colorsPair: (ext: string, int: string) => (ext === int ? ext : `${ext} outside, ${int} inside`),
 
-  // Actions
+  // Actions and the foot of the table
   actionsTitle: 'Order',
+  counts: { ready: (n: number) => `${n} ready`, check: (n: number) => `${n} to check`, hold: (n: number) => `${n} on hold` },
+  saveDraft: 'Save draft',
   markReady: 'Mark ready (locks sizes)',
   markingReady: 'Marking ready…',
   reopen: 'Reopen',

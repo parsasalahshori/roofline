@@ -1,0 +1,86 @@
+/*
+ * What the Measure screens share under the page head. The host is the page's width as a container: where the columns
+ * (requests, the map or the windows, the quote) do not fit side by side, the host shows one at a time with the steps.
+ */
+.host {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  container: measure / inline-size;
+}
+
+/* The steps: drawn only in the narrow layout */
+.steps {
+  display: none;
+}
+
+@container measure (max-width: 599.98px) {
+  .host[data-steps-below="600"] .steps {
+    display: grid;
+    flex: none;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 2px;
+    margin-bottom: 12px;
+    padding: 3px;
+    border-radius: var(--r-2);
+    background: var(--sunken);
+  }
+}
+
+@container measure (max-width: 979.98px) {
+  .host[data-steps-below="980"] .steps {
+    display: grid;
+    flex: none;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 2px;
+    margin-bottom: 12px;
+    padding: 3px;
+    border-radius: var(--r-2);
+    background: var(--sunken);
+  }
+}
+
+.step {
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--r-1);
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.step[data-selected="true"] {
+  background: var(--raised);
+  box-shadow: var(--e-1);
+  color: var(--ink);
+}
+
+.stepNumber {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px var(--line-ctl);
+  font: 600 var(--font-size-min) / 1 var(--f-mono);
+}
+
+.step[data-selected="true"] .stepNumber {
+  background: var(--ink);
+  box-shadow: none;
+  color: var(--ink-inv);
+}
+
+.step[data-done="true"] .stepNumber {
+  background: var(--ok);
+  box-shadow: none;
+  color: var(--ink-inv);
+}

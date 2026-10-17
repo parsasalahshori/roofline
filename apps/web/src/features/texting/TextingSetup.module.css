@@ -1,0 +1,7 @@
+/* The steps, then what the step in progress shows: the form, or the carriers' answer. As wide as the Settings column it opens in. */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}

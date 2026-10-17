@@ -1,5 +1,11 @@
-/* The strip under the top bar. The gutter keeps the banner off the screen edges; nothing here scrolls sideways. */
+/* The strip under the top bar. Its gutters are the page's own (24px, 16px on a phone), so the banner lines up with the title below it. */
 .slot {
   box-sizing: border-box;
-  padding: 8px 16px;
+  padding: 8px 24px 0;
+}
+
+@media (max-width: 767.98px) {
+  .slot {
+    padding: 8px 16px 0;
+  }
 }

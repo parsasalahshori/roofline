@@ -8,8 +8,10 @@ import { common } from '../src/copy/common.ts';
 import { AddHomeSheet } from '../src/features/create/AddHomeSheet.tsx';
 import { AddressFields, EMPTY_ADDRESS, type AddressValue } from '../src/features/create/AddressFields.tsx';
 import { CustomerPicker } from '../src/features/create/CustomerPicker.tsx';
+import { FormActions } from '../src/features/create/FormActions.tsx';
 import type { CustomerRecord } from '../src/features/create/api.ts';
 import { stubApi } from './helpers.tsx';
+import { chooseFromListbox } from './crm-helpers.ts';
 
 let api: ReturnType<typeof stubApi> | undefined;
 
@@ -36,8 +38,9 @@ function fieldBox(label: string): HTMLElement {
 }
 
 describe('address fields', () => {
-  it('address fields lists all states and reports errors under their fields', () => {
+  it('address fields lists all states and reports errors under their fields', async () => {
     const onChange = vi.fn();
+    const user = userEvent.setup();
     render(
       <AddressFields
         value={EMPTY_ADDRESS}
@@ -51,10 +54,14 @@ describe('address fields', () => {
     expect(fieldBox(create.address.state)).toContainElement(screen.getByText('c'));
     expect(fieldBox(create.address.zip)).toContainElement(screen.getByText('d'));
 
+    // The state is a Listbox: its list opens under the control and holds the empty choice, then every state by name
     const state = screen.getByLabelText(create.address.state);
-    const options = within(state).getAllByRole('option');
+    expect(state).toHaveTextContent(create.address.statePlaceholder);
+    await user.click(state);
+    const list = await screen.findByRole('listbox', { name: create.address.state });
+    const options = within(list).getAllByRole('option');
     expect(options.length).toBeGreaterThanOrEqual(51);
-    expect(within(state).getByRole('option', { name: 'Texas' })).toHaveAttribute('value', 'TX');
+    expect(within(list).getByRole('option', { name: 'Texas' })).toBeInTheDocument();
     expect(options[0]).toHaveTextContent(create.address.statePlaceholder);
   });
 
@@ -67,7 +74,7 @@ describe('address fields', () => {
     await user.type(screen.getByLabelText(create.address.street), '1');
     expect(onChange).toHaveBeenLastCalledWith({ ...value, addressLine: '1' });
 
-    await user.selectOptions(screen.getByLabelText(create.address.state), 'TX');
+    await chooseFromListbox(user, create.address.state, 'Texas');
     expect(onChange).toHaveBeenLastCalledWith({ ...value, state: 'TX' });
   });
 });
@@ -85,6 +92,13 @@ describe('customer picker', () => {
     expect(onSelect).toHaveBeenCalledTimes(1);
     expect(onSelect).toHaveBeenCalledWith(ann);
     expect(api.count('GET /api/customers?q=smi&limit=8')).toBe(1);
+  });
+
+  it('the empty search box says what to type', () => {
+    api = stubApi({});
+    renderWithProviders(<CustomerPicker selected={null} onSelect={vi.fn()} />);
+
+    expect(screen.getByLabelText(create.newJob.searchCustomer)).toHaveAttribute('placeholder', create.newJob.searchPlaceholder);
   });
 
   it('picker shows no matches text', async () => {
@@ -115,7 +129,7 @@ describe('add home sheet', () => {
   async function fillHome(user: ReturnType<typeof userEvent.setup>) {
     await user.type(screen.getByLabelText(create.address.street), '12 Oak St');
     await user.type(screen.getByLabelText(create.address.city), 'Dallas');
-    await user.selectOptions(screen.getByLabelText(create.address.state), 'TX');
+    await chooseFromListbox(user, create.address.state, 'Texas');
     await user.type(screen.getByLabelText(create.address.zip), '75201');
   }
 
@@ -174,5 +188,36 @@ describe('add home sheet', () => {
     await user.click(screen.getByRole('button', { name: common.close }));
 
     expect(onDone).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the buttons at the foot of a create form', () => {
+  /** matchMedia that answers the phone query with `phone` and everything else with no match. */
+  function stubViewport(phone: boolean) {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: phone && query === '(max-width: 767.98px)',
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(() => false),
+    }));
+  }
+
+  const parts = <FormActions className="bar" save={<button type="submit">Save it</button>} cancel={<a href="/back">Cancel it</a>} />;
+  const order = () => Array.from(document.querySelector('.bar')?.children ?? []).map((child) => child.textContent);
+
+  it('puts the main action first where there is room beside it', () => {
+    stubViewport(false);
+    render(parts);
+    expect(order()).toEqual(['Save it', 'Cancel it']);
+  });
+
+  it('puts the way out first and the main action last on a phone, where the bar sits under the thumb', () => {
+    stubViewport(true);
+    render(parts);
+    expect(order()).toEqual(['Cancel it', 'Save it']);
   });
 });

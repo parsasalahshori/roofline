@@ -1,11 +1,12 @@
 import { useRef, useState } from 'react';
 import { consentAttestationText } from '@roofline/shared';
-import { Button, Checkbox, Skeleton } from '@roofline/ui';
+import { Button, Checkbox, Panel, Skeleton } from '@roofline/ui';
 import { ApiError } from '../../api/client.ts';
 import { importCopy } from '../../copy/import.ts';
 import { useCompany } from '../settings/api.ts';
 import { useImport, useStartImport } from './api.ts';
 import styles from './ImportWizard.module.css';
+import { WizardActions } from './WizardActions.tsx';
 
 export type ConsentStepProps = { importId: string; onBack: () => void };
 
@@ -36,34 +37,35 @@ export function ConsentStep({ importId, onBack }: ConsentStepProps) {
   const startError = start.error instanceof ApiError && start.error.status !== 409 ? start.error.message : null;
 
   return (
-    <section className={styles.wizard}>
-      <h2 className={styles.title}>{importCopy.consentTitle}</h2>
-      {company.data ? (
-        <Checkbox
-          checked={checked}
-          onChange={(next) => setChecked(next)}
-          label={consentAttestationText(company.data.name)}
-        />
-      ) : (
-        <Skeleton height="2.5rem" />
-      )}
-      {!checked ? <p className={styles.note}>{importCopy.consentUncheckedNote}</p> : null}
-      {view && view.counts.consent.optedOutKept > 0 ? (
-        <p className={styles.note}>{importCopy.optedOutKept(view.counts.consent.optedOutKept)}</p>
-      ) : null}
-      {startError !== null ? (
-        <p className={styles.error} role="alert">
-          {startError}
-        </p>
-      ) : null}
-      <div className={styles.actions}>
-        <Button type="button" variant="ghost" onClick={onBack}>
+    <>
+      <Panel title={importCopy.consentTitle}>
+        {company.data ? (
+          <Checkbox
+            checked={checked}
+            onChange={(next) => setChecked(next)}
+            label={consentAttestationText(company.data.name)}
+          />
+        ) : (
+          <Skeleton height="2.5rem" />
+        )}
+        {!checked ? <p className={`${styles.note} ${styles.after}`}>{importCopy.consentUncheckedNote}</p> : null}
+        {view && view.counts.consent.optedOutKept > 0 ? (
+          <p className={`${styles.note} ${styles.after}`}>{importCopy.optedOutKept(view.counts.consent.optedOutKept)}</p>
+        ) : null}
+        {startError !== null ? (
+          <p className={`${styles.error} ${styles.after}`} role="alert">
+            {startError}
+          </p>
+        ) : null}
+      </Panel>
+      <WizardActions status={importCopy.stepOf(4, 5)}>
+        <Button type="button" variant="default" onClick={onBack}>
           {importCopy.back}
         </Button>
         <Button type="button" variant="primary" busy={start.isPending} onClick={onImport}>
           {importCopy.startImport}
         </Button>
-      </div>
-    </section>
+      </WizardActions>
+    </>
   );
 }

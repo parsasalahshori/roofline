@@ -101,8 +101,8 @@ describe('AiFeedCard', () => {
     expect(rows).toHaveLength(6);
     expect(rows[0]).toHaveAttribute('data-agent', 'front_desk');
     expect(rows[1]).toHaveAttribute('data-agent', 'estimator');
-    expect(within(rows[0]!).getByText('Front Desk, just now')).toBeInTheDocument();
-    expect(within(rows[1]!).getByText('Estimator, 1 hr ago')).toBeInTheDocument();
+    expect(within(rows[0]!).getByText('Front Desk · just now')).toBeInTheDocument();
+    expect(within(rows[1]!).getByText('Estimator · 1 hr ago')).toBeInTheDocument();
     expect(screen.queryByText('Did thing 6')).toBeNull();
     expect(await screen.findByText(liftFeed.working(2))).toBeInTheDocument();
   });
@@ -116,7 +116,7 @@ describe('AiFeedCard', () => {
     expect(await screen.findByText('Scanned hail')).toBeInTheDocument();
     await waitFor(() => expect(queryClient.isFetching()).toBe(0));
     expect(screen.queryByText(/working/)).toBeNull();
-    expect(screen.getByText('Storm Scout, 5 min ago')).toBeInTheDocument();
+    expect(screen.getByText('Storm Scout · 5 min ago')).toBeInTheDocument();
   });
 
   it('shows a loading state, then an empty line', async () => {

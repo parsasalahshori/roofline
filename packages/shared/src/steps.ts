@@ -60,9 +60,13 @@ export type StepPreview = {
   title: string;
   lines: string[];
   messageSample?: string;
+  /** An email's subject with its fill-in words filled in, as the first customer reads it. */
+  subjectSample?: string;
   recipientCount?: number;
   sendTime?: string;
   maxSpendCents?: number;
+  /** A move_appointment step's new time (ISO), so a list of plans can say when the install goes without the step's payload. */
+  moves?: { start: string; end: string };
 };
 
 /** What a step reports when it has run: counts such as `{ sent: 31, blocked: 2 }`, or counts by name. */
@@ -143,6 +147,8 @@ const maxSpendCents = z
 
 const dollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 const wholeDollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+/** An amount with cents only where the cents matter, as the review's own headline writes it: $270, $21.42. */
+const money = (cents: number): string => (cents % 100 === 0 ? wholeDollars : dollars).format(cents / 100);
 const plural = (n: number, one: string, many: string): string => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
 
 // ---------------------------------------------------------------------------------------------
@@ -218,7 +224,7 @@ const demoSpend: StepTypeDef<SpendPayload> = {
   payload: spendPayload,
   preview: (p) => ({
     title: p.label,
-    lines: [`Spends up to ${dollars.format(p.maxSpendCents / 100)}`, ...(p.area !== undefined ? [p.area] : [])],
+    lines: [`Spends up to ${money(p.maxSpendCents)}`, ...(p.area !== undefined ? [p.area] : [])],
     maxSpendCents: p.maxSpendCents,
   }),
   baseline: () => 'demo',
@@ -279,6 +285,41 @@ const smsPayload = z.strictObject({
 });
 type SmsPayload = z.output<typeof smsPayload>;
 
+/**
+ * What a storm token reads in a review's sample when the plan carries no detail for the customer shown: the same
+ * stand-ins the email sample always used. A real detail (the first customer's own hail size and street, which a storm
+ * plan writes into `fields`) wins, so the sample reads as that customer will read it.
+ */
+const SAMPLE_STORM_DETAIL = { hail_size: '1.75"', street: 'Maple St', day: 'yesterday' } as const;
+
+type StormDetail = { hail_size: string; street: string; day: string };
+
+/** The storm details to show for the first customer of a batch: their own where the plan has them, else the stand-ins. */
+function stormDetailFor(fields: Record<string, Record<string, string>> | undefined, firstCustomerId: string | undefined): StormDetail {
+  const mine = firstCustomerId === undefined ? undefined : fields?.[firstCustomerId];
+  return {
+    hail_size: mine?.hail_size ?? SAMPLE_STORM_DETAIL.hail_size,
+    street: mine?.street ?? SAMPLE_STORM_DETAIL.street,
+    day: mine?.day ?? SAMPLE_STORM_DETAIL.day,
+  };
+}
+
+/** A text's sample: the name and company filled in and, for a storm text, its hail size, street and day as well. */
+function renderTextSample(p: SmsPayload, facts: PreviewFacts): string {
+  const named = renderBody(p.body, {
+    ...(facts.sampleFirstName !== undefined && { first_name: facts.sampleFirstName }),
+    company: facts.companyName,
+  });
+  // Only a storm text carries these tokens: its batch holds per-customer fields and a storm dedupe key
+  const stormText = p.fields !== undefined || p.dedupePrefix?.startsWith('storm:') === true;
+  if (!stormText) return named;
+  return renderStormTemplate(named, {
+    first_name: facts.sampleFirstName ?? '',
+    company: facts.companyName,
+    ...stormDetailFor(p.fields, p.customerIds[0]),
+  });
+}
+
 const sendSmsBatch: StepTypeDef<SmsPayload> = {
   type: 'send_sms_batch',
   approvalClass: 'message',
@@ -304,10 +345,7 @@ const sendSmsBatch: StepTypeDef<SmsPayload> = {
         p.purpose === 'marketing' ? 'Marketing message' : 'Informational message',
         "Customers who can't be texted are skipped.",
       ],
-      messageSample: renderBody(p.body, {
-        ...(facts.sampleFirstName !== undefined && { first_name: facts.sampleFirstName }),
-        company: facts.companyName,
-      }),
+      messageSample: renderTextSample(p, facts),
       recipientCount,
     };
   },
@@ -402,18 +440,18 @@ const sendEmailBatch: StepTypeDef<SendEmailPayload> = {
   payload: sendEmailPayload,
   preview(p, facts) {
     const recipientCount = facts.recipientCount ?? p.customerIds.length;
+    const fill = {
+      first_name: facts.sampleFirstName ?? 'Sam',
+      company: facts.companyName,
+      ...stormDetailFor(p.fields, p.customerIds[0]),
+      ...(facts.companyAddress !== undefined ? { company_address: facts.companyAddress } : {}),
+      unsubscribe: '(unsubscribe link)',
+    };
     return {
       title: `Email ${plural(recipientCount, 'customer', 'customers')}`,
       lines: ['Marketing email', "Customers who can't be emailed are skipped."],
-      messageSample: renderStormTemplate(p.body, {
-        first_name: facts.sampleFirstName ?? 'Sam',
-        company: facts.companyName,
-        hail_size: '1.75"',
-        street: 'Maple St',
-        day: 'yesterday',
-        ...(facts.companyAddress !== undefined ? { company_address: facts.companyAddress } : {}),
-        unsubscribe: '(unsubscribe link)',
-      }),
+      messageSample: renderStormTemplate(p.body, fill),
+      subjectSample: renderStormTemplate(p.subject, fill),
       recipientCount,
     };
   },
@@ -565,7 +603,7 @@ const createAdCampaign: StepTypeDef<CreateAdPayload> = {
     const perDayCents = dailyBudgetCents(p.maxSpendCents, p.days);
     return {
       title: p.platform === 'google' ? 'Google ads on the hail area' : 'Facebook and Instagram ads on the hail area',
-      lines: ['Circles cover the hail area', `${dollars.format(perDayCents / 100)} a day for ${p.days} days`],
+      lines: ['Circles cover the hail area', `${money(perDayCents)} a day for ${p.days} days`],
       maxSpendCents: p.maxSpendCents,
     };
   },
@@ -800,7 +838,7 @@ const moveAppointment: StepTypeDef<MoveAppointmentPayload> = {
   approvalClass: 'internal',
   userCreatable: false,
   payload: moveAppointmentPayload,
-  preview: (p) => ({ title: 'Move an install', lines: [p.reason, `${p.start} to ${p.end}`] }),
+  preview: (p) => ({ title: 'Move an install', lines: [p.reason, `${p.start} to ${p.end}`], moves: { start: p.start, end: p.end } }),
   baseline: () => 'install_moved',
   units: (_p, result) => countOf(result.moved),
 };

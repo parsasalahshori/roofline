@@ -5,11 +5,20 @@
   min-width: 20px;
   height: 20px;
   padding: 0 6px;
-  border-radius: 10px;
-  background: var(--accent);
-  color: var(--accent-ink);
+  border-radius: var(--r-pill);
+  font-family: var(--f-mono);
   font-size: var(--font-size-min);
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1;
   font-variant-numeric: tabular-nums;
+}
+
+.badge[data-tone="alert"] {
+  background: var(--bad);
+  color: var(--bad-ink);
+}
+
+.badge[data-tone="neutral"] {
+  background: var(--sunken);
+  color: var(--ink-2);
 }

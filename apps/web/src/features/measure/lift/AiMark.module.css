@@ -1,9 +1,10 @@
+/* The AI's mark: a tape-tinted tile with a tape ring, so it reads on both themes (tape ink only sits on its tint). */
 .mark {
   display: inline-grid;
   flex: none;
   place-items: center;
-  border-radius: 5px;
-  background: var(--ds-accent, #ffc21a);
-  box-shadow: inset 0 0 0 1px rgba(217, 158, 0, 0.6);
-  color: var(--ds-text-1, #151c22);
+  border-radius: var(--r-1);
+  background: var(--tape-tint);
+  box-shadow: inset 0 0 0 1.5px var(--tape);
+  color: var(--tape-ink);
 }

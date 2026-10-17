@@ -107,7 +107,7 @@ describe('hit layers in installMapLayers', () => {
         'circle-radius': 20,
         'circle-opacity': 0,
         'circle-stroke-opacity': 0,
-        'circle-color': tokens['pin-customer'],
+        'circle-color': tokens['st-inst'],
       },
     });
     expect(fake.layers.get('jobs-hit')).toMatchObject({

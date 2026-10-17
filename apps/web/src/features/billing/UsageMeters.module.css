@@ -1,4 +1,4 @@
-/* This period's usage: one meter under another, each with its line of text and an optional bar */
+/* This period's usage: a small heading, then one meter beside the next (one under another on a phone) */
 .section {
   display: flex;
   flex-direction: column;
@@ -7,14 +7,13 @@
 
 .heading {
   margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
+  font: 600 var(--font-size-body)/1.3 var(--f-ui);
 }
 
 .list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
-  gap: 16px;
+  gap: 16px 20px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -27,15 +26,20 @@
   min-width: 0;
 }
 
+/* The meter's name: the small mono caption a table head would be */
 .label {
   margin: 0;
-  color: var(--text-muted);
-  font-size: var(--font-size-min);
-  font-weight: 600;
+  color: var(--ink-3);
+  font: 600 var(--font-size-min)/1.2 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
+/* What was used, in mono so the digits line up from one meter to the next */
 .line {
   margin: 0;
+  font-family: var(--f-mono);
   font-size: var(--font-size-body);
+  font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }

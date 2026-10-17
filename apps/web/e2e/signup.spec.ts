@@ -23,7 +23,7 @@ test('a new roofer reaches the map with Setup open in under 2 minutes, no card',
   await page.getByRole('button', { name: 'Start my free trial' }).click();
 
   await expect(page).toHaveURL(/\/settings\/setup$/);
-  await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
+  await expect(page.getByRole('main', { name: 'Settings' })).toBeVisible();
   const basics = page.getByRole('listitem').filter({ hasText: 'Your company on the map' });
   await expect(basics).toContainText('Done');
   expect(Date.now() - start).toBeLessThan(120_000);

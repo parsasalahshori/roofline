@@ -411,9 +411,8 @@ async function openWindows(uploads: WindowPhotoUpload[]) {
     </Providers>,
   );
   fireEvent.click(await screen.findByRole('button', { name: measureWindows.scanButton }));
-  await screen.findByRole('heading', { name: measureWindows.measuredBy });
-  const card = screen.getByRole('region', { name: measureWindows.statsLabel });
-  fireEvent.click(within(card).getByRole('button', { name: copy.add }));
+  await waitFor(() => expect(screen.getByRole('region', { name: measureWindows.statsLabel }).dataset.phase).toBe('done'));
+  fireEvent.click(screen.getByRole('button', { name: copy.add }));
   return screen.getByRole('dialog', { name: copy.title });
 }
 
@@ -459,7 +458,7 @@ describe('AR on the windows screen', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: copy.close }));
     const row = document.querySelector('[data-photo-window]')!;
     expect(row.textContent).toContain('Den');
-    expect(row.textContent).toContain(copy.sizeExact('36', '60'));
+    expect(row.textContent).toContain('36 by 60 inches');
   });
 
   it('Android, straight to AR from the photos screen: no camera access, so it asks for one normal photo, then saves', async () => {

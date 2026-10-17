@@ -14,7 +14,7 @@ import { createAppRouter } from '../src/app/router.tsx';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { auth } from '../src/copy/auth.ts';
 import { common } from '../src/copy/common.ts';
-import { dock } from '../src/copy/dock.ts';
+import { rail } from '../src/copy/rail.ts';
 import { errors } from '../src/copy/errors.ts';
 import { ACCOUNT, COMPANY, SHELL_ROUTES, stubApi as stubApiBase, type Routes, USER } from './helpers.tsx';
 
@@ -91,7 +91,7 @@ describe('sign-in', () => {
     await waitFor(() => expect(where(router)).toBe('/approvals/t1'));
     expect(api.sent('POST /api/auth/login')).toEqual([{ email: 'sam@example.com', password: 'a long password' }]);
     // The page behind the sign-in opens once the session is confirmed
-    expect(await screen.findByRole('navigation', { name: dock.label })).toBeInTheDocument();
+    expect(await screen.findByRole('navigation', { name: rail.label })).toBeInTheDocument();
   });
 
   it('ignores an unsafe next', async () => {
@@ -170,7 +170,7 @@ describe('the session redirect', () => {
       'GET /api/approvals/t1': () => ({ status: 404, body: { error: 'Not found' } }),
     });
     const { router } = renderApp('/approvals/t1');
-    await screen.findByRole('navigation', { name: dock.label });
+    await screen.findByRole('navigation', { name: rail.label });
     const navigate = vi.spyOn(router, 'navigate');
 
     await Promise.allSettled([apiFetch('/api/other'), apiFetch('/api/other'), apiFetch('/api/other')]);
@@ -213,7 +213,7 @@ describe('the session redirect', () => {
       'GET /api/other': () => ({ status: 401, body: { error: 'Please sign in.' } }),
     });
     const { router, user } = renderApp('/jobs');
-    await screen.findByRole('navigation', { name: dock.label });
+    await screen.findByRole('navigation', { name: rail.label });
 
     await Promise.allSettled([apiFetch('/api/other')]);
     await waitFor(() => expect(where(router)).toBe('/sign-in?next=%2Fjobs'));
@@ -221,7 +221,7 @@ describe('the session redirect', () => {
     await user.type(screen.getByLabelText(auth.password), 'a long password');
     await user.click(screen.getByRole('button', { name: auth.signIn }));
     await waitFor(() => expect(where(router)).toBe('/jobs'));
-    await screen.findByRole('navigation', { name: dock.label });
+    await screen.findByRole('navigation', { name: rail.label });
 
     await Promise.allSettled([apiFetch('/api/other')]);
     await waitFor(() => expect(where(router)).toBe('/sign-in?next=%2Fjobs'));
@@ -241,12 +241,12 @@ describe('the session redirect', () => {
     expect((await screen.findByText('We hit a snag on our side.')).closest('[role="alert"]')).not.toBeNull();
     // Not a lost session: the person stays where they were, and the page behind it does not open
     expect(where(router)).toBe('/jobs');
-    expect(screen.queryByRole('navigation', { name: dock.label })).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: rail.label })).not.toBeInTheDocument();
 
     api.routes['GET /api/auth/me'] = () => ({ body: ACCOUNT });
     await user.click(screen.getByRole('button', { name: errors.tryAgain }));
 
-    expect(await screen.findByRole('navigation', { name: dock.label })).toBeInTheDocument();
+    expect(await screen.findByRole('navigation', { name: rail.label })).toBeInTheDocument();
     expect(where(router)).toBe('/jobs');
   });
 });
@@ -365,7 +365,7 @@ describe('accept invite', () => {
     expect(api.sent('POST /api/auth/accept-invite')).toEqual([{ token: 'inv1', name: 'Sam Roofer', password: 'a long password' }]);
     expect(queryClient.getQueryData(keys.me)).toEqual(ACCOUNT);
     // The session is already known, so the home page does not ask the server who this is
-    expect(await screen.findByRole('navigation', { name: dock.label })).toBeInTheDocument();
+    expect(await screen.findByRole('navigation', { name: rail.label })).toBeInTheDocument();
   });
 
   it('asks an existing account to sign in first, and comes back to the invite after', async () => {

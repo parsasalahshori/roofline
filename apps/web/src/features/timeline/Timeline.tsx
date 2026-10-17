@@ -1,7 +1,8 @@
 import type { Agent, TimelineItem } from '@roofline/shared';
-import { Button, EmptyState, Skeleton } from '@roofline/ui';
+import { Button } from '@roofline/ui';
 import { AGENT_LABEL } from '../../copy/status.ts';
 import { timeline } from '../../copy/timeline.ts';
+import { EmptyPanel, LoadError, RowsSkeleton } from '../jobs/states.tsx';
 import { FrontDeskCard, frontDeskActivity } from './FrontDeskCard.tsx';
 import { NoteComposer } from './NoteComposer.tsx';
 import { useTimeline, type TimelineSubject } from './api.ts';
@@ -43,29 +44,35 @@ export function TimeStamp({ at }: { at: string }) {
 
 function ActivityRow({ item }: { item: TimelineItem }) {
   return (
-    <li className={styles.activity} data-type="activity">
-      <p className={styles.summary}>{item.summary}</p>
-      <p className={styles.meta}>
-        <span>{timeline.by(actorLabel(item))}</span> <TimeStamp at={item.at} />
-      </p>
+    <li className={styles.item} data-type="activity">
+      <span className={styles.dot} aria-hidden="true" />
+      <div className={styles.content}>
+        <p className={styles.summary}>{item.summary}</p>
+        <p className={styles.meta}>
+          <span>{timeline.by(actorLabel(item))}</span> <TimeStamp at={item.at} />
+        </p>
+      </div>
     </li>
   );
 }
 
 function TextRow({ item, text }: { item: TimelineItem; text: NonNullable<TimelineItem['text']> }) {
   return (
-    <li className={styles.text} data-type="text">
-      <div className={styles.bubble} data-direction={text.direction} data-status={text.status}>
-        <p className={styles.body}>{text.body}</p>
+    <li className={styles.item} data-type="text">
+      <span className={styles.dot} data-kind="text" aria-hidden="true" />
+      <div className={styles.content} data-direction-row={text.direction}>
+        <div className={styles.bubble} data-direction={text.direction} data-status={text.status}>
+          <p className={styles.body}>{text.body}</p>
+        </div>
+        <p className={styles.meta}>
+          <span>{timeline.messageStatus[text.status]}</span> <TimeStamp at={item.at} />
+        </p>
       </div>
-      <p className={styles.meta}>
-        <span>{timeline.messageStatus[text.status]}</span> <TimeStamp at={item.at} />
-      </p>
     </li>
   );
 }
 
-/** The shared timeline of a job or a customer: the note box, then the items newest first. */
+/** The shared timeline of a job or a customer: the note box, then the items newest first on a rail. */
 export function Timeline({ customerId, jobId }: TimelineProps) {
   const subject: TimelineSubject = jobId !== undefined ? { jobId } : { customerId };
   const query = useTimeline(subject);
@@ -74,24 +81,16 @@ export function Timeline({ customerId, jobId }: TimelineProps) {
   let body;
   if (query.isPending) {
     body = (
-      <div className={styles.loading}>
-        <p className={styles.visuallyHidden}>{timeline.loading}</p>
-        <Skeleton lines={3} />
+      <div role="status" aria-label={timeline.loading}>
+        <RowsSkeleton rows={3} />
       </div>
     );
   } else if (query.data === undefined) {
     body = (
-      <EmptyState
-        title={timeline.loadFailed}
-        action={
-          <Button variant="primary" onClick={() => void query.refetch()}>
-            {timeline.retry}
-          </Button>
-        }
-      />
+      <LoadError tag={timeline.errorTag} title={timeline.loadFailed} retry={timeline.retry} busy={query.isFetching} onRetry={() => void query.refetch()} />
     );
   } else if (items.length === 0) {
-    body = <p className={styles.empty}>{timeline.empty}</p>;
+    body = <EmptyPanel variant="inline" title={timeline.empty} body={timeline.emptyBody} />;
   } else {
     body = (
       <ol aria-label={timeline.label} className={styles.list}>
@@ -110,7 +109,7 @@ export function Timeline({ customerId, jobId }: TimelineProps) {
       <NoteComposer subjectType={jobId !== undefined ? 'job' : 'customer'} subjectId={(jobId ?? customerId) ?? ''} />
       {body}
       {query.hasNextPage ? (
-        <Button variant="ghost" busy={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>
+        <Button variant="default" size="sm" busy={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>
           {timeline.showOlder}
         </Button>
       ) : null}

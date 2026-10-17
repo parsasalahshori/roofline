@@ -1,58 +1,76 @@
-/* The loading placeholder keeps its height so the list does not jump when it arrives */
-.loading {
-  display: block;
-  padding: 8px 0;
+/* The table sits in a panel: surface, hairline and a 10px radius, like every other table on the page */
+.panel {
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+  overflow: hidden;
 }
 
-/* The customer name and address: a link that is a whole 40px target on a phone */
-.jobLink {
+/* Where one stage's rows end and the next stage's begin */
+.group + .group > tr:first-child > td {
+  border-top: 1px solid var(--line-2);
+}
+
+/* The customer name and address: a link that is a whole target */
+.jobLink,
+.cardLink {
   display: flex;
   flex-direction: column;
-  min-height: 40px;
+  min-height: 36px;
   justify-content: center;
   color: inherit;
   text-decoration: none;
 }
 
-.jobLink:focus-visible {
-  outline: 2px solid var(--text);
+.jobLink:focus-visible,
+.cardLink:focus-visible {
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
+  border-radius: var(--r-1);
 }
 
 .name {
-  font-weight: 600;
+  font-weight: 650;
 }
 
 .address {
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: 13px;
 }
 
-/* Desktop: a table that fits the window, with the header row kept quiet */
-.table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
+.rep {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.table th,
-.table td {
-  padding: 8px;
-  text-align: left;
-  vertical-align: middle;
-  border-bottom: 1px solid var(--line);
+.unassigned {
+  color: var(--ink-3);
 }
 
-.table th {
-  color: var(--text-muted);
-  font-weight: 600;
-}
-
-.num {
+/* A date in a table is a number: the mono face, like Age and Value */
+.updated {
+  color: var(--ink-3);
+  font-family: var(--f-mono);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-/* Phone: one card-like row per job; nothing scrolls sideways */
+/* A job with no value yet: a quiet dash where the figure would be */
+.noValue {
+  color: var(--ink-3);
+}
+
+.move {
+  width: 1%;
+  text-align: right;
+}
+
+.moreCell {
+  padding: 4px 12px 8px;
+}
+
+/* Phone: one card per job. The name and its stage tag, the address, then value, rep and age; the chevron at the corner */
 .stack {
   display: flex;
   flex-direction: column;
@@ -62,19 +80,51 @@
   list-style: none;
 }
 
-.row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 12px;
-  border-radius: var(--radius-card);
+.card {
+  position: relative;
+  border-radius: var(--r-4);
   background: var(--surface);
+  box-shadow: var(--e-1);
 }
 
-.meta {
+/* The foot of the card runs to the card's own padding; only the rows beside the 44px move button leave it room */
+.cardLink {
+  gap: 4px;
+  min-height: 0;
+  padding: 12px 14px;
+  align-items: stretch;
+}
+
+.cardTop {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  font-size: 14px;
+  gap: 6px 8px;
+  padding-right: 36px;
+}
+
+.card .address {
+  padding-right: 36px;
+}
+
+.cardFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 4px;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+.value {
+  color: var(--ink);
+  font: 600 13px/1 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.cardMove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
 }

@@ -1,23 +1,23 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router';
-import { Button, Card, EmptyState, Skeleton } from '@roofline/ui';
-import type { PublicProposalView } from '@roofline/shared';
+import { Button, EmptyState, Skeleton } from '@roofline/ui';
 import { homeowner, money } from '../../copy/homeowner.ts';
+import { quote } from '../../copy/quote.ts';
+import { ArrowIcon, CameraIcon, CheckIcon, DocIcon, PhoneIcon } from '../public/icons.tsx';
+import { PublicHeader } from '../public/PublicHeader.tsx';
+import { usePublicBrand } from '../public/usePublicBrand.ts';
+import { RoofThumb } from '../quote/RoofThumb.tsx';
 import { SignFlow } from './SignFlow.tsx';
 import { DeclineSheet } from './DeclineSheet.tsx';
-import { usePublicProposal, useRecordView, signedPdfUrl } from './api.ts';
+import { SIGNED_PDF_POLL_LIMIT, usePublicProposal, useProposalReads, useRecordView, signedPdfUrl } from './api.ts';
+import { addressText, defaultOption, financingOf, plainDate, roofCard } from './facts.ts';
+import type { HomeownerView } from './types.ts';
 import styles from './HomeownerPage.module.css';
 
-type Option = PublicProposalView['options'][number];
+type Option = HomeownerView['options'][number];
 
-/** The date part of a date-only (or ISO) value, the way a homeowner reads it. UTC keeps a bare date from sliding back a day. */
-const formatDate = (value: string): string => new Date(value).toLocaleDateString('en-US', { timeZone: 'UTC' });
-
-/** A moment in the homeowner's own time zone, as a date. */
-const formatSigned = (value: string): string => new Date(value).toLocaleDateString('en-US');
-
-/** 875 basis points become "8.75"; a whole rate drops its zeros, so 900 becomes "9". */
-const formatApr = (aprBps: number): string => (aprBps / 100).toFixed(2).replace(/\.?0+$/, '');
+/** A moment in the homeowner's own time zone, as a date ("Oct 12, 2026"). */
+const formatSigned = (value: string): string => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
 /** The company's phone from a 410 body, when the body carries a usable one. */
 function latestPhone(latest: unknown): string | null {
@@ -29,13 +29,20 @@ function latestPhone(latest: unknown): string | null {
 /**
  * The public proposal a homeowner opens from a link. No session and no shell: the route mounts it
  * alone, and it is never indexed. Only the company's own proposal is shown, totals only, never unit prices.
+ * Good, Better and Best are three tiles; the one picked shows its single all-in price, and the main button
+ * (the company's colour, the only use of it on the screen) chooses it.
  */
 export function HomeownerPage() {
   const params = useParams();
   const token = params.token ?? '';
   const query = usePublicProposal(token);
   useRecordView(token, query.isSuccess);
+  const reads = useProposalReads(token, query.dataUpdatedAt);
+  // The company's one colour (null: the default blue stays). It is set on the document root, so the sheets, which are
+  // portaled to the body, wear it too.
+  usePublicBrand(query.data ? (query.data as HomeownerView).accentColor : null);
 
+  const [pickedId, setPickedId] = useState<string | null>(null);
   const [chosenOptionId, setChosenOptionId] = useState<string | null>(null);
   const [declineOpen, setDeclineOpen] = useState(false);
 
@@ -61,9 +68,9 @@ export function HomeownerPage() {
   if (query.isPending) {
     return (
       <main className={styles.page}>
-        <div className={styles.column}>
+        <div className={`${styles.column} ${styles.bare}`}>
           <div className={styles.loading}>
-            <p className={styles.text} role="status">{homeowner.loading}</p>
+            <p className={styles.lede} role="status">{homeowner.loading}</p>
             <Skeleton lines={3} />
           </div>
         </div>
@@ -76,7 +83,7 @@ export function HomeownerPage() {
     if (status === 404) {
       return (
         <main className={styles.page}>
-          <div className={styles.column}>
+          <div className={`${styles.column} ${styles.bare}`}>
             <EmptyState title={homeowner.goneTitle} body={homeowner.goneBody} />
           </div>
         </main>
@@ -86,7 +93,7 @@ export function HomeownerPage() {
       const phone = latestPhone(query.error?.latest);
       return (
         <main className={styles.page}>
-          <div className={styles.column}>
+          <div className={`${styles.column} ${styles.bare}`}>
             <EmptyState
               title={homeowner.expiredTitle}
               body={homeowner.goneBody}
@@ -98,7 +105,7 @@ export function HomeownerPage() {
     }
     return (
       <main className={styles.page}>
-        <div className={styles.column}>
+        <div className={`${styles.column} ${styles.bare}`}>
           <EmptyState
             title={homeowner.loadFailed}
             action={<Button variant="ghost" onClick={() => void query.refetch()}>{homeowner.tryAgain}</Button>}
@@ -108,81 +115,90 @@ export function HomeownerPage() {
     );
   }
 
-  const proposal = query.data;
+  const proposal = query.data as HomeownerView;
   const phone = proposal.companyPhone;
-  const callLink = phone ? <Button variant="ghost" href={`tel:${phone}`}>{homeowner.callUs(proposal.companyName)}</Button> : null;
+  const callLink = phone ? <Button variant="ghost" className={styles.link} href={`tel:${phone}`}>{homeowner.callUs(proposal.companyName)}</Button> : null;
+  // A page whose only way forward is a call (expired, declined) makes the call its one real action, in the thumb's place at the bottom
+  const callMain = (variant: 'primary' | 'default') =>
+    phone ? (
+      <div className={styles.dock}>
+        <Button
+          size="lg"
+          variant={variant === 'primary' ? undefined : 'ghost'}
+          className={variant === 'primary' ? styles.choose : styles.secondary}
+          href={`tel:${phone}`}
+        >
+          <PhoneIcon size={18} />
+          {homeowner.callUs(proposal.companyName)}
+        </Button>
+      </div>
+    ) : null;
   const chosen = chosenOptionId === null ? null : proposal.options.find((option) => option.id === chosenOptionId) ?? null;
-
-  const header = (
-    <header className={styles.header}>
-      <p className={styles.company}>{proposal.companyName}</p>
-      <p className={styles.text}>{homeowner.forAddress(proposal.address)}</p>
-    </header>
-  );
+  const picked = proposal.options.find((option) => option.id === pickedId) ?? defaultOption(proposal.options);
+  const facts = roofCard(proposal.roof);
 
   return (
-    <main className={styles.page}>
-      <div className={styles.column}>
-        {header}
-
-        {proposal.status === 'open' ? (
+    <div className={styles.page}>
+      <PublicHeader name={proposal.companyName} logoUrl={proposal.logoUrl} phone={phone} />
+      <main className={styles.column}>
+        {proposal.status === 'open' && picked ? (
           <>
-            <div className={styles.header}>
+            <header className={styles.heading}>
               <h1 className={styles.title}>{homeowner.greeting(proposal.firstName)}</h1>
-              <p className={styles.text}>{homeowner.validUntil(formatDate(proposal.validUntil))}</p>
-              <p className={styles.text}>{homeowner.chooseOne}</p>
-            </div>
+              <p className={styles.lede}>{homeowner.forAddress(addressText(proposal.address))}</p>
+            </header>
 
-            <ul className={styles.options}>
-              {proposal.options.map((option: Option) => (
-                <li key={option.id}>
-                  <Card as="section" className={styles.option} data-testid="option-card" aria-label={option.name}>
-                    <div className={styles.optionHead}>
-                      <h2 className={styles.optionName}>{option.name}</h2>
-                      {option.tier === 'better' ? <span className={styles.badge}>{homeowner.mostPopular}</span> : null}
-                    </div>
-
-                    {option.highlights.length > 0 ? (
-                      <ul className={styles.list}>
-                        {option.highlights.map((item) => <li key={item}>{item}</li>)}
-                      </ul>
-                    ) : null}
-
-                    {option.inclusions.length > 0 ? (
-                      <>
-                        <h3 className={styles.sectionHeading}>{homeowner.includedHeading}</h3>
-                        <ul className={styles.list}>
-                          {option.inclusions.map((item) => <li key={item}>{item}</li>)}
-                        </ul>
-                      </>
-                    ) : null}
-
-                    <p className={styles.total}>
-                      <span className={styles.totalLabel}>{homeowner.totalLabel}</span>
-                      <span className={styles.totalValue}>{money(option.totalCents)}</span>
-                      {proposal.basis !== 'exact' ? <span className={styles.badgeMuted}>{homeowner.estimateLabel}</span> : null}
+            {facts !== null ? (
+              <section className={styles.house} aria-label={homeowner.roofFacts} data-thumb={proposal.roof?.outline ? true : undefined}>
+                {proposal.roof?.outline ? (
+                  <div className={styles.houseThumb}>
+                    <RoofThumb ring={proposal.roof.outline.ring} center={proposal.roof.outline.center} alt={quote.outlineAlt} showOutline />
+                  </div>
+                ) : null}
+                <div className={styles.facts}>
+                  {facts.stats.length > 0 ? (
+                    <dl className={styles.stats}>
+                      {facts.stats.map((stat) => (
+                        <div key={stat.key}>
+                          <dt>{stat.label}</dt>
+                          <dd>{stat.value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  ) : null}
+                  {facts.photos !== null ? (
+                    <p className={styles.photos}>
+                      <CameraIcon size={16} />
+                      {facts.photos}
                     </p>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
 
-                    {option.monthlyEstimateCents !== null && option.financingTerms !== null ? (
-                      <p className={styles.monthly}>
-                        {homeowner.monthlyLine(
-                          money(option.monthlyEstimateCents),
-                          option.financingTerms.months,
-                          formatApr(option.financingTerms.aprBps),
-                        )}
-                      </p>
-                    ) : null}
+            {proposal.options.length > 1 ? (
+              <fieldset className={styles.tiles} data-count={proposal.options.length}>
+                <legend className="visually-hidden">{homeowner.chooseOne}</legend>
+                {proposal.options.map((option: Option) => (
+                  <label key={option.id} className={styles.tile} data-selected={option.id === picked.id ? true : undefined}>
+                    <input type="radio" name="option" value={option.id} checked={option.id === picked.id} onChange={() => setPickedId(option.id)} />
+                    <span className={styles.tileTier}>{homeowner.tierLabel[option.tier]}</span>{' '}
+                    <span className={styles.tilePrice}>{money(option.totalCents)}</span>{' '}
+                    {option.tier === 'better' ? <span className={styles.popular}>{homeowner.mostPopular}</span> : null}
+                  </label>
+                ))}
+              </fieldset>
+            ) : null}
 
-                    <Button size="lg" className={styles.choose} onClick={() => setChosenOptionId(option.id)}>
-                      {homeowner.chooseOption(option.name)}
-                    </Button>
-                  </Card>
-                </li>
-              ))}
-            </ul>
+            <OptionPanel
+              option={picked}
+              estimate={proposal.basis !== 'exact'}
+              validUntil={plainDate(proposal.validUntil)}
+              onChoose={() => setChosenOptionId(picked.id)}
+            />
 
-            <div className={styles.footer}>
-              <Button variant="ghost" onClick={() => setDeclineOpen(true)}>{homeowner.declineLink}</Button>
+            <div className={styles.links}>
+              <Button variant="ghost" className={styles.link} onClick={() => setDeclineOpen(true)}>{homeowner.declineLink}</Button>
               {callLink}
             </div>
 
@@ -208,41 +224,146 @@ export function HomeownerPage() {
         ) : null}
 
         {proposal.status === 'signed' && proposal.signed !== null ? (
-          <Card as="section" className={styles.end}>
-            <h1 className={styles.title}>{homeowner.signedTitle}</h1>
-            <p className={styles.text}>
-              {homeowner.signedBy(
-                proposal.signed.name,
-                formatSigned(proposal.signed.at),
-                proposal.options.find((option) => option.id === proposal.signed?.optionId)?.name ?? '',
-              )}
-            </p>
-            {proposal.signed.pdfReady ? (
-              <div className={styles.actions}>
-                <Button size="lg" href={signedPdfUrl(token)}>{homeowner.downloadPdf}</Button>
-              </div>
-            ) : (
-              <p className={styles.text}>{homeowner.pdfPreparing}</p>
-            )}
-          </Card>
+          <Signed proposal={proposal} token={token} polling={reads < SIGNED_PDF_POLL_LIMIT} />
         ) : null}
 
         {proposal.status === 'declined' ? (
-          <Card as="section" className={styles.end}>
+          <section className={styles.end}>
             <h1 className={styles.title}>{homeowner.declinedTitle}</h1>
-            <p className={styles.text}>{homeowner.declinedBody(proposal.companyName)}</p>
-            {callLink}
-          </Card>
+            <p className={styles.lede}>{homeowner.declinedBody(proposal.companyName)}</p>
+            {callMain('default')}
+          </section>
         ) : null}
 
         {proposal.status === 'expired' ? (
-          <Card as="section" className={styles.end}>
+          <section className={styles.end}>
             <h1 className={styles.title}>{homeowner.expiredTitle}</h1>
-            <p className={styles.text}>{homeowner.expiredBody(proposal.companyName)}</p>
-            {callLink}
-          </Card>
+            <p className={styles.lede}>{homeowner.expiredBody(proposal.companyName)}</p>
+            {callMain('primary')}
+          </section>
+        ) : null}
+      </main>
+    </div>
+  );
+}
+
+/**
+ * The option that is picked: its one all-in price, what the monthly payment would be when it carries the terms, what it
+ * includes, then the main button. The panel is a region named for the option, so the price and its button read together.
+ */
+function OptionPanel({ option, estimate, validUntil, onChoose }: { option: Option; estimate: boolean; validUntil: string; onChoose: () => void }) {
+  const financing = financingOf(option);
+  const highlights = option.highlights;
+  const inclusions = option.inclusions.filter((item) => !highlights.some((h) => h.toLowerCase() === item.toLowerCase()));
+  return (
+    <section className={styles.panel} aria-label={option.name} data-testid="option-card">
+      <div className={styles.option}>
+        <div className={styles.optionHead}>
+          <h2 className={styles.optionName}>{option.name}</h2>
+          {estimate ? <span className={styles.estimate}>{homeowner.estimateLabel}</span> : null}
+        </div>
+        <p className={styles.priceRow}>
+          <span className={styles.price}>{money(option.totalCents)}</span>
+          <span className={styles.allIn}>{homeowner.allIn}</span>
+        </p>
+
+        {financing !== null ? (
+          <div className={styles.fin}>
+            <b className={styles.finMonthly}>{homeowner.financingMonthly(financing.monthly)}</b>
+            <span className={styles.finRight}>{homeowner.financingApr(financing.apr)}</span>
+            <small>{homeowner.financingPayments(financing.months)}</small>
+            <small className={styles.finRight}>{homeowner.financingTotal(financing.total)}</small>
+            <small className={styles.finNote}>{homeowner.financingNote}</small>
+          </div>
+        ) : null}
+
+        {highlights.length > 0 ? (
+          <ul className={styles.checks}>
+            {highlights.map((item) => (
+              <li key={item}>
+                <CheckIcon size={16} />
+                <b>{item}</b>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
+        {inclusions.length > 0 ? (
+          <>
+            <h3 className={styles.eyebrow}>{homeowner.includedHeading}</h3>
+            <ul className={styles.checks}>
+              {inclusions.map((item) => (
+                <li key={item}>
+                  <CheckIcon size={16} />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </>
         ) : null}
       </div>
-    </main>
+
+      <div className={styles.dock}>
+        <Button size="lg" className={styles.choose} onClick={onChoose}>
+          {homeowner.chooseOption(homeowner.tierLabel[option.tier], money(option.totalCents))}
+          <ArrowIcon size={18} />
+        </Button>
+        <p className={styles.fine}>{homeowner.priceGoodUntil(validUntil)}</p>
+      </div>
+    </section>
+  );
+}
+
+/** The signed page: a green check, what was signed, a short timeline, and the signed copy to keep. */
+function Signed({ proposal, token, polling }: { proposal: HomeownerView; token: string; polling: boolean }) {
+  const signed = proposal.signed;
+  if (signed === null) return null;
+  const option = proposal.options.find((candidate) => candidate.id === signed.optionId);
+  const when = formatSigned(signed.at);
+  return (
+    <section className={styles.end}>
+      <span className={styles.okMark} aria-hidden="true">
+        <CheckIcon size={26} />
+      </span>
+      <h1 className={styles.title}>{homeowner.signedTitle}</h1>
+      <p className={styles.lede}>{homeowner.signedBy(signed.name, option ? homeowner.tierLabel[option.tier] : '')}</p>
+
+      {option ? (
+        <div className={styles.record}>
+          <small>{homeowner.optionKicker(homeowner.tierLabel[option.tier])}</small>
+          <small className={styles.right}>{homeowner.signedOn(when)}</small>
+          <b>{addressText(proposal.address)}</b>
+          <b className={styles.right}>{money(option.totalCents)}</b>
+        </div>
+      ) : null}
+
+      <ol className={styles.timeline}>
+        <li data-done="">
+          <i aria-hidden="true">
+            <CheckIcon size={14} />
+          </i>
+          <div>
+            <b>{homeowner.signedStepDone}</b>
+            <span>{signed.pdfReady ? homeowner.signedStepCopy : polling ? homeowner.pdfPreparing : homeowner.pdfPreparingLate}</span>
+          </div>
+        </li>
+        <li>
+          <i aria-hidden="true" />
+          <div>
+            <b>{homeowner.signedStepNext}</b>
+            <span>{homeowner.signedStepNextBody(proposal.companyName)}</span>
+          </div>
+        </li>
+      </ol>
+
+      {signed.pdfReady ? (
+        <div className={styles.dock}>
+          <Button variant="ghost" size="lg" className={styles.secondary} href={signedPdfUrl(token)}>
+            <DocIcon size={18} />
+            {homeowner.downloadPdf}
+          </Button>
+        </div>
+      ) : null}
+    </section>
   );
 }

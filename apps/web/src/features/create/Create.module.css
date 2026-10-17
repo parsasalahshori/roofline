@@ -1,4 +1,10 @@
-/* The address block: the street spans the row, city and state share the next, ZIP follows */
+/* The address block sizes its columns by its own width, so a wide form and a narrow sheet each get the layout that fits */
+.address {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+/* The street spans the row; city and state share the next, ZIP follows; a wide block puts city, state and ZIP on one row */
 .addressGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -10,6 +16,12 @@
   grid-column: 1 / -1;
 }
 
+@container (min-width: 560px) {
+  .addressGrid {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.2fr) minmax(0, 0.8fr);
+  }
+}
+
 /* The customer search: the field, its notes and the list of matches */
 .picker {
   display: grid;
@@ -19,16 +31,23 @@
 
 .note {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: var(--font-size-body);
 }
 
 .results {
   display: grid;
-  gap: 4px;
   margin: 0;
   padding: 0;
+  overflow: hidden;
   list-style: none;
+  border-radius: var(--r-2);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+}
+
+.results > li + li {
+  border-top: 1px solid var(--line);
 }
 
 /* A match is as tall as a phone touch target and as wide as its column */
@@ -36,6 +55,7 @@
   width: 100%;
   min-height: 40px;
   justify-content: flex-start;
+  border-radius: 0;
   text-align: left;
 }
 
@@ -54,16 +74,11 @@
   overflow-wrap: anywhere;
 }
 
-/* The sheet's form: the address block, then Save as wide as its words */
+/* The sheet's form: the address block; Save is pinned in the sheet's footer */
 .sheetForm {
   display: grid;
   gap: 16px;
   min-width: 0;
-}
-
-.save {
-  justify-self: start;
-  min-height: 40px;
 }
 
 @media (max-width: 767.98px) {

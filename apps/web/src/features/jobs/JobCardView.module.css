@@ -1,73 +1,237 @@
-/* One card: the link on top, the Move-to menu under it. */
+/*
+ * One card on the board (REDESIGN.md 6, d-pipeline.png): name and one tag, the address, a next-step line, and a footer of
+ * value, rep and aging. On hover or focus the footer gives way to the split "Move to" button, laid over it so nothing
+ * moves. A touch screen has no hover, so there the chevron stays at the foot of the card.
+ */
 .card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  position: relative;
+  display: block;
+  border-radius: var(--r-2);
   background: var(--surface);
-  color: var(--text);
+  box-shadow: var(--e-1);
+  color: var(--ink);
+  transition: box-shadow var(--t-fast) var(--ease), opacity var(--t-fast) var(--ease);
 }
 
-/* The whole top of the card is the link: a 40px target with a visible focus ring */
+.card:hover,
+.card:focus-within,
+.card:has([aria-expanded='true']) {
+  box-shadow: 0 0 0 1px var(--brand-line), var(--e-2);
+}
+
+/* The card being dragged stays where it was, faded; the tilted picture is what follows the pointer */
+.card[data-dragging='true'] {
+  opacity: 0.4;
+  box-shadow: 0 0 0 1px var(--brand-line);
+}
+
+/* The copy of the card the browser drags, tilted 2 degrees and lifted (e-3) */
+.ghost {
+  position: fixed;
+  top: -1000px;
+  left: -1000px;
+  transform: rotate(-2deg);
+  box-shadow: var(--e-3);
+  pointer-events: none;
+}
+
+/* The whole top of the card is the link: a target with a visible focus ring */
 .link {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-height: 40px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--r-2);
   color: inherit;
   text-decoration: none;
   cursor: grab;
-  border-radius: 8px;
 }
 
 .link:focus-visible {
-  outline: 2px solid var(--text);
-  outline-offset: 2px;
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+/* The name first and the tag at the far edge; a name too long to leave the tag room sends it to a line of its own, not
+   to an ellipsis: who the job is for is the one thing a card must say whole */
+.top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  min-width: 0;
 }
 
 .name {
-  font-size: 1rem;
-  overflow-wrap: anywhere;
+  min-width: 0;
+  overflow: hidden;
+  font: 650 14px/1.2 var(--f-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.address,
+.tag {
+  flex: none;
+  height: 20px;
+  padding: 0 5px;
+}
+
+/* A little smaller than a tag elsewhere, so a name of ordinary length and its tag share a lane's width */
+.tag svg {
+  width: 12px;
+  height: 12px;
+}
+
+.address {
+  overflow: hidden;
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The next step: a dashed rule above, an icon, two lines at most */
 .next {
-  font-size: 0.875rem;
-  color: var(--text-muted);
-  overflow-wrap: anywhere;
+  display: flex;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line-2);
+  color: var(--ink-2);
+  font-size: var(--font-size-min);
+  line-height: 1.3;
 }
 
-.value {
-  font-size: 0.875rem;
-  font-weight: 600;
+.nextIcon {
+  margin-top: 1px;
+  color: var(--ink-3);
 }
 
-.rep {
+.nextText {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.footer {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.875rem;
+  min-height: 24px;
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
+  transition: opacity var(--t-fast) var(--ease);
 }
 
-.unassigned,
-.meta {
-  font-size: 0.875rem;
-  color: var(--text-muted);
+.value {
+  color: var(--ink);
+  font: 600 13px/1 var(--f-mono);
+  font-variant-numeric: tabular-nums;
 }
 
-.stuck {
-  align-self: flex-start;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--danger);
-  color: var(--on-danger);
-  font-size: 0.75rem;
-  font-weight: 600;
+.rep {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
-/* Stuck cards carry the stuck tone on their border as well as the chip */
-.card[data-stuck='true'] {
-  border-color: var(--danger);
+.repName {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.unassigned {
+  font-size: 13px;
+}
+
+/* Days in the stage: a short bar and a mono "4d", pushed to the right */
+.age {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--ink-3);
+  font: 500 var(--font-size-min) / 1 var(--f-mono);
+}
+
+.age[data-hot='true'] {
+  color: var(--warn-text);
+}
+
+.ageBar {
+  display: inline-block;
+  width: 18px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+}
+
+.ageFill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--ink-3);
+}
+
+.age[data-hot='true'] .ageFill {
+  background: var(--warn);
+}
+
+/* The split button lies over the footer and shows with the hover or the focus; it stays while its menu is open */
+.actions {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  opacity: 0;
+  transition: opacity var(--t-fast) var(--ease);
+}
+
+.card:hover .actions,
+.card:focus-within .actions,
+.card:has([aria-expanded='true']) .actions {
+  opacity: 1;
+}
+
+.card:hover .footer,
+.card:focus-within .footer,
+.card:has([aria-expanded='true']) .footer {
+  opacity: 0;
+}
+
+/* A touch screen cannot hover: the chevron stays in the footer's corner and the quick button is left to the menu */
+@media (hover: none) {
+  .actions {
+    right: 8px;
+    left: auto;
+    opacity: 1;
+  }
+
+  .actions [data-part='quick'] {
+    display: none;
+  }
+
+  .footer {
+    padding-right: 36px;
+  }
+
+  .card:hover .footer,
+  .card:focus-within .footer {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .actions,
+  .footer {
+    transition: opacity var(--t-fast) linear;
+  }
 }

@@ -8,9 +8,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { RunNowButton } from '../src/features/agents/RunNowButton.tsx';
-import { agentPage, agents, agentsCommon } from '../src/copy/agents.ts';
-import { WINDOW_COPY } from '../src/copy/dock.ts';
-import { AGENT_LABEL } from '../src/copy/status.ts';
+import { agentPage, agents, agentsCommon, agentsDash, agentsWindow } from '../src/copy/agents.ts';
+import { WINDOW_COPY } from '../src/copy/rail.ts';
+import { shell } from '../src/copy/shell.ts';
+import { AGENT_LABEL, TASK_STATUS_LABEL } from '../src/copy/status.ts';
 import { ACCOUNT, type Routes, SHELL_ROUTES, stubApi } from './helpers.tsx';
 
 vi.mock('../src/shell/map/MapView.tsx', async () => {
@@ -44,7 +45,7 @@ const DETAIL: AgentDetail = {
   paused: null,
   runNow: { kind: 'available', nextAllowedAt: null },
   recentTasks: [
-    { id: 't1', kind: 'storm_check', status: 'done', mode: 'live', createdAt: '2026-10-12T15:00:00Z', finishedAt: '2026-10-12T15:05:00Z', minutesSaved: 45, href: '/approvals/t1' },
+    { id: 't1', kind: 'storm_check', title: 'Storm check near Maple Ridge', status: 'done', mode: 'live', createdAt: '2026-10-12T15:00:00Z', finishedAt: '2026-10-12T15:05:00Z', minutesSaved: 45, href: '/approvals/t1' },
   ],
   hourlyRateCents: 2800,
 };
@@ -68,11 +69,17 @@ function setup(path: string, role: 'owner' | 'office' | 'rep' = 'owner', overrid
   return { router, user: userEvent.setup(), queryClient };
 }
 
+/** The time-saved tile's figure as one phrase ("about 31 hours"): its lead, number and unit are three elements. */
+const savedFigure = (): string | null => {
+  const label = screen.queryByText(`${agentPage.timeSaved} ${agentsCommon.estimate}`);
+  return label?.nextElementSibling?.textContent ?? null;
+};
+
 describe('agent page', () => {
   it('shows time saved as an estimate', async () => {
     setup('/agents/storm-scout');
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
-    expect(await within(dialog).findByText(/about 31 hours/)).toBeInTheDocument();
+    const dialog = await screen.findByRole('main', { name: AGENT_LABEL.storm_scout });
+    await waitFor(() => expect(savedFigure()).toBe('about 31 hours'));
     expect(within(dialog).getAllByText(/\(estimate\)/).length).toBeGreaterThan(0);
   });
 
@@ -87,17 +94,16 @@ describe('agent page', () => {
       'GET /api/agents/storm_scout?period=week': () => ({ body: { ...DETAIL, period: 'week', minutesInPeriod: 270 } }),
     });
     await screen.findByRole('link', { name: '1 inch' });
-    expect(screen.queryByText(/about 4\.5 hours/)).toBeNull();
+    expect(savedFigure()).not.toBe('about 4.5 hours');
     expect(api.count('GET /api/agents/storm_scout?period=week')).toBe(0);
-    await user.click(screen.getByRole('button', { name: agentPage.periods.week }));
-    expect((await screen.findAllByText(/about 4\.5 hours/)).length).toBeGreaterThan(0);
-    expect(screen.queryByText(/about 31 hours/)).toBeNull();
+    await user.click(screen.getByRole('radio', { name: agentPage.periods.week }));
+    await waitFor(() => expect(savedFigure()).toBe('about 4.5 hours'));
     expect(api.count('GET /api/agents/storm_scout?period=week')).toBe(1);
   });
 
   it('shows not-found for an unknown agent', async () => {
     setup('/agents/nope');
-    expect(await screen.findByRole('dialog', { name: WINDOW_COPY.notFound.title })).toBeInTheDocument();
+    expect(await screen.findByRole('main', { name: WINDOW_COPY.notFound.title })).toBeInTheDocument();
   });
 
   it('shows the pause switch to the owner only', async () => {
@@ -153,7 +159,7 @@ describe('agent page', () => {
     setup('/agents/storm-scout', 'owner', {
       [GET]: () => ({ body: { ...DETAIL, runNow: { kind } as AgentDetail['runNow'] } }),
     });
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
+    const dialog = await screen.findByRole('main', { name: AGENT_LABEL.storm_scout });
     expect(await within(dialog).findByText(text)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: agentPage.runNowButton })).not.toBeInTheDocument();
   });
@@ -185,7 +191,7 @@ describe('agent page', () => {
 
   it('recent work opens the review', async () => {
     setup('/agents/storm-scout');
-    const link = await screen.findByRole('link', { name: /storm check/i });
+    const link = await screen.findByRole('link', { name: /storm check near maple ridge/i });
     expect(link).toHaveAttribute('href', '/approvals/t1');
   });
 
@@ -193,7 +199,7 @@ describe('agent page', () => {
     setup('/agents/storm-scout', 'owner', {
       [GET]: () => ({ body: { ...DETAIL, recentTasks: [{ ...DETAIL.recentTasks[0]!, href: '/jobs/j9' }] } }),
     });
-    const link = await screen.findByRole('link', { name: /storm check/i });
+    const link = await screen.findByRole('link', { name: /storm check near maple ridge/i });
     expect(link).toHaveAttribute('href', '/jobs/j9');
   });
 
@@ -201,7 +207,7 @@ describe('agent page', () => {
     setup('/agents/storm-scout', 'rep', {
       [GET]: () => ({ body: { ...DETAIL, hourlyRateCents: null, recentTasks: [{ ...DETAIL.recentTasks[0]!, href: null }] } }),
     });
-    expect(await screen.findByText('storm check')).toBeInTheDocument();
+    expect(await screen.findByText('Storm check near Maple Ridge')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /storm check/i })).toBeNull();
     expect(document.body.textContent).not.toContain('$');
   });
@@ -211,9 +217,11 @@ describe('agent page', () => {
     const table = await screen.findByRole('table');
     expect(within(table).getByText('Routes planned')).toBeInTheDocument();
     expect(within(table).getByText('2')).toBeInTheDocument();
-    expect(within(table).getByText('about 1.5 hours (estimate)')).toBeInTheDocument();
+    // Each cell is "about" and its hours, with no second estimate mark; the tile above says it is an estimate
+    expect(within(table).getByRole('columnheader', { name: agentPage.colTime })).toBeInTheDocument();
+    expect(within(table).getByText('about 1.5 hours')).toBeInTheDocument();
     expect(within(table).getByText('Texts sent')).toBeInTheDocument();
-    expect(within(table).getByText('about 1 hour (estimate)')).toBeInTheDocument();
+    expect(within(table).getByText('about 1 hour')).toBeInTheDocument();
   });
 
   it('load error', async () => {
@@ -273,13 +281,68 @@ describe('agent page', () => {
     await waitFor(() => expect(screen.queryByText('It is already checking. Try again soon.')).toBeNull());
   });
 
-  it('section headings are h3 under the h2 title', async () => {
+  it('the agent is the h1 and each section is an h2 panel: controls, rules, then the figures and the work', async () => {
     setup('/agents/storm-scout');
-    const dialog = await screen.findByRole('dialog', { name: WINDOW_COPY.agents.title });
-    await within(dialog).findByRole('link', { name: '1 inch' });
-    expect(within(dialog).getByRole('heading', { level: 2, name: AGENT_LABEL.storm_scout })).toBeInTheDocument();
-    expect(within(dialog).getAllByRole('heading', { level: 2 })).toHaveLength(1);
-    expect(within(dialog).getAllByRole('heading', { level: 3 }).length).toBeGreaterThanOrEqual(3);
+    const page = await screen.findByRole('main', { name: AGENT_LABEL.storm_scout });
+    await within(page).findByRole('link', { name: '1 inch' });
+    expect(within(page).getByRole('heading', { level: 1, name: AGENT_LABEL.storm_scout })).toBeInTheDocument();
+    const sections = within(page).getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(sections).toEqual([agentPage.controlsTitle, agentPage.rulesTitle, agentPage.breakdownTitle, agentPage.recentTitle]);
+  });
+
+  it('opens with the way back to Agents, and the status as a tag with its word', async () => {
+    setup('/agents/storm-scout');
+    const page = await screen.findByRole('main', { name: AGENT_LABEL.storm_scout });
+    await within(page).findByRole('link', { name: '1 inch' });
+    // The trail is in the shell's top bar, above the page
+    const trail = screen.getByRole('navigation', { name: shell.crumbsLabel });
+    expect(within(trail).getByRole('link', { name: WINDOW_COPY.agents.title })).toHaveAttribute('href', '/agents');
+    expect(within(trail).getByText(AGENT_LABEL.storm_scout)).toHaveAttribute('aria-current', 'page');
+    const controls = within(page).getByRole('region', { name: agentPage.controlsTitle });
+    // The tag beside the title and the switch under it say the same word, "Running": the switch is on
+    const tag = within(controls).getAllByText(agentsDash.running).find((node) => node.closest('[data-tone]') !== null);
+    expect(tag?.closest('[data-tone]')).toHaveAttribute('data-tone', 'ok');
+    expect(within(controls).getByRole('switch', { name: agentPage.runningLabel })).toBeChecked();
+  });
+
+  it('the page switch means what the card switch means: on is running, off is paused', async () => {
+    setup('/agents/storm-scout', 'owner', { [GET]: () => ({ body: { ...DETAIL, paused: PAUSED } }) });
+    const off = await screen.findByRole('switch', { name: agentPage.runningLabel });
+    expect(off).not.toBeChecked();
+    // The word does not flip to "Paused" when it is off: the agent's state is the tag's
+    expect(screen.queryByRole('switch', { name: agentPage.pauseLabel })).toBeNull();
+  });
+
+  it('the figures over the page: what it saved, what it finished today and how often it succeeds', async () => {
+    setup('/agents/storm-scout', 'owner', {
+      [GET]: () => ({ body: { ...DETAIL, card: { ...DETAIL.card, finishedToday: 7, successRate: 0.875 } } }),
+    });
+    const page = await screen.findByRole('main', { name: AGENT_LABEL.storm_scout });
+    expect(await within(page).findByText(agentsWindow.finishedToday)).toBeInTheDocument();
+    expect(within(page).getByText('7')).toBeInTheDocument();
+    expect(within(page).getByText('88%')).toBeInTheDocument();
+  });
+
+  it('says there are not enough runs yet to give a success rate', async () => {
+    setup('/agents/storm-scout');
+    const page = await screen.findByRole('main', { name: AGENT_LABEL.storm_scout });
+    expect(await within(page).findByText(agentsWindow.successRateNone)).toBeInTheDocument();
+    // The empty figure is a quiet dash for the eye and words for a screen reader, never a bare hyphen
+    const tile = within(page).getByText(agentsWindow.successRate).closest('dl') as HTMLElement;
+    expect(within(tile).getByText(agentsCommon.noFigure)).toBeInTheDocument();
+    expect(tile.textContent).not.toContain('-');
+  });
+
+  it('sets the time saved as "about", the number and the unit, in one phrase', async () => {
+    setup('/agents/storm-scout');
+    await screen.findByRole('main', { name: AGENT_LABEL.storm_scout });
+    await waitFor(() => expect(savedFigure()).toBe('about 31 hours'));
+  });
+
+  it('a recent task has its status as a tag with a word', async () => {
+    setup('/agents/storm-scout');
+    const link = await screen.findByRole('link', { name: /storm check/i });
+    expect(within(link).getByText(TASK_STATUS_LABEL.done).closest('[data-tone]')).toHaveAttribute('data-tone', 'ok');
   });
 
   it('keeps the previous period while the next loads', async () => {
@@ -294,15 +357,13 @@ describe('agent page', () => {
     vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) =>
       String(input).includes('period=week') ? gate.then(() => inner(input, init)) : inner(input, init),
     );
-    await screen.findByText(/about 31 hours/);
-    await user.click(screen.getByRole('button', { name: agentPage.periods.week }));
-    expect(screen.getAllByText(/about 31 hours/).length).toBeGreaterThan(0);
-    expect(screen.queryByText(/about 4\.5 hours/)).toBeNull();
+    await waitFor(() => expect(savedFigure()).toBe('about 31 hours'));
+    await user.click(screen.getByRole('radio', { name: agentPage.periods.week }));
+    expect(savedFigure()).toBe('about 31 hours');
     // the old figures stay up, marked busy, until the new period arrives
     expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
     release();
-    expect((await screen.findAllByText(/about 4\.5 hours/)).length).toBeGreaterThan(0);
-    await waitFor(() => expect(screen.queryByText(/about 31 hours/)).toBeNull());
+    await waitFor(() => expect(savedFigure()).toBe('about 4.5 hours'));
     expect(document.querySelector('[aria-busy="true"]')).toBeNull();
   });
 

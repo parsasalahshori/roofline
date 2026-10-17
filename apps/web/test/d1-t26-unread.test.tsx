@@ -5,7 +5,7 @@ import { RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
-import { dock, WINDOW_COPY } from '../src/copy/dock.ts';
+import { rail, WINDOW_COPY } from '../src/copy/rail.ts';
 import { ACCOUNT, type Routes, SHELL_ROUTES, stubApi } from './helpers.tsx';
 
 vi.mock('../src/shell/map/MapView.tsx', async () => {
@@ -59,7 +59,7 @@ function renderShell(items: ConversationListItem[]) {
 }
 
 async function frontDeskLink() {
-  const nav = await screen.findByRole('navigation', { name: dock.label });
+  const nav = await screen.findByRole('navigation', { name: rail.label });
   return within(nav).getByRole('link', { name: new RegExp('^' + WINDOW_COPY['front-desk'].title) });
 }
 
@@ -67,7 +67,7 @@ describe('Front Desk dock badge', () => {
   it('counts conversations with unread messages or needing attention', async () => {
     renderShell([item('a', 2, false), item('b', 0, true), item('c', 0, false)]);
     const link = await frontDeskLink();
-    expect(await within(link).findByRole('img', { name: dock.frontDeskBadge(2) })).toBeInTheDocument();
+    expect(await within(link).findByRole('img', { name: rail.frontDeskBadge(2) })).toBeInTheDocument();
     expect(api.calls.some((call) => call.url === '/api/conversations?filter=needs_attention')).toBe(true);
   });
 

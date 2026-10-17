@@ -1,44 +1,61 @@
+/* The timeline: the note box, then a rail of dots with what happened, newest first */
 .timeline {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
 }
 
 .list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.activity,
-.text {
+/* A row: its dot on the rail at the left, what happened beside it. The rail is the hairline under the dots. */
+.item {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+  padding-bottom: 16px;
+}
+
+.item:last-child {
+  padding-bottom: 0;
+}
+
+.item:not(:last-child)::before {
+  position: absolute;
+  top: 18px;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+  background: var(--line-2);
+  content: '';
+}
+
+.dot {
+  flex: none;
+  box-sizing: border-box;
+  width: 9px;
+  height: 9px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--ink-3);
+}
+
+.dot[data-kind='text'] {
+  background: var(--brand);
+}
+
+.content {
   display: flex;
   flex-direction: column;
   gap: 4px;
-}
-
-.text {
-  align-items: flex-start;
-}
-
-.text:has(.bubble[data-direction="out"]) {
-  align-items: flex-end;
-}
-
-.bubble {
-  max-width: 85%;
-  padding: 8px 12px;
-  border-radius: var(--radius-card);
-  background: var(--surface-2);
-  color: var(--text);
-}
-
-.bubble[data-direction="out"] {
-  background: var(--accent);
-  color: var(--accent-ink);
+  min-width: 0;
 }
 
 .body,
@@ -49,35 +66,39 @@
 }
 
 .summary {
-  color: var(--text);
+  color: var(--ink);
 }
 
 .meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
   margin: 0;
-  font-size: 0.875rem;
-  color: var(--text-muted);
+  color: var(--ink-3);
+  font-size: 13px;
 }
 
 .time {
+  font-family: var(--f-mono);
+  font-size: var(--font-size-min);
   white-space: nowrap;
 }
 
-.empty {
-  margin: 0;
-  color: var(--text-muted);
+.bubble {
+  max-width: 100%;
+  padding: 8px 12px;
+  border-radius: var(--r-3);
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.bubble[data-direction='out'] {
+  background: var(--brand);
+  color: var(--brand-ink);
 }
 
 .loading {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.visuallyHidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
 }

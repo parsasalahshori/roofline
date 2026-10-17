@@ -21,6 +21,7 @@ const MIN_UNVERIFIED_SHARE = 0.5;
  * cue on almost every roof trains people to skip it.
  */
 const CUE_MIN_SHARE = 0.1;
+// Drawn on the map's canvas over aerial photos: literal, the same in light and dark
 const CUE_COLOR = '#ffb020';
 /**
  * Lidar provenance (Roof3dEdge.source / Roof3dFace.lidarShare 'lidar'): roof measured by leaf-off USGS lidar, not by

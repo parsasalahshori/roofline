@@ -1,0 +1,74 @@
+/* The next step: a card of its own, the clock in an amber tile (as the mockups draw it, whatever the company's colour), the step in Archivo, its day and the rep under it */
+.card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px 16px;
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+}
+
+.icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-2);
+  background: var(--warn-tint);
+  color: var(--warn-text);
+}
+
+/* Past its day, the tile is filled: the glyph is the surface colour on the status amber */
+.card[data-overdue='true'] .icon {
+  background: var(--warn);
+  color: var(--surface);
+}
+
+.text {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 3px;
+  min-width: 0;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--ink-3);
+  font: 500 var(--font-size-min)/1.2 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.step {
+  margin: 0;
+  font: 700 17px/1.25 var(--f-display);
+  overflow-wrap: anywhere;
+}
+
+.none {
+  margin: 0;
+  font: 700 16px/1.25 var(--f-display);
+}
+
+.body {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.action {
+  margin-top: 6px;
+}

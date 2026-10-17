@@ -7,8 +7,9 @@ import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import { billing } from '../src/copy/billing.ts';
 import { connections } from '../src/copy/connections.ts';
-import { WINDOW_COPY } from '../src/copy/dock.ts';
+import { WINDOW_COPY } from '../src/copy/rail.ts';
 import { setup } from '../src/copy/setup.ts';
+import { shell } from '../src/copy/shell.ts';
 import { settings } from '../src/copy/settings.ts';
 import { storm } from '../src/copy/storm.ts';
 import { ACCOUNT, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
@@ -199,7 +200,28 @@ it('opens in a window titled Settings', async () => {
   signedInApi();
   renderApp('/settings/company');
 
-  expect(await screen.findByRole('dialog', { name: WINDOW_COPY.settings.title })).toBeInTheDocument();
+  expect(await screen.findByRole('main', { name: WINDOW_COPY.settings.title })).toBeInTheDocument();
+});
+
+it('a screen under Setup opens with its way back, and Setup stays the open tab', async () => {
+  signedInApi({
+    'GET /api/texting': () => ({
+      body: { state: 'waiting', reason: null, rejectedFields: [], brand: null, defaults: {}, submittedAt: '2026-10-11T10:00:00.000Z', approvedAt: null, number: null, needsPaymentMethod: false, needsVerifiedEmail: false, hostedPolicyUrls: { privacy: '/p', terms: '/t' } },
+    }),
+  });
+  for (const [path, last] of [
+    ['/settings/setup/import', settings.subpages.import],
+    ['/settings/setup/texting', settings.subpages.texting],
+  ] as const) {
+    renderApp(path);
+
+    const trail = await screen.findByRole('navigation', { name: shell.crumbsLabel });
+    expect(within(trail).getByRole('link', { name: WINDOW_COPY.settings.title })).toHaveAttribute('href', '/settings/company');
+    expect(within(trail).getByRole('link', { name: settings.tabs.setup })).toHaveAttribute('href', '/settings/setup');
+    expect(within(trail).getByText(last)).toBeInTheDocument();
+    expect(within(await tabsNav()).getByRole('link', { name: settings.tabs.setup })).toHaveAttribute('aria-current', 'page');
+    cleanup();
+  }
 });
 
 it('shows the Storm tab to the owner and opens it', async () => {

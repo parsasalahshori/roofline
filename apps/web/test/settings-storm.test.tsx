@@ -7,6 +7,7 @@ import type { StormPhoto, StormSettingsBody, StormSettingsPatch } from '../src/a
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { connections } from '../src/copy/connections.ts';
 import { errors } from '../src/copy/errors.ts';
+import { settings as settingsCopy } from '../src/copy/settings.ts';
 import { storm } from '../src/copy/storm.ts';
 import { Settings } from '../src/features/settings/Settings.tsx';
 import { ACCOUNT, type Routes, stubApi } from './helpers.tsx';
@@ -125,18 +126,25 @@ function renderStormTab() {
 }
 
 const saveButton = () => screen.getByRole('button', { name: storm.settings.save });
+const saveBar = () => screen.queryByRole('group', { name: settingsCopy.saveBar.label });
 
 it('storm tab loads the saved settings', async () => {
   stubStorm();
   renderStormTab();
 
-  expect(await screen.findByLabelText(storm.settings.thresholdLabel)).toHaveValue('1');
-  expect(screen.getByRole('option', { name: storm.settings.thresholdOption(1) })).toBeInTheDocument();
-  expect(screen.getByLabelText(storm.settings.budgetLabel)).toHaveValue('250.00');
+  // The threshold is a list that opens: it shows the one in use
+  expect(await screen.findByLabelText(storm.settings.thresholdLabel)).toHaveTextContent(settingsCopy.stormTab.hailSize(1));
+  expect(screen.getByLabelText(storm.settings.budgetLabel)).toHaveValue('250');
   expect(screen.getByLabelText(storm.settings.daysLabel)).toHaveValue(7);
   expect((screen.getByLabelText(connections.googleShareLabel) as HTMLInputElement).value).toBe('60');
   expect(screen.getByText('60%')).toBeInTheDocument();
   expect(screen.getByText('40%')).toBeInTheDocument();
+  // The two shares are named at the two ends of the slider, and the slider says both aloud
+  expect(screen.getByText(connections.googleShareShort)).toBeInTheDocument();
+  expect(screen.getByText(connections.metaShareShort)).toBeInTheDocument();
+  expect(screen.getByLabelText(connections.googleShareLabel)).toHaveAttribute('aria-valuetext', connections.shareSplit(60, 40));
+  // The slider's help is its description, and comes last
+  expect(screen.getByLabelText(connections.googleShareLabel)).toHaveAccessibleDescription(storm.settings.shareHelp);
   expect(screen.getByRole('switch', { name: storm.settings.emailsLabel })).toHaveAttribute('aria-checked', 'true');
   expect(screen.getByLabelText(storm.settings.smsLabel)).toHaveValue(CUSTOM_SMS);
   expect(screen.getByLabelText(storm.settings.emailSubjectLabel)).toHaveValue(CUSTOM_SUBJECT);
@@ -147,7 +155,8 @@ it('storm tab saves a changed threshold and budget with a PUT of only the change
   stubStorm();
   const { user } = renderStormTab();
 
-  await user.selectOptions(await screen.findByLabelText(storm.settings.thresholdLabel), '1.5');
+  await user.click(await screen.findByLabelText(storm.settings.thresholdLabel));
+  await user.click(screen.getByRole('option', { name: settingsCopy.stormTab.hailSize(1.5) }));
   const budget = screen.getByLabelText(storm.settings.budgetLabel);
   await user.clear(budget);
   await user.type(budget, '300');
@@ -155,6 +164,44 @@ it('storm tab saves a changed threshold and budget with a PUT of only the change
 
   await waitFor(() => expect(api.sent('PUT /api/storm/settings')).toEqual([{ thresholdIn: 1.5, adBudgetCents: 30000 }]));
   await screen.findByText(storm.settings.saved);
+});
+
+it('the hail sizes read as plain numbers of inches, and the budget as dollars without trailing zeros', async () => {
+  server.thresholdIn = 1.25;
+  server.adBudgetCents = 27050;
+  stubStorm();
+  renderStormTab();
+
+  expect(await screen.findByLabelText(storm.settings.thresholdLabel)).toHaveTextContent('1.25 in');
+  expect(screen.getByLabelText(storm.settings.budgetLabel)).toHaveValue('270.50');
+  expect(settingsCopy.stormTab.hailSize(1)).toBe('1 in');
+  expect(settingsCopy.stormTab.hailSize(0.75)).toBe('0.75 in');
+});
+
+it('a budget typed with a dollar sign and a comma is read as money', async () => {
+  stubStorm();
+  const { user } = renderStormTab();
+
+  const budget = await screen.findByLabelText(storm.settings.budgetLabel);
+  await user.clear(budget);
+  await user.type(budget, '$1,200');
+  await user.click(saveButton());
+
+  await waitFor(() => expect(api.sent('PUT /api/storm/settings')).toEqual([{ adBudgetCents: 120000 }]));
+});
+
+it('moving the slider changes both shares and sends only the Google share', async () => {
+  stubStorm();
+  renderStormTab();
+
+  const slider = await screen.findByLabelText(connections.googleShareLabel);
+  fireEvent.change(slider, { target: { value: '35' } });
+
+  expect(screen.getByText('35%')).toBeInTheDocument();
+  expect(screen.getByText('65%')).toBeInTheDocument();
+  expect(slider).toHaveAttribute('aria-valuetext', connections.shareSplit(35, 65));
+  fireEvent.click(saveButton());
+  await waitFor(() => expect(api.sent('PUT /api/storm/settings')).toEqual([{ adGoogleSharePct: 35 }]));
 });
 
 it('storm tab shows a server validation error under the field', async () => {
@@ -279,4 +326,50 @@ it('storm tab shows the generic failure when the settings cannot be read', async
   renderStormTab();
 
   expect(await screen.findByText(errors.generic)).toBeInTheDocument();
+});
+
+it('storm tab shows no save bar until something changes, then Save and Discard', async () => {
+  stubStorm();
+  const { user } = renderStormTab();
+
+  const budget = await screen.findByLabelText(storm.settings.budgetLabel);
+  expect(saveBar()).toBeNull();
+  expect(screen.queryByRole('button', { name: storm.settings.save })).toBeNull();
+
+  await user.clear(budget);
+  await user.type(budget, '300');
+  expect(saveBar()).not.toBeNull();
+  expect(saveButton()).toBeEnabled();
+
+  await user.click(screen.getByRole('button', { name: settingsCopy.saveBar.discard }));
+  expect(screen.getByLabelText(storm.settings.budgetLabel)).toHaveValue('250');
+  expect(saveBar()).toBeNull();
+  expect(api.count('PUT /api/storm/settings')).toBe(0);
+});
+
+it('storm tab keeps Discard for an entry that cannot be saved, and Save off', async () => {
+  stubStorm();
+  const { user } = renderStormTab();
+
+  const budget = await screen.findByLabelText(storm.settings.budgetLabel);
+  await user.clear(budget);
+  await user.type(budget, 'lots');
+
+  expect(await screen.findByText(storm.settings.budgetInvalid)).toBeInTheDocument();
+  expect(saveButton()).toBeDisabled();
+  await user.click(screen.getByRole('button', { name: settingsCopy.saveBar.discard }));
+  expect(screen.getByLabelText(storm.settings.budgetLabel)).toHaveValue('250');
+  expect(screen.queryByText(storm.settings.budgetInvalid)).toBeNull();
+});
+
+it('storm tab goes back to a clean form once the change is saved', async () => {
+  stubStorm();
+  const { user } = renderStormTab();
+
+  await user.click(await screen.findByRole('switch', { name: storm.settings.emailsLabel }));
+  await user.click(saveButton());
+
+  await waitFor(() => expect(api.sent('PUT /api/storm/settings')).toEqual([{ emailEnabled: false }]));
+  await waitFor(() => expect(saveBar()).toBeNull());
+  expect(screen.getByRole('switch', { name: storm.settings.emailsLabel })).toHaveAttribute('aria-checked', 'false');
 });

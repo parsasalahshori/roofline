@@ -5,6 +5,8 @@ export const liftMeasure = {
   loadFailed: 'We could not load this roof.',
   scaleBar: (feet: number) => `${feet} ft`,
   scaleBarLabel: (feet: number) => `Scale: ${feet} ft`,
+  /** The round "i" on a narrow map that opens the photo's and the outlines' credits. */
+  creditsToggle: 'Map credits',
   north: 'North',
   northLetter: 'N',
   structureLabel: (sqFt: number) => `${sqFt.toLocaleString()} sq ft`,
@@ -125,6 +127,8 @@ export const liftProposal = {
   },
   tiersLabel: 'Proposal tier',
   tier: { good: 'Good', better: 'Better', best: 'Best' },
+  /** A phone's pinned bar on the roof step: the tier, the squares measured and the way to the proposal. */
+  quoteBar: { label: (tier: string, squares: number) => `${tier} \u00b7 ${squares.toFixed(1)} sq`, open: 'Proposal' },
   recommended: 'Recommended',
   perMonth: (dollars: string) => `${dollars}/mo`,
   materialsFor: (tier: string) => `Materials for ${tier}`,

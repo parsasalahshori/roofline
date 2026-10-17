@@ -2,6 +2,9 @@ import type { QuoteProduct } from '@roofline/shared';
 
 const dollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
+/** "in-home" with a word joiner (U+2060, invisible) after the hyphen, so a narrow line never breaks it into "in-" and "home". */
+const inHome = 'in-\u2060home';
+
 /** Whole dollars from integer cents: 1425000 gives "$14,250". */
 export const quoteMoney = (cents: number): string => dollars.format(cents / 100);
 
@@ -43,7 +46,7 @@ export const quote = {
   // Results
   resultsTitle: 'Your estimate',
   forAddress: (address: string): string => `For ${address}`,
-  roofLine: (squares: number): string => `Roof: about ${squares.toLocaleString('en-US')} squares`,
+  roofLine: (squares: number): string => `About ${squares.toLocaleString('en-US')} squares`,
   windowsLine: (count: number): string => `About ${count} ${count === 1 ? 'window' : 'windows'}`,
   windowsAdjust: 'We counted from above. Adjust if needed.',
   windowsFewer: 'One window fewer',
@@ -53,17 +56,19 @@ export const quote = {
   guttersLine: 'Gutters',
   guttersAtVisit: 'Priced at your free visit',
   range: (low: number, high: number): string => `from ${quoteMoney(low)} to ${quoteMoney(high)}`,
-  finalNote: 'Final price after a free in-home visit.',
+  finalNote: `Final price after a free ${inHome} visit.`,
   pickProducts: 'What would you like a price for?',
   productName: (p: QuoteProduct): string => PRODUCT_NAMES[p],
-  continueButton: 'Get my exact price',
+  /** The estimate's next step is the request form, so the button says that: the exact price only comes after the visit. */
+  continueButton: 'Next: your details',
   outlineAlt: 'Satellite photo of your home with the measured roof outline',
   imagery: 'Imagery: Esri, Maxar, Earthstar Geographics',
   startOver: 'Use a different address',
 
   // Fallback (daily limit reached, or a home we would rather price after a look: a flat, a big building, a roof hard to see)
   fallbackTitle: "We'll call you with your estimate",
-  fallbackBody: 'Some homes need a person to look before we can give a fair price, and this is one of them. Leave your details and we will call you with your estimate, usually within one business day.',
+  fallbackLead: 'Some homes need a person to look before we can give a fair price, and this is one of them.',
+  fallbackBody: 'Leave your details and we will call you with your estimate, usually within one business day.',
 
   // Lead form
   formTitle: 'How can we reach you?',
@@ -77,7 +82,7 @@ export const quote = {
   textConsentLabel: 'You may also text me (optional)',
   privacyLink: 'Privacy Policy',
   termsLink: 'Terms',
-  slotsTitle: 'Pick a time for your free in-home visit (optional)',
+  slotsTitle: `Pick a time for your free ${inHome} visit (optional)`,
   slotsNone: 'No times are open online right now. We will call you to set one up.',
   slotsLoading: 'Loading open times',
   slotNone: 'Call me to set a time',
@@ -97,8 +102,8 @@ export const quote = {
 
   // Done
   doneTitle: (first: string): string => `Thanks, ${first}!`,
-  doneBody: 'We have your request. Someone from our team will contact you shortly to confirm your free in-home visit.',
-  doneBooked: (when: string): string => `Your free in-home visit is booked for ${when}.`,
+  doneBody: `We have your request. Someone from our team will contact you shortly to confirm your free ${inHome} visit.`,
+  doneBooked: (when: string): string => `Your free ${inHome} visit is booked for ${when}.`,
   doneBodyBooked: 'We have your request and your visit time. If you need to change it, just give us a call.',
   doneSlotTaken: 'The time you picked was just taken, so we will call you to set another one.',
   doneCall: (phone: string): string => `Questions? Call us at ${phone}.`,

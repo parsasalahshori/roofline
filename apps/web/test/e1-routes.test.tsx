@@ -7,10 +7,11 @@ import { DEFAULT_TIER_TEMPLATES, defaultPricebook } from '@roofline/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
-import { dock, WINDOW_COPY } from '../src/copy/dock.ts';
+import { rail } from '../src/copy/rail.ts';
 import { homeowner } from '../src/copy/homeowner.ts';
 import { liftMeasure } from '../src/copy/liftMeasure.ts';
 import { measure } from '../src/copy/measure.ts';
+import { measureGutters } from '../src/copy/measureGutters.ts';
 import { measureWindows } from '../src/copy/measureWindows.ts';
 import { prices } from '../src/copy/prices.ts';
 import { proposals } from '../src/copy/proposals.ts';
@@ -67,8 +68,6 @@ const MEASUREMENT: MeasurementView = {
 
 let api: ReturnType<typeof stubApi>;
 
-const waitForHref = (read: () => string | null, href: string) => waitFor(() => expect(read()).toBe(href));
-
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -91,11 +90,6 @@ function renderApp(path: string) {
     </Providers>,
   );
   return { router, queryClient, user: userEvent.setup() };
-}
-
-/** A dock link by its label. Its name also holds the "Coming soon" note and any badge, so only the start of the name is matched. */
-function dockLink(dockNav: HTMLElement, label: string) {
-  return within(dockNav).getByRole('link', { name: new RegExp('^' + label) });
 }
 
 describe('E1 windows', () => {
@@ -131,20 +125,25 @@ describe('E1 windows', () => {
       adjustments: { excludedWindowIds: [], manualCounts: {} }, tookMs: 0,
     };
     signedInApi(ACCOUNT, {
+      // The switch's Gutters place comes from the request list, as on the roof screen
+      ...proposalListRoutes(),
       'GET /api/window-measurements/w1': () => ({ body: windowsView }),
       'GET /api/window-measurements/w1/preview': () => ({ body: { quotes: [] } }),
     });
     renderApp('/estimator/windows/w1');
     expect(await screen.findByRole('button', { name: measureWindows.scanButton })).toBeInTheDocument();
-    const nav = screen.getByRole('navigation', { name: measureWindows.switchLabel });
-    expect(within(nav).getByRole('link', { name: measureWindows.switchRoof }).getAttribute('href')).toBe('/estimator?measure=1%20Main%20St%2C%20Austin%2C%20TX');
+    // The switch in the top bar: Windows is the page, Roof is the other choice (Gutters needs a measured roof)
+    const switcher = screen.getByRole('radiogroup', { name: measureWindows.switchLabel });
+    expect(within(switcher).getByRole('radio', { name: measureWindows.switchWindows })).toBeChecked();
+    expect(within(switcher).getByRole('radio', { name: measureWindows.switchRoof })).not.toBeChecked();
   });
 
   it('/estimator/windows opens the address step', async () => {
-    signedInApi(ACCOUNT);
+    signedInApi(ACCOUNT, proposalListRoutes());
     renderApp('/estimator/windows');
     expect(await screen.findByRole('heading', { name: measureWindows.startTitle })).toBeInTheDocument();
-    expect(screen.getByText(measureWindows.pickAddress)).toBeInTheDocument();
+    expect(screen.getByLabelText(measureWindows.addressLabel)).toBeInTheDocument();
+    expect(screen.getByText(measureWindows.startSteps[0]!)).toBeInTheDocument();
   });
 
   it('the roof screen\u2019s Windows switch measures the same property\u2019s windows', async () => {
@@ -156,10 +155,11 @@ describe('E1 windows', () => {
       }),
     });
     renderApp('/estimator/measure/m1');
-    const nav = await screen.findByRole('navigation', { name: measureWindows.switchLabel });
-    await within(nav).findByRole('link', { name: measureWindows.switchWindows });
-    await waitForHref(() => within(nav).getByRole('link', { name: measureWindows.switchWindows }).getAttribute('href'), '/estimator/windows?property=pr1');
-    expect(within(nav).getByRole('link', { name: measureWindows.switchRoof }).getAttribute('aria-current')).toBe('page');
+    const switcher = await screen.findByRole('radiogroup', { name: measureWindows.switchLabel });
+    expect(within(switcher).getByRole('radio', { name: measureWindows.switchRoof })).toBeChecked();
+    expect(within(switcher).getByRole('radio', { name: measureWindows.switchWindows })).not.toBeChecked();
+    // Where each choice goes is the page's own links (see measure-page.test.tsx); the roof here has no outline, so no Gutters
+    expect(within(switcher).queryByRole('radio', { name: measureGutters.switchGutters })).toBeNull();
   });
 
   it('/estimator/proposals/p1 shows the proposal', async () => {
@@ -187,19 +187,9 @@ describe('E1 windows', () => {
     const { router } = renderApp('/p/abc');
 
     expect(await screen.findByText(homeowner.goneTitle)).toBeInTheDocument();
-    expect(screen.queryByRole('navigation', { name: dock.label })).toBeNull();
+    expect(screen.queryByRole('navigation', { name: rail.label })).toBeNull();
     expect(document.querySelector('[data-map-mock]')).toBeNull();
     expect(where(router)).toBe('/p/abc');
-  });
-
-  it('the dock Estimator has no Coming soon note', async () => {
-    signedInApi(ACCOUNT, proposalListRoutes());
-    renderApp('/estimator');
-    const dockNav = await screen.findByRole('navigation', { name: dock.label });
-
-    expect(dockLink(dockNav, WINDOW_COPY.estimator.title).textContent ?? '').not.toContain(dock.comingSoon);
-    expect(dockLink(dockNav, WINDOW_COPY.storm.title).textContent ?? '').not.toContain(dock.comingSoon);
-    expect(dockLink(dockNav, WINDOW_COPY['front-desk'].title).textContent ?? '').not.toContain(dock.comingSoon);
   });
 
   it('Settings Prices shows the three E1 sections', async () => {
@@ -222,9 +212,12 @@ describe('E1 windows', () => {
     });
     renderApp('/settings/prices');
 
-    expect(await screen.findByRole('heading', { name: tierEditor.title })).toBeInTheDocument();
-    expect(await screen.findByRole('heading', { name: financeCopy.title })).toBeInTheDocument();
-    expect(await screen.findByRole('heading', { name: estimateCopy.title })).toBeInTheDocument();
-    expect(await screen.findByLabelText(prices.fields.permit)).toBeInTheDocument();
+    // Each section's panel first holds its loading line under the same heading, so wait for the heading that stays
+    for (const title of [tierEditor.title, financeCopy.title, estimateCopy.title]) {
+      await waitFor(() => expect(screen.getByRole('heading', { name: title })).toBeInTheDocument());
+    }
+    expect(await screen.findByText(prices.fields.permit)).toBeInTheDocument();
+    // Once the data is in, a section has one panel, not a loading one inside the form's
+    await waitFor(() => expect(screen.getAllByRole('heading', { name: estimateCopy.title })).toHaveLength(1));
   });
 });

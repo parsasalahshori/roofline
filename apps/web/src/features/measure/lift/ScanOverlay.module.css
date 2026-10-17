@@ -1,5 +1,11 @@
-/* The scan over a picture (the roof's map or the house's photo): brackets, dots and a sweep, in screen space. */
+/*
+ * The scan over a picture (the roof's map or the house's photo): brackets, dots and a sweep, in screen space. The
+ * brackets and the sweep are tape yellow (it is measuring); the dots are literal white, because they sit on a photograph.
+ */
 .scanLayer {
+  /* literal: drawn over a photograph */
+  --over-white: #fff;
+  --over-halo: rgb(21 28 34 / 0.55);
   position: absolute;
   z-index: 1;
   inset: 0;
@@ -14,7 +20,7 @@
   position: absolute;
   width: 26px;
   height: 26px;
-  border: 0 solid var(--ds-accent, #ffc21a);
+  border: 0 solid var(--tape);
 }
 
 .brackets > span[data-corner="tl"] {
@@ -56,9 +62,17 @@
   left: 0;
   right: 0;
   height: 40%;
-  border-bottom: 2.5px solid var(--ds-accent, #ffc21a);
-  background: linear-gradient(180deg, rgba(255, 194, 26, 0), rgba(255, 194, 26, 0.34));
+  border-bottom: 2.5px solid var(--tape);
   animation: sweep 1.5s ease-in-out infinite;
+}
+
+/* The glow trailing the line: tape yellow fading out upwards */
+.sweep::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent, var(--tape));
+  opacity: 0.34;
 }
 
 @keyframes sweep {
@@ -77,8 +91,8 @@
   height: 8px;
   margin: -4px 0 0 -4px;
   border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 0 0 1.5px rgba(21, 28, 34, 0.55);
+  background: var(--over-white);
+  box-shadow: 0 0 0 1.5px var(--over-halo);
 }
 
 @media (prefers-reduced-motion: reduce) {

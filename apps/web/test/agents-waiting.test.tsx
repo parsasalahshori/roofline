@@ -3,7 +3,7 @@ import type { WaitingItem } from '@roofline/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { agents, agentsCommon } from '../src/copy/agents.ts';
 import { agentsKeys } from '../src/features/agents/api.ts';
-import { AGENT_LABEL } from '../src/copy/status.ts';
+import { AGENT_LABEL, TASK_STATUS_LABEL } from '../src/copy/status.ts';
 import { WaitingList } from '../src/features/agents/WaitingList.tsx';
 import { type Routes, renderAt, stubApi } from './helpers.tsx';
 
@@ -66,6 +66,27 @@ describe('WaitingList', () => {
     const rows = within(region).getAllByRole('listitem');
     expect(within(rows[0]!).getByRole('link', { name: agents.waitingOpen }).getAttribute('href')).toBe('/jobs/j1');
     expect(within(rows[1]!).queryByRole('link')).toBeNull();
+  });
+
+  it('marks a row that needs help with a tag, and leaves the drafts and follow-ups plain', async () => {
+    show({
+      'GET /api/agents/waiting': () => ({
+        body: {
+          items: [
+            item('a', { kind: 'you' }, { kind: 'attention', agent: 'storm_scout', text: 'Storm Scout needs help: Storm plan for Bellevue.', href: '/approvals/a' }),
+            item('b', { kind: 'you' }),
+            item('c', { kind: 'you' }, { kind: 'front_desk_follow_up', agent: 'front_desk' }),
+          ],
+        },
+      }),
+    });
+    const region = await screen.findByLabelText(agents.waitingListLabel);
+    const [needsHelp, draft, followUp] = within(region).getAllByRole('listitem');
+    expect(within(needsHelp!).getByText(TASK_STATUS_LABEL.needs_attention)).toBeTruthy();
+    // It can be acted on: the row opens the plan's own page
+    expect(within(needsHelp!).getByRole('link', { name: agents.waitingOpen }).getAttribute('href')).toBe('/approvals/a');
+    expect(within(draft!).queryByText(TASK_STATUS_LABEL.needs_attention)).toBeNull();
+    expect(within(followUp!).queryByText(TASK_STATUS_LABEL.needs_attention)).toBeNull();
   });
 
   it('shows the empty state', async () => {

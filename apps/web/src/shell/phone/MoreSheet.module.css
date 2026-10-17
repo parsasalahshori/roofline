@@ -1,7 +1,7 @@
-/* The sheet's body: one full-width row per app, each at least 48px tall */
+/* The sheet's body: one full-width row per page, each at least 48px tall */
 .list {
   display: grid;
-  gap: 4px;
+  gap: 2px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -10,20 +10,48 @@
 .link {
   display: flex;
   align-items: center;
+  gap: 12px;
   min-height: 48px;
-  padding: 0 16px;
-  border-radius: var(--radius-card);
-  color: var(--text);
-  font-size: var(--font-size-body);
-  font-weight: 600;
+  padding: 0 12px;
+  border-radius: var(--r-2);
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 500;
   text-decoration: none;
 }
 
 .link:hover {
-  background: var(--line);
+  background: var(--surface-2);
 }
 
-.link:focus-visible {
-  outline: 2px solid var(--text);
-  outline-offset: 2px;
+/* The name takes the row; a count sits at the far right */
+.name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Setup progress and the demo badge, under the list when they exist */
+.extras {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 8px 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.setup {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  color: var(--ink-2);
+  font-size: 0.9375rem;
+  text-decoration: none;
+}
+
+.extras:empty {
+  display: none;
 }

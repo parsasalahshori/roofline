@@ -71,21 +71,22 @@ export function SendTextsPreview({ step, onSavePayload }: StepPreviewProps) {
     <div className={styles.preview}>
       {shown.map((message, i) => (
         <div key={`${customerIdOf(message)}:${i}`} className={styles.row}>
-          <div className={styles.text}>
+          <div className={styles.head}>
             <RecipientName customerId={customerIdOf(message)} place={i + 1} />
-            <p className={styles.body}>{bodyOf(message)}</p>
-            {missing.has(i) ? <p className={styles.warning}>{stepTexts.missingStop}</p> : null}
+            {canRemove ? (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => {
+                  remove(i);
+                }}
+              >
+                {stepTexts.remove}
+              </Button>
+            ) : null}
           </div>
-          {canRemove ? (
-            <Button
-              variant="ghost"
-              onClick={() => {
-                remove(i);
-              }}
-            >
-              {stepTexts.remove}
-            </Button>
-          ) : null}
+          <p className={styles.body}>{bodyOf(message)}</p>
+          {missing.has(i) ? <p className={styles.warning}>{stepTexts.missingStop}</p> : null}
         </div>
       ))}
       {!expanded && messages.length > FIRST_ROWS ? (

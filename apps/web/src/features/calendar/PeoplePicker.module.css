@@ -1,49 +1,50 @@
-/* The people picker: a fieldset of checkboxes, each with a colour dot. */
+/* The people chips: a mono caps label, then one chip for each person, each with a dot of the colour its appointments wear. */
 .picker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
 }
 
-.legend {
-  padding: 0;
-  margin-bottom: 4px;
-  font-size: var(--font-size-min);
-  color: var(--text-muted);
+.eyebrow {
+  flex: none;
+  color: var(--ink-3);
+  font: 500 var(--font-size-min)/1 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.list {
+.chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 16px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.item {
-  min-width: 0;
-}
-
-.person {
-  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: var(--font-size-body);
-  color: var(--text);
+  gap: 8px;
+  min-width: 0;
 }
 
 .dot {
   display: inline-block;
-  flex: none;
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
 }
 
+/* On, a chip is ink: the dot gets a thin ring of the opposite ink so its colour reads on either ground */
+[data-on="true"] .dot {
+  box-shadow: 0 0 0 1.5px var(--ink-inv);
+}
+
+/* A phone: the chips wrap onto as many lines as the names need, so every person is on the screen and nothing slides sideways */
 @media (max-width: 767.98px) {
-  .person {
-    min-height: 40px;
+  .picker {
+    flex: 1 1 auto;
+  }
+
+  .eyebrow {
+    display: none;
+  }
+
+  .chips {
+    padding: 2px;
   }
 }

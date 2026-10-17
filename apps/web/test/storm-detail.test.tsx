@@ -105,21 +105,45 @@ describe('StormDetail', () => {
     vi.unstubAllGlobals();
   });
 
-  it('shows counts and radar-estimated size', async () => {
+  it('names the storm over its day, with the numbers in a strip: size from radar, customers and homes hit', async () => {
     setup();
     expect(await screen.findByRole('heading', { level: 1, name: 'Maple Ridge' })).toBeInTheDocument();
-    expect(screen.getByText(storm.upTo('1.75'))).toBeInTheDocument();
-    expect(screen.getByText(storm.customersHitLabel)).toBeInTheDocument();
-    expect(screen.getByText(storm.homesHitLabel)).toBeInTheDocument();
+    const main = screen.getByRole('main', { name: storm.crumbStorm });
+    expect(within(main).getByText('Saturday, October 10')).toBeInTheDocument();
+    // The hail key also says "Hail size" (to a screen reader): the tile is the one with a number in it
+    const tile = (label: string) =>
+      within(main)
+        .getAllByText(label)
+        .map((node) => node.closest('dl'))
+        .find((dl): dl is HTMLDListElement => dl !== null) as HTMLElement;
+    expect(within(tile(storm.hailSizeLabel)).getByText('1.75')).toBeInTheDocument();
+    expect(within(tile(storm.hailSizeLabel)).getByText(storm.hailUnit)).toBeInTheDocument();
+    expect(within(tile(storm.hailSizeLabel)).getByText(storm.hailSizeMeta('Ping-pong'))).toBeInTheDocument();
+    expect(within(tile(storm.customersHitLabel)).getByText('12')).toBeInTheDocument();
+    expect(within(tile(storm.homesHitLabel)).getByText('340')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: storm.mapLabel })).toBeInTheDocument();
+    // The trail back to the list
+    expect(screen.getByRole('link', { name: storm.crumbStorm })).toHaveAttribute('href', '/storm');
   });
 
-  it('shows the shared hail legend', async () => {
+  it('shows the shared hail legend over the map', async () => {
     setup();
-    const list = await screen.findByRole('list', { name: mapCopy.hailLegend });
-    expect(screen.getByRole('heading', { level: 3, name: mapCopy.hailLegend })).toBeInTheDocument();
-    const items = within(list).getAllByRole('listitem');
-    expect(items.map((item) => item.textContent)).toEqual([...mapCopy.hailSizeLevels]);
+    const legend = await screen.findByRole('region', { name: mapCopy.hailLegend });
+    const items = within(legend).getAllByRole('listitem');
+    expect(items.map((item) => item.textContent)).toEqual([...mapCopy.hailSizeNames]);
+  });
+
+  it('says where the plan stands, in a tag and a sentence', async () => {
+    setup({ plan: { taskId: 't1', status: 'draft' } });
+    const panel = await screen.findByRole('region', { name: storm.planHeadingDetail });
+    expect(within(panel).getByText(storm.planStatus.draft)).toBeInTheDocument();
+    expect(within(panel).getByText(storm.planPanelWaiting)).toBeInTheDocument();
+    cleanup();
+
+    setup({ plan: null });
+    const none = await screen.findByRole('region', { name: storm.planHeadingDetail });
+    expect(within(none).getByText(storm.noPlan)).toBeInTheDocument();
+    expect(within(none).getByText(storm.planPanelNone)).toBeInTheDocument();
   });
 
   it('colours the swath with the shell hail expression', async () => {

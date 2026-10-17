@@ -12,7 +12,7 @@ import { test, expect } from './fixtures.ts';
 const INPUT = 'Minutes saved for Texts sent';
 
 /**
- * The "Office time saved this week" tile ("about $514") on the Agents dashboard: this week's minutes at the hourly rate, in dollars. The
+ * The "Office time saved" tile ("about $514") on the Agents dashboard: this week's minutes at the hourly rate, in dollars. The
  * recount's 30 minutes land on today's Storm Scout step, so it always moves ($14 at the default $28 an hour).
  */
 function totalsLine(page: Page) {
@@ -98,7 +98,7 @@ test('settings agents: reps cannot see the Agents tab', async ({ page, loginAs, 
   await loginAs(page, 'rep');
   await markTodaySeen('rep@a.test');
   await page.goto('/settings');
-  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const settings = page.getByRole('main', { name: 'Settings' });
   await expect(settings).toBeVisible();
   await expect(settings.getByRole('link', { name: 'Agents', exact: true })).toHaveCount(0);
   await expect(settings.getByRole('tab', { name: 'Agents', exact: true })).toHaveCount(0);

@@ -1,32 +1,19 @@
-import { useId, useMemo, type ReactNode } from 'react';
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router';
-import { isTimeZone, type AppointmentView, type JobView, type TaskStatus } from '@roofline/shared';
-import type { ProposalView } from '@roofline/shared';
-import { Button, EmptyState, Skeleton, UiLink, useToast } from '@roofline/ui';
+import type { AppointmentView, JobView, TaskStatus } from '@roofline/shared';
+import { Button, Icon, Panel, Tag, UiLink, useToast } from '@roofline/ui';
+import { appointments } from '../../copy/appointments.ts';
 import { job } from '../../copy/job.ts';
-import { proposals } from '../../copy/proposals.ts';
 import { jobs } from '../../copy/jobs.ts';
 import { TASK_STATUS_LABEL } from '../../copy/status.ts';
-import { useMe } from '../../api/hooks.ts';
-import { useCompany } from '../settings/api.ts';
-import { useCopyLink } from '../proposals/api.ts';
-import { formatDollars } from '../jobs/JobCardView.tsx';
-import { Timeline } from '../timeline/Timeline.tsx';
-import { useMeasure } from '../estimator/api.ts';
-import { useCreateQuote, useJobProposals } from './api.ts';
-import { ClaimSection } from './ClaimSection.tsx';
+import { useIsPhone } from '../../shell/useIsPhone.ts';
+import { formatDollars } from '../jobs/format.ts';
+import { EmptyPanel } from '../jobs/states.tsx';
+import { useCompanyZone } from '../jobs/useCompanyToday.ts';
+import { useCreateQuote } from './api.ts';
 import styles from './JobSections.module.css';
 
-export type JobSectionsProps = { view: JobView };
-
-const FALLBACK_ZONE = 'America/Chicago';
-
-/** The company's zone when it is one Intl knows, the Chicago default otherwise. Never the browser's. */
-function useCompanyZone(): string {
-  const company = useCompany();
-  const zone = company.data?.timezone;
-  return zone !== undefined && isTimeZone(zone) ? zone : FALLBACK_ZONE;
-}
+type PanelProps = { view: JobView; className?: string };
 
 /** A plan's status word, or null for a status with no fixed words (`partly_done`). */
 function taskWord(status: TaskStatus): string | null {
@@ -37,68 +24,79 @@ function isFixedStatus(status: TaskStatus): status is Exclude<TaskStatus, 'partl
   return Object.hasOwn(TASK_STATUS_LABEL, status);
 }
 
-/** One titled block of the job: a section with its heading, labelled by it. */
-function Section({ title, children, name }: { title: string; children: ReactNode; name: string }) {
-  const headingId = useId();
-  return (
-    <section aria-labelledby={headingId} className={styles.section} data-section={name}>
-      <h2 id={headingId} className={styles.heading}>
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
-
-/** The lowest enabled option's total as a line, or null when there is none. Instant numbers say Estimate. */
-function proposalFromText(proposal: ProposalView): string | null {
-  const totals = proposal.options.filter((option) => option.enabled).map((option) => option.totalCents);
-  if (totals.length === 0) return null;
-  const money = proposals.money(Math.min(...totals));
-  return proposal.basis === 'exact' ? job.proposalExactFrom(money) : job.proposalFrom(money);
-}
-
-/** One proposal row: the link, plus a Copy link button for staff who may hand the link out. */
-function ProposalRow({ proposal, from, canCopy }: { proposal: ProposalView; from: string | null; canCopy: boolean }) {
-  const copyLink = useCopyLink(proposal.id);
-  return (
-    <li className={styles.proposalRow}>
-      <UiLink href={'/estimator/proposals/' + proposal.id} className={styles.link} data-status={proposal.status}>
-        <span className={styles.strong}>{proposal.number}</span>
-        <span className={styles.meta}>{proposals.statusLabelFor(proposal.status)}</span>
-        {from !== null ? <span className={styles.meta}>{from}</span> : null}
-      </UiLink>
-      {canCopy ? (
-        <Button variant="ghost" busy={copyLink.isPending} onClick={() => copyLink.mutate()}>
-          {proposals.copyLink}
-        </Button>
-      ) : null}
-    </li>
-  );
-}
-
-/** The four blocks under the header: appointments, quotes, agent tasks and the timeline. */
-export function JobSections({ view }: JobSectionsProps) {
+/** The visits booked for the job: kind, when, who. The buttons book the two the job needs. */
+export function AppointmentsPanel({ view, className }: PanelProps) {
   const zone = useCompanyZone();
-  const navigate = useNavigate();
-  const toast = useToast();
-  const createQuote = useCreateQuote(view.job.id);
   const jobId = view.job.id;
-  const measure = useMeasure();
-  const jobProposals = useJobProposals(jobId);
-  const me = useMe();
-  const canCopyLinks = me.data?.role === 'owner' || me.data?.role === 'office';
-
-  const whenFormat = useMemo(
-    () => new Intl.DateTimeFormat('en-US', { timeZone: zone, dateStyle: 'medium', timeStyle: 'short' }),
-    [zone],
-  );
+  const whenFormat = useMemo(() => new Intl.DateTimeFormat('en-US', { timeZone: zone, dateStyle: 'medium', timeStyle: 'short' }), [zone]);
   const dayFormat = useMemo(() => new Intl.DateTimeFormat('en-US', { timeZone: zone, dateStyle: 'medium' }), [zone]);
 
   function whenText(appointment: AppointmentView): string {
     const start = new Date(appointment.startsAt);
     return appointment.allDay ? job.appointmentAllDay(dayFormat.format(start)) : whenFormat.format(start);
   }
+
+  // The two booking buttons sit in the panel's head on a desktop. Beside the title they leave it no room on a phone,
+  // so there they are a row of their own under the visits.
+  const phone = useIsPhone();
+  const empty = view.appointments.length === 0;
+  const bookButtons = view.can.edit ? (
+    <>
+      <Button variant="default" size="sm" href={`/calendar/new?jobId=${jobId}&kind=inspection`}>
+        {job.bookInspection}
+      </Button>
+      <Button variant="default" size="sm" href={`/calendar/new?jobId=${jobId}&kind=install`}>
+        {job.bookInstall}
+      </Button>
+    </>
+  ) : null;
+  const bookRow = phone && bookButtons ? (
+    <div className={styles.bookRow} data-after-list={empty ? 'false' : 'true'}>
+      {bookButtons}
+    </div>
+  ) : null;
+
+  return (
+    <Panel title={job.appointmentsTitle} className={className} padded={empty} actions={phone ? undefined : (bookButtons ?? undefined)}>
+      {empty ? (
+        <>
+          <EmptyPanel variant="inline" title={job.appointmentsEmpty} body={job.appointmentsEmptyBody} />
+          {bookRow}
+        </>
+      ) : (
+        <>
+          <ul className={styles.rows}>
+            {view.appointments.map((appointment) => (
+              <li key={appointment.id}>
+                <UiLink
+                  href={`/calendar/appointments/${appointment.id}`}
+                  className={styles.row}
+                  data-kind={appointment.kind}
+                  data-status={appointment.status}
+                >
+                  <span className={styles.main}>
+                    <span className={styles.strong}>{job.appointmentKind[appointment.kind]}</span>
+                    {appointment.status !== 'scheduled' ? <Tag>{appointments.status[appointment.status]}</Tag> : null}
+                  </span>
+                  <span className={styles.mono}>{whenText(appointment)}</span>
+                  <span className={styles.muted}>{appointment.assigned?.name ?? jobs.unassigned}</span>
+                </UiLink>
+              </li>
+            ))}
+          </ul>
+          {bookRow}
+        </>
+      )}
+    </Panel>
+  );
+}
+
+/** The quotes on the job, each a link to its editor; New quote starts a draft and opens it. */
+export function QuotesPanel({ view, className }: PanelProps) {
+  const jobId = view.job.id;
+  const navigate = useNavigate();
+  const toast = useToast();
+  const createQuote = useCreateQuote(jobId);
 
   async function startQuote() {
     try {
@@ -109,133 +107,70 @@ export function JobSections({ view }: JobSectionsProps) {
     }
   }
 
-  async function startProposal() {
-    try {
-      const measurement = await measure.mutateAsync({ propertyId: view.home.id });
-      // Ruling EM: the measure window builds the proposal on this job
-      navigate('/estimator/measure/' + measurement.id, { state: { jobId } });
-    } catch {
-      toast.show(job.proposalStartFailed, 'error');
-    }
-  }
-
   return (
-    <div className={styles.sections}>
-      <Section title={job.appointmentsTitle} name="appointments">
-        {view.can.edit ? (
-          <div className={styles.actions}>
-            <Button variant="ghost" href={`/calendar/new?jobId=${jobId}&kind=inspection`}>
-              {job.bookInspection}
-            </Button>
-            <Button variant="ghost" href={`/calendar/new?jobId=${jobId}&kind=install`}>
-              {job.bookInstall}
-            </Button>
-          </div>
-        ) : null}
-        {view.appointments.length === 0 ? (
-          <EmptyState title={job.appointmentsEmpty} />
-        ) : (
-          <ul className={styles.list}>
-            {view.appointments.map((appointment) => (
-              <li
-                key={appointment.id}
-                className={styles.item}
-                data-kind={appointment.kind}
-                data-status={appointment.status}
-              >
-                {job.appointmentLine(
-                  job.appointmentKind[appointment.kind],
-                  whenText(appointment),
-                  appointment.assigned?.name ?? jobs.unassigned,
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
+    <Panel
+      title={job.quotesTitle}
+      className={className}
+      padded={view.quotes.length === 0}
+      actions={
+        view.can.edit ? (
+          <Button variant="default" size="sm" busy={createQuote.isPending} onClick={() => void startQuote()}>
+            <Icon name="plus" size={16} />
+            {job.newQuote}
+          </Button>
+        ) : undefined
+      }
+    >
+      {view.quotes.length === 0 ? (
+        <EmptyPanel variant="inline" title={job.quotesEmpty} body={job.quotesEmptyBody} />
+      ) : (
+        <ul className={styles.rows}>
+          {view.quotes.map((quote) => (
+            <li key={quote.id}>
+              <UiLink href={`/jobs/${jobId}/quotes/${quote.id}`} className={styles.row} data-status={quote.status}>
+                <span className={styles.main}>
+                  <span className={styles.number}>{quote.number}</span>
+                  {quote.status === 'final' ? (
+                    <Tag tone="ok" icon="check">
+                      {job.quoteStatus[quote.status]}
+                    </Tag>
+                  ) : (
+                    <Tag icon="pen">{job.quoteStatus[quote.status]}</Tag>
+                  )}
+                </span>
+                {view.can.seeValue ? <span className={styles.money}>{job.quoteTotal(formatDollars(quote.totalCents))}</span> : null}
+              </UiLink>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
+  );
+}
 
-      <Section title={job.quotesTitle} name="quotes">
-        {view.can.edit ? (
-          <div className={styles.actions}>
-            <Button variant="primary" busy={createQuote.isPending} onClick={() => void startQuote()}>
-              {job.newQuote}
-            </Button>
-          </div>
-        ) : null}
-        {view.quotes.length === 0 ? (
-          <EmptyState title={job.quotesEmpty} />
-        ) : (
-          <ul className={styles.list}>
-            {view.quotes.map((quote) => (
-              <li key={quote.id}>
-                <UiLink href={`/jobs/${jobId}/quotes/${quote.id}`} className={styles.link} data-status={quote.status}>
-                  <span className={styles.strong}>{quote.number}</span>
-                  <span className={styles.meta}>{job.quoteStatus[quote.status]}</span>
-                  {view.can.seeValue ? (
-                    <span className={styles.meta}>{job.quoteTotal(formatDollars(quote.totalCents))}</span>
-                  ) : null}
+/** What the agents have drafted or done for this job: each a link to the plan. */
+export function TasksPanel({ view, className }: PanelProps) {
+  return (
+    <Panel title={job.tasksTitle} className={className} padded={view.tasks.length === 0}>
+      {view.tasks.length === 0 ? (
+        <EmptyPanel variant="inline" title={job.tasksEmpty} body={job.tasksEmptyBody} />
+      ) : (
+        <ul className={styles.rows}>
+          {view.tasks.map((task) => {
+            const word = taskWord(task.status);
+            return (
+              <li key={task.id}>
+                <UiLink href={`/approvals/${task.id}`} className={styles.row} data-status={task.status}>
+                  <span className={styles.main}>
+                    <span className={styles.strong}>{task.title}</span>
+                  </span>
+                  {word !== null ? <Tag>{word}</Tag> : null}
                 </UiLink>
               </li>
-            ))}
-          </ul>
-        )}
-      </Section>
-
-      <Section title={job.proposalsTitle} name="proposals">
-        {view.can.edit ? (
-          <div className={styles.actions}>
-            <Button variant="primary" busy={measure.isPending} onClick={() => void startProposal()}>
-              {job.newProposal}
-            </Button>
-          </div>
-        ) : null}
-        {jobProposals.isPending ? (
-          <Skeleton lines={2} />
-        ) : jobProposals.isError ? (
-          <p>{job.proposalsLoadFailed}</p>
-        ) : jobProposals.data.length === 0 ? (
-          <EmptyState title={job.proposalsEmpty} />
-        ) : (
-          <ul className={styles.list}>
-            {jobProposals.data.map((proposal) => {
-              const from = view.can.seeValue ? proposalFromText(proposal) : null;
-              return (
-                <ProposalRow
-                  key={proposal.id}
-                  proposal={proposal}
-                  from={from}
-                  canCopy={canCopyLinks && proposal.status !== 'draft'}
-                />
-              );
-            })}
-          </ul>
-        )}
-      </Section>
-      <ClaimSection jobId={jobId} />
-
-      <Section title={job.tasksTitle} name="tasks">
-        {view.tasks.length === 0 ? (
-          <EmptyState title={job.tasksEmpty} />
-        ) : (
-          <ul className={styles.list}>
-            {view.tasks.map((task) => {
-              const word = taskWord(task.status);
-              return (
-                <li key={task.id}>
-                  <UiLink href={`/approvals/${task.id}`} className={styles.link} data-status={task.status}>
-                    <span className={styles.strong}>{task.title}</span>
-                    {word !== null ? <span className={styles.meta}>{word}</span> : null}
-                  </UiLink>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Section>
-
-      <Section title={job.timelineTitle} name="timeline">
-        <Timeline jobId={jobId} />
-      </Section>
-    </div>
+            );
+          })}
+        </ul>
+      )}
+    </Panel>
   );
 }

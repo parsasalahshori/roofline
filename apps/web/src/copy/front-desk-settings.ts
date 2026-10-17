@@ -2,6 +2,8 @@
 export const frontDeskSettings = {
   loadFailed: 'We could not load the Front Desk settings.',
   title: 'Front Desk',
+  /** The panels of the form, top to bottom (the on-call list and the forwarding guide are panels with their own titles). */
+  panels: { answering: 'Answering', assistant: 'The assistant', rules: 'What it may do', timing: 'Timing and records' },
   onOff: {
     label: 'Front Desk answers my calls',
     blocked: {
@@ -18,8 +20,8 @@ export const frontDeskSettings = {
   facts: {
     label: 'What the assistant should know about your company',
     help: 'Hours, service area and anything callers often ask.',
-    counter: (used: number, max: number) => `${used} of ${max} characters`,
-    tooLong: (max: number) => `Keep this to ${max} characters or fewer.`,
+    counter: (used: number, max: number) => `${used.toLocaleString('en-US')} of ${max.toLocaleString('en-US')} characters`,
+    tooLong: (max: number) => `Keep this to ${max.toLocaleString('en-US')} characters or fewer.`,
   },
   mayMove: { label: 'May move an appointment' },
   mayCancel: { label: 'May cancel an appointment' },

@@ -1,0 +1,167 @@
+/* The transcript: speaker bubbles on a quiet ground. The caller sits left, the assistant and the team right; times are mono. */
+.count {
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.empty {
+  margin: 0;
+  color: var(--ink-3);
+}
+
+.turns {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.turn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.turn[data-side="left"] {
+  align-items: flex-start;
+}
+
+.turn[data-side="right"] {
+  align-items: flex-end;
+}
+
+.bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  max-width: min(78%, 560px);
+  padding: 10px 12px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-3);
+  background: var(--surface-2);
+}
+
+/* A speech bubble's corner points at the speaker's side */
+.turn[data-side="left"] .bubble {
+  border-top-left-radius: var(--r-1);
+}
+
+.turn[data-side="right"] .bubble {
+  border-top-right-radius: var(--r-1);
+}
+
+/* The assistant is a neutral grey, the team a calm blue: the company's own colour (red for some) never paints what was said */
+.turn[data-speaker="assistant"] .bubble {
+  border-color: var(--line-2);
+  background: var(--sunken);
+}
+
+.turn[data-speaker="team"] .bubble {
+  border-color: color-mix(in srgb, var(--info) 30%, transparent);
+  background: var(--info-tint);
+}
+
+/* Who spoke, and when: the name in sans, the time in mono */
+.label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+}
+
+.speaker {
+  color: var(--ink-2);
+  font-size: var(--font-size-min);
+  font-weight: 600;
+}
+
+.turn[data-speaker="team"] .speaker {
+  color: var(--info-text);
+}
+
+.stamp {
+  color: var(--ink-3);
+  font: 500 var(--font-size-min)/1 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.text,
+.note {
+  margin: 0;
+  font-size: var(--font-size-body);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.text {
+  color: var(--ink);
+}
+
+.note {
+  color: var(--ink-3);
+  font-style: italic;
+}
+
+.cut {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+/* The cards for what the assistant did sit under its line, the width of the bubble or wider */
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(100%, 560px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A note from the system: centered, quiet */
+.system {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px 8px;
+  color: var(--ink-3);
+  font-size: 13px;
+  text-align: center;
+}
+
+.systemLabel {
+  font: 600 var(--font-size-min)/1 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Where a new day starts in a thread of texts */
+.day {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-3);
+  font: 600 var(--font-size-min)/1 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.day::before,
+.day::after {
+  flex: 1 1 0;
+  height: 1px;
+  background: var(--line);
+  content: "";
+}
+
+@media (max-width: 767.98px) {
+  .bubble {
+    max-width: 92%;
+  }
+}

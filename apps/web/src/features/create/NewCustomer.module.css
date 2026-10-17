@@ -1,8 +1,11 @@
-/* The whole form: names, then the phones and emails, then the first home, then texting consent and Save */
+/*
+ * The New customer form: a panel each for the name, the contact details and the first home, on a two-column grid that
+ * becomes one column on a phone. The action bar sticks to the foot of the screen on a phone.
+ */
 .form {
   display: grid;
-  gap: 24px;
-  max-width: 720px;
+  gap: 14px;
+  max-width: 760px;
 }
 
 /* First and last name on one row; the display name takes the whole row below them */
@@ -35,30 +38,35 @@
   width: 100%;
 }
 
-/* The add buttons are as tall as a phone touch target and only as wide as their words */
 .addRow {
   align-self: flex-start;
-  min-height: 40px;
 }
 
-.home {
-  display: grid;
-  gap: 12px;
-}
-
-.heading {
-  margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
-}
-
-.save {
-  justify-self: start;
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
 @media (max-width: 767.98px) {
   .names,
   .contacts {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The primary action stays where the thumb is while the form scrolls */
+  .actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    margin: 0 -16px -32px;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line);
+    background: var(--surface);
+  }
+
+  .save {
+    flex: 1 1 auto;
   }
 }

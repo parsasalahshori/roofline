@@ -15,11 +15,11 @@
 
 .alert {
   margin: 0;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--surface-2);
-  color: var(--text);
+  padding: 10px 12px;
+  border-radius: var(--r-2);
+  background: var(--bad-tint);
+  color: var(--bad-text);
+  font-size: var(--font-size-body);
   overflow-wrap: anywhere;
 }
 

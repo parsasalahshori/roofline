@@ -1,7 +1,7 @@
-import { tokens } from '@roofline/ui';
+import { type ColorScheme, type TokenName, tokensFor } from '@roofline/ui';
 import type { Feature, FeatureCollection, MultiPolygon } from 'geojson';
 import type { GeoJSONSource, LayerSpecification, Map as MapLibreMap, SourceSpecification } from 'maplibre-gl';
-import { hailFillExpression } from './stormLayer.ts';
+import { hailFillExpression, hailStrokeExpression } from './stormLayer.ts';
 
 /*
  * The map's sources and layers. Two groups are added in order: BASE (the storm swath, the service area
@@ -44,8 +44,11 @@ export const LAYER = {
   jobsHit: 'jobs-hit',
 } as const;
 
-/** Opacity of the hail swath fill. */
-export const HAIL_FILL_OPACITY = 0.7;
+/** Opacity of the hail swath fill: 40%, so the streets and pins show through (the design's 35 to 45%). */
+export const HAIL_FILL_OPACITY = 0.4;
+/** Width and opacity of the stroke around each hail band. */
+export const HAIL_STROKE_WIDTH = 1.2;
+export const HAIL_STROKE_OPACITY = 0.8;
 
 /** Everything the layers draw. */
 export type MapData = {
@@ -113,24 +116,29 @@ function asLayer(spec: Record<string, unknown>): LayerSpecification {
   return spec as unknown as LayerSpecification;
 }
 
+/** The literal colours of one theme. MapLibre paints cannot read CSS variables. */
+type Palette = Record<TokenName, string>;
+
 /** The colour of a job pin, by its stage. Anything unknown takes the lead blue. */
-function stageColor(): unknown[] {
+function stageColor(t: Palette): unknown[] {
   return [
     'match',
     ['get', 'stage'],
     'lead',
-    tokens['stage-lead'],
+    t['st-lead'],
     'inspection',
-    tokens['stage-inspection'],
+    t['st-insp'],
     'proposal',
-    tokens['stage-proposal'],
+    t['st-prop'],
     'won',
-    tokens['stage-won'],
+    t['st-won'],
     'installed',
-    tokens['stage-won'],
+    t['st-inst'],
+    'paid',
+    t['st-paid'],
     'lost',
-    tokens.text,
-    tokens['stage-lead'],
+    t.ink,
+    t['st-lead'],
   ];
 }
 
@@ -138,27 +146,27 @@ function stageColor(): unknown[] {
  * The transparent hit circle over a single pin: 40px across (radius 20), invisible, and with the same
  * source and filter as the pin it sits on, so a click on it reads the same feature.
  */
-function hitPaint(): Record<string, unknown> {
+function hitPaint(t: Palette): Record<string, unknown> {
   return {
     'circle-radius': 20,
     'circle-opacity': 0,
     'circle-stroke-opacity': 0,
-    'circle-color': tokens['pin-customer'],
+    'circle-color': t['st-inst'],
   };
 }
 
-/** A cluster bubble sized by the number of points it holds, read from `countKey`. */
-function clusterPaint(countKey: 'count' | 'point_count'): Record<string, unknown> {
+/** A cluster is an ink disc ringed in the surface colour, sized by the number of points it holds, read from `countKey`. */
+function clusterPaint(t: Palette, countKey: 'count' | 'point_count'): Record<string, unknown> {
   return {
-    'circle-color': tokens.accent,
+    'circle-color': t.ink,
     'circle-radius': ['step', ['get', countKey], 16, 10, 20, 50, 26, 200, 32],
-    'circle-stroke-width': 2,
-    'circle-stroke-color': tokens.text,
+    'circle-stroke-width': 2.5,
+    'circle-stroke-color': t.surface,
   };
 }
 
 /** The number printed inside a cluster bubble. Only added when the style has glyphs. */
-function countLabel(id: string, source: string, textField: unknown[], clustersOnly: boolean): LayerSpecification {
+function countLabel(t: Palette, id: string, source: string, textField: unknown[], clustersOnly: boolean): LayerSpecification {
   return asLayer({
     id,
     type: 'symbol',
@@ -169,7 +177,7 @@ function countLabel(id: string, source: string, textField: unknown[], clustersOn
       'text-font': ['Noto Sans Regular'],
       'text-size': 14,
     },
-    paint: { 'text-color': tokens['accent-ink'] },
+    paint: { 'text-color': t['ink-inv'] },
   });
 }
 
@@ -185,7 +193,7 @@ function addLayerOnce(map: MapLibreMap, spec: LayerSpecification): void {
   if (!map.getLayer(spec.id)) map.addLayer(spec);
 }
 
-function addBaseGroup(map: MapLibreMap, data: MapData, hasGlyphs: boolean): void {
+function addBaseGroup(map: MapLibreMap, data: MapData, hasGlyphs: boolean, t: Palette): void {
   addSourceOnce(map, SOURCE.stormSwath, { type: 'geojson', data: empty() });
   addLayerOnce(
     map,
@@ -202,9 +210,9 @@ function addBaseGroup(map: MapLibreMap, data: MapData, hasGlyphs: boolean): void
       id: LAYER.stormSwathOutline,
       type: 'line',
       source: SOURCE.stormSwath,
-      // Not an outline: a wide, blurred line in the contour's own colour feathers the edge of each band.
+      // A thin stroke one step darker than the band's fill
       layout: { 'line-join': 'round' },
-      paint: { 'line-color': hailFillExpression(), 'line-width': 22, 'line-blur': 20, 'line-opacity': 0.55 },
+      paint: { 'line-color': hailStrokeExpression(), 'line-width': HAIL_STROKE_WIDTH, 'line-opacity': HAIL_STROKE_OPACITY },
     }),
   );
 
@@ -217,9 +225,9 @@ function addBaseGroup(map: MapLibreMap, data: MapData, hasGlyphs: boolean): void
       source: SOURCE.stormSpots,
       paint: {
         'circle-radius': 5,
-        'circle-color': tokens['hail-5'],
+        'circle-color': t['hail-5'],
         'circle-stroke-width': 2,
-        'circle-stroke-color': tokens.surface,
+        'circle-stroke-color': t.surface,
       },
     }),
   );
@@ -231,7 +239,9 @@ function addBaseGroup(map: MapLibreMap, data: MapData, hasGlyphs: boolean): void
       id: LAYER.serviceArea,
       type: 'line',
       source: SOURCE.serviceArea,
-      paint: { 'line-color': tokens.text, 'line-opacity': 0.5, 'line-width': 2 },
+      // A quiet dashed hairline: where the company works, never louder than the data on the map
+      layout: { 'line-join': 'round' },
+      paint: { 'line-color': t['ink-3'], 'line-opacity': 0.55, 'line-width': 1.25, 'line-dasharray': [3, 3] },
     }),
   );
 
@@ -242,15 +252,15 @@ function addBaseGroup(map: MapLibreMap, data: MapData, hasGlyphs: boolean): void
       id: LAYER.clusters,
       type: 'circle',
       source: SOURCE.clusters,
-      paint: clusterPaint('count'),
+      paint: clusterPaint(t, 'count'),
     }),
   );
   if (hasGlyphs) {
-    addLayerOnce(map, countLabel(COUNT_LAYER.clusters, SOURCE.clusters, ['to-string', ['get', 'count']], false));
+    addLayerOnce(map, countLabel(t, COUNT_LAYER.clusters, SOURCE.clusters, ['to-string', ['get', 'count']], false));
   }
 }
 
-function addPinGroup(map: MapLibreMap, data: MapData, hasGlyphs: boolean): void {
+function addPinGroup(map: MapLibreMap, data: MapData, hasGlyphs: boolean, t: Palette): void {
   const clusterOptions: { cluster?: boolean; clusterRadius?: number } = data.clustering
     ? { cluster: true, clusterRadius: CLIENT_CLUSTER_RADIUS }
     : {};
@@ -264,7 +274,7 @@ function addPinGroup(map: MapLibreMap, data: MapData, hasGlyphs: boolean): void 
       type: 'circle',
       source: SOURCE.customers,
       filter: ['has', 'point_count'],
-      paint: clusterPaint('point_count'),
+      paint: clusterPaint(t, 'point_count'),
     }),
   );
   addLayerOnce(
@@ -274,7 +284,7 @@ function addPinGroup(map: MapLibreMap, data: MapData, hasGlyphs: boolean): void 
       type: 'circle',
       source: SOURCE.jobs,
       filter: ['has', 'point_count'],
-      paint: clusterPaint('point_count'),
+      paint: clusterPaint(t, 'point_count'),
     }),
   );
   addLayerOnce(
@@ -285,10 +295,10 @@ function addPinGroup(map: MapLibreMap, data: MapData, hasGlyphs: boolean): void 
       source: SOURCE.customers,
       filter: ['!', ['has', 'point_count']],
       paint: {
-        'circle-color': tokens['pin-customer'],
+        'circle-color': t['st-inst'],
         'circle-radius': 7,
-        'circle-stroke-width': 2,
-        'circle-stroke-color': tokens.surface,
+        'circle-stroke-width': 2.5,
+        'circle-stroke-color': t.surface,
       },
     }),
   );
@@ -299,7 +309,7 @@ function addPinGroup(map: MapLibreMap, data: MapData, hasGlyphs: boolean): void 
       type: 'circle',
       source: SOURCE.customers,
       filter: ['!', ['has', 'point_count']],
-      paint: hitPaint(),
+      paint: hitPaint(t),
     }),
   );
   addLayerOnce(
@@ -310,10 +320,10 @@ function addPinGroup(map: MapLibreMap, data: MapData, hasGlyphs: boolean): void 
       source: SOURCE.jobs,
       filter: ['!', ['has', 'point_count']],
       paint: {
-        'circle-color': stageColor(),
+        'circle-color': stageColor(t),
         'circle-radius': 7,
-        'circle-stroke-width': 2,
-        'circle-stroke-color': tokens.surface,
+        'circle-stroke-width': 2.5,
+        'circle-stroke-color': t.surface,
       },
     }),
   );
@@ -324,12 +334,12 @@ function addPinGroup(map: MapLibreMap, data: MapData, hasGlyphs: boolean): void 
       type: 'circle',
       source: SOURCE.jobs,
       filter: ['!', ['has', 'point_count']],
-      paint: hitPaint(),
+      paint: hitPaint(t),
     }),
   );
   if (hasGlyphs) {
-    addLayerOnce(map, countLabel(COUNT_LAYER.customerClusters, SOURCE.customers, ['get', 'point_count_abbreviated'], true));
-    addLayerOnce(map, countLabel(COUNT_LAYER.jobClusters, SOURCE.jobs, ['get', 'point_count_abbreviated'], true));
+    addLayerOnce(map, countLabel(t, COUNT_LAYER.customerClusters, SOURCE.customers, ['get', 'point_count_abbreviated'], true));
+    addLayerOnce(map, countLabel(t, COUNT_LAYER.jobClusters, SOURCE.jobs, ['get', 'point_count_abbreviated'], true));
   }
 }
 
@@ -353,6 +363,27 @@ function removePinGroup(map: MapLibreMap): void {
   }
 }
 
+/** Every layer of the PINS group: the single pins, their hit layers, the clusters and the count labels. */
+const PIN_LAYER_IDS: readonly string[] = [
+  LAYER.clusters,
+  COUNT_LAYER.clusters,
+  LAYER.customerClusters,
+  LAYER.jobClusters,
+  LAYER.customers,
+  LAYER.customersHit,
+  LAYER.jobs,
+  LAYER.jobsHit,
+  COUNT_LAYER.customerClusters,
+  COUNT_LAYER.jobClusters,
+];
+
+/** Shows or hides every pin and cluster (the Jobs switch). A layer that is not on the map is skipped. */
+export function setPinsVisible(map: MapLibreMap, visible: boolean): void {
+  for (const id of PIN_LAYER_IDS) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+  }
+}
+
 export function emptyMapData(): MapData {
   return {
     serviceArea: null,
@@ -363,11 +394,16 @@ export function emptyMapData(): MapData {
   };
 }
 
+/** The theme each map's layers were painted for, so a later pin rebuild keeps the same colours. */
+const installedScheme = new WeakMap<object, ColorScheme>();
+
 /** Adds every source and layer, skipping any that already exists. Call it after every `style.load`. */
-export function installMapLayers(map: MapLibreMap, data: MapData): void {
+export function installMapLayers(map: MapLibreMap, data: MapData, scheme: ColorScheme = 'light'): void {
   const hasGlyphs = styleHasGlyphs(map);
-  addBaseGroup(map, data, hasGlyphs);
-  addPinGroup(map, data, hasGlyphs);
+  const palette = tokensFor(scheme);
+  installedScheme.set(map, scheme);
+  addBaseGroup(map, data, hasGlyphs, palette);
+  addPinGroup(map, data, hasGlyphs, palette);
   installedClustering.set(map, data.clustering);
 }
 
@@ -380,6 +416,7 @@ export function removeMapLayers(map: MapLibreMap): void {
     if (map.getSource(id)) map.removeSource(id);
   }
   installedClustering.delete(map);
+  installedScheme.delete(map);
 }
 
 /** Feeds new data to the sources already on the map; rebuilds them when `data.clustering` has changed. */
@@ -397,6 +434,6 @@ export function updateMapData(map: MapLibreMap, data: MapData): void {
   }
 
   removePinGroup(map);
-  addPinGroup(map, data, styleHasGlyphs(map));
+  addPinGroup(map, data, styleHasGlyphs(map), tokensFor(installedScheme.get(map) ?? 'light'));
   installedClustering.set(map, data.clustering);
 }

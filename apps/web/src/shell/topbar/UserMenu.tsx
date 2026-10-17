@@ -3,13 +3,18 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMe, useSignOut, useSwitchCompany } from '../../api/hooks.ts';
 import type { Account } from '../../api/types.ts';
 import { common } from '../../copy/common.ts';
+import { rail } from '../../copy/rail.ts';
 import { shell } from '../../copy/shell.ts';
 import { SetupRing } from '../../features/setup/SetupRing.tsx';
 import { useIsPhone } from '../useIsPhone.ts';
 import styles from './UserMenu.module.css';
 
-/** The person's initials in the top bar (the name is the button's label, for screen readers). Opens the account menu: a popover on desktop, a sheet on phone. */
-export function UserMenu() {
+/**
+ * The signed-in person. `rail` is the foot of the left rail (initials, name and role, the menu opening upward, the setup
+ * ring above it); `bar` is a phone page's head (just the initials, the menu a bottom sheet). The name is the button's
+ * accessible name either way. Opens the account menu: a popover on desktop, a sheet on phone.
+ */
+export function UserMenu({ variant = 'bar' }: { variant?: 'rail' | 'bar' }) {
   const me = useMe();
   const phone = useIsPhone();
   const [open, setOpen] = useState(false);
@@ -35,7 +40,7 @@ export function UserMenu() {
   if (!account) return null;
 
   return (
-    <div ref={rootRef} className={styles.root}>
+    <div ref={rootRef} className={styles.root} data-variant={variant}>
       <Button
         variant="ghost"
         aria-haspopup="true"
@@ -44,9 +49,19 @@ export function UserMenu() {
         onClick={() => setOpen((current) => !current)}
         className={styles.trigger}
       >
-        <Avatar name={account.user.name} size={32} />
+        <Avatar name={account.user.name} size={28} />
+        {variant === 'rail' ? (
+          <span className={styles.who}>
+            <b className={styles.name}>{account.user.name}</b>
+            <small className={styles.role}>{rail.roles[account.role]}</small>
+          </span>
+        ) : null}
       </Button>
-      <SetupRing />
+      {variant === 'rail' ? (
+        <div className={styles.setup}>
+          <SetupRing />
+        </div>
+      ) : null}
       {open && !phone ? (
         <div ref={popoverRef} tabIndex={-1} className={styles.popover}>
           <Card as="section" padded={false} aria-label={shell.menuLabel}>

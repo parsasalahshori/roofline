@@ -1,11 +1,12 @@
-import { Button, Card, EmptyState, Field, Skeleton, useToast } from '@roofline/ui';
-import { useId, useState, type FormEvent, type ReactNode } from 'react';
+import { Banner, Button, EmptyState, Field, Panel, Skeleton, useToast } from '@roofline/ui';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import type { AdAccount, AdPlatform } from '../../api/types.ts';
 import { useMe } from '../../api/hooks.ts';
 import { connections } from '../../copy/connections.ts';
 import { errors } from '../../copy/errors.ts';
 import { settings } from '../../copy/settings.ts';
 import { formErrors } from '../auth/formErrors.ts';
+import { ConnectionTag, type ConnectionState } from './ConnectionTag.tsx';
 import {
   useAdAccounts,
   useCheckAdAccount,
@@ -13,6 +14,7 @@ import {
   useConnectMeta,
   useRemoveAdAccount,
 } from './adsApi.ts';
+import form from './form.module.css';
 import styles from './AdConnections.module.css';
 
 /*
@@ -24,79 +26,100 @@ import styles from './AdConnections.module.css';
 const GOOGLE_ID = /^\d{10}$/;
 const stripSeparators = (value: string) => value.replace(/[-\s]/g, '');
 
+/** A linked Google Ads customer ID the way Google writes it, 795-262-0506; anything that is not ten digits stays as it came. */
+const formatGoogleId = (id: string) => (GOOGLE_ID.test(id) ? `${id.slice(0, 3)}-${id.slice(3, 6)}-${id.slice(6)}` : id);
+
+/** A linked Meta ad account ID without the act_ the platform's API puts in front of it. */
+const formatMetaId = (id: string) => id.replace(/^act_/i, '');
+
 /** The account on this platform that is still linked. A removed one is not, and the form comes back. */
 const linkedAccount = (accounts: AdAccount[], platform: AdPlatform) =>
   accounts.find((account) => account.platform === platform && account.status !== 'revoked');
 
+/** How the account stands, for the tag beside the card's title. No account is "not connected". */
+function stateOf(account: AdAccount | undefined): ConnectionState {
+  if (account === undefined || account.status === 'revoked') return 'off';
+  if (account.status === 'active') return 'connected';
+  return account.status === 'pending' ? 'waiting' : 'attention';
+}
+
 type AdAccountCardProps = {
   heading: string;
   steps: string[];
+  /** What the platform calls an account's ID, and the ID as a person reads it. */
+  idLabel: string;
+  formatId: (id: string) => string;
   account: AdAccount | undefined;
   owner: boolean;
   /** The form that links a new account; shown to the owner only, while there is no account. */
   connectForm: ReactNode;
 };
 
-/** One platform's card: its steps, then its status and controls once an account exists. */
-function AdAccountCard({ heading, steps, account, owner, connectForm }: AdAccountCardProps) {
-  const headingId = useId();
+/** One platform's card: its state beside the title, the steps while there is something left to do, then the account and its controls. */
+function AdAccountCard({ heading, steps, idLabel, formatId, account, owner, connectForm }: AdAccountCardProps) {
   const toast = useToast();
   const check = useCheckAdAccount();
   const remove = useRemoveAdAccount();
   // A failed press is said in a toast; the provider's own words never reach the screen
   const reportError = (error: Error) => toast.show(formErrors(error, []).general ?? errors.generic, 'error');
+  const needsCheck = account?.status === 'pending' || account?.status === 'error';
 
-  return (
-    <Card as="section" className={styles.card} aria-labelledby={headingId}>
-      <h2 id={headingId} className={styles.heading}>
-        {heading}
-      </h2>
-      <p className={styles.stepsLabel}>{connections.stepsLabel}</p>
-      <ol className={styles.steps}>
+  // How to connect: the way in while nothing is linked, and a reference under the controls while the link waits on the person
+  const stepsList = (
+    <div className={styles.steps}>
+      <p className={form.factLabel}>{connections.stepsLabel}</p>
+      <ol>
         {steps.map((step) => (
           <li key={step}>{step}</li>
         ))}
       </ol>
+    </div>
+  );
 
-      {account ? (
-        <div className={styles.account}>
-          <p className={styles.accountId}>{connections.accountId(account.externalAccountId)}</p>
-          <p className={styles.statusRow}>
-            <span className={styles.statusLabel}>{connections.statusLabel}</span>
-            <span className={styles.status} data-status={account.status}>
-              {connections.statuses[account.status]}
-            </span>
-          </p>
-          {(account.status === 'pending' || account.status === 'error') && account.lastErrorPlain ? (
-            <p className={styles.reason}>{account.lastErrorPlain}</p>
-          ) : null}
-          {owner ? (
-            <div className={styles.actions}>
-              {account.status === 'pending' || account.status === 'error' ? (
+  return (
+    <Panel title={heading} actions={<ConnectionTag state={stateOf(account)} />}>
+      <div className={styles.body}>
+        {account ? (
+          <>
+            <dl className={form.facts}>
+              <div className={form.fact}>
+                <dt className={form.factLabel}>{idLabel}</dt>
+                <dd className={`${form.factValue} ${form.mono}`}>{formatId(account.externalAccountId)}</dd>
+              </div>
+            </dl>
+            {needsCheck && account.lastErrorPlain ? (
+              <Banner tone={account.status === 'error' ? 'danger' : 'warning'}>{account.lastErrorPlain}</Banner>
+            ) : null}
+            {owner ? (
+              <div className={styles.actions}>
+                {needsCheck ? (
+                  <Button
+                    variant="primary"
+                    busy={check.isPending}
+                    onClick={() => check.mutate(account.id, { onError: reportError })}
+                  >
+                    {connections.checkAgain}
+                  </Button>
+                ) : null}
                 <Button
-                  variant="primary"
-                  busy={check.isPending}
-                  onClick={() => check.mutate(account.id, { onError: reportError })}
+                  variant="default"
+                  busy={remove.isPending}
+                  onClick={() => remove.mutate(account.id, { onError: reportError })}
                 >
-                  {connections.checkAgain}
+                  {connections.remove}
                 </Button>
-              ) : null}
-              <Button
-                variant="ghost"
-                busy={remove.isPending}
-                onClick={() => remove.mutate(account.id, { onError: reportError })}
-              >
-                {connections.remove}
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      ) : owner ? (
-        connectForm
-      ) : (
-        <p className={styles.note}>{connections.ownerOnly}</p>
-      )}
-    </Card>
+              </div>
+            ) : null}
+            {account.status === 'active' ? null : stepsList}
+          </>
+        ) : (
+          <>
+            {stepsList}
+            {owner ? connectForm : <p className={form.help}>{connections.ownerOnly}</p>}
+          </>
+        )}
+      </div>
+    </Panel>
   );
 }
 
@@ -192,7 +215,7 @@ function MetaConnectForm() {
   );
 }
 
-/** The slot for ad account connections under Connections: one card per platform. */
+/** The ad account connections under Connections: one panel per platform. */
 export function AdConnections() {
   const me = useMe();
   const accounts = useAdAccounts();
@@ -218,10 +241,12 @@ export function AdConnections() {
       );
     }
     return (
-      <div role="status" className={styles.loading}>
-        <Skeleton lines={4} />
-        <span className="visually-hidden">{settings.loading}</span>
-      </div>
+      <Panel>
+        <div role="status">
+          <Skeleton lines={4} />
+          <span className="visually-hidden">{settings.loading}</span>
+        </div>
+      </Panel>
     );
   }
 
@@ -230,15 +255,18 @@ export function AdConnections() {
   const list = accounts.data.accounts;
 
   return (
-    <div className={styles.cards}>
+    <>
       <AdAccountCard
         heading={connections.googleAds}
         steps={[
           connections.googleStepId,
-          managerId !== null ? connections.googleStepManager(managerId) : connections.googleStepManagerSoon,
+          // An ID that is not set up yet comes as an empty string as well as null: either one is "not yet"
+          managerId ? connections.googleStepManager(managerId) : connections.googleStepManagerSoon,
           connections.googleStepAccept,
           connections.googleStepCheck,
         ]}
+        idLabel={connections.googleAccountIdLabel}
+        formatId={formatGoogleId}
         account={linkedAccount(list, 'google')}
         owner={owner}
         connectForm={<GoogleConnectForm />}
@@ -246,15 +274,17 @@ export function AdConnections() {
       <AdAccountCard
         heading={connections.meta}
         steps={[
-          businessId !== null ? connections.metaStepBusiness(businessId) : connections.metaStepBusinessSoon,
+          businessId ? connections.metaStepBusiness(businessId) : connections.metaStepBusinessSoon,
           connections.metaStepShare,
           connections.metaStepId,
           connections.metaStepConnect,
         ]}
+        idLabel={connections.metaAccountIdLabel}
+        formatId={formatMetaId}
         account={linkedAccount(list, 'meta')}
         owner={owner}
         connectForm={<MetaConnectForm />}
       />
-    </div>
+    </>
   );
 }
