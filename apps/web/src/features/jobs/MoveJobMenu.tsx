@@ -107,7 +107,7 @@ export function MoveJobMenu({ job, onMoved, compact = false, archived, split = f
       current={job.stage}
       extras={extras}
       showLabel={!compact && !split}
-      className={prominent ? styles.tall : undefined}
+      className={prominent ? styles.tall : styles.target}
       onPick={(key) => void choose(key)}
     />
   );

@@ -1015,6 +1015,17 @@ describe('jobs list', () => {
     expect(within(row).getByRole('button', { name: jobs.moveTo })).toBeInTheDocument();
   });
 
+  it('a job with no value yet has a quiet dash in the Value column and says so in words', async () => {
+    signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead', customerName: 'Pat Homeowner', valueCents: null })])]));
+    renderApp('/jobs?view=list');
+
+    const table = await screen.findByRole('table', { name: jobs.listLabel });
+    const row = within(table).getByRole('row', { name: /Pat Homeowner/ });
+    const dash = within(row).getByText(jobs.noValueDash);
+    expect(dash).toHaveAttribute('aria-hidden', 'true');
+    expect(within(row).getByText(jobs.noValueYet)).toHaveClass('visually-hidden');
+  });
+
   it('an empty list says what is missing and offers a New job button', async () => {
     signedIn(boardOf());
     renderApp('/jobs?view=list');

@@ -48,9 +48,17 @@
   color: var(--ink-3);
 }
 
+/* A date in a table is a number: the mono face, like Age and Value */
 .updated {
   color: var(--ink-3);
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* A job with no value yet: a quiet dash where the figure would be */
+.noValue {
+  color: var(--ink-3);
 }
 
 .move {
@@ -79,10 +87,11 @@
   box-shadow: var(--e-1);
 }
 
+/* The foot of the card runs to the card's own padding; only the rows beside the 44px move button leave it room */
 .cardLink {
   gap: 4px;
   min-height: 0;
-  padding: 12px 56px 12px 14px;
+  padding: 12px 14px;
   align-items: stretch;
 }
 
@@ -91,6 +100,11 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 8px;
+  padding-right: 36px;
+}
+
+.card .address {
+  padding-right: 36px;
 }
 
 .cardFoot {
@@ -111,6 +125,6 @@
 
 .cardMove {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 4px;
+  right: 4px;
 }

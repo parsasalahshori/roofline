@@ -34,6 +34,8 @@ export const jobs = {
   totalWord: 'total',
   /** A lane whose jobs have no value yet: said in words rather than as "$0". */
   noValueYet: 'No value yet',
+  /** Where a job's value would be in a table, until it has one. */
+  noValueDash: '–',
   addToStage: (stage: string) => `Add a job to ${stage}`,
   lostDrawer: (count: number) => `Lost (${count})`,
   lostDrawerEmpty: 'No lost jobs.',
