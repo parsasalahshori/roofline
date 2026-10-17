@@ -130,9 +130,10 @@ function ProposalBody({ proposal }: { proposal: ProposalView }) {
       title={proposals.title(proposal.number)}
       crumbs={[JOBS_CRUMB, { label: proposal.customer.name, href: `/jobs/${proposal.jobId}` }, { label: proposal.number }]}
       subtitle={
-        <span className={styles.meta}>
+        <span className={styles.meta} data-proposal-meta="">
           <StatusTag proposal={proposal} />
-          <span className={styles.part}>{proposals.customerLine(proposal.customer.name, proposal.address)}</span>
+          <span className={styles.part}>{proposal.customer.name}</span>
+          {proposal.address.trim() !== '' ? <span className={styles.part}>{proposal.address}</span> : null}
           <span className={styles.part}>{proposals.validUntil(formatDay(proposal.validUntil))}</span>
           {proposal.basis === 'exact' ? <span className={styles.part}>{proposals.basisExactNote}</span> : null}
         </span>

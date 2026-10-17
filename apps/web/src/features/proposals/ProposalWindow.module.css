@@ -3,23 +3,42 @@
  * activity and the text message at the right.
  */
 .meta {
+  /* The room a dot has between two words */
+  --dot-room: 16px;
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  vertical-align: top;
+  row-gap: 4px;
   min-width: 0;
+  /* A word that wraps to the start of a line has its dot out past the left edge, and the edge cuts it off: no line starts or ends with one */
+  overflow: hidden;
   overflow-wrap: anywhere;
 }
 
 /* The status tag keeps its room from the words after it */
 .meta > :first-child {
-  margin-right: 6px;
+  margin-right: 12px;
 }
 
-/* The words of the line under the title read as one line: a dot after each but the last, centred in the gap (6px each side, as the dot inside a part) */
-.part:not(:last-child)::after {
+/* The words under the title read as one line, a dot centred between each pair. Each word after the first pulls back over the room its
+   predecessor leaves for it and holds the dot in its own left padding. */
+.part:not(:last-child) {
+  padding-right: var(--dot-room);
+}
+
+.part + .part {
+  position: relative;
+  margin-left: calc(-1 * var(--dot-room));
+  padding-left: var(--dot-room);
+}
+
+.part + .part::before {
   content: '\00b7';
-  margin-left: 6px;
+  position: absolute;
+  left: 0;
+  width: var(--dot-room);
+  text-align: center;
   color: var(--ink-3);
 }
 

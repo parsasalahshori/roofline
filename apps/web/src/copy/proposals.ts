@@ -17,7 +17,6 @@ export const proposals = {
 
   // --- header ---
   title: (number: string): string => `Proposal ${number}`,
-  customerLine: (name: string, address: string): string => `${name} · ${address}`,
   validUntil: (date: string): string => `Good until ${date}`,
   /** Labels every instant number and every price derived from one (master 9.2). */
   estimateLabel: 'Estimate',

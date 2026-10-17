@@ -172,8 +172,11 @@ describe('ProposalWindow page', () => {
     mocks.proposal = make();
     show();
     expect(screen.getByText(proposals.statusLabelFor('draft'))).toBeInTheDocument();
-    expect(screen.getByText(proposals.customerLine('Dana Smith', '12 Oak St'))).toBeInTheDocument();
-    expect(screen.getByText(proposals.validUntil('Nov 11'))).toBeInTheDocument();
+    // One word each, so the page puts the same dot between them
+    const meta = document.querySelector('[data-proposal-meta]') as HTMLElement;
+    expect(within(meta).getByText('Dana Smith')).toBeInTheDocument();
+    expect(within(meta).getByText('12 Oak St')).toBeInTheDocument();
+    expect(within(meta).getByText(proposals.validUntil('Nov 11'))).toBeInTheDocument();
   });
 
   it('the valid-until date is plain: Nov 9, not 2026-11-09', () => {
