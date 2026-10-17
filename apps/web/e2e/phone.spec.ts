@@ -102,8 +102,9 @@ for (const width of [360, 390]) {
       const search = main.getByRole('button', { name: 'Search', exact: true });
       const bell = main.getByRole('link', { name: 'Notifications' });
       await expect(menu).toBeVisible();
-      // Only the initials show on a phone; the full name is the button's label.
-      await expect(main.getByText(longName, { exact: true })).toHaveCount(0);
+      // Only the initials show on a phone; the full name is the button's label (not its text: a list elsewhere on the page,
+      // such as the Jobs filter's people, may name the owner in full)
+      await expect(menu).not.toContainText(longName);
 
       const [titleBox, menuBox, searchBox, bellBox] = await Promise.all([heading.boundingBox(), menu.boundingBox(), search.boundingBox(), bell.boundingBox()]);
       for (const box of [titleBox, menuBox, searchBox, bellBox]) expect(box).not.toBeNull();
