@@ -9,6 +9,7 @@ const order = read('features/measure/windows/order/OrderWindow.module.css');
 const panel = read('features/measure/lift/ProposalPanel.module.css');
 const scanBar = read('features/measure/lift/ScanBar.module.css');
 const windows = read('features/measure/windows/WindowsWindow.module.css');
+const roofPage = read('features/measure/MeasureWindow.module.css');
 
 /** One declaration of the first rule for a selector in the text given (at any indent: a query's rules count). */
 function valueOf(css: string, selector: string, property: string): string | undefined {
@@ -52,6 +53,21 @@ describe('the Measure roof callout', () => {
   it('stands clear of the credits strip along the bottom of a wide map, and keeps its lower place where they fold into a corner', () => {
     expect(valueOf(scanBar, '.bar', 'bottom')).toBe('30px');
     expect(valueOf(from(scanBar, '@container (max-width: 640px)'), '.bar', 'bottom')).toBe('20px');
+  });
+});
+
+describe('the measured roof on a phone', () => {
+  it('gives the photo more than the screen’s height, so the roof is framed above the card with its labels apart, and the page scrolls to the numbers', () => {
+    const narrow = from(roofPage, '@container measure (max-width: 979.98px)');
+    expect(valueOf(narrow, '.work[data-step="roof"][data-proposal="true"]', 'min-height')).toBe('640px');
+    // Before the scan the photo keeps the screen's height: the Measure roof button stays in view
+    expect(valueOf(roofPage, '.work', 'min-height')).toBe('480px');
+  });
+
+  it('keeps the bar with the total over the photo’s own layers (the card is 3), which scroll under it now, and under the tab bar', () => {
+    const bar = Number(valueOf(roofPage, '.quoteBar', 'z-index'));
+    expect(bar).toBeGreaterThan(3);
+    expect(bar).toBeLessThan(10);
   });
 });
 
