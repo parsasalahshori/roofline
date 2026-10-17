@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { Fragment, useId, useState } from 'react';
 import { useParams } from 'react-router';
 import type { ProposalView } from '@roofline/shared';
 import { Banner, Button, Field, Icon, Panel, Segmented, Skeleton } from '@roofline/ui';
@@ -22,30 +22,59 @@ import { formatDay } from './format.ts';
 import { OptionCard } from './OptionCard.tsx';
 import { ProposalEvents, proposalEventLines } from './ProposalEvents.tsx';
 import { StatusTag } from './StatusTag.tsx';
+import { messageParts, type MessageWords } from './messagePreview.ts';
 import { RECOMMENDED_TIER } from './tiers.ts';
 import styles from './ProposalWindow.module.css';
 
 const JOBS_CRUMB = { label: WINDOW_COPY.jobs.title, href: '/jobs' } as const;
 
-/** The text message; edits stay local and save when the field loses focus with a changed value. */
-function MessageBox({ body, editable, onCommit }: { body: string; editable: boolean; onCommit: (body: string) => void }) {
+/** The message as the customer will read it: the words that fill in are filled, and the link is a quiet word of its own line. */
+function MessageText({ body, words }: { body: string; words: MessageWords }) {
+  return (
+    <p className={styles.messageText}>
+      {messageParts(body, words).map((part, i) =>
+        part.link ? (
+          <Fragment key={i}>
+            <span className={styles.messageLink}>{proposals.messageLinkWord}</span>
+            <br />
+          </Fragment>
+        ) : (
+          <Fragment key={i}>{part.text}</Fragment>
+        ),
+      )}
+    </p>
+  );
+}
+
+/**
+ * The text message. The box is the text with its words that fill in ({first_name} and the rest) as they are kept; under it,
+ * and alone once the proposal cannot be edited, the same text as the customer reads it. Edits stay local and save when the
+ * field loses focus with a changed value.
+ */
+function MessageBox({ body, editable, words, onCommit }: { body: string; editable: boolean; words: MessageWords; onCommit: (body: string) => void }) {
   const [draft, setDraft] = useState(body);
   return (
     <Panel title={proposals.messageHeading} className={styles.message}>
       {editable ? (
-        <Field
-          multiline
-          rows={4}
-          label={proposals.messageLabel}
-          help={proposals.messageHelp}
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={() => {
-            if (draft !== body) onCommit(draft);
-          }}
-        />
+        <>
+          <Field
+            multiline
+            rows={4}
+            label={proposals.messageLabel}
+            help={proposals.messageHelp}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={() => {
+              if (draft !== body) onCommit(draft);
+            }}
+          />
+          <div className={styles.preview} data-preview="">
+            <p className={styles.previewLabel}>{proposals.messagePreview}</p>
+            <MessageText body={draft} words={words} />
+          </div>
+        </>
       ) : (
-        <p className={styles.messageText}>{body}</p>
+        <MessageText body={body} words={words} />
       )}
     </Panel>
   );
@@ -92,6 +121,8 @@ function ProposalBody({ proposal }: { proposal: ProposalView }) {
   const radioName = useId();
 
   const events = proposalEventLines(proposal, new Date(), timeZone);
+  // What the text's words that fill in are filled with, as the server fills them when the text goes out
+  const words: MessageWords = { firstName: proposal.customer.name.trim().split(/\s+/)[0] ?? null, company: company.data?.name ?? '', address: proposal.address };
 
   return (
     <DetailPage
@@ -101,9 +132,9 @@ function ProposalBody({ proposal }: { proposal: ProposalView }) {
       subtitle={
         <span className={styles.meta}>
           <StatusTag proposal={proposal} />
-          <span>{proposals.customerLine(proposal.customer.name, proposal.address)}</span>
-          <span>{proposals.validUntil(formatDay(proposal.validUntil))}</span>
-          {proposal.basis === 'exact' ? <span>{proposals.basisExactNote}</span> : null}
+          <span className={styles.part}>{proposals.customerLine(proposal.customer.name, proposal.address)}</span>
+          <span className={styles.part}>{proposals.validUntil(formatDay(proposal.validUntil))}</span>
+          {proposal.basis === 'exact' ? <span className={styles.part}>{proposals.basisExactNote}</span> : null}
         </span>
       }
       actions={
@@ -206,6 +237,7 @@ function ProposalBody({ proposal }: { proposal: ProposalView }) {
             key={proposal.messageBody}
             body={proposal.messageBody}
             editable={editable}
+            words={words}
             onCommit={(messageBody) => patch.mutate({ messageBody })}
           />
         </div>

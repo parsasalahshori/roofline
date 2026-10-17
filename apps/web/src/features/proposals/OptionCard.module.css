@@ -2,8 +2,8 @@
  * One option of a proposal. On a desktop the three options are stacked rows and each row is a radio that picks it: its
  * tier, name and what it is made of at the left, its price in Archivo at the right. The picked row opens out under its
  * heading into what it includes, what can be changed and its price lines, and the total stays pinned at the foot while
- * those lines scroll. The recommended option has the brand ring and tint and says so in a tag; the picked one has the
- * filled radio and an ink ring. On a phone the tabs pick, and the row is only a heading.
+ * those lines scroll. The picked option has the company's ring and its filled radio; the recommended one has the tint and
+ * says so in a tag. On a phone the tabs pick, and the row is only a heading.
  */
 .card {
   min-width: 0;
@@ -14,12 +14,8 @@
   box-shadow: var(--e-1);
 }
 
+/* The picked option has the company's ring (selection is the brand colour, as on the roof's quote); the recommended one has its tint and its tag */
 .card[data-open='true'] {
-  border-color: var(--ink);
-  box-shadow: 0 0 0 1px var(--ink), var(--e-1);
-}
-
-.card[data-recommended='true'] {
   border-color: var(--brand);
   box-shadow: 0 0 0 1px var(--brand), var(--e-1);
 }
@@ -47,7 +43,7 @@
 }
 
 .header:has(.input:focus-visible) {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
 
@@ -71,7 +67,7 @@
   cursor: pointer;
 }
 
-/* The radio: an empty ring, with an ink dot when the row is the picked one */
+/* The radio: an empty ring, with a dot in the company's colour when the row is the picked one */
 .radio {
   display: inline-grid;
   flex: none;
@@ -85,7 +81,7 @@
 }
 
 .input:checked + .radio {
-  border-color: var(--ink);
+  border-color: var(--brand);
 }
 
 .input:checked + .radio::after {
@@ -93,7 +89,7 @@
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: var(--ink);
+  background: var(--brand);
 }
 
 .titles {
@@ -145,7 +141,7 @@
 .body {
   display: grid;
   gap: 18px;
-  padding: 16px;
+  padding: 16px 16px 28px;
   border-top: 1px solid var(--line);
 }
 
@@ -253,6 +249,18 @@
   border-top: 1px solid var(--line);
   border-radius: 0 0 var(--r-3) var(--r-3);
   background: var(--surface-2);
+}
+
+/* Lines scrolling under the bar fade out into it, so a row is never cut through by a hard edge (the body's bottom padding keeps the last row clear of the fade) */
+.foot::before {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  left: 0;
+  height: 20px;
+  background: linear-gradient(to top, var(--surface), transparent);
+  pointer-events: none;
 }
 
 .footLabel {

@@ -134,6 +134,9 @@ export function OptionCard({ option, editable, basis, prices, onChange, open = t
   };
 
   const recommended = option.tier === RECOMMENDED_TIER;
+  // An option named for its material (Good: "Architectural shingles") does not say the material twice
+  const material = materialNames[draft.material];
+  const specText = draft.name.trim().toLowerCase() === material.toLowerCase() ? proposals.specLineWasteOnly(waste) : proposals.specLine(material, waste);
   const title = (
     <>
       {onSelect ? <span className={styles.radio} aria-hidden="true" /> : null}
@@ -157,7 +160,7 @@ export function OptionCard({ option, editable, basis, prices, onChange, open = t
           )}
         </span>
         <span className={styles.name}>{draft.name}</span>
-        <span className={styles.spec}>{proposals.specLine(materialNames[draft.material], waste)}</span>
+        <span className={styles.spec}>{specText}</span>
       </span>
       {onSelect ? <span className={styles.price}>{proposals.money(totalCents)}</span> : null}
     </>

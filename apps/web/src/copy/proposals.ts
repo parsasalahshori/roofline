@@ -78,6 +78,10 @@ export const proposals = {
   messageHeading: 'Text message',
   messageLabel: 'What the customer gets by text',
   messageHelp: 'Keep {link} in the message so the customer can open the proposal.',
+  /** Under the text box: the same message with the words that fill in already filled, as the customer will read it. */
+  messagePreview: 'How it reads',
+  /** Stands for the proposal's link in that preview: the real link is made when the text goes out. */
+  messageLinkWord: 'link to your proposal',
 
   // --- actions ---
   send: 'Send',
@@ -98,6 +102,8 @@ export const proposals = {
   optionLeftOut: 'Left out',
   /** The one line under an option's name: what it is made of and the waste it allows for. */
   specLine: (material: string, wastePercent: number): string => `${material} · ${wastePercent}% waste`,
+  /** The same line when the option's name already says the material. */
+  specLineWasteOnly: (wastePercent: number): string => `${wastePercent}% waste`,
   activityHeading: 'Activity',
 
   // --- option cards ---

@@ -11,6 +11,13 @@
   overflow-wrap: anywhere;
 }
 
+/* The words of the line under the title read as one line: a dot after each but the last */
+.part:not(:last-child)::after {
+  content: '\00b7';
+  margin-left: 10px;
+  color: var(--ink-3);
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;
@@ -72,8 +79,39 @@
 
 .messageText {
   margin: 0;
+  line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* The proposal's link in the preview: a quiet word of its own line, since the real link is made when the text goes out */
+.messageLink {
+  display: inline-block;
+  margin: 2px 0;
+  padding: 1px 8px;
+  border-radius: var(--r-1);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--info-text);
+  font: 500 13px/1.4 var(--f-mono);
+  text-decoration: underline;
+}
+
+/* Under the editable box: the message as the customer reads it */
+.preview {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.previewLabel {
+  margin: 0;
+  color: var(--ink-3);
+  font: 600 var(--font-size-min) / 1.2 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .skeletonPanel {

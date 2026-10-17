@@ -156,8 +156,15 @@ describe('OptionCard', () => {
   });
 
   it('under its name, one line: what it is made of and the waste it allows for', () => {
-    const { option } = setup();
+    const { option } = setup({ option: { ...makeOption(), name: 'The everyday roof' } });
     expect(screen.getByText(proposals.specLine(materialNames[option.scope.material], option.scope.wastePercent))).toBeInTheDocument();
+  });
+
+  it('a name that is already the material is not said twice: the line is the waste alone', () => {
+    const { option } = setup();
+    expect(option.name).toBe(materialNames[option.scope.material]);
+    expect(screen.getByText(proposals.specLineWasteOnly(option.scope.wastePercent))).toBeInTheDocument();
+    expect(screen.queryByText(proposals.specLine(materialNames[option.scope.material], option.scope.wastePercent))).toBeNull();
   });
 
   it('the total is the last thing in the card, after the price lines', () => {
