@@ -199,6 +199,7 @@
 /* A visit: a tint of its person's colour, a 3px edge in the full colour, text in ink, the time in mono */
 /* No z-index of its own: the line for the time now passes over the tint but under the words (see .now) */
 .appt {
+  --block: color-mix(in srgb, var(--person) 14%, var(--surface));
   position: absolute;
   box-sizing: border-box;
   display: flex;
@@ -208,14 +209,22 @@
   padding: 4px 8px;
   border-left: 3px solid var(--person);
   border-radius: 2px var(--r-2) var(--r-2) 2px;
-  background: color-mix(in srgb, var(--person) 14%, var(--surface));
+  background: var(--block);
   color: var(--ink);
   cursor: pointer;
   overflow: hidden;
   line-height: 1.2;
+  /* A halo in the block's own tint: the line for the time now, when it crosses a word, breaks around the letters instead of striking them out */
+  text-shadow:
+    0 0 2px var(--block),
+    0 0 2px var(--block),
+    0 0 3px var(--block);
 }
 
-.appt:hover,
+.appt:hover {
+  --block: color-mix(in srgb, var(--person) 24%, var(--surface));
+}
+
 .allDayItem:hover {
   background: color-mix(in srgb, var(--person) 24%, var(--surface));
 }

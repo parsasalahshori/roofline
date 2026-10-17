@@ -39,6 +39,8 @@ const WHOLE_CHARS = 19;
 const SHORT_CHARS = 12;
 /** The room a block needs beside the kind of visit to show the word of a mark ("Done", "No-show"), not only its glyph. */
 const WORD_ROOM_PX = 150;
+/** Narrower than this, a block cannot hold the kind of visit and the glyph of its status on one line: the glyph takes the line of its own. */
+const MARK_BESIDE_PX = 60;
 
 /** Wall-clock minutes since midnight of `instant` in `zone`. */
 function wallMinutes(instant: Date, zone: string): number {
@@ -211,6 +213,9 @@ export function TimeGrid({ zone, days, appointments, busy, people, showCanceled,
   /** Whether a block `lanes` side by side has room for the word of its status mark (before the column is measured, only a block alone has). */
   const hasWordRoom = (lanes: number): boolean => (columnPx === null ? lanes === 1 : columnPx / lanes - BLOCK_CHROME_PX >= WORD_ROOM_PX);
 
+  /** Whether a block `lanes` side by side is too narrow for the kind of visit and its status glyph on one line (unmeasured, none is). */
+  const isNarrow = (lanes: number): boolean => columnPx !== null && columnPx / lanes - BLOCK_CHROME_PX < MARK_BESIDE_PX;
+
   /** Arrow keys walk the appointments in DOM order; Enter opens the focused one. */
   const onItemKeyDown = (event: KeyboardEvent<HTMLElement>, appointmentId: string) => {
     if (event.key === 'Enter') {
@@ -309,6 +314,9 @@ export function TimeGrid({ zone, days, appointments, busy, people, showCanceled,
       const hours = fitHours([range, formatCompactRange(startAt, endAt, zone), compactStart], laneCount);
       const startText = fitHours([start, compactStart], laneCount);
       const kind = visitKind(appt.title, appt.customerName);
+      const mark = statusMark(appt, laneCount);
+      // A narrow block gives the kind the whole line and the status glyph the line the hours would have had: the start is on the grid's own axis
+      const markBelow = mark !== null && isNarrow(laneCount);
       timed.push(
         <div
           key={appt.id}
@@ -338,16 +346,16 @@ export function TimeGrid({ zone, days, appointments, busy, people, showCanceled,
             <>
               {startText !== '' ? <span className={styles.itemTime}>{startText}</span> : null}
               <span className={styles.itemTitle}>{kind}</span>
-              {statusMark(appt, laneCount)}
+              {mark}
             </>
           ) : (
             <>
               <span className={styles.itemHead}>
                 <span className={styles.itemTitle}>{kind}</span>
-                {statusMark(appt, laneCount)}
+                {markBelow ? null : mark}
               </span>
               {appt.customerName ? <span className={styles.itemSub}>{appt.customerName}</span> : null}
-              {hours !== '' ? <span className={styles.itemTime}>{hours}</span> : null}
+              {markBelow ? mark : hours !== '' ? <span className={styles.itemTime}>{hours}</span> : null}
             </>
           )}
         </div>,

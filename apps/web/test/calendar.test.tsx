@@ -904,6 +904,39 @@ describe('hours that fit the block', () => {
   });
 });
 
+describe('the status glyph in a narrow block', () => {
+  function gridWidth(px: number) {
+    return vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.getAttribute('data-testid') === 'time-grid' ? px : 0;
+    });
+  }
+  /** The first line of a tall block: the kind of visit (and, when there is room, the mark). */
+  const headOf = (block: HTMLElement) => block.firstElementChild as HTMLElement;
+
+  it('sits beside the kind where the block has room for both, and under it where the kind would be cut to a letter', async () => {
+    const width = gridWidth(1000);
+    try {
+      renderCalendar('/calendar?view=week&date=2026-11-02', {
+        appointments: [
+          makeAppointment({ id: 'alone', status: 'completed', startsAt: '2026-11-03T15:00:00.000Z', endsAt: '2026-11-03T16:00:00.000Z' }),
+          makeAppointment({ id: 'p1', status: 'no_show', startsAt: '2026-11-02T15:00:00.000Z', endsAt: '2026-11-02T16:00:00.000Z' }),
+          makeAppointment({ id: 'p2', startsAt: '2026-11-02T15:30:00.000Z', endsAt: '2026-11-02T16:30:00.000Z' }),
+        ],
+      });
+      // A 132px column holds the kind and the mark of a lone block on one line
+      const alone = await screen.findByTestId('appt-alone');
+      expect(within(headOf(alone)).getByText(calendar.status.completed)).toBeInTheDocument();
+      // Two lanes of 66px leave 45px for the words: the kind has the line, the mark has the one after the customer
+      const side = screen.getByTestId('appt-p1');
+      expect(within(headOf(side)).queryByText(calendar.status.no_show)).toBeNull();
+      expect(within(side).getByText(calendar.status.no_show)).toBeInTheDocument();
+      expect(within(headOf(side)).getByText('Inspection')).toBeInTheDocument();
+    } finally {
+      width.mockRestore();
+    }
+  });
+});
+
 describe('where the grid opens', () => {
   /** Records the scrollTop the grid is given: jsdom does not scroll, so the value set is the answer. */
   function recordScroll(): { latest: () => number | undefined; restore: () => void } {
