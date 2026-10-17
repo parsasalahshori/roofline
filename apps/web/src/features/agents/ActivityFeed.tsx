@@ -1,18 +1,26 @@
-import { useState } from 'react';
-import { LAUNCH_AGENTS, type ScreenAgent } from '@roofline/shared';
+import { isScreenAgent, type ScreenAgent } from '@roofline/shared';
 import { Banner, Button, Chip, EmptyState, Panel, Skeleton } from '@roofline/ui';
+import { useSearchParams } from 'react-router';
 import { agents, agentsCommon } from '../../copy/agents.ts';
 import { AGENT_LABEL } from '../../copy/status.ts';
 import { InlineError } from '../approvals/InlineError.tsx';
 import { useCompany } from '../settings/api.ts';
+import { keepAddressTogether } from './addressText.ts';
 import { AgentGlyph } from './AgentGlyph.tsx';
+import { DASH_ORDER } from './agentTheme.ts';
 import { useAgentFeed } from './api.ts';
 import { agentTimeLabel } from './time.ts';
 import styles from './ActivityFeed.module.css';
 
-/** What the agents did, newest first: one chip per launch agent filters it, 'Show more' loads older rows. */
+/**
+ * What the agents did, newest first: one chip per agent, in the order of the Overview's cards, filters it; 'Show more'
+ * loads older rows. The filter lives in the address (?agent=storm_scout), so an agent's page can link to its own rows.
+ */
 export function ActivityFeed() {
-  const [filter, setFilter] = useState<ScreenAgent | undefined>(undefined);
+  const [params, setParams] = useSearchParams();
+  const asked = params.get('agent');
+  const filter: ScreenAgent | undefined = asked !== null && isScreenAgent(asked) ? asked : undefined;
+  const setFilter = (agent: ScreenAgent | undefined) => setParams(agent === undefined ? {} : { agent }, { replace: true });
   const feed = useAgentFeed(filter);
   const zone = useCompany().data?.timezone;
   const items = feed.data?.pages.flatMap((page) => page.items) ?? [];
@@ -23,7 +31,7 @@ export function ActivityFeed() {
         <Chip pressed={filter === undefined} onClick={() => setFilter(undefined)}>
           {agents.feedFilterAll}
         </Chip>
-        {LAUNCH_AGENTS.map((agent) => (
+        {DASH_ORDER.map((agent) => (
           <Chip key={agent} pressed={filter === agent} onClick={() => setFilter(agent)}>
             {AGENT_LABEL[agent]}
           </Chip>
@@ -53,7 +61,7 @@ export function ActivityFeed() {
                 <li key={item.id} className={styles.row}>
                   <AgentGlyph agent={item.agent} />
                   <div className={styles.text}>
-                    <p className={styles.sentence}>{item.text}</p>
+                    <p className={styles.sentence}>{keepAddressTogether(item.text)}</p>
                     <p className={styles.meta}>
                       <span className={styles.agent}>{AGENT_LABEL[item.agent]}</span>
                       <time dateTime={item.at} className={styles.time}>

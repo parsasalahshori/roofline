@@ -100,11 +100,10 @@
   font-variant-numeric: tabular-nums;
 }
 
-.saveRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
+.form {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
 }
 
 @media (max-width: 40rem) {

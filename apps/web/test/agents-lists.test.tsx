@@ -1,8 +1,9 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import type { BaselineBreakdownRow, RecentTask, RuleSentence } from '@roofline/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { TASK_KIND_LABEL } from '../src/copy/status.ts';
-import { RecentTasks } from '../src/features/agents/RecentTasks.tsx';
+import { agentPage } from '../src/copy/agents.ts';
+import { TASK_KIND_LABEL, TASK_STATUS_LABEL } from '../src/copy/status.ts';
+import { RECENT_SHOWN, RecentTasks } from '../src/features/agents/RecentTasks.tsx';
 import { RulesList } from '../src/features/agents/RulesList.tsx';
 import { TimeBreakdown } from '../src/features/agents/TimeBreakdown.tsx';
 import { renderAt, stubApi } from './helpers.tsx';
@@ -16,6 +17,7 @@ function task(overrides: Partial<RecentTask> = {}): RecentTask {
   return {
     id: 't1',
     kind: 'send_proposal',
+    title: 'Sent a proposal for 2208 Willow St',
     status: 'done',
     createdAt: '2026-10-12T20:05:00Z',
     minutesSaved: null,
@@ -26,20 +28,64 @@ function task(overrides: Partial<RecentTask> = {}): RecentTask {
 
 function showTasks(tasks: RecentTask[], timezone = 'America/Chicago') {
   const api = stubApi({ 'GET /api/company': () => ({ body: { id: 'c1', name: 'A', timezone } }) });
-  renderAt(<RecentTasks tasks={tasks} />);
+  renderAt(<RecentTasks agent="storm_scout" tasks={tasks} />);
   return api;
 }
 
 describe('RecentTasks', () => {
-  it('names the link by its content, in plain words', async () => {
+  it('names the link by its content: what the task was and its state, in plain words', async () => {
     showTasks([task()]);
     const link = await screen.findByRole('link');
     expect(link.getAttribute('aria-label')).toBeNull();
-    expect(within(link).getByText(TASK_KIND_LABEL['send_proposal']!)).toBeTruthy();
+    expect(within(link).getByText('Sent a proposal for 2208 Willow St')).toBeTruthy();
+    expect(within(link).getByText(TASK_STATUS_LABEL.done)).toBeTruthy();
     expect(link.textContent).not.toContain('send_proposal');
   });
 
-  it('has words for every real task kind and falls back for unknown ones', async () => {
+  it('shows what each task was, so rows of one kind can be told apart', async () => {
+    showTasks([
+      task({ id: 'a', title: 'Booked an inspection at 1105 Main St', href: null }),
+      task({ id: 'b', title: 'Booked an inspection at 5402 Aspen Grove Rd', href: null }),
+    ]);
+    expect(await screen.findByText('Booked an inspection at 1105 Main St')).toBeTruthy();
+    expect(screen.getByText('Booked an inspection at 5402 Aspen Grove Rd')).toBeTruthy();
+  });
+
+  it('keeps a house number with its street where a line breaks', async () => {
+    showTasks([task({ title: 'Booked an inspection at 305 Ridgeway Dr', href: null })]);
+    const title = await screen.findByText('Booked an inspection at 305 Ridgeway Dr');
+    expect(title.textContent).toContain('305\u00A0Ridgeway');
+  });
+
+  it('lists the ten newest and sends the rest to the Feed, filtered to this agent', async () => {
+    const many = Array.from({ length: 12 }, (_, index) => task({ id: `t${index}`, title: `Task number ${index}`, href: null }));
+    showTasks(many);
+    expect(await screen.findByText('Task number 0')).toBeTruthy();
+    expect(screen.getAllByRole('listitem')).toHaveLength(RECENT_SHOWN);
+    expect(screen.queryByText('Task number 10')).toBeNull();
+    expect(screen.getByRole('link', { name: agentPage.recentSeeAll }).getAttribute('href')).toBe('/agents/feed?agent=storm_scout');
+  });
+
+  it('has no link to the Feed when everything fits', async () => {
+    showTasks([task({ href: null }), task({ id: 't2', href: null })]);
+    await screen.findAllByText('Sent a proposal for 2208 Willow St');
+    expect(screen.queryByRole('link', { name: agentPage.recentSeeAll })).toBeNull();
+  });
+
+  it('writes the saved time as hours, with no second estimate mark', async () => {
+    showTasks([task({ minutesSaved: 30, href: null })]);
+    expect(await screen.findByText('about 0.5 hours')).toBeTruthy();
+    expect(screen.queryByText(/\(estimate\)/)).toBeNull();
+  });
+
+  it('writes times in the company time zone', async () => {
+    showTasks([task()], 'America/Los_Angeles');
+    expect(await screen.findByText('Oct 12, 1:05 PM')).toBeTruthy();
+  });
+});
+
+describe('task kind words', () => {
+  it('has words for every real task kind (the approvals screens use them)', () => {
     const kinds = ['storm_plan', 'send_storm_plan', 'create_ad_campaign', 'send_proposal', 'order_exact_report', 'exact_report'];
     // Front Desk live tasks and G1's agents (Claims, Scheduler, Follow-up).
     kinds.push('call', 'text_conversation', 'claims_nudges', 'claims_reply_noted', 'claims_adjuster_visit');
@@ -47,14 +93,6 @@ describe('RecentTasks', () => {
     for (const kind of kinds) {
       expect(Object.hasOwn(TASK_KIND_LABEL, kind)).toBe(true);
     }
-    showTasks([task({ id: 'u', kind: 'brand_new_kind', href: null }), task({ id: 'p', kind: 'toString', href: null })]);
-    expect(await screen.findByText('brand new kind')).toBeTruthy();
-    expect(screen.getByText('toString')).toBeTruthy();
-  });
-
-  it('writes times in the company time zone', async () => {
-    showTasks([task()], 'America/Los_Angeles');
-    expect(await screen.findByText('Oct 12, 1:05 PM')).toBeTruthy();
   });
 });
 

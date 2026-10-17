@@ -2,6 +2,7 @@ import { Banner, Icon, Panel, Skeleton, UiLink } from '@roofline/ui';
 import type { ScreenAgent } from '@roofline/shared';
 import { agentsDash } from '../../copy/agents.ts';
 import { AGENT_LABEL } from '../../copy/status.ts';
+import { keepAddressTogether } from './addressText.ts';
 import { AgentGlyph } from './AgentGlyph.tsx';
 import { agoWords } from './agentTheme.ts';
 import { useAgentDetail, useAgentFeed } from './api.ts';
@@ -35,7 +36,8 @@ export function AgentPanel({ agent, now }: { agent: ScreenAgent; now: number }) 
       <div className={styles.body}>
         <div className={styles.intro}>
           <p className={styles.blurb}>{agentsDash.blurb[agent]}</p>
-          {d ? <RunNowButton agent={agent} runNow={d.runNow} paused={d.paused !== null} label={agentsDash.runNow} /> : null}
+          {/* Front Desk's "answers as calls come in" would say the blurb over again: the panel leaves it out */}
+          {d && d.runNow.kind !== 'answers_calls' ? <RunNowButton agent={agent} runNow={d.runNow} paused={d.paused !== null} label={agentsDash.runNow} /> : null}
         </div>
         <section className={styles.section}>
           <div className={styles.sectionHead}>
@@ -76,10 +78,10 @@ export function AgentPanel({ agent, now }: { agent: ScreenAgent; now: number }) 
               {rows.map((row) => (
                 <li key={row.id} className={styles.feedRow}>
                   {row.href === null ? (
-                    <span>{row.text}</span>
+                    <span>{keepAddressTogether(row.text)}</span>
                   ) : (
                     <UiLink href={row.href} className={styles.feedLink}>
-                      {row.text}
+                      {keepAddressTogether(row.text)}
                     </UiLink>
                   )}{' '}
                   <span className={styles.when}>{agoWords(row.at, now)}</span>

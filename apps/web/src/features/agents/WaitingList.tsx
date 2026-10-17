@@ -1,10 +1,11 @@
 import { useId } from 'react';
 import type { WaitingItem } from '@roofline/shared';
-import { Banner, Button, EmptyState, Panel, Skeleton } from '@roofline/ui';
+import { Banner, Button, EmptyState, Panel, Skeleton, Tag } from '@roofline/ui';
 import { agents, agentsCommon } from '../../copy/agents.ts';
-import { AGENT_LABEL } from '../../copy/status.ts';
+import { AGENT_LABEL, TASK_STATUS_LABEL } from '../../copy/status.ts';
 import { InlineError } from '../approvals/InlineError.tsx';
 import { useCompany } from '../settings/api.ts';
+import { keepAddressTogether } from './addressText.ts';
 import { AgentGlyph } from './AgentGlyph.tsx';
 import { useWaiting } from './api.ts';
 import { agentTimeLabel } from './time.ts';
@@ -38,12 +39,18 @@ function WaitingGroup({ group, zone }: { group: Group; zone: string | undefined 
           <li key={item.id} className={styles.row}>
             <AgentGlyph agent={item.agent} />
             <div className={styles.text}>
-              <p className={styles.sentence}>{item.text}</p>
+              <p className={styles.sentence}>{keepAddressTogether(item.text)}</p>
               <p className={styles.meta}>
                 <span className={styles.agent}>{AGENT_LABEL[item.agent]}</span>
                 <time dateTime={item.since} className={styles.time}>
                   {agentTimeLabel(item.since, zone)}
                 </time>
+                {/* A task that needs help is told apart from the drafts waiting for a yes: a glyph, the words, a colour */}
+                {item.kind === 'attention' ? (
+                  <Tag tone="warn" icon="alert">
+                    {TASK_STATUS_LABEL.needs_attention}
+                  </Tag>
+                ) : null}
               </p>
             </div>
             {item.href ? (

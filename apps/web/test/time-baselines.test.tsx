@@ -2,6 +2,7 @@ import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { agentPage, timeBaselines as copy } from '../src/copy/agents.ts';
 import { TimeBaselines } from '../src/features/agents/TimeBaselines.tsx';
+import { settings } from '../src/copy/settings.ts';
 import { renderAt, stubApi } from './helpers.tsx';
 
 const ROWS = [
@@ -39,6 +40,44 @@ describe('TimeBaselines', () => {
     expect(api.unexpected).toEqual([]);
   });
 
+  it('the Save sits in the shared save bar: there while there are changes, gone when there are none', async () => {
+    const { user } = setup();
+    const field = await input('text_sent');
+    // Nothing to save, so no bar and no button
+    expect(screen.queryByRole('group', { name: settings.saveBar.label })).toBeNull();
+    expect(screen.queryByRole('button', { name: copy.save })).toBeNull();
+    await user.clear(field);
+    await user.type(field, '3');
+    const bar = screen.getByRole('group', { name: settings.saveBar.label });
+    expect(within(bar).getByText(settings.saveBar.unsaved)).toBeInTheDocument();
+    expect(within(bar).getByRole('button', { name: copy.save })).toBeEnabled();
+    // Putting the number back is not a change
+    await user.clear(field);
+    await user.type(field, '2');
+    expect(screen.queryByRole('group', { name: settings.saveBar.label })).toBeNull();
+  });
+
+  it('Enter in a number saves it, like the other settings forms', async () => {
+    const { api, user } = setup();
+    const field = await input('text_sent');
+    await user.clear(field);
+    await user.type(field, '4{Enter}');
+    await waitFor(() => expect(api.sent('PUT /api/agents/time-baselines')).toEqual([{ minutes: { text_sent: 4 } }]));
+    expect(await screen.findByText(copy.saved)).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: settings.saveBar.label })).toBeNull();
+  });
+
+  it('Discard puts the numbers back to what was saved and sends nothing', async () => {
+    const { api, user } = setup();
+    const field = await input('proposal_sent');
+    await user.clear(field);
+    await user.type(field, '30');
+    await user.click(screen.getByRole('button', { name: settings.saveBar.discard }));
+    expect(field.value).toBe('25');
+    expect(screen.queryByRole('group', { name: settings.saveBar.label })).toBeNull();
+    expect(api.calls.filter((call) => call.key.startsWith('PUT'))).toEqual([]);
+  });
+
   it('Reset to default sends null for a changed company number', async () => {
     const { api, user } = setup();
     const field = await input('proposal_sent');
@@ -53,18 +92,20 @@ describe('TimeBaselines', () => {
   it('validation shows plain messages next to the input and blocks Save', async () => {
     const { api, user } = setup();
     const field = await input('text_sent');
-    const save = screen.getByRole('button', { name: copy.save });
     await user.clear(field);
     await user.type(field, '700');
     const described = document.getElementById(field.getAttribute('aria-describedby') ?? '');
     expect(described).toHaveTextContent(copy.errorRange);
+    // A number that cannot be saved still brings the bar, so the person sees there is something to fix
+    const save = screen.getByRole('button', { name: copy.save });
     expect(save).toBeDisabled();
     await user.clear(field);
     await user.type(field, '2.3');
     expect(screen.getByText(copy.errorStep)).toBeInTheDocument();
     await user.clear(field);
     expect(screen.getByText(copy.errorNotNumber)).toBeInTheDocument();
-    expect(save).toBeDisabled();
+    expect(screen.getByRole('button', { name: copy.save })).toBeDisabled();
+    await user.type(field, '700{Enter}');
     expect(api.calls.filter((call) => call.key.startsWith('PUT'))).toEqual([]);
     expect(api.unexpected).toEqual([]);
   });

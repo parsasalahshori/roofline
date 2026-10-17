@@ -7,6 +7,8 @@ import type { BaselineKey, ScreenAgent, TimePeriod } from '@roofline/shared';
 /** Words every Agents component shares (one source for the estimate mark and the placeholder). */
 export const agentsCommon = {
   estimate: '(estimate)',
+  /** Where a tile has no figure yet: a dash for the eye, these words for a screen reader. */
+  noFigure: 'No figure yet',
   comingSoon: 'Coming soon',
   // The money line: "≈ $870 of staff time at $28/hour (estimate)" then a link for the owner
   staffTime: 'of staff time at',
@@ -87,7 +89,11 @@ export const agentPage = {
   rulesTitle: 'What it does',
   rulesEmpty: 'No rules to show yet.',
   recentTitle: 'Recent work',
+  recentSeeAll: 'See all in Feed',
   recentEmpty: 'Nothing here yet.',
+  /** The page's switch: on means the agent is running, as on its card. */
+  runningLabel: 'Running',
+  /** The read-only line for someone who cannot change it. */
   pauseLabel: 'Paused',
   pausedBy: 'Paused by',
   pauseTitle: 'Pause this agent?',
@@ -227,14 +233,15 @@ export const agentsDash = {
   tasksToday: 'Tasks today',
   agentsRunning: 'agents running',
   agentsOf: 'of',
-  hoursWeek: 'Hours saved this week',
+  hoursWeek: 'Saved this week',
   hoursUnit: 'hrs',
+  hoursUnitOne: 'hr',
   hoursSub: 'Calls, measuring, claims, crews',
   fullTimeLead: 'Same as',
   fullTimeUnit: 'full-time staff',
   fullTimeSubPrefix: 'hours at',
   fullTimeSubSuffix: 'a week',
-  officeSaved: 'Office time saved this week',
+  officeSaved: 'Office time saved',
   /** The mark on every estimated hours and money figure (copy rule): "about 110 hrs", "about $514". */
   about: 'about',
   officeSub: 'This week at',
@@ -254,7 +261,6 @@ export const agentsDash = {
   tasksTodayLine: 'tasks today',
   successLine: 'success',
   savedLine: 'saved this week',
-  noSuccess: 'no runs yet',
   latestNone: 'Nothing yet today',
   cardSparkLabel: 'Tasks finished in the last 14 days',
   selectHint: 'Show details for',

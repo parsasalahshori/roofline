@@ -129,7 +129,8 @@ async function frontDeskFollowUps(tx: Tx, ctx: TenantContext, now: Date): Promis
  * `/api/agents`: the activity feed and the waiting-on-a-person list (the Agents screen).
  * - `GET /feed?agent=&cursor=` one page of the feed, newest first, 30 rows; `nextCursor` is null on the last page.
  * - `GET /waiting` drafts waiting for approval, tasks that need attention, and Front Desk follow-ups,
- *   oldest first, with who each one waits on.
+ *   oldest first, with who each one waits on and where to act on it (a draft opens its review, an attention task its job
+ *   or, with no job, its review).
  * Reps see only events and tasks on their own jobs and customers (Ruling AX-J).
  */
 export function agentsFeedRoutes(deps: AppDeps): Router {
@@ -191,7 +192,8 @@ export function agentsFeedRoutes(deps: AppDeps): Router {
           text,
           since: row.since.toISOString(),
           waitingOn: onJob ? jobAssigneeWaitingOn(row, ctx) : attentionWaitingOn(ctx),
-          href: jobHref(row.subjectType, row.subjectId),
+          // The job when the task is about one; a plan with no job (a storm plan) opens its own review, so the row can be acted on
+          href: jobHref(row.subjectType, row.subjectId) ?? (canReview(ctx) ? `/approvals/${row.taskId}` : null),
         };
       });
       const followUps = await frontDeskFollowUps(tx, ctx, now);

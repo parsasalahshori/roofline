@@ -69,6 +69,8 @@ export type BaselineBreakdownRow = { baseline: BaselineKey; units: number; minut
 export type RecentTask = {
   id: string;
   kind: string;
+  /** What the task is about, in words ("Booked an inspection at 1105 Main St"), so rows of one kind can be told apart. */
+  title: string;
   status: string;
   mode: 'needs_approval' | 'live';
   createdAt: string;

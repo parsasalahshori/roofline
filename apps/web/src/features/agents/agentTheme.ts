@@ -36,3 +36,16 @@ export function agoWords(iso: string, now: number): string {
   const days = Math.floor(hours / 24);
   return `${days} d ago`;
 }
+
+/**
+ * `hoursLabel`'s words in three parts, for a tile that sets the lead and the unit small beside a big number:
+ * "about 28 hours" is lead "about", number "28", unit "hours". Same rounding as `hoursLabel`: halves under ten hours,
+ * whole hours above; under a quarter of an hour it is "less than 0.5 hours".
+ */
+export function hoursParts(minutes: number): { lead: string; number: string; unit: string } {
+  const safe = Number.isFinite(minutes) ? Math.max(0, minutes) : 0;
+  if (safe < 15) return { lead: 'less than', number: '0.5', unit: 'hours' };
+  const hours = safe / 60;
+  const rounded = hours < 10 ? Math.round(hours * 2) / 2 : Math.round(hours);
+  return { lead: 'about', number: rounded.toLocaleString('en-US'), unit: rounded === 1 ? 'hour' : 'hours' };
+}
