@@ -69,10 +69,15 @@ export function ArOverlay({
           ? copy.arLost
           : n === 4
             ? copy.arAllPlaced
-            : s.phase === 'aiming'
-              ? copy.arAimAt(copy.arCornerNames[n]!)
-              : copy.arSearching;
-  const edges = s === null ? [] : liveEdges(s.points, s.phase === 'aiming' ? s.aim : null);
+            : s.phase === 'sampling'
+              ? copy.arHoldStill
+              : s.phase === 'aiming'
+                ? s.notice === 'hold-still'
+                  ? copy.arHoldStillRetry(copy.arCornerNames[n]!)
+                  : copy.arAimAt(copy.arCornerNames[n]!)
+                : copy.arSearching;
+  const aiming = s?.phase === 'aiming' || s?.phase === 'sampling';
+  const edges = s === null ? [] : liveEdges(s.points, aiming ? s.aim : null);
   const quad = s === null ? null : asQuad(s.points);
   const size = quad === null ? null : sizeFromArPoints(quad);
   return (
@@ -83,7 +88,7 @@ export function ArOverlay({
         </p>
         <p className={styles.tip}>{copy.arFrameTip}</p>
       </div>
-      <div className={styles.aim} data-aim={s?.phase === 'aiming' && n < 4 ? 'on' : 'off'} aria-hidden="true">
+      <div className={styles.aim} data-aim={aiming && n < 4 ? 'on' : 'off'} aria-hidden="true">
         <span className={styles.aimDot} />
       </div>
       <div className={styles.readout}>
@@ -294,5 +299,5 @@ export default ArMeasure;
 
 /** For tests and the visual check: a snapshot of a session. */
 export function arSnapshot(over: Partial<ArSnapshot> & { points?: ArPoint[] } = {}): ArSnapshot {
-  return { phase: 'aiming', points: [], aim: null, trackingLostCount: 0, anchors: true, cameraAccess: true, ...over };
+  return { phase: 'aiming', points: [], aim: null, trackingLostCount: 0, anchors: true, cameraAccess: true, wallLocked: true, progress: null, notice: null, ...over };
 }

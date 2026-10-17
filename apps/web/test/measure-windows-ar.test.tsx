@@ -18,7 +18,7 @@ import { forgetRevealed } from '../src/features/measure/lift/scan.ts';
 import { ArMeasure, type ArResult } from '../src/features/measure/windows/ar/ArMeasure.tsx';
 import { insetCorners, projectToImage } from '../src/features/measure/windows/ar/arMath.ts';
 import { forgetArSupport } from '../src/features/measure/windows/ar/arSupport.ts';
-import { OPTIONAL_FEATURES } from '../src/features/measure/windows/ar/arSession.ts';
+import { averageSamples, intersectPlane, isStill, OPTIONAL_FEATURES } from '../src/features/measure/windows/ar/arSession.ts';
 import { PhotoMeasure } from '../src/features/measure/windows/PhotoMeasure.tsx';
 import { sizePhotoWindow } from '../src/features/measure/windows/photoModel.ts';
 import { WindowsWindow } from '../src/features/measure/windows/WindowsWindow.tsx';
@@ -47,14 +47,29 @@ function perspective(fovyDeg = 60, aspect = 4 / 3, near = 0.1, far = 100): numbe
 const PROJECTION = perspective();
 const translation = ([x, y, z]: ArPoint) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1];
 const transform = (p: ArPoint) => ({ position: { x: p[0], y: p[1], z: p[2] }, matrix: translation(p), inverse: { matrix: IDENTITY } });
+/** A hit pose on a wall facing the phone (+z): the hit pose's +Y axis is the surface normal, as in the Hit Test spec. */
+const wallHit = (p: ArPoint) => ({ position: { x: p[0], y: p[1], z: p[2] }, matrix: [1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, p[0], p[1], p[2], 1], inverse: { matrix: IDENTITY } });
+/** A hit pose on a floor (normal +y). */
+const floorHit = (p: ArPoint) => ({ position: { x: p[0], y: p[1], z: p[2] }, matrix: translation(p), inverse: { matrix: IDENTITY } });
+/** The phone at the origin looking at a point (-z toward it), as a pose matrix. */
+function lookAt(at: ArPoint | null): number[] {
+  const f = at === null ? [0, 0, -1] : at.map((v) => v / Math.hypot(...at));
+  let r = [-f[2]!, 0, f[0]!]; // f x up(0,1,0)
+  const rl = Math.hypot(r[0]!, r[1]!, r[2]!);
+  r = rl < 1e-9 ? [1, 0, 0] : r.map((v) => v / rl);
+  const u = [r[1]! * f[2]! - r[2]! * f[1]!, r[2]! * f[0]! - r[0]! * f[2]!, r[0]! * f[1]! - r[1]! * f[0]!];
+  return [r[0]!, r[1]!, r[2]!, 0, u[0]!, u[1]!, u[2]!, 0, -f[0]!, -f[1]!, -f[2]!, 0, 0, 0, 0, 1];
+}
 
-type FrameState = { tracked: boolean; hit: ArPoint | null };
+type FrameState = { tracked: boolean; hit: ArPoint | null; floor?: boolean };
 
 class FakeSession {
   enabledFeatures: string[];
   ended = false;
   private callbacks = new Map<number, (t: number, frame: unknown) => void>();
   private next = 1;
+  /** The XR clock, ms: 33 per frame. */
+  clock = 1000;
   private listeners: Record<string, (() => void)[]> = { select: [], end: [] };
   anchorsMade = 0;
   constructor(features: string[]) {
@@ -89,14 +104,16 @@ class FakeSession {
     const cbs = [...this.callbacks.values()];
     this.callbacks.clear();
     const view = { projectionMatrix: PROJECTION, transform: transform([0, 0, 0]), camera: this.enabledFeatures.includes('camera-access') ? { width: 640, height: 480 } : null };
+    this.clock += 33;
     const frame = {
       session: this,
-      getViewerPose: () => (state.tracked ? { transform: transform([0, 0, 0]), views: [view] } : null),
+      // The phone stays at the origin and turns to look at the hit, like a person aiming the reticle
+      getViewerPose: () => (state.tracked ? { transform: { ...transform([0, 0, 0]), matrix: lookAt(state.hit) }, views: [view] } : null),
       getHitTestResults: () =>
         state.tracked && state.hit !== null
           ? [
               {
-                getPose: () => ({ transform: transform(state.hit!) }),
+                getPose: () => ({ transform: state.floor ? floorHit(state.hit!) : wallHit(state.hit!) }),
                 createAnchor: async () => {
                   this.anchorsMade += 1;
                   return { anchorSpace: { at: state.hit }, delete: vi.fn() };
@@ -107,7 +124,7 @@ class FakeSession {
       getPose: (space: { at: ArPoint }) => ({ transform: transform(space.at) }),
       trackedAnchors: { has: () => true },
     };
-    for (const cb of cbs) cb(0, frame);
+    for (const cb of cbs) cb(this.clock, frame);
   }
   select() {
     this.listeners.select!.forEach((cb) => cb());
@@ -123,11 +140,17 @@ function fakeXr(supported: boolean, features = ['hit-test', 'dom-overlay', 'anch
 }
 
 const step = (state: FrameState) => act(() => session.tick(state));
+/** The phone held still on the same spot for `frames` frames (45 frames of 33 ms is about 1.5 s). */
+const hold = (state: FrameState, frames = 45) =>
+  act(() => {
+    for (let i = 0; i < frames; i++) session.tick(state);
+  });
+/** A tap (a screen tap, the session's select), then the second of holding still that places the corner. */
 const tap = (state: FrameState) =>
   act(() => {
     session.tick(state);
     session.select();
-    session.tick(state);
+    for (let i = 0; i < 45; i++) session.tick(state);
   });
 const overlay = () => screen.getByRole('dialog', { name: copy.arOverlay });
 const message = () => overlay().querySelector('[data-ar-message]')!.textContent;
@@ -194,7 +217,7 @@ describe('measuring in AR (fake WebXR session)', () => {
     const [mode, init] = requestSession.mock.calls[0]!;
     expect(mode).toBe('immersive-ar');
     expect(init.requiredFeatures).toEqual(['hit-test']);
-    expect(init.optionalFeatures).toEqual(['dom-overlay', 'anchors', 'camera-access', 'depth-sensing']);
+    expect(init.optionalFeatures).toEqual(['dom-overlay', 'anchors', 'camera-access']);
     expect(OPTIONAL_FEATURES).toEqual(init.optionalFeatures);
     expect(init.domOverlay.root).toBe(document.querySelector('[data-ar-overlay]'));
     expect(session.requestHitTestSource).toHaveBeenCalledWith({ space: { type: 'viewer' } });
@@ -220,6 +243,8 @@ describe('measuring in AR (fake WebXR session)', () => {
     // The Place button works as well as a screen tap
     await step({ tracked: true, hit: FRAME[2]! });
     fireEvent.click(screen.getByRole('button', { name: copy.arPlace }));
+    expect(message()).toBe(copy.arHoldStill);
+    await hold({ tracked: true, hit: FRAME[2]! });
     await step({ tracked: true, hit: FRAME[3]! });
     await tap({ tracked: true, hit: FRAME[3]! });
     expect(message()).toBe(copy.arAllPlaced);
@@ -248,25 +273,32 @@ describe('measuring in AR (fake WebXR session)', () => {
     expect(message()).toBe(copy.arSearching);
     await step({ tracked: true, hit: FRAME[0]! });
     await tap({ tracked: true, hit: FRAME[0]! });
+    expect(overlay().querySelector('[data-ar-points]')!.getAttribute('data-ar-points')).toBe('1');
     await step({ tracked: false, hit: null });
     expect(message()).toBe(copy.arLost);
     expect(screen.getByRole('alert').textContent).toBe(copy.arLost);
+    // The world can shift when AR finds itself again: the placed corner is cleared (as on the iPhone)
+    expect(overlay().querySelector('[data-ar-points]')!.getAttribute('data-ar-points')).toBe('0');
     await step({ tracked: false, hit: null });
     expect(overlay().textContent).toContain(copy.arLostTimes(1));
     await step({ tracked: true, hit: FRAME[1]! });
-    expect(message()).toBe(copy.arAimAt('top right'));
+    expect(message()).toBe(copy.arAimAt('top left'));
+    await tap({ tracked: true, hit: FRAME[1]! });
     await step({ tracked: false, hit: null });
     await step({ tracked: true, hit: FRAME[1]! });
     expect(overlay().textContent).toContain(copy.arLostTimes(2));
+    expect(overlay().querySelector('[data-ar-points]')!.getAttribute('data-ar-points')).toBe('0');
   });
 
   it('no camera access: finish ends the session and keeps the photo already taken, corners inset 15%', async () => {
     fakeXr(true);
     const onSave = await openArTab();
     await startAr();
-    for (const p of FRAME) await tap({ tracked: true, hit: p });
+    // AR loses the wall once before the corners are placed
+    await step({ tracked: true, hit: FRAME[0]! });
     await step({ tracked: false, hit: null });
     await step({ tracked: true, hit: FRAME[0]! });
+    for (const p of FRAME) await tap({ tracked: true, hit: p });
     fireEvent.click(screen.getByRole('button', { name: copy.arFinish }));
     await step({ tracked: true, hit: FRAME[0]! });
     await waitFor(() => expect(session.end).toHaveBeenCalled());
@@ -307,6 +339,79 @@ describe('measuring in AR (fake WebXR session)', () => {
     expect(r.corners[0][1]).toBeLessThan(240);
     expect(r.corners[0][0] + r.corners[1][0]).toBeCloseTo(640, 0);
     expect(session.end).toHaveBeenCalled();
+  });
+
+  it('no corner before the wall is locked: a floor is not a wall, and Place stays off until a vertical surface is found', async () => {
+    fakeXr(true);
+    await openArTab();
+    await startAr();
+    await step({ tracked: true, hit: [0, -1.4, -1.5], floor: true });
+    expect(message()).toBe(copy.arSearching);
+    expect(screen.getByRole('button', { name: copy.arPlace }).hasAttribute('disabled')).toBe(true);
+    // A tap on the floor places nothing
+    await tap({ tracked: true, hit: [0, -1.4, -1.5], floor: true });
+    expect(overlay().querySelector('[data-ar-points]')!.getAttribute('data-ar-points')).toBe('0');
+    await step({ tracked: true, hit: FRAME[0]! });
+    expect(message()).toBe(copy.arAimAt('top left'));
+    expect(screen.getByRole('button', { name: copy.arPlace }).hasAttribute('disabled')).toBe(false);
+  });
+
+  it('later view rays meet the FIRST hit\'s plane: a hit that jumps behind the wall (the glass) does not move the corner', async () => {
+    fakeXr(true);
+    await openArTab();
+    await startAr();
+    await step({ tracked: true, hit: FRAME[0]! });
+    // The same view ray, but the hit-test now reports a surface 30 cm behind the wall: the corner stays on the wall
+    const behind: ArPoint = [FRAME[0]![0] * 1.15, FRAME[0]![1] * 1.15, -2.3];
+    await tap({ tracked: true, hit: behind });
+    expect(overlay().querySelector('[data-ar-points]')!.getAttribute('data-ar-points')).toBe('1');
+    // Its distance to the next corner is the wall's, not the glass's: aim at the top right on the wall
+    await step({ tracked: true, hit: FRAME[1]! });
+    expect(overlay().textContent).toContain(copy.arEdge('Top', '36'));
+  });
+
+  it('a corner takes about a second of holding still: moving the phone collects nothing, and the tap times out with a hint', async () => {
+    fakeXr(true);
+    await openArTab();
+    await startAr();
+    await step({ tracked: true, hit: FRAME[0]! });
+    act(() => session.select());
+    expect(message()).toBe(copy.arHoldStill);
+    // The phone keeps turning (a few degrees every frame): never still
+    await act(async () => {
+      for (let i = 0; i < 140; i++) session.tick({ tracked: true, hit: [FRAME[0]![0] + (i % 2) * 0.2, FRAME[0]![1], -2] });
+    });
+    expect(overlay().querySelector('[data-ar-points]')!.getAttribute('data-ar-points')).toBe('0');
+    await step({ tracked: true, hit: FRAME[0]! });
+    expect(message()).toBe(copy.arHoldStillRetry('top left'));
+    // Still for a second: placed
+    await tap({ tracked: true, hit: FRAME[0]! });
+    expect(overlay().querySelector('[data-ar-points]')!.getAttribute('data-ar-points')).toBe('1');
+  });
+
+  it('a phone that refuses a named optional feature gets the session again without just that one', async () => {
+    fakeXr(true);
+    requestSession.mockRejectedValueOnce(new Error("Unsupported feature requested: 'anchors'"));
+    await openArTab();
+    await startAr();
+    expect(requestSession).toHaveBeenCalledTimes(2);
+    expect(requestSession.mock.calls[1]![1].optionalFeatures).toEqual(['dom-overlay', 'camera-access']);
+    expect(requestSession.mock.calls[1]![1].requiredFeatures).toEqual(['hit-test']);
+    expect(requestSession.mock.calls[1]![1].domOverlay.root).toBe(document.querySelector('[data-ar-overlay]'));
+  });
+
+  it('a refusal that does not say which feature: each is left out in turn, the others kept', async () => {
+    fakeXr(true);
+    // Refuses anything that asks for camera-access, without naming it
+    requestSession.mockImplementation(async (_mode: string, init: { optionalFeatures: string[] }) => {
+      if (init.optionalFeatures.includes('camera-access')) throw new Error('NotSupportedError');
+      return session;
+    });
+    await openArTab();
+    await startAr();
+    const seen = requestSession.mock.calls.map((c) => (c[1] as { optionalFeatures: string[] }).optionalFeatures);
+    expect(seen[0]).toEqual(['dom-overlay', 'anchors', 'camera-access']);
+    expect(seen.at(-1)).toEqual(['dom-overlay', 'anchors']);
   });
 
   it('a session the phone refuses says so and offers Start AR again', async () => {
@@ -480,6 +585,36 @@ describe('AR on the windows screen', () => {
     await waitFor(() => expect(sent(PATCH)).toHaveLength(1));
     expect(sent(PATCH)[0]).toMatchObject({ photoWindows: [{ uploadId: 'up2', corners: insetCorners(900, 1200), scale: { kind: 'ar' } }] });
     expect(xhrSent).toEqual(['/api/window-measurements/w1/uploads']);
+  });
+});
+
+describe('AR corner maths', () => {
+  it('a view ray meets the locked plane; parallel and behind-the-phone rays do not', () => {
+    const wall = { point: [0, 0, -2] as ArPoint, normal: [0, 0, 1] as ArPoint };
+    expect(intersectPlane(wall, [0, 0, 0], [0, 0, -1])).toEqual([0, 0, -2]);
+    const p = intersectPlane(wall, [0, 0, 0], [0.3, 0.4, -1].map((v) => v / Math.hypot(0.3, 0.4, 1)) as ArPoint)!;
+    expect(p[2]).toBeCloseTo(-2, 9);
+    expect(p[0]).toBeCloseTo(0.6, 9);
+    expect(intersectPlane(wall, [0, 0, 0], [1, 0, 0])).toBeNull();
+    expect(intersectPlane(wall, [0, 0, 0], [0, 0, 1])).toBeNull();
+  });
+
+  it('the average drops an outlier 2 cm off and needs enough samples', () => {
+    const base: ArPoint = [0.4, 1.6, -2];
+    const samples = Array.from({ length: 30 }, (_, i): ArPoint => [base[0] + ((i % 3) - 1) * 0.001, base[1], base[2]]);
+    samples.push([0.42, 1.6, -2]);
+    const avg = averageSamples(samples)!;
+    expect(avg[0]).toBeCloseTo(0.4, 3);
+    expect(averageSamples(samples.slice(0, 3))).toBeNull();
+  });
+
+  it('still means under 3 mm and 1 degree across the window', () => {
+    const at = (t: number, x: number, turnDeg = 0) => ({ t, p: [x, 1.4, 0] as ArPoint, f: [Math.sin((turnDeg * Math.PI) / 180), 0, -Math.cos((turnDeg * Math.PI) / 180)] as ArPoint });
+    const still = [0, 100, 200, 300].map((t) => at(t, 0.001 * (t / 300)));
+    expect(isStill(still, 300)).toBe(true);
+    expect(isStill([at(0, 0), at(300, 0.005)], 300)).toBe(false);
+    expect(isStill([at(0, 0), at(300, 0, 1.5)], 300)).toBe(false);
+    expect(isStill([at(250, 0)], 300)).toBe(false);
   });
 });
 
