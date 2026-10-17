@@ -108,7 +108,7 @@ function VisitsSection({ zone, seesEveryone }: { zone: string; seesEveryone: boo
         </ul>
         <div className={styles.emptyText}>
           <p className={styles.emptyTitle}>{today.noAppointments}</p>
-          <p className={styles.emptyHelp}>{leads > 0 ? home.noVisitsLeads(leads) : today.noAppointmentsHelp}</p>
+          <p className={styles.emptyHelp}>{leads > 0 ? today.noVisitsLeads(leads) : today.noAppointmentsHelp}</p>
           <Button variant="default" href="/calendar/new">
             {today.bookVisit}
           </Button>

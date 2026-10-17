@@ -82,6 +82,7 @@ const fake = vi.hoisted(() => {
     });
 
     fitBounds = vi.fn();
+    getContainer = () => ({ clientHeight: 600 });
     easeTo = vi.fn();
     addControl = vi.fn();
     remove = vi.fn();

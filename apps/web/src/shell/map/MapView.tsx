@@ -28,6 +28,18 @@ import { useColorScheme } from '../useColorScheme.ts';
 import chrome from './MapChrome.module.css';
 import styles from './MapView.module.css';
 
+/** How much of the map's foot the legend and the attribution strip cover, in pixels: the legend stands 44px up and is two rows
+ *  (84px) tall, and a cluster is a disc 40px across that must clear it. */
+const MAP_FOOT = 160;
+
+/**
+ * The padding of the starting view: an even 40px, but the foot is kept free of data, so no pin or cluster ends up under the
+ * legend or the attribution. A small map gives the foot at most a third of its height.
+ */
+function startPadding(height: number): { top: number; right: number; bottom: number; left: number } {
+  return { top: 40, right: 40, bottom: Math.max(40, Math.min(MAP_FOOT, Math.round(height / 3))), left: 40 };
+}
+
 export type MapViewProps = {
   onOpen: (target: PinTarget) => void;
   /**
@@ -207,7 +219,9 @@ export function MapView({ onOpen, onEstimate, pins: pinsAtStart = true }: MapVie
   // The starting view: the service area, or the US view that the map was created with.
   useEffect(() => {
     const instance = mapRef.current;
-    if (instance && area.data?.bounds) instance.fitBounds(area.data.bounds, { padding: 40, maxZoom: 14 });
+    if (instance && area.data?.bounds) {
+      instance.fitBounds(area.data.bounds, { padding: startPadding(instance.getContainer().clientHeight), maxZoom: 14 });
+    }
   }, [area.data]);
 
   // Feed the layers from the last good answer, so a failed pins request leaves the pins on the map.

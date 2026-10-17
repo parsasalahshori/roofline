@@ -188,7 +188,17 @@ export function StormWindow() {
         {storms.data ? (
           <Panel title={storm.listHeading} tag={rows.length > 0 ? storm.count(rows.length) : undefined} padded={false}>
             {rows.length === 0 ? (
-              <EmptyState title={storm.empty} body={storm.emptyHelp} />
+              <EmptyState
+                title={storm.empty}
+                body={storm.emptyHelp}
+                action={
+                  canDecide ? (
+                    <Button variant="default" href="/settings/storm">
+                      {storm.emptyAction}
+                    </Button>
+                  ) : undefined
+                }
+              />
             ) : phone ? (
               <StormsList rows={rows} />
             ) : (

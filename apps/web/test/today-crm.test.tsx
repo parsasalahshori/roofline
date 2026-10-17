@@ -211,6 +211,8 @@ describe('the Today window with CRM data', () => {
     mount(['/today']);
 
     expect(await screen.findByText(today.noAppointments)).toBeInTheDocument();
+    // My day is the person's own list: it says so, where Home's panel (everyone's visits) says "Today"
+    expect(screen.getByRole('heading', { name: 'Your visits today' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: today.followUps })).toBeNull();
     expect(api.unexpected).toEqual([]);
   });

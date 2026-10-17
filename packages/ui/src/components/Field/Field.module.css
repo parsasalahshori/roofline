@@ -38,6 +38,13 @@ textarea.control {
   resize: vertical;
 }
 
+/* A thumb cannot drag the corner, and the grip drawn in it is only clutter in a field that is already tall enough */
+@media (max-width: 767.98px) {
+  textarea.control {
+    resize: none;
+  }
+}
+
 .control::placeholder {
   color: var(--ink-3);
 }

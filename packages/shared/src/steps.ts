@@ -147,6 +147,8 @@ const maxSpendCents = z
 
 const dollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 const wholeDollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+/** An amount with cents only where the cents matter, as the review's own headline writes it: $270, $21.42. */
+const money = (cents: number): string => (cents % 100 === 0 ? wholeDollars : dollars).format(cents / 100);
 const plural = (n: number, one: string, many: string): string => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
 
 // ---------------------------------------------------------------------------------------------
@@ -222,7 +224,7 @@ const demoSpend: StepTypeDef<SpendPayload> = {
   payload: spendPayload,
   preview: (p) => ({
     title: p.label,
-    lines: [`Spends up to ${dollars.format(p.maxSpendCents / 100)}`, ...(p.area !== undefined ? [p.area] : [])],
+    lines: [`Spends up to ${money(p.maxSpendCents)}`, ...(p.area !== undefined ? [p.area] : [])],
     maxSpendCents: p.maxSpendCents,
   }),
   baseline: () => 'demo',
@@ -601,7 +603,7 @@ const createAdCampaign: StepTypeDef<CreateAdPayload> = {
     const perDayCents = dailyBudgetCents(p.maxSpendCents, p.days);
     return {
       title: p.platform === 'google' ? 'Google ads on the hail area' : 'Facebook and Instagram ads on the hail area',
-      lines: ['Circles cover the hail area', `${dollars.format(perDayCents / 100)} a day for ${p.days} days`],
+      lines: ['Circles cover the hail area', `${money(perDayCents)} a day for ${p.days} days`],
       maxSpendCents: p.maxSpendCents,
     };
   },

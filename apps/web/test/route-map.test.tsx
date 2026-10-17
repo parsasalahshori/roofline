@@ -42,6 +42,11 @@ describe('RouteMap fit', () => {
     fake.FakeMarker.instances.length = 0;
   });
 
+  it('keeps the doors clear of the attribution along the foot of the map', () => {
+    render(<RouteMap stops={stops} currentStopId={stops[0].id} position={null} />);
+    expect(fake.FakeMap.instances[0].fitBounds).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ padding: { top: 32, right: 32, bottom: 72, left: 32 } }));
+  });
+
   it('fits the view once for a route, not on every move of the rep', () => {
     const { rerender } = render(<RouteMap stops={stops} currentStopId={stops[0].id} position={null} />);
     rerender(<RouteMap stops={stops} currentStopId={stops[0].id} position={{ lat: 32.9, lng: -96.8 }} />);

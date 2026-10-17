@@ -21,7 +21,7 @@ test('opens once per day, again the next day', async ({ page, loginAs, db }) => 
   const dlg = page.getByRole('main', { name: 'My day' });
   // The page names itself and lists today's visits; it does not greet (Home does)
   await expect(dlg.getByRole('heading', { level: 1, name: 'My day' })).toBeVisible();
-  await expect(dlg.getByRole('region', { name: "Today's visits" })).toBeVisible();
+  await expect(dlg.getByRole('region', { name: 'Your visits today' })).toBeVisible();
   await goHome(page);
 
   // Same day: the question is asked again, but the answer is no

@@ -46,6 +46,8 @@ export const storm = {
   colActions: 'Actions',
   hailUnit: 'in',
   radarNote: 'Hail sizes are estimated from radar.',
+  /** The way on from an empty Storms list, for the people who can change when hail alerts: Settings > Storm. */
+  emptyAction: 'Storm alert settings',
   noPlanWaiting: 'No storm plan is waiting for you',
   noPlanWaitingHelp: 'When hail crosses your area, Storm Scout drafts a plan here for your OK.',
   /** The name of the card with the swaths while the Storm page is open. */

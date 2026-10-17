@@ -158,6 +158,11 @@
   .eyebrow {
     order: 0;
     flex: 1 1 100%;
+    margin: 0 0 6px;
+  }
+
+  /* With the shell's controls the title is centred in a 44px row, which already leaves it room under the eyebrow */
+  .head[data-trailing="true"] .eyebrow {
     margin: 0;
   }
 

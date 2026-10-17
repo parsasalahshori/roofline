@@ -85,7 +85,8 @@ export function RouteMap({ stops, currentStopId, position }: RouteMapProps) {
         [west, south],
         [east, north],
       ],
-      { padding: 32, maxZoom: 17, animate: false },
+      // The attribution sits along the foot of the map: the doors stay clear of it (a door is a 31px disc)
+      { padding: { top: 32, right: 32, bottom: 72, left: 32 }, maxZoom: 17, animate: false },
     );
   }, [west, south, east, north]);
 

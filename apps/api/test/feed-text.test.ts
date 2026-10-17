@@ -48,9 +48,12 @@ describe('feedSentence', () => {
     );
   });
 
-  test('created with a title that is not an "a/an" phrase is prefixed with "a plan"', () => {
+  test('created with a title that is not an "a/an" phrase quotes the title, so a colon inside it is the title\'s own', () => {
     expect(feedSentence(row({ kind: 'created', taskTitle: 'Storm plan: Elm Street' }))).toBe(
-      'Storm Scout drafted a plan: Storm plan: Elm Street',
+      'Storm Scout drafted \u201cStorm plan: Elm Street\u201d',
+    );
+    expect(feedSentence(row({ kind: 'created', taskTitle: 'Storm plan for hail near Plano (up to 1.5 in)' }))).toBe(
+      'Storm Scout drafted \u201cStorm plan for hail near Plano (up to 1.5 in)\u201d',
     );
   });
 
@@ -100,7 +103,7 @@ describe('feedSentence', () => {
   });
 
   test('a task created by a person reads as a re-run', () => {
-    expect(feedSentence(row({ kind: 'created', actorName: 'Pat', taskTitle: 'Storm plan: Elm' }))).toBe('Pat re-ran Storm plan: Elm');
+    expect(feedSentence(row({ kind: 'created', actorName: 'Pat', taskTitle: 'Storm plan: Elm' }))).toBe('Pat re-ran \u201cStorm plan: Elm\u201d');
   });
 
   test('finished steps show their unit count with the unit word', () => {
@@ -153,19 +156,19 @@ describe('feedSentence', () => {
 
   test('finished reads by status', () => {
     expect(feedSentence(row({ kind: 'finished', taskTitle: 'Storm plan: Elm', data: { status: 'done' } }))).toBe(
-      'Finished: Storm plan: Elm',
+      'Finished: \u201cStorm plan: Elm\u201d',
     );
     expect(feedSentence(row({ kind: 'finished', taskTitle: 'Storm plan: Elm', data: { status: 'partly_done' } }))).toBe(
-      'Partly finished: Storm plan: Elm',
+      'Partly finished: \u201cStorm plan: Elm\u201d',
     );
     expect(feedSentence(row({ kind: 'finished', taskTitle: 'Storm plan: Elm', data: { status: 'failed' } }))).toBe(
-      'Could not finish: Storm plan: Elm',
+      'Could not finish: \u201cStorm plan: Elm\u201d',
     );
   });
 
   test('expired says a draft expired without an answer', () => {
     expect(feedSentence(row({ kind: 'expired', taskTitle: 'Storm plan: Elm' }))).toBe(
-      'A draft expired without an answer: Storm plan: Elm',
+      'A draft expired without an answer: \u201cStorm plan: Elm\u201d',
     );
   });
 
@@ -231,7 +234,7 @@ describe('Front Desk live rows', () => {
 describe('waiting sentences', () => {
   test('a draft waiting names the agent and the plan', () => {
     expect(waitingDraftText('storm_scout', 'Storm plan: Elm Street')).toBe(
-      'Storm Scout has a draft waiting: Storm plan: Elm Street',
+      'Storm Scout has a draft waiting: \u201cStorm plan: Elm Street\u201d',
     );
   });
 
@@ -239,6 +242,13 @@ describe('waiting sentences', () => {
     expect(waitingAttentionText('front_desk', 'Front desk day', 'The line dropped.')).toBe(
       'Front Desk needs help: Front desk day. The line dropped.',
     );
+  });
+
+  test('a title with a colon of its own is quoted, so the sentence keeps one colon', () => {
+    expect(waitingDraftText('scheduler', 'Rain on the install day: move 1 install?')).toBe(
+      'Scheduler has a draft waiting: \u201cRain on the install day: move 1 install?\u201d',
+    );
+    expect(waitingAttentionText('claims', 'Claim file: Elm', null)).toBe('Claims needs help: \u201cClaim file: Elm\u201d');
   });
 
   test('an attention task without a reason is just the title', () => {

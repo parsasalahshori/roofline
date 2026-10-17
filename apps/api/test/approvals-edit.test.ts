@@ -408,7 +408,7 @@ describe('GET /api/approvals', () => {
           enabled: true,
           version: 1,
           status: 'pending',
-          preview: { title: 'Google + Facebook ads on the swath', lines: ['Spends up to $270.00'], maxSpendCents: 27000 },
+          preview: { title: 'Google + Facebook ads on the swath', lines: ['Spends up to $270'], maxSpendCents: 27000 },
           canApprove: true,
           attempts: 0,
           result: null,
@@ -771,7 +771,7 @@ describe('PATCH /api/approvals/:taskId/steps/:stepId', () => {
       .patch(url(taskId, spend.id))
       .send({ version: 1, payload: { label: 'Just Facebook', maxSpendCents: 9000 } });
     expect(res.status).toBe(200);
-    expect(res.body.preview).toEqual({ title: 'Just Facebook', lines: ['Spends up to $90.00'], maxSpendCents: 9000 });
+    expect(res.body.preview).toEqual({ title: 'Just Facebook', lines: ['Spends up to $90'], maxSpendCents: 9000 });
   });
 
   test('editing enabled and payload together applies both in one version bump', async () => {

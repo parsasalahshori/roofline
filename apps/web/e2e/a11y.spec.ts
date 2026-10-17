@@ -47,7 +47,7 @@ test('my day has no serious accessibility violations', async ({ page, loginAs, m
   await markTodaySeen('owner@a.test');
   await page.goto('/today');
   await expect(page.getByRole('main', { name: 'My day' })).toBeVisible();
-  await expect(page.getByRole('region', { name: "Today's visits" })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Your visits today' })).toBeVisible();
   await scan(page);
 });
 

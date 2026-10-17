@@ -153,6 +153,25 @@ describe('Storm list', () => {
     expect(await screen.findByText(storm.empty)).toBeInTheDocument();
   });
 
+  it('shows the way on from the empty state to the people who can change the alerts: the Storm settings', async () => {
+    stubStorms([]);
+    renderAt(<StormWindow />);
+    const link = await screen.findByRole('link', { name: storm.emptyAction });
+    expect(link).toHaveAttribute('href', '/settings/storm');
+  });
+
+  it('leaves that link out for a field rep, who cannot open the Storm settings', async () => {
+    stubApi({
+      ...SHELL_ROUTES,
+      'GET /api/auth/me': () => ({ body: { ...ACCOUNT, role: 'rep' } }),
+      'GET /api/storms': () => ({ body: { storms: [] } }),
+      [STORM_LAYER_KEY]: () => ({ body: layerBody(false) }),
+    });
+    renderAt(<StormWindow />);
+    expect(await screen.findByText(storm.empty)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: storm.emptyAction })).toBeNull();
+  });
+
   it('does not show the empty state when there are storms', async () => {
     stubStorms([NEWER]);
     renderAt(<StormWindow />);

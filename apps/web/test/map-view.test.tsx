@@ -82,6 +82,9 @@ const fake = vi.hoisted(() => {
     });
 
     fitBounds = vi.fn();
+    // A map 600px tall: its foot (legend and attribution) is the 160px that the starting view keeps free
+    static containerHeight = 600;
+    getContainer = () => ({ clientHeight: FakeMap.containerHeight });
     easeTo = vi.fn();
     addControl = vi.fn();
     remove = vi.fn();
@@ -218,6 +221,7 @@ beforeEach(() => {
   fake.FakeMap.instances.length = 0;
   fake.FakeMap.failToCreate = false;
   fake.FakeMap.bounds = { west: -97.123456, south: 32.5, east: -96.4, north: 33.1 };
+  fake.FakeMap.containerHeight = 600;
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL) => {
@@ -240,13 +244,28 @@ afterEach(() => {
 });
 
 describe('MapView', () => {
+  it('keeps the foot of a small map to a third of its height, and never less than the even 40px', async () => {
+    areaBody = { serviceArea: null, bounds: [-97.1, 32.5, -96.4, 33.1] };
+    // 240px tall: a third is 80px; 90px tall: a third is 30px, so the even 40px holds
+    for (const [height, bottom] of [[240, 80], [90, 40]] as const) {
+      fake.FakeMap.containerHeight = height;
+      const { unmount } = renderMap();
+      const map = lastMap();
+      await waitFor(() =>
+        expect(map.fitBounds).toHaveBeenCalledWith([-97.1, 32.5, -96.4, 33.1], { padding: { top: 40, right: 40, bottom, left: 40 }, maxZoom: 14 }),
+      );
+      unmount();
+    }
+    fake.FakeMap.containerHeight = 600;
+  });
+
   it('fits the service area', async () => {
     areaBody = { serviceArea: null, bounds: [-97.1, 32.5, -96.4, 33.1] };
     renderMap();
     const map = lastMap();
 
     await waitFor(() =>
-      expect(map.fitBounds).toHaveBeenCalledWith([-97.1, 32.5, -96.4, 33.1], { padding: 40, maxZoom: 14 }),
+      expect(map.fitBounds).toHaveBeenCalledWith([-97.1, 32.5, -96.4, 33.1], { padding: { top: 40, right: 40, bottom: 160, left: 40 }, maxZoom: 14 }),
     );
   });
 
