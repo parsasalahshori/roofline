@@ -1,3 +1,4 @@
+#if STAFF_APP
 import RooflineCore
 import SwiftUI
 
@@ -135,3 +136,4 @@ struct ServerSettingsView: View {
         }
     }
 }
+#endif

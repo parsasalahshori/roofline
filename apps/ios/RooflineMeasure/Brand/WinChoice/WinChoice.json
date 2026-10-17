@@ -1,0 +1,39 @@
+{
+  "name": "WinChoice",
+  "appStoreName": "WinChoice",
+  "wordmark": "WinChoice",
+  "slug": "summit-ridge",
+  "server": {
+    "debug": "http://localhost:4500",
+    "release": ""
+  },
+  "colors": {
+    "red": "#ED3A2B",
+    "redDark": "#FF5A4B",
+    "navy": "#112337",
+    "navyDeep": "#061F3F",
+    "blue": "#155EAB",
+    "blueDark": "#6EA8EF"
+  },
+  "madeIn": "Vinyl windows made in Mountain Pine, Arkansas",
+  "factoryPlace": "Mountain Pine, Arkansas",
+  "glassNote": "Every window comes with LoE366 glass with argon and a FlexScreen.",
+  "includes": [
+    "Made to your sizes in Mountain Pine, Arkansas",
+    "FlexScreen on every window that opens"
+  ],
+  "tiers": {
+    "good": { "summary": "Vinyl double-hung and sliders, standard install" },
+    "better": { "summary": "LoE366 glass with argon, full-frame install, lifetime warranty", "badge": "Most pick" },
+    "best": { "summary": "Triple-pane glass, full-frame install" }
+  },
+  "windowColors": [
+    { "key": "white", "label": "White", "hex": "#F7F7F4" },
+    { "key": "beige", "label": "Beige", "hex": "#E6DCC6" },
+    { "key": "sandstone", "label": "Sandstone", "hex": "#CDBB9C" },
+    { "key": "earthtone", "label": "Earthtone", "hex": "#7A6650" },
+    { "key": "bronze", "label": "Bronze", "hex": "#4E3B2C" },
+    { "key": "black", "label": "Black", "hex": "#1D1F22" }
+  ],
+  "quoteFootnote": "No payment today."
+}

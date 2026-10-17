@@ -1,3 +1,4 @@
+#if STAFF_APP
 import SwiftUI
 import WebKit
 
@@ -119,3 +120,4 @@ private struct SheetWebView: UIViewRepresentable {
         }
     }
 }
+#endif

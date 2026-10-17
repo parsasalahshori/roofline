@@ -148,6 +148,59 @@ let outboxChecks: [Check] = [
         await again.syncAll()
         ctx.equal(t.saved[item.id]?.corners?[2], Vec2(250, 450))
     },
+    Check("Outbox: a 429 holds the item back for Retry-After, then it goes by itself; it is never a refusal") { ctx in
+        final class Clock: @unchecked Sendable {
+            private let lock = NSLock()
+            private var date = Date(timeIntervalSince1970: 1_800_000_000)
+            var now: Date { lock.locked { date } }
+            func advance(_ seconds: TimeInterval) { lock.locked { date = date.addingTimeInterval(seconds) } }
+        }
+        let clock = Clock()
+        let t = FakeTransport()
+        t.uploadAnswers = [.failure(TransportError(status: 429, message: "Too many photos at once.", retryAfter: 3))]
+        let ob = Outbox(directory: tempDir(), transport: t, now: { clock.now })
+        try await ob.load()
+        _ = try await ob.enqueue(window: sampleWindow(), measurementId: "m", address: nil, jpeg: Data([1]), imageWidthPx: 1440, imageHeightPx: 1920)
+        await ob.syncAll()
+        var item = await ob.items.first!
+        ctx.equal(item.state, .waiting, "a 429 is worth trying again, not a refusal")
+        ctx.equal(item.lastError, "Too many photos at once.")
+        ctx.equal(item.retryNotBefore, clock.now.addingTimeInterval(3), "not before the server's Retry-After")
+        ctx.equal(await ob.nextRetryDate(), clock.now.addingTimeInterval(3))
+        // Too early: the outbox does not knock again
+        clock.advance(1)
+        await ob.syncAll()
+        ctx.equal(t.uploads, 1, "nothing is sent before Retry-After is over")
+        ctx.equal(await ob.items.first?.state, .waiting)
+        // The wait is over: it goes by itself, photo then window
+        clock.advance(2.5)
+        await ob.syncAll()
+        item = await ob.items.first!
+        ctx.equal(item.state, .done)
+        ctx.equal(item.retryNotBefore, nil, "the hold is gone once it went through")
+        ctx.equal(t.uploads, 2)
+        ctx.equal(await ob.nextRetryDate(), nil)
+    },
+    Check("Outbox: the person's Retry does not wait for an old Retry-After; an old outbox file still reads") { ctx in
+        var i = OutboxItem(window: sampleWindow(), measurementId: "m", address: nil, jpegFileName: "x.jpg", imageWidthPx: 1, imageHeightPx: 1)
+        let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+        i = OutboxMachine.failed(OutboxMachine.started(i, .photo), .photo, TransportError(status: 429, message: "slow down", retryAfter: 3600), now: t0)
+        ctx.equal(i.retryNotBefore, t0.addingTimeInterval(3600))
+        ctx.equal(OutboxMachine.retried(i).retryNotBefore, nil)
+        // A refusal (4xx) is not held back by a time: it waits for the person
+        let refused = OutboxMachine.failed(OutboxMachine.started(OutboxItem(window: sampleWindow(), measurementId: "m", address: nil, jpegFileName: nil, imageWidthPx: 0, imageHeightPx: 0), .window), .window, TransportError(status: 422, message: "no", retryAfter: 60), now: t0)
+        ctx.equal(refused.retryNotBefore, nil)
+        ctx.equal(refused.state, .failed)
+        // An outbox.json written before retryNotBefore existed decodes with it unset
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = .iso8601
+        var legacy = (try? JSONSerialization.jsonObject(with: e.encode(OutboxItem(window: sampleWindow(), measurementId: "m", address: nil, jpegFileName: nil, imageWidthPx: 0, imageHeightPx: 0)))) as? [String: Any] ?? [:]
+        legacy.removeValue(forKey: "retryNotBefore")
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        let back = try d.decode(OutboxItem.self, from: JSONSerialization.data(withJSONObject: legacy))
+        ctx.equal(back.retryNotBefore, nil)
+    },
     Check("OutboxMachine: a refused photo upload is redone from scratch on Retry") { ctx in
         var i = OutboxItem(window: sampleWindow(), measurementId: "m", address: nil, jpegFileName: "x.jpg", imageWidthPx: 1, imageHeightPx: 1)
         i = OutboxMachine.failed(OutboxMachine.started(i, .photo), .photo, TransportError(status: 415, message: "HEIC"))

@@ -1,3 +1,4 @@
+#if STAFF_APP
 #if DEBUG
 import Foundation
 
@@ -45,4 +46,5 @@ enum DebugLaunch {
     @MainActor private static var done: Set<String> = []
     @MainActor static func once(_ step: String) -> Bool { done.insert(step).inserted }
 }
+#endif
 #endif

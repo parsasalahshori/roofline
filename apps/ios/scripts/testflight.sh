@@ -1,8 +1,10 @@
 #!/bin/sh
-# Builds Roofline Measure and uploads it to App Store Connect (TestFlight, internal testers).
+# Builds an iPhone app and uploads it to App Store Connect (TestFlight, internal testers). SCHEME picks the app:
+# RooflineMeasure (the default, the rep app, bundle id com.premjeetech.roofline.measure) or WinChoice (the homeowner app,
+# com.premjeetech.winchoice.measure): `SCHEME=WinChoice apps/ios/scripts/testflight.sh`.
 #
 # Needs: Xcode (not just the Command Line Tools), XcodeGen (brew install xcodegen), an Apple Developer Program team,
-# the app record for com.premjeetech.roofline.measure in App Store Connect, and a Team API key (Users and Access >
+# the app record for the bundle id in App Store Connect, and a Team API key (Users and Access >
 # Integrations > App Store Connect API, role App Manager or Admin).
 #
 #   export DEVELOPMENT_TEAM=ABCDE12345                                        # Apple team id
@@ -26,7 +28,8 @@ command -v xcodegen >/dev/null 2>&1 || { echo "XcodeGen is missing: brew install
 xcodebuild -version >/dev/null 2>&1 || { echo "xcodebuild needs Xcode: install it and run sudo xcode-select -s /Applications/Xcode.app" >&2; exit 1; }
 
 BUILD_NUMBER=${BUILD_NUMBER:-$(date -u +%y%m%d%H%M)}
-ARCHIVE="$here/build/RooflineMeasure.xcarchive"
+SCHEME=${SCHEME:-RooflineMeasure}
+ARCHIVE="$here/build/$SCHEME.xcarchive"
 EXPORT="$here/build/export"
 AUTH="-authenticationKeyPath $ASC_KEY_PATH -authenticationKeyID $ASC_KEY_ID -authenticationKeyIssuerID $ASC_ISSUER_ID"
 
@@ -36,12 +39,12 @@ echo "== Core checks"
 echo "== Generate the Xcode project"
 xcodegen generate
 
-echo "== Archive (build $BUILD_NUMBER)"
+echo "== Archive $SCHEME (build $BUILD_NUMBER)"
 rm -rf "$ARCHIVE" "$EXPORT"
 # shellcheck disable=SC2086
 xcodebuild \
   -project RooflineMeasure.xcodeproj \
-  -scheme RooflineMeasure \
+  -scheme "$SCHEME" \
   -configuration Release \
   -destination 'generic/platform=iOS' \
   -archivePath "$ARCHIVE" \

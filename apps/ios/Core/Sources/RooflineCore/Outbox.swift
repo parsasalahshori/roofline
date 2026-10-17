@@ -4,7 +4,15 @@ import Foundation
 // 1. the JPEG to POST /api/window-measurements/:id/uploads -> upload id and the photo's size,
 // 2. the window (with that upload id) to POST /api/window-measurements/:id/photo-windows.
 // Each step is recorded on disk before the next, so a killed app or a dead signal resumes where it stopped. A failure
-// the server explains (4xx) waits for the person's Retry; a network failure or 5xx is tried again on the next sync.
+// the server explains (4xx) waits for the person's Retry; a network failure or 5xx is tried again on the next sync. A 429
+// (too many calls, or too many photos at once) carries Retry-After: the item waits at least that long, so the outbox does not
+// keep knocking while the server is telling it to stop.
+//
+// The homeowner app (WinChoice) uses the same outbox over its own endpoints: `measurementId` is then the REQUEST id,
+// the photo goes to POST /requests/:id/uploads and the window to POST /requests/:id/windows (idempotent on the window
+// id), both with the homeowner's bearer token (HomeownerOutboxTransport in the app). A window can be HELD: its photo
+// uploads at once, but the window itself waits until the homeowner has picked its style (the server needs one), then
+// `release` lets it go.
 
 public enum OutboxState: String, Codable, Sendable {
     /// Not sent yet, or a step failed in a way worth trying again by itself.
@@ -40,6 +48,12 @@ public struct OutboxItem: Codable, Equatable, Sendable, Identifiable {
     public var lastErrorStage: OutboxStage?
     /// A window save was attempted and its answer never came: check before sending again.
     public var windowSendUncertain: Bool
+    /// The homeowner app: the window is complete on the phone but not ready to send (its style is not picked yet). The
+    /// photo still uploads. Optional so an outbox written before this existed still decodes.
+    public var held: Bool?
+    /// The server said "not before" (429's Retry-After): `syncAll` leaves the item alone until then. Optional so an outbox
+    /// written before this existed still decodes.
+    public var retryNotBefore: Date?
 
     public init(window: PhotoWindowInput, measurementId: String, address: String?, jpegFileName: String?, imageWidthPx: Int, imageHeightPx: Int, createdAt: Date = Date()) {
         id = window.id
@@ -56,13 +70,19 @@ public struct OutboxItem: Codable, Equatable, Sendable, Identifiable {
         lastError = nil
         lastErrorStage = nil
         windowSendUncertain = false
+        held = nil
     }
 
-    /// What to do next, or nil when there is nothing (done, or waiting for Retry).
+    /// Complete on the phone, waiting for the homeowner (see `held`).
+    public var isHeld: Bool { held == true }
+
+    /// What to do next, or nil when there is nothing (done, held back, or waiting for Retry).
     public var nextStage: OutboxStage? {
         switch state {
         case .done, .failed: return nil
-        case .waiting, .sending: return uploadId == nil && jpegFileName != nil ? .photo : .window
+        case .waiting, .sending:
+            if uploadId == nil && jpegFileName != nil { return .photo }
+            return isHeld ? nil : .window
         }
     }
 }
@@ -71,10 +91,13 @@ public struct OutboxItem: Codable, Equatable, Sendable, Identifiable {
 public struct TransportError: Error, Equatable, Sendable {
     public var status: Int?
     public var message: String
+    /// Seconds the server asked us to wait before trying again (429's Retry-After).
+    public var retryAfter: Double?
 
-    public init(status: Int?, message: String) {
+    public init(status: Int?, message: String, retryAfter: Double? = nil) {
         self.status = status
         self.message = message
+        self.retryAfter = retryAfter
     }
 
     /// Worth trying again by itself: no answer, a timeout, rate limiting, or the server's own failure.
@@ -108,18 +131,25 @@ public enum OutboxMachine {
         i.window.uploadId = upload.id
         // The corners are in the JPEG's pixels; if the server reads the photo at another size, follow it
         if upload.widthPx != i.imageWidthPx || upload.heightPx != i.imageHeightPx, upload.widthPx > 0, upload.heightPx > 0 {
-            i.window.corners = i.window.corners.map { ImageMapping.rescale($0, from: (Double(i.imageWidthPx), Double(i.imageHeightPx)), to: (Double(upload.widthPx), Double(upload.heightPx))) }
+            let from = (Double(i.imageWidthPx), Double(i.imageHeightPx)), to = (Double(upload.widthPx), Double(upload.heightPx))
+            i.window.corners = i.window.corners.map { ImageMapping.rescale($0, from: from, to: to) }
+            // A card window has a second set of corners in the same photo
+            if case .card(let c) = i.window.scale {
+                i.window.scale = .card(CardScale(cardCorners: ImageMapping.rescale(c.cardCorners, from: from, to: to), card: c.card))
+            }
             i.imageWidthPx = upload.widthPx
             i.imageHeightPx = upload.heightPx
         }
         i.state = .waiting
         i.lastError = nil
         i.lastErrorStage = nil
+        i.retryNotBefore = nil
         return i
     }
 
     public static func windowSaved(_ item: OutboxItem) -> OutboxItem {
         var i = item
+        i.retryNotBefore = nil
         i.state = .done
         i.windowSendUncertain = false
         i.lastError = nil
@@ -127,11 +157,13 @@ public enum OutboxMachine {
         return i
     }
 
-    public static func failed(_ item: OutboxItem, _ stage: OutboxStage, _ error: TransportError) -> OutboxItem {
+    public static func failed(_ item: OutboxItem, _ stage: OutboxStage, _ error: TransportError, now: Date = Date()) -> OutboxItem {
         var i = item
         i.state = error.isRetryable ? .waiting : .failed
         i.lastError = error.message
         i.lastErrorStage = stage
+        // "Try again in N seconds": not before then (only for what is worth retrying by itself)
+        i.retryNotBefore = error.isRetryable ? error.retryAfter.map { now.addingTimeInterval(max($0, 0)) } : nil
         // A refused window was not saved: no doubt left about it
         if stage == .window, !error.isRetryable { i.windowSendUncertain = false }
         return i
@@ -143,6 +175,8 @@ public enum OutboxMachine {
         guard i.state == .failed || i.state == .waiting else { return i }
         if i.lastErrorStage == .photo { i.uploadId = nil }
         i.state = .waiting
+        // The person asked: do not hold it back for an earlier "not before"
+        i.retryNotBefore = nil
         return i
     }
 }
@@ -151,13 +185,16 @@ public enum OutboxMachine {
 public actor Outbox {
     public let directory: URL
     private let transport: OutboxTransport
+    private let now: @Sendable () -> Date
     public private(set) var items: [OutboxItem] = []
     private var syncing = false
     private var observer: (@Sendable ([OutboxItem]) -> Void)?
 
-    public init(directory: URL, transport: OutboxTransport) {
+    /// `now` is the clock the Retry-After waits are measured on (a check can move it).
+    public init(directory: URL, transport: OutboxTransport, now: @escaping @Sendable () -> Date = { Date() }) {
         self.directory = directory
         self.transport = transport
+        self.now = now
     }
 
     private var fileURL: URL { directory.appendingPathComponent("outbox.json") }
@@ -194,18 +231,44 @@ public actor Outbox {
 
     /// Saves a measured window and its photo on disk. Nothing is sent yet. A RoomPlan window may come without a photo
     /// (no frame saw all four corners): it skips the upload and is sent with no uploadId and no corners.
-    public func enqueue(window: PhotoWindowInput, measurementId: String, address: String?, jpeg: Data?, imageWidthPx: Int, imageHeightPx: Int) throws -> OutboxItem {
+    public func enqueue(window: PhotoWindowInput, measurementId: String, address: String?, jpeg: Data?, imageWidthPx: Int, imageHeightPx: Int, held: Bool = false) throws -> OutboxItem {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var name: String?
         if let jpeg = jpeg {
             name = "\(window.id).jpg"
             try jpeg.write(to: directory.appendingPathComponent("\(window.id).jpg"), options: [.atomic])
         }
-        let item = OutboxItem(window: window, measurementId: measurementId, address: address, jpegFileName: name, imageWidthPx: imageWidthPx, imageHeightPx: imageHeightPx)
+        var item = OutboxItem(window: window, measurementId: measurementId, address: address, jpegFileName: name, imageWidthPx: imageWidthPx, imageHeightPx: imageHeightPx)
+        if held { item.held = true }
         items.removeAll { $0.id == item.id }
         items.append(item)
         try persist()
         return item
+    }
+
+    /// Changes a window that has not been sent yet (the homeowner's room, name or style) and, with `release`, lets it go.
+    /// A window already on the server is not touched: the server refuses a second, different body for the same id.
+    @discardableResult
+    public func updateWindow(id: String, release: Bool = false, _ change: (inout PhotoWindowInput) -> Void) throws -> Bool {
+        guard let k = items.firstIndex(where: { $0.id == id }), items[k].state != .done, items[k].windowSendUncertain == false else { return false }
+        change(&items[k].window)
+        if release { items[k].held = nil }
+        try persist()
+        return true
+    }
+
+    /// Lets a held window go (its style is picked).
+    public func release(id: String) throws {
+        guard let k = items.firstIndex(where: { $0.id == id }) else { return }
+        items[k].held = nil
+        try persist()
+    }
+
+    /// Drops every item of one request, with its photo (the homeowner started over, or the saved request expired).
+    public func removeAll(measurementId: String) throws {
+        for i in items where i.measurementId == measurementId { if let u = jpegURL(for: i) { try? FileManager.default.removeItem(at: u) } }
+        items.removeAll { $0.measurementId == measurementId }
+        try persist()
     }
 
     public func retry(id: String) throws {
@@ -231,6 +294,11 @@ public actor Outbox {
 
     public var pendingCount: Int { items.filter { $0.state != .done }.count }
 
+    /// When the earliest held-back item may be tried again (the server's Retry-After), nil when nothing is held back.
+    public func nextRetryDate() -> Date? {
+        items.filter { $0.state == .waiting && !$0.isHeld }.compactMap { $0.retryNotBefore }.filter { $0 > now() }.min()
+    }
+
     /// Sends everything that can be sent, one item at a time, oldest first. Returns how many finished.
     @discardableResult
     public func syncAll() async -> Int {
@@ -248,6 +316,8 @@ public actor Outbox {
     @discardableResult
     public func send(id: String) async -> Bool {
         while let k = items.firstIndex(where: { $0.id == id }), let stage = items[k].nextStage {
+            // The server said to wait (Retry-After): not before then
+            if let notBefore = items[k].retryNotBefore, notBefore > now() { return false }
             let item = items[k]
             update(OutboxMachine.started(item, stage))
             do {
@@ -267,7 +337,7 @@ public actor Outbox {
                     update(OutboxMachine.windowSaved(current(id) ?? item))
                 }
             } catch let e as TransportError {
-                update(OutboxMachine.failed(current(id) ?? item, stage, e))
+                update(OutboxMachine.failed(current(id) ?? item, stage, e, now: now()))
                 return false
             } catch {
                 let e = TransportError(status: nil, message: (error as NSError).localizedDescription)

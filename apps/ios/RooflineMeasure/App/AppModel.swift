@@ -1,3 +1,4 @@
+#if STAFF_APP
 import Foundation
 import Observation
 import RooflineCore
@@ -126,3 +127,4 @@ final class AppModel {
         Task { await self.sync() }
     }
 }
+#endif

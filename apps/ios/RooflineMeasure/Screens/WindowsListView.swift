@@ -1,18 +1,6 @@
+#if STAFF_APP
 import RooflineCore
 import SwiftUI
-
-/// What a measure screen needs: where to save, and which window it is.
-struct MeasureContext: Identifiable, Hashable {
-    var measurementId: String
-    var address: String
-    /// The window this photo belongs to (shared by every photo of it).
-    var windowKey: String
-    var label: String
-    /// Measuring a window that is already on the list (another pass), not a new one.
-    var again: Bool
-
-    var id: String { "\(measurementId)/\(windowKey)/\(again)" }
-}
 
 /// One address's windows: every window photographed or scanned (photos of one window grouped by windowKey), its
 /// size in eighths with its ±, a 'check' badge, and what is still waiting in the outbox.
@@ -250,7 +238,9 @@ func previewSize(_ w: PhotoWindowInput) -> (Double, Double)? {
         return (size.widthIn, size.heightIn)
     case .roomplan(let s):
         return (s.widthM * inchesPerMetre, s.heightM * inchesPerMetre)
-    case .other:
+    case .card, .other:
+        // The bank-card scale is the homeowner app's; the rep app never writes it
         return nil
     }
 }
+#endif

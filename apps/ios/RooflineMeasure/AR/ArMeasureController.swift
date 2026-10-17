@@ -44,13 +44,28 @@ final class ArMeasureController {
     private(set) var cornersInPhoto = false
     private(set) var loupe: UIImage?
     var wallLocked: Bool { capture.wallPlane != nil }
+    /// The corners placed so far, as screen points of the AR view (for the homeowner app's dots and size plates).
+    private(set) var cornerDots: [CGPoint] = []
+    /// A length plate for each side drawn so far, at its midpoint on screen.
+    private(set) var edgeLabels: [EdgeLabel] = []
+
+    struct EdgeLabel: Equatable, Identifiable {
+        var id: Int
+        var point: CGPoint
+        /// The side in eighths, e.g. "35 5/8".
+        var text: String
+        /// The side, inches.
+        var inches: Double = 0
+        /// The side still running to the crosshair.
+        var live: Bool
+    }
 
     let lidar: Bool
     var device: ArDevice { lidar ? .arkitLidar : .arkit }
     let startedAt = Date()
 
     @ObservationIgnored let sceneView: ARSCNView
-    @ObservationIgnored private let overlay = ArOverlay()
+    @ObservationIgnored private let overlay: ArOverlay
     @ObservationIgnored private var sampler = CornerSampler()
     @ObservationIgnored private var samplingDepth: [Vec3] = []
     @ObservationIgnored private var sampling = false
@@ -65,8 +80,10 @@ final class ArMeasureController {
     /// Seconds a corner may take to sample before it is placed from what it has (or refused with < 5 samples).
     static let samplingTimeout: TimeInterval = 4
 
-    init() {
+    /// `tapeStyle`: the homeowner app draws corners and sides in tape yellow (Chalk Line's measuring colour).
+    init(tapeStyle: Bool = false) {
         lidar = DeviceCaps.hasLiDAR
+        overlay = ArOverlay(tapeStyle: tapeStyle)
         sceneView = ARSCNView(frame: .zero)
         sceneView.automaticallyUpdatesLighting = true
         sceneView.rendersCameraGrain = false
@@ -202,6 +219,7 @@ final class ArMeasureController {
         if next != phase { phase = next }
 
         updateOverlay(wallNormal: capture.wallPlane?.normal)
+        updateScreenMarks()
         if frameCount % 6 == 0, !capture.isComplete { loupe = makeLoupe() }
     }
 
@@ -328,6 +346,68 @@ final class ArMeasureController {
         return (window, shot, pass)
     }
 
+    /// What a finished measure gives any app: its corners and their spreads, the sizing preview, and the photo of the
+    /// current frame with the corners projected into it. Nil (with a message) when it cannot be made.
+    struct Capture {
+        var finished: FinishedCorners
+        var shot: FrameCapture.Shot
+        var preview: ArSize?
+        var trackingLostCount: Int
+        var restartsForTracking: Int
+        var durationS: Double
+    }
+
+    func makeCapture() -> Capture? {
+        guard let f = finished, let frame = sceneView.session.currentFrame else {
+            message = "Place all four corners first."
+            return nil
+        }
+        guard let shot = FrameCapture.shot(frame: frame, points: f.pointsM) else {
+            message = "The photo could not be made. Try again."
+            return nil
+        }
+        return Capture(finished: f, shot: shot, preview: preview, trackingLostCount: capture.trackingLostCount,
+                       restartsForTracking: capture.restartsForTracking, durationS: Date().timeIntervalSince(startedAt))
+    }
+
+    /// Width and height as the live readout shows them (the corners placed so far and the crosshair).
+    var liveReadout: LiveReadout {
+        LiveReadout.from(corners: capture.points, aim: capture.isComplete ? nil : aim, device: device)
+    }
+
+    /// Where the placed corners and the middle of each side are on screen, for the homeowner app's dots and plates.
+    private func updateScreenMarks() {
+        func screen(_ p: Vec3) -> CGPoint? {
+            let v = sceneView.projectPoint(SCNVector3(Float(p.x), Float(p.y), Float(p.z)))
+            // z > 1 is behind the camera
+            guard v.z > 0, v.z < 1 else { return nil }
+            return CGPoint(x: CGFloat(v.x), y: CGFloat(v.y))
+        }
+        let points = finished?.pointsM ?? capture.points
+        let dots = points.compactMap(screen)
+        var labels: [EdgeLabel] = []
+        var pairs: [(Vec3, Vec3, Bool)] = []
+        if points.count >= 2 { for i in 1..<points.count { pairs.append((points[i - 1], points[i], false)) } }
+        if points.count == 4 {
+            pairs.append((points[3], points[0], false))
+        } else if let a = aim, let last = points.last {
+            pairs.append((last, a, true))
+        }
+        for (i, pr) in pairs.enumerated() {
+            guard let mid = screen((pr.0 + pr.1) / 2) else { continue }
+            let inches = pr.0.distance(to: pr.1) * inchesPerMetre
+            labels.append(EdgeLabel(id: i, point: mid, text: Eighths.format(inches), inches: inches, live: pr.2))
+        }
+        // Observed properties are only written when they changed by a visible amount: SwiftUI redraws on every write
+        func moved(_ a: [CGPoint], _ b: [CGPoint]) -> Bool {
+            a.count != b.count || zip(a, b).contains { abs($0.x - $1.x) > 0.5 || abs($0.y - $1.y) > 0.5 }
+        }
+        if moved(dots, cornerDots) { cornerDots = dots }
+        if labels.count != edgeLabels.count || zip(labels, edgeLabels).contains(where: { moved([$0.point], [$1.point]) || $0.text != $1.text || $0.live != $1.live }) {
+            edgeLabels = labels
+        }
+    }
+
     /// The live sides, in eighths (the last one runs to the reticle while aiming).
     var liveSides: [(text: String, toAim: Bool)] {
         capture.liveEdgesIn(aim: capture.isComplete ? nil : aim).map { (Eighths.format($0.inches) + " in", $0.toAim) }
@@ -380,12 +460,19 @@ final class ArSessionProxy: NSObject, ARSessionDelegate {
 /// SceneKit nodes for the corners, the sides and the reticle on the wall.
 final class ArOverlay {
     let root = SCNNode()
+    /// The homeowner app's look: every corner and side in tape yellow (#FFC21F).
+    let tapeStyle: Bool
+    static let tape = UIColor(red: 1, green: 0.76, blue: 0.12, alpha: 1)
+
+    init(tapeStyle: Bool = false) {
+        self.tapeStyle = tapeStyle
+    }
 
     func update(corners: [Vec3], aim: Vec3?, wallNormal: Vec3?, closed: Bool) {
         root.childNodes.forEach { $0.removeFromParentNode() }
         for (i, c) in corners.enumerated() {
             let s = SCNSphere(radius: 0.006)
-            s.firstMaterial?.diffuse.contents = i == 0 ? UIColor.systemYellow : UIColor.systemGreen
+            s.firstMaterial?.diffuse.contents = tapeStyle ? Self.tape : (i == 0 ? UIColor.systemYellow : UIColor.systemGreen)
             s.firstMaterial?.lightingModel = .constant
             let n = SCNNode(geometry: s)
             n.simdPosition = c.simd
@@ -396,7 +483,8 @@ final class ArOverlay {
         if !closed, let a = aim, !corners.isEmpty { path.append(a) }
         if path.count >= 2 {
             for i in 1..<path.count {
-                root.addChildNode(Self.segment(from: path[i - 1], to: path[i], color: !closed && i == path.count - 1 && aim != nil ? .white : .systemGreen))
+                let live = !closed && i == path.count - 1 && aim != nil
+                root.addChildNode(Self.segment(from: path[i - 1], to: path[i], color: live ? .white : (tapeStyle ? Self.tape : .systemGreen)))
             }
         }
         if let a = aim {
