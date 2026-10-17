@@ -288,6 +288,19 @@ describe('ProposalWindow page', () => {
     expect(activity.getByText(proposals.eventsNone)).toBeInTheDocument();
   });
 
+  it('a proposal the customer signed or declined is never listed as not opened, whatever its view count says', () => {
+    mocks.proposal = make({ status: 'signed', sentAt: '2026-10-12T15:00:00Z', signed: { optionId: 'o2', name: 'Karen White', at: '2026-10-12T19:54:00Z' } });
+    show();
+    const activity = within(screen.getByRole('region', { name: proposals.activityHeading }));
+    expect(activity.queryByText(proposals.eventsNone)).toBeNull();
+    expect(activity.getByText(/^Signed by Karen White/)).toBeInTheDocument();
+    cleanup();
+
+    mocks.proposal = make({ status: 'declined', sentAt: '2026-10-12T15:00:00Z', declined: { at: '2026-10-12T19:54:00Z', reason: null } });
+    show();
+    expect(within(screen.getByRole('region', { name: proposals.activityHeading })).queryByText(proposals.eventsNone)).toBeNull();
+  });
+
   it('the text message is a panel of its own', () => {
     mocks.proposal = make({ status: 'sent', sentAt: '2026-10-12T15:00:00Z', messageBody: 'Hi there' });
     show();
