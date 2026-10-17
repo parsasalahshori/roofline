@@ -51,12 +51,12 @@ export class DemoSolar implements SolarApi {
   readonly configured = true;
 
   /** Whether the demo lot at this point has the old, low-quality imagery. */
-  static oldImageryAt(point: LngLat): boolean {
+  static oldImageryAt(point: readonly [number, number]): boolean {
     const i = DEMO_LOOKUP_LOTS.findIndex((l) => Math.abs(l[0] - point[0]) < 1e-6 && Math.abs(l[1] - point[1]) < 1e-6);
     return i >= 0 && i % 8 === 7;
   }
 
-  async buildingInsights(point: LngLat): Promise<SolarBuilding | null> {
+  async buildingInsights(point: readonly [number, number]): Promise<SolarBuilding | null> {
     const old = DemoSolar.oldImageryAt(point);
     const recent = new Date(Date.now() - 1.5 * 365.25 * 24 * 3600 * 1000).toISOString().slice(0, 10);
     return {

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { loadConfig } from '../src/config.ts';
-import { FakeSolar } from '../src/providers/fakes/solar.ts';
+import { DEMO_LOOKUP_LOTS } from '../src/demo/places.ts';
+import { DemoSolar, FakeSolar } from '../src/providers/fakes/solar.ts';
 import { GoogleSolar, parseBuildingInsights } from '../src/providers/google-solar.ts';
 import { createSolarApi, SolarUnavailableError, UnconfiguredSolar } from '../src/providers/solar.ts';
 
@@ -124,9 +125,20 @@ describe('createSolarApi', () => {
     ENCRYPTION_KEY: Buffer.alloc(32, 1).toString('base64'),
   };
 
-  test('DEMO_MODE uses the real Solar API when GOOGLE_SOLAR_API_KEY is set, else the fake', () => {
+  test('the demo Solar gives recent HIGH imagery, except LOW 2014 imagery on every eighth lookup lot', async () => {
+    const solar = new DemoSolar();
+    const ordinary = (await solar.buildingInsights(DEMO_LOOKUP_LOTS[0]!))!;
+    expect(ordinary.imageryQuality).toBe('HIGH');
+    expect(Number(ordinary.imageryDate!.slice(0, 4))).toBeGreaterThanOrEqual(new Date().getUTCFullYear() - 2);
+    const old = (await solar.buildingInsights(DEMO_LOOKUP_LOTS[7]!))!;
+    expect(old).toMatchObject({ imageryQuality: 'LOW', imageryDate: '2014-06-12' });
+    expect(DemoSolar.oldImageryAt(DEMO_LOOKUP_LOTS[15]!)).toBe(true);
+    expect(DemoSolar.oldImageryAt(DEMO_LOOKUP_LOTS[8]!)).toBe(false);
+  });
+
+  test('DEMO_MODE uses the real Solar API when GOOGLE_SOLAR_API_KEY is set, else the demo one', () => {
     expect(createSolarApi(loadConfig({ ...base, DEMO_MODE: '1', GOOGLE_SOLAR_API_KEY: KEY }))).toBeInstanceOf(GoogleSolar);
-    expect(createSolarApi(loadConfig({ ...base, DEMO_MODE: '1' }))).toBeInstanceOf(FakeSolar);
+    expect(createSolarApi(loadConfig({ ...base, DEMO_MODE: '1' }))).toBeInstanceOf(DemoSolar);
   });
 
   test('FAKE_PROVIDERS is the fake even with a key; otherwise the real one, or unconfigured without a key', () => {
