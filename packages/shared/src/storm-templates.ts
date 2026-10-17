@@ -79,11 +79,19 @@ export function hailLabel(inches: number): string {
 }
 
 /**
+ * A hail size as the owner reads it in a plan's title and summary: 1.75 -> '1.75 in'. A bare inch mark before a closing
+ * bracket or a full stop ('(up to 1.5")') reads like a stray quote there; the customers' texts keep it (hailLabel).
+ */
+export function hailInches(inches: number): string {
+  return `${inches} in`;
+}
+
+/**
  * Plan title for a storm. Uses the place name when present (non-blank),
  * otherwise a title without a place.
  */
 export function stormTitle(placeName: string | null, maxIn: number): string {
-  const label = hailLabel(maxIn);
+  const label = hailInches(maxIn);
   if (placeName === null || placeName.trim() === '') {
     return `Storm plan for hail (up to ${label})`;
   }

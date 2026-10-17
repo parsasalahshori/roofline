@@ -104,7 +104,6 @@ export const storm = {
     thresholdHeading: 'When a storm starts a plan',
     thresholdLabel: 'Hail size that starts a plan',
     thresholdHelp: 'Radar-estimated hail at or above this size starts a storm plan.',
-    thresholdOption: (inches: number) => `${inches.toFixed(2)} inches`,
 
     budgetHeading: 'Ad budget for a storm',
     budgetLabel: 'Budget in dollars',
@@ -137,7 +136,6 @@ export const storm = {
     photosFull: (max: number) => `You have the most photos allowed, ${max}. Remove one to add another.`,
     photoPickLabel: 'Add a photo',
     photoChoose: 'Choose a photo',
-    photoDrop: 'Or drop a photo here',
     photoType: 'Photos must be a JPEG or PNG.',
     photoSize: 'Photos must be 5 MB or smaller.',
     photoAlt: (n: number) => `Ad photo ${n}`,

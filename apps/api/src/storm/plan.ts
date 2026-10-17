@@ -15,6 +15,7 @@ import {
   DEFAULT_STORM_EMAIL_BODY,
   DEFAULT_STORM_EMAIL_SUBJECT,
   DEFAULT_STORM_SMS,
+  hailInches,
   hailLabel,
   missingStormTokens,
   splitAdBudget,
@@ -204,7 +205,7 @@ export async function draftStormPlan(
     const recipients = await listStormPlanRecipients(tx, ctx, companyStormId);
     const day = stormDayLabel(facts.convectiveDay, now, facts.company.timezone);
     const steps = buildSteps(facts, recipients, companyStormId, day);
-    const summary = `${facts.customersHit} of your customers and ${facts.homesHit} homes were hit by radar-estimated hail up to ${hailLabel(facts.maxIn)}.`;
+    const summary = `${facts.customersHit} of your customers and ${facts.homesHit} homes were hit by radar-estimated hail up to ${hailInches(facts.maxIn)}.`;
     const { taskId } = await createTask(
       tx,
       ctx,
