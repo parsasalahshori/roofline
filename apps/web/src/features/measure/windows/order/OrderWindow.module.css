@@ -267,6 +267,11 @@
     overflow-y: auto;
     overscroll-behavior-y: contain;
   }
+
+  /* While there is more to scroll to, the bottom edge fades: a row or a note cut there reads as "scroll", not as a fault */
+  .detailScroll[data-more="true"] {
+    mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 32px), transparent);
+  }
 }
 
 .sheet {
@@ -933,6 +938,11 @@
     justify-content: flex-end;
   }
 
+  /* The tag ends where the quantity's number and the sheet's own padding end (16px in), not 4px from the card's edge */
+  .table .row > td.cStatus {
+    padding-right: 16px;
+  }
+
   .cOrder {
     grid-area: order;
   }
@@ -964,6 +974,13 @@
 
   .poField input {
     height: auto;
+    min-height: 44px;
+  }
+
+  /* The PO box is a thumb tall: the line count beside it is centred in the same 44px, so the two read on one line */
+  .cell[data-cell="lines"] .cellValue {
+    display: flex;
+    align-items: center;
     min-height: 44px;
   }
 
