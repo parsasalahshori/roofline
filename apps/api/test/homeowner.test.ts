@@ -1523,3 +1523,44 @@ describe('the instant quote page and the app', () => {
     }
   });
 });
+
+describe('the browser measuring page (/q/:slug/measure)', () => {
+  test("a phone's browser can do the whole journey from the page's own origin: card window, contact with consent, call me", async () => {
+    // A browser sends Origin on every POST, DELETE and PATCH (the iPhone app sends none); the page's origin must pass them all
+    const origin = t.deps.config.APP_ORIGIN;
+    const made = await send('post', '/requests', { address: ADDRESS, services: ['windows'] }, { origin });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const s: Started = { id: (made.body as HomeownerCreated).requestId, token: (made.body as HomeownerCreated).token, body: made.body as HomeownerCreated };
+
+    // The photo goes up as the bytes of the file the camera gave
+    const scene = cardScene({ windowIn: { w: 36, h: 48 } });
+    const photo = await request(t.app)
+      .post(`${base()}/requests/${s.id}/uploads`)
+      .set('X-Forwarded-For', nextIp())
+      .set('Origin', origin)
+      .set('Authorization', `Bearer ${s.token}`)
+      .set('Content-Type', 'image/jpeg')
+      .send(Buffer.from(scene.bytes));
+    expect(photo.status, JSON.stringify(photo.body)).toBe(201);
+
+    // The window exactly as the page sends it: the card's four taps, the frame's four taps, the ids it made itself
+    const window = { id: 'w-web-1', room: 'Kitchen', label: 'Over the sink', style: 'double-hung', scale: { kind: 'card', cardCorners: scene.cardCorners, card: { widthMm: 85.6, heightMm: 53.98 } }, uploadId: photo.body.id, corners: scene.windowCorners };
+    const saved = await send('post', `/requests/${s.id}/windows`, window, { token: s.token, origin });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(201);
+    const w = (saved.body as HomeownerRequestView).windows[0]!;
+    // What the page shows: eighths of an inch and an "about ±"
+    expect(w.sizeLabel).toMatch(/^\d+( \d\/\d)? x \d+( \d\/\d)?$/);
+    expect(w.uncertaintyLabel).toMatch(/^about ±/);
+    expect((saved.body as HomeownerRequestView).rooms).toEqual(['Kitchen']);
+    // A reload resumes from the token alone
+    expect((await view(s)).windows.map((x) => x.id)).toEqual(['w-web-1']);
+
+    const filed = await send('post', `/requests/${s.id}/contact`, contactBody(), { token: s.token, origin });
+    expect(filed.status, JSON.stringify(filed.body)).toBe(201);
+    expect((await get(`/requests/${s.id}/slots`, { token: s.token, origin })).status).toBe(200);
+    const call = await send('post', `/requests/${s.id}/book`, { callMe: true }, { token: s.token, origin });
+    expect(call.status, JSON.stringify(call.body)).toBe(200);
+    expect((call.body as HomeownerRequestView).booking).toEqual({ visit: null, callMe: true });
+    expect((await send('delete', `/requests/${s.id}/windows/w-web-1`, undefined, { token: s.token, origin })).status).toBe(200);
+  });
+});

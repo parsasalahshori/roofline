@@ -729,3 +729,51 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+
+/* Reviews, year started, licence: one quiet line under the letterhead */
+.trustRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 0 16px 8px;
+  list-style: none;
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
+  box-sizing: border-box;
+}
+
+/* The measuring flow (/q/:slug/measure) on the same page: its cards, lines and second buttons in the quote page's look */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.text {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 0.9375rem;
+  overflow-wrap: anywhere;
+}
+
+.small,
+.note {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: var(--font-size-min);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.page .secondary[data-size] {
+  width: 100%;
+  min-height: 52px;
+  border-radius: var(--r-3);
+  box-shadow: inset 0 0 0 1px var(--line-ctl);
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 700;
+}

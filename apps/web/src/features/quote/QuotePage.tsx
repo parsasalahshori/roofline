@@ -17,6 +17,7 @@ import { usePublicBrand } from '../public/usePublicBrand.ts';
 import { type EstimateAnswer, QuoteApiError, quoteApi } from './api.ts';
 import { RoofThumb, RoofThumbPlaceholder } from './RoofThumb.tsx';
 import { measureLink } from './paths.ts';
+import { writeSeed } from './measure/session.ts';
 import { QrCode } from './QrCode.tsx';
 import { Turnstile } from './Turnstile.tsx';
 import styles from './QuotePage.module.css';
@@ -476,7 +477,7 @@ function Results({
         {answer.roof ? <p className={styles.fine}>{quote.finalNote}</p> : null}
         {answer.outline !== null ? <p className={styles.fine}>{quote.imagery}</p> : null}
       </div>
-      {showContinue && windows ? <MeasureWindows slug={slug} quoteId={answer.quoteId} app={config.homeownerApp} device={device} /> : null}
+      {showContinue && windows ? <MeasureWindows slug={slug} quoteId={answer.quoteId} address={answer.address} services={services} app={config.homeownerApp} device={device} /> : null}
       {showContinue ? (
         <div className={styles.dock}>
           {windows && config.homeownerApp !== null ? (
@@ -513,7 +514,21 @@ function Range({ low, high, pending = false }: { low: number; high: number; pend
  * store; an Android phone measures in its browser; on a computer a QR code (one link for both) is scanned by the phone.
  * Without the company's app link the page offers only the free visit (the caller's link under this).
  */
-function MeasureWindows({ slug, quoteId, app, device }: { slug: string; quoteId: string; app: PublicQuoteConfig['homeownerApp']; device: Device }) {
+function MeasureWindows({
+  slug,
+  quoteId,
+  address,
+  services,
+  app,
+  device,
+}: {
+  slug: string;
+  quoteId: string;
+  address: string;
+  services: readonly QuoteProduct[];
+  app: PublicQuoteConfig['homeownerApp'];
+  device: Device;
+}) {
   if (app === null) return null;
   const link = measureLink(slug, quoteId);
   return (
@@ -528,7 +543,7 @@ function MeasureWindows({ slug, quoteId, app, device }: { slug: string; quoteId:
       ) : null}
       {device === 'android' ? (
         <>
-          <Button href={link} size="lg" className={`${styles.primary} ${styles.wrap}`}>
+          <Button href={link} size="lg" className={`${styles.primary} ${styles.wrap}`} onClick={() => writeSeed(slug, { quoteId, address, services: [...services] })}>
             {quote.browserMeasure}
           </Button>
           <p className={styles.fine}>{quote.browserLine}</p>

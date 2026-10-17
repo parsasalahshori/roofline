@@ -35,19 +35,17 @@ describe('the homeowner pages are made for a thumb', () => {
     expect(block(header, '.call')).toMatch(/height:\s*44px;/);
   });
 
-  it('the window-count stepper is 44px high, with 44px buttons', () => {
-    expect(block(quotePage, '.stepper .stepButton')).toMatch(/min-width:\s*44px;/);
-    expect(block(quotePage, '.stepper .stepButton')).toMatch(/min-height:\s*44px;/);
-    expect(block(quotePage, '.count')).toMatch(/min-width:\s*44px;/);
-    expect(block(quotePage, '.count')).toMatch(/line-height|\/44px/);
+  it('the main and second buttons on the quote and measure pages are 52px high', () => {
+    expect(block(quotePage, '.page .primary[data-size]')).toMatch(/min-height:\s*52px;/);
+    expect(block(quotePage, '.page .secondary[data-size]')).toMatch(/min-height:\s*52px;/);
   });
 });
 
 describe('what a person can pick or draw on has the control edge (3:1), not the hairline', () => {
-  it('the Good, Better and Best tiles, the visit times, the stepper, the empty box and the signature well', () => {
+  it('the Good, Better and Best tiles, the visit times, the service options, the empty box and the signature well', () => {
     expect(block(proposalPage, '.tile')).toContain('var(--line-ctl)');
     expect(block(quotePage, '.slot')).toContain('var(--line-ctl)');
-    expect(block(quotePage, '.stepper')).toContain('var(--line-ctl)');
+    expect(block(quotePage, '.option')).toContain('var(--line-ctl)');
     expect(block(quotePage, '.rowBox[data-off]')).toContain('var(--line-ctl)');
     expect(block(signaturePad, '.well::after')).toContain('var(--line-ctl)');
   });
