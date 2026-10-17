@@ -30,9 +30,10 @@ export const HOMEOWNER_LABEL_MAX = 80;
  * Why a request went to the call-back path instead of getting an online estimate. Coarse on purpose (the app words each
  * one): 'unit' = an apartment, suite or other unit; 'address' = the address could not be pinned to one house; 'home' = a
  * house a person has to look at (a big building, a roof that is hard to see); 'busy' = nothing could be measured right
- * now (the company's daily limit, or the address lookup was down).
+ * now (the company's daily limit, or the address lookup was down); 'satellite-unusable' = the satellite pictures of the
+ * home are not clear or recent enough to measure the roof (the detailed reason stays with the company's staff).
  */
-export const HOMEOWNER_CALLBACK_REASONS = ['unit', 'address', 'home', 'busy'] as const;
+export const HOMEOWNER_CALLBACK_REASONS = ['unit', 'address', 'home', 'busy', 'satellite-unusable'] as const;
 export type HomeownerCallbackReason = (typeof HOMEOWNER_CALLBACK_REASONS)[number];
 
 /** Where a request is on its way from "asked" to "installed" (GET /requests/:id/status). */
@@ -135,8 +136,11 @@ export type HomeownerEstimate = {
   windows: { low: number; high: number; likely: number } | null;
   /** The roof's price range, whole dollars (rounded out to hundreds), and its size in squares. */
   roof: { low: number; high: number; squares: number } | null;
-  /** 'at-visit': gutters are priced at the free visit, never online. */
-  gutters: 'at-visit' | null;
+  /**
+   * Present when the roof was asked about but the satellite pictures cannot be trusted for this home: `roof` is then
+   * null, no roof price is shown, and `message` is the sentence to show. The windows are not affected.
+   */
+  roofNote?: { reason: 'satellite-unusable'; message: string };
 };
 
 /** POST /requests. */

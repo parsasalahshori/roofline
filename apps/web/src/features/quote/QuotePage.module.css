@@ -127,17 +127,6 @@
   font-size: 0.875rem;
 }
 
-/* The second choice next to "Measure with the app": an outlined button, so it reads as a button and not as a link */
-.page .secondary[data-size] {
-  width: 100%;
-  min-height: 52px;
-  border-radius: var(--r-3);
-  box-shadow: inset 0 0 0 1px var(--line-ctl);
-  color: var(--ink);
-  font-size: 1rem;
-  font-weight: 700;
-}
-
 .honeypot {
   position: absolute;
   left: -10000px;
@@ -401,40 +390,12 @@
 }
 
 /* The window count: a segmented stepper with the count in mono, and why it can be changed beside it */
-.step {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  padding-left: 32px;
-}
-
-.step .rowNote {
-  padding-left: 0;
-}
-
-.stepper {
-  display: flex;
-  flex: none;
-  align-items: center;
-  overflow: hidden;
-  border-radius: var(--r-2);
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--line-ctl);
-}
-
-.stepper .stepButton {
-  min-width: 44px;
-  min-height: 44px;
-  border-radius: 0;
-}
-
+/* The windows row: a count to the right, where a roof row has its price */
 .count {
-  min-width: 44px;
-  border-right: 1px solid var(--line);
-  border-left: 1px solid var(--line);
-  font: 600 1.0625rem/44px var(--f-mono);
-  text-align: center;
+  font: 700 1rem/1.2 var(--f-display);
   font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .notes {
@@ -715,7 +676,7 @@
   font-weight: 600;
 }
 
-/* "Measure with the app": the store button, and on a computer a QR code beside it */
+/* Measuring the windows: the store or browser button, or on a computer a QR code */
 .appOffer {
   display: flex;
   flex-direction: column;
@@ -730,44 +691,41 @@
   text-align: left;
 }
 
-.appRow {
+.qr {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-
-.qr {
-  display: none;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
 }
 
 .qrImage {
   display: block;
-  width: 132px;
-  height: 132px;
+  width: 148px;
+  height: 148px;
   border-radius: var(--r-2);
   box-shadow: inset 0 0 0 1px var(--line);
 }
 
-@media (min-width: 720px) {
-  .appRow {
-    flex-direction: row;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 16px;
-  }
+/* A long label wraps inside its button instead of running out of it */
+.appOffer .wrap {
+  height: auto;
+  min-height: 48px;
+  padding-block: 12px;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.25;
+}
 
-  .appRow .primary {
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-
-  .qr {
-    display: flex;
-    flex: none;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    max-width: 160px;
-    text-align: center;
-  }
+/* A quiet text link for the free visit under the main way to measure */
+.page .linkButton[data-variant] {
+  align-self: center;
+  width: auto;
+  min-height: 44px;
+  padding: 8px 4px;
+  color: var(--ink);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }

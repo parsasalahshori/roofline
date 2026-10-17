@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { reportHeight } from './embed.ts';
+import { MeasurePage } from './MeasurePage.tsx';
 import { QuotePage } from './QuotePage.tsx';
 
 /**
@@ -14,4 +15,13 @@ export function mountQuotePage(root: HTMLElement, slug: string): void {
     </StrictMode>,
   );
   reportHeight();
+}
+
+/** Mounts /q/:slug/measure, the page where windows are measured in the phone's browser (a placeholder for now). */
+export function mountMeasurePage(root: HTMLElement, slug: string): void {
+  createRoot(root).render(
+    <StrictMode>
+      <MeasurePage slug={slug} />
+    </StrictMode>,
+  );
 }

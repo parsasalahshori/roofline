@@ -38,6 +38,7 @@ import {
   type HomeownerRequestView,
   type PhotoWindowInput,
   QUOTE_CONSENT_VERSION,
+  homeownerProducts,
   QUOTE_PRODUCTS,
   QUOTE_WINDOW_COUNT,
   type QuoteProduct,
@@ -365,7 +366,7 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
         name: company.name,
         brandColor: hex6(settings.accentColor),
         phone: company.phoneE164,
-        services: settings.products,
+        services: homeownerProducts(settings.products),
         booking: settings.booking,
         privacyUrl: urls.privacy,
         termsUrl: urls.terms,
@@ -390,7 +391,7 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
     route(async (req, res) => {
       const { ctx, settings } = await pageFor(deps, req.params.slug);
       const body = parse(CreateBody, req.body);
-      if (!body.services.every((s) => settings.products.includes(s))) throw new AppError(422, NOT_OFFERED_MESSAGE, 'services').coded('service_not_offered');
+      if (!body.services.every((s) => homeownerProducts(settings.products).includes(s))) throw new AppError(422, NOT_OFFERED_MESSAGE, 'services').coded('service_not_offered');
       const ipHash = quoteIpHash(deps.config, req.ip ?? 'unknown', ctx.companyId);
       const outcome = await estimateForHomeowner(deps, ctx, settings, { address: body.address, services: body.services, ipHash });
 
@@ -606,7 +607,7 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
       if (body.consentVersion !== QUOTE_CONSENT_VERSION) throw new AppError(409, RELOAD_MESSAGE).coded('consent_changed');
       // Counted once the form is whole: a mistyped phone number or email must not use up the hour's tries.
       await auth.budget(request.id, 'contact');
-      const products = request.services.filter((p): p is QuoteProduct => settings.products.includes(p as QuoteProduct));
+      const products = request.services.filter((p): p is QuoteProduct => homeownerProducts(settings.products).includes(p as QuoteProduct));
       if (products.length === 0) throw new AppError(422, NOT_OFFERED_MESSAGE, 'services').coded('service_not_offered');
       const now = clock.now();
 
@@ -726,7 +727,7 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
         if (fresh === null) return null;
         const full = await buildRequestView(tx, ctx, fresh);
         if (changed) {
-          const products = fresh.services.filter((p): p is QuoteProduct => settings.products.includes(p as QuoteProduct));
+          const products = fresh.services.filter((p): p is QuoteProduct => homeownerProducts(settings.products).includes(p as QuoteProduct));
           await addHomeownerNote(tx, ctx, lead.jobId, { kind: 'job.app_windows', summary: `Homeowner app: ${leadSummary(products, full)}` }, now);
         }
         return full;

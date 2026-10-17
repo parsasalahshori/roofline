@@ -1,4 +1,4 @@
-import type { PublicQuoteConfig, PublicQuoteEstimate, PublicQuoteLeadResult, PublicQuoteSlots, PublicQuoteWindows, QuoteProduct } from '@roofline/shared';
+import type { PublicQuoteConfig, PublicQuoteEstimate, PublicQuoteLeadResult, PublicQuoteSlots, QuoteProduct } from '@roofline/shared';
 import { quote } from '../../copy/quote.ts';
 
 /*
@@ -75,7 +75,6 @@ export type LeadBody = {
 export const quoteApi = {
   config: (slug: string, signal?: AbortSignal) => call<PublicQuoteConfig>(base(slug), undefined, signal),
   estimate: (slug: string, body: { address: string; website: string; turnstileToken?: string }) => call<EstimateAnswer>(`${base(slug)}/estimate`, body),
-  windows: (slug: string, body: { quoteId: string; count: number }, signal?: AbortSignal) => call<PublicQuoteWindows>(`${base(slug)}/windows`, body, signal),
   slots: (slug: string, signal?: AbortSignal) => call<PublicQuoteSlots>(`${base(slug)}/slots`, undefined, signal),
   lead: (slug: string, body: LeadBody) => call<PublicQuoteLeadResult>(`${base(slug)}/lead`, body),
 };

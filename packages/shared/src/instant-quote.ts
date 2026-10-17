@@ -10,6 +10,14 @@ import type { LngLat } from './roof.ts';
 export const QUOTE_PRODUCTS = ['windows', 'roof', 'gutters'] as const;
 export type QuoteProduct = (typeof QUOTE_PRODUCTS)[number];
 
+/**
+ * What homeowners are offered (the web page and the app). Gutters are measured and priced by staff only, so they are
+ * left out of everything a homeowner sees, whatever the company has switched on.
+ */
+export function homeownerProducts(products: readonly QuoteProduct[]): QuoteProduct[] {
+  return products.filter((p) => p !== 'gutters');
+}
+
 /** Defaults for a company that has not set the page up yet. */
 export const QUOTE_DEFAULTS = {
   products: ['windows', 'roof'] as QuoteProduct[],
@@ -126,6 +134,13 @@ export type PublicQuoteConfig = {
   homeownerApp: { url: string; name: string } | null;
 };
 
+/**
+ * What the homeowner is told when the satellite pictures of their home cannot be trusted to measure the roof (too old,
+ * not sharp enough, no building found, or the roof outline is in doubt). The specific cause is kept for staff only.
+ */
+export const SATELLITE_UNUSABLE_MESSAGE =
+  "We can't measure your roof from satellite images — the pictures of your home aren't clear or recent enough. We'll measure it at your free visit.";
+
 /** How the estimate came out: measured, or the company's daily limit reached / the home not measurable (we call instead). */
 export type PublicQuoteStatus = 'ready' | 'fallback';
 
@@ -136,12 +151,17 @@ export type PublicQuoteEstimate = {
   /** The address as found (street, city, state and ZIP), or as typed when it was not looked up. */
   address: string;
   roof: { squares: number; range: PriceRange } | null;
-  /** The window count is a guess from the outside: the homeowner may change it (POST .../windows re-prices it). */
-  windows: { count: number; range: PriceRange } | null;
+  /**
+   * The window count is a guess from the outside: `count` is the likely number, `countRange` the plausible low to high
+   * (equal when the walls are clear). The web page shows the count only; the price stays with staff and the app.
+   */
+  windows: { count: number; range: PriceRange; countRange: { low: number; high: number } } | null;
   /** Always null since October 2026: gutters are priced at the visit, never on the page (kept for older stored rows). */
   gutters: { feet: number; range: PriceRange } | null;
   /** The main roof's outline for the picture, and the point the picture is centred on. */
   outline: { center: LngLat; ring: LngLat[] } | null;
+  /** 'satellite-unusable': the roof is not priced because the satellite pictures cannot be trusted (see SATELLITE_UNUSABLE_MESSAGE). */
+  notice?: 'satellite-unusable' | null;
 };
 
 /** GET /api/public/quote/:slug/slots: open in-home visit times. `id` is the start as an ISO string. */

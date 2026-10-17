@@ -61,6 +61,7 @@ export function methodOf(scale: WindowPhotoScale): { method: RowMethod; grade: R
     case 'sheet':
       return { method: 'sheet', grade: 'order' };
     case 'reference':
+    case 'card':
       return { method: 'paper', grade: 'quote' };
     case 'known-side':
       return { method: 'hand', grade: 'quote' };

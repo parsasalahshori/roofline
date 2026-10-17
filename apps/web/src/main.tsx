@@ -19,11 +19,18 @@ async function startQuotePage(host: HTMLElement, slug: string): Promise<void> {
   quote.mountQuotePage(host, slug);
 }
 
+async function startMeasurePage(host: HTMLElement, slug: string): Promise<void> {
+  const quote = await import('./features/quote/entry.tsx');
+  quote.mountMeasurePage(host, slug);
+}
+
 async function startApp(host: HTMLElement): Promise<void> {
   const app = await import('./app/boot.tsx');
   app.bootApp(host);
 }
 
-const quoteSlug = /^\/q\/([a-z0-9-]{3,40})\/?$/i.exec(window.location.pathname)?.[1];
-if (quoteSlug !== undefined) void startQuotePage(root, quoteSlug.toLowerCase());
+const quoteMatch = /^\/q\/([a-z0-9-]{3,40})(\/measure)?\/?$/i.exec(window.location.pathname);
+const quoteSlug = quoteMatch?.[1];
+if (quoteSlug !== undefined && quoteMatch?.[2] !== undefined) void startMeasurePage(root, quoteSlug.toLowerCase());
+else if (quoteSlug !== undefined) void startQuotePage(root, quoteSlug.toLowerCase());
 else void startApp(root);

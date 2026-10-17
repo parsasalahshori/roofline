@@ -10,6 +10,7 @@ import {
   type PublicQuoteWindows,
   QUOTE_CONSENT_VERSION,
   QUOTE_LIMITS,
+  homeownerProducts,
   QUOTE_PRODUCTS,
   QUOTE_WINDOW_COUNT,
   quoteConsentText,
@@ -20,7 +21,7 @@ import {
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { bookedTimes, bookVisit, HOUR_MS, offeredSlots, officeAlert, startFollowUp } from '../quote/booking.ts';
-import { estimateForAddress, windowsForCount } from '../quote/estimate.ts';
+import { estimateForAddress, type StoredSatellite, windowsForCount } from '../quote/estimate.ts';
 import { checkFormToken, issueFormToken, quoteIpHash, turnstileOn, verifyTurnstile } from '../quote/guards.ts';
 import { publicRateLimit } from '../rate-limit.ts';
 import { emailField, noNul, parse, UUID } from '../validate.ts';
@@ -160,7 +161,7 @@ export function publicQuoteRoutes(deps: AppDeps): Router {
         logoUrl: company.logoUrl,
         accentColor: settings.accentColor,
         phone: company.phoneE164,
-        products: settings.products,
+        products: homeownerProducts(settings.products),
         booking: settings.booking,
         consent: {
           version: QUOTE_CONSENT_VERSION,
@@ -236,7 +237,7 @@ export function publicQuoteRoutes(deps: AppDeps): Router {
       if (token !== 'ok') throw new AppError(422, QUOTE_MESSAGE, 'formToken');
       if (body.consentVersion !== QUOTE_CONSENT_VERSION) throw new AppError(409, RELOAD_MESSAGE);
       await requireHuman(deps, req, body.turnstileToken);
-      const products = body.products.filter((p): p is QuoteProduct => settings.products.includes(p));
+      const products = body.products.filter((p): p is QuoteProduct => homeownerProducts(settings.products).includes(p));
       if (products.length === 0) throw new AppError(422, PRODUCTS_MESSAGE, 'products');
 
       const found = await withTenant(deps.pools, ctx, async (tx) => {
@@ -301,13 +302,24 @@ export function publicQuoteRoutes(deps: AppDeps): Router {
   return router;
 }
 
+/** For staff: why the roof was not priced from satellite images (the homeowner is only told the one sentence). */
+function satelliteNote(r: { satellite?: StoredSatellite }, products: readonly QuoteProduct[]): string {
+  const sat = r.satellite;
+  if (sat === undefined || !products.includes('roof')) return '';
+  const imagery = [sat.quality, sat.date].filter((x): x is string => x !== null).join(' ');
+  return ` Roof not priced, satellite images unusable: ${sat.problems.join(', ')}${imagery === '' ? '' : ` (imagery ${imagery})`}. Measure the roof at the visit.`;
+}
+
 const dollars = (cents: number) => `$${Math.round(cents / 100).toLocaleString('en-US')}`;
 
 /**
  * What the homeowner was shown, in one plain line for the job's timeline (ranges only, as on the page). `own`: the
  * window count the homeowner set on the page, with its range, in place of the estimated one.
  */
-export function shownSummary(r: Partial<PublicQuoteEstimate>, products: readonly QuoteProduct[], own: PublicQuoteWindows | null = null): string {
+export function shownSummary(
+  r: { roof?: PublicQuoteEstimate['roof']; windows?: PublicQuoteWindows | null; satellite?: StoredSatellite },
+  products: readonly QuoteProduct[], own: PublicQuoteWindows | null = null,
+): string {
   const parts: string[] = [];
   if (products.includes('roof') && r.roof) parts.push(`Roof about ${r.roof.squares} squares, ${dollars(r.roof.range.lowCents)} to ${dollars(r.roof.range.highCents)}`);
   if (products.includes('windows') && r.windows) {
@@ -316,6 +328,6 @@ export function shownSummary(r: Partial<PublicQuoteEstimate>, products: readonly
     parts.push(`about ${w.count} windows${whose}, ${dollars(w.range.lowCents)} to ${dollars(w.range.highCents)}`);
   }
   const asked = `Asked about ${products.join(', ')}.`;
-  const visit = products.includes('gutters') ? ' Gutters are priced at the visit.' : '';
+  const visit = (products.includes('gutters') ? ' Gutters are priced at the visit.' : '') + satelliteNote(r, products);
   return parts.length > 0 ? `${asked} Shown: ${parts.join('; ')}.${visit}` : `${asked} No estimate was shown; call them.${visit}`;
 }

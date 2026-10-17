@@ -1,9 +1,20 @@
 import { describe, expect, test } from 'vitest';
 import type { QuoteEstimateRow } from '@roofline/db';
-import { type MeasurementView, ROOF_QUALITY_REASONS, ROOF_QUALITY_SEVERITY, type RoofQualityReason } from '@roofline/shared';
+import { type LngLat, type MeasurementView, ROOF_QUALITY_REASONS, ROOF_QUALITY_SEVERITY, type RoofQualityReason } from '@roofline/shared';
 import { shownSummary } from '../../src/public/quote.ts';
 import { scaleMix, windowsForCount } from '../../src/quote/estimate.ts';
-import { type LookupFacts, lookupGate, measurementGate, QUOTE_GATES, rangePctFor, streetMatches, typedUnit } from '../../src/quote/gates.ts';
+import {
+  type LookupFacts,
+  lookupGate,
+  measurementGate,
+  metresOutsideRing,
+  QUOTE_GATES,
+  rangePctFor,
+  type SatelliteFacts,
+  satelliteGate,
+  streetMatches,
+  typedUnit,
+} from '../../src/quote/gates.ts';
 
 /*
  * The instant quote page's checks (quote/gates.ts) on fake lookups and fake measurements: every reason a home gets a
@@ -78,6 +89,81 @@ describe('lookupGate (before anything is measured)', () => {
   });
 });
 
+const NOW = new Date('2026-10-14T15:00:00.000Z');
+/** Fresh HIGH imagery of a house the geocoded point sits on, no review reasons: nothing to doubt. */
+const GOOD: SatelliteFacts = {
+  now: NOW,
+  solarBuilding: { imageryQuality: 'HIGH', imageryDate: '2024-06-15' },
+  roof3d: null,
+  reasons: [],
+  yearBuilt: 1998,
+  outlineGapM: 0,
+};
+
+describe('satelliteGate (can the satellite pictures be trusted for the roof?)', () => {
+  test('HIGH imagery from a couple of years ago, a house older than the picture, a point on the outline: trusted', () => {
+    expect(satelliteGate(GOOD)).toEqual({ problems: [], imagery: { quality: 'HIGH', date: '2024-06-15' }, blocksWindows: false });
+  });
+
+  test('imagery below HIGH is not trusted: MEDIUM, LOW and BASE alike', () => {
+    for (const quality of ['MEDIUM', 'LOW', 'BASE']) {
+      const gate = satelliteGate({ ...GOOD, solarBuilding: { imageryQuality: quality, imageryDate: '2025-01-01' } });
+      expect(gate.problems, quality).toEqual(['imagery-quality']);
+      expect(gate.blocksWindows).toBe(false);
+    }
+    // The 3D roof's own imagery is used when Solar's answer is not known.
+    expect(satelliteGate({ ...GOOD, solarBuilding: undefined, roof3d: { imageryQuality: 'MEDIUM', imageryDate: '2025-01-01' } }).problems).toEqual(['imagery-quality']);
+  });
+
+  test(`imagery older than ${QUOTE_GATES.maxImageryAgeYears} years is not trusted; just inside is`, () => {
+    const at = (imageryDate: string) => satelliteGate({ ...GOOD, solarBuilding: { imageryQuality: 'HIGH', imageryDate } }).problems;
+    expect(at('2021-10-20')).toEqual([]); // 4.98 years
+    expect(at('2021-10-01')).toEqual(['imagery-old']); // 5.04 years
+    expect(at('2012-07-19')).toEqual(['imagery-old']);
+  });
+
+  test('a home built in the imagery year or later is not in the picture', () => {
+    expect(satelliteGate({ ...GOOD, yearBuilt: 2023 }).problems).toEqual([]);
+    expect(satelliteGate({ ...GOOD, yearBuilt: 2024 }).problems).toEqual(['built-after-imagery']);
+    expect(satelliteGate({ ...GOOD, yearBuilt: 2026 }).problems).toEqual(['built-after-imagery']);
+    expect(satelliteGate({ ...GOOD, yearBuilt: null }).problems).toEqual([]);
+  });
+
+  test('no Solar building (null) is a problem; Solar not known (undefined) is not', () => {
+    expect(satelliteGate({ ...GOOD, solarBuilding: null }).problems).toEqual(['no-solar-building']);
+    expect(satelliteGate({ ...GOOD, solarBuilding: undefined }).problems).toEqual([]);
+  });
+
+  test("a serious review reason is 'roof-review'; the outline ones also spoil the windows", () => {
+    expect(satelliteGate({ ...GOOD, reasons: ['roof-hidden'] })).toMatchObject({ problems: ['roof-review'], blocksWindows: false });
+    expect(satelliteGate({ ...GOOD, reasons: ['outline-off'] })).toMatchObject({ problems: ['roof-review'], blocksWindows: true });
+    expect(satelliteGate({ ...GOOD, reasons: ['joined-buildings'] })).toMatchObject({ blocksWindows: true });
+    expect(satelliteGate({ ...GOOD, reasons: ['trees', 'edges-unverified'] }).problems).toEqual([]);
+  });
+
+  test('an outline more than 10 m from the geocoded house is the wrong house: roof and windows both', () => {
+    expect(satelliteGate({ ...GOOD, outlineGapM: QUOTE_GATES.maxOutlineGapM }).problems).toEqual([]);
+    expect(satelliteGate({ ...GOOD, outlineGapM: 25 })).toMatchObject({ problems: ['outline-off-house'], blocksWindows: true });
+    expect(satelliteGate({ ...GOOD, outlineGapM: null }).problems).toEqual([]);
+  });
+
+  test('every problem is reported, for staff', () => {
+    const gate = satelliteGate({ ...GOOD, solarBuilding: { imageryQuality: 'LOW', imageryDate: '2014-05-01' }, yearBuilt: 2016, reasons: ['roof-hidden'] });
+    expect(gate.problems).toEqual(['imagery-quality', 'imagery-old', 'built-after-imagery', 'roof-review']);
+    expect(gate.imagery).toEqual({ quality: 'LOW', date: '2014-05-01' });
+  });
+
+  test('metresOutsideRing: 0 inside, else the distance to the nearest edge', () => {
+    // About 20 m by 18 m round (0, 45).
+    const ring: LngLat[] = [[-0.00012, 44.99992], [0.00012, 44.99992], [0.00012, 45.00008], [-0.00012, 45.00008]];
+    expect(metresOutsideRing([0, 45], ring)).toBe(0);
+    const east = metresOutsideRing([0.00012 + 0.0001, 45], ring); // 0.0001 deg of lng at 45 N is about 7.9 m
+    expect(east).toBeGreaterThan(7);
+    expect(east).toBeLessThan(9);
+    expect(metresOutsideRing([0, 45.001], ring)).toBeGreaterThan(100);
+  });
+});
+
 describe('measurementGate (after the measurement)', () => {
   test('a plain house is priced at the company width', () => {
     const gate = measurementGate(house());
@@ -85,10 +171,13 @@ describe('measurementGate (after the measurement)', () => {
     expect(rangePctFor(12, gate, 40)).toBe(12);
   });
 
-  test("every serious ('block') review reason but 'edges-unverified' is a call back", () => {
+  test("serious review reasons are the satellite gate's now, not measurementGate's", () => {
     const serious = ROOF_QUALITY_REASONS.filter((r) => ROOF_QUALITY_SEVERITY[r] === 'block' && r !== 'edges-unverified');
     expect(serious).toEqual(expect.arrayContaining(['roof-hidden', 'outline-off', 'joined-buildings', 'roof-inferred']));
-    for (const r of serious) expect(measurementGate(house({ reasons: [r] })).callback, r).toBe('roof-review');
+    for (const r of serious) {
+      expect(measurementGate(house({ reasons: [r] })).callback, r).toBeNull();
+      expect(satelliteGate({ ...GOOD, reasons: [r] }).problems, r).toEqual(['roof-review']);
+    }
   });
 
   test("'check' reasons alone do not stop the price", () => {
@@ -101,8 +190,8 @@ describe('measurementGate (after the measurement)', () => {
     expect(gate).toEqual({ callback: null, widen: true });
     expect(rangePctFor(12, gate, 40)).toBe(12 + QUOTE_GATES.unverifiedEdgesWidenPct);
     expect(rangePctFor(38, gate, 40)).toBe(40);
-    // With a serious reason too, it is a call back all the same.
-    expect(measurementGate(house({ reasons: ['edges-unverified', 'roof-hidden'] })).callback).toBe('roof-review');
+    // With a serious reason too, the satellite gate stops the roof price all the same.
+    expect(satelliteGate({ ...GOOD, reasons: ['edges-unverified', 'roof-hidden'] }).problems).toEqual(['roof-review']);
   });
 
   test('a commercial building or a complex (over 6,000 sq ft or 80 squares) is a call back', () => {
@@ -149,5 +238,12 @@ describe('the window count the homeowner sets', () => {
     const line = shownSummary(shown, ['windows', 'gutters'], { count: 20, range: { lowCents: 1_300_000, highCents: 1_700_000 } });
     expect(line).toContain('about 20 windows (their count; we estimated 14), $13,000 to $17,000');
     expect(line).toContain('Gutters are priced at the visit.');
+  });
+
+  test('the job says, for staff only, why the roof was not priced from satellite images', () => {
+    const satellite = { problems: ['imagery-quality' as const, 'imagery-old' as const], quality: 'LOW', date: '2014-05-01', roofAsked: true };
+    const line = shownSummary({ roof: null, windows: { count: 14, range: { lowCents: 900_000, highCents: 1_200_000 } }, satellite }, ['windows', 'roof']);
+    expect(line).toContain('Roof not priced, satellite images unusable: imagery-quality, imagery-old (imagery LOW 2014-05-01). Measure the roof at the visit.');
+    expect(shownSummary({ roof: null, windows: null, satellite }, ['windows'])).not.toContain('satellite');
   });
 });

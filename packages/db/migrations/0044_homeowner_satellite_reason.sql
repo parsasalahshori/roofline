@@ -1,0 +1,2 @@
+ALTER TABLE "homeowner_requests" DROP CONSTRAINT "homeowner_requests_callback_reason_check";--> statement-breakpoint
+ALTER TABLE "homeowner_requests" ADD CONSTRAINT "homeowner_requests_callback_reason_check" CHECK ("homeowner_requests"."callback_reason" in ('unit', 'address', 'home', 'busy', 'satellite-unusable'));

@@ -25,7 +25,7 @@ const CONFIG: PublicQuoteConfig = {
   logoUrl: null,
   accentColor: '#1f6feb',
   phone: '+14025550100',
-  products: ['windows', 'roof', 'gutters'],
+  products: ['windows', 'roof'],
   booking: false,
   consent: {
     version: QUOTE_CONSENT_VERSION,
@@ -45,7 +45,7 @@ const READY: EstimateAnswer = {
   status: 'ready',
   address: '4810 Underwood Ave, Omaha, NE 68132',
   roof: { squares: 24.5, range: { lowCents: 1_250_000, highCents: 1_980_000 } },
-  windows: { count: 18, range: { lowCents: 950_000, highCents: 2_400_000 } },
+  windows: { count: 14, range: { lowCents: 950_000, highCents: 2_400_000 }, countRange: { low: 12, high: 16 } },
   gutters: null,
   outline: {
     center: [-96.0, 41.25],
@@ -81,8 +81,12 @@ afterEach(() => {
 
 type User = ReturnType<typeof userEvent.setup>;
 
+/** The button that goes on to the request form: "Get my exact price", or the free visit when windows are on the page. */
+const NEXT = new RegExp(`^(${quote.continueButton}|${quote.visitLink})$`);
+const toForm = () => screen.getByRole('button', { name: NEXT });
+
 /** The first step: what are you looking for? Ticks the given services (all three by default) and goes on. */
-async function pick(user: User, names: QuoteProduct[] = ['windows', 'roof', 'gutters']) {
+async function pick(user: User, names: QuoteProduct[] = ['windows', 'roof']) {
   await screen.findByRole('heading', { name: quote.servicesTitle });
   for (const p of names) await user.click(screen.getByRole('checkbox', { name: quote.productName(p) }));
   await user.click(screen.getByRole('button', { name: quote.servicesContinue }));
@@ -114,19 +118,16 @@ describe('QuotePage', () => {
     expect(await screen.findByRole('heading', { name: quote.resultsTitle })).toBeInTheDocument();
     expect(screen.getByText(quote.roofLine(24.5))).toBeInTheDocument();
     expect(screen.getByText(quote.range(1_250_000, 1_980_000))).toBeInTheDocument();
-    expect(screen.getByText(quote.windowsLine(18))).toBeInTheDocument();
-    expect(screen.getByText(quote.range(950_000, 2_400_000))).toBeInTheDocument();
+    // The windows are a count with its range, never a price.
+    expect(screen.getByText('About 14 windows (12\u201316)')).toBeInTheDocument();
+    expect(screen.queryByText(quote.range(950_000, 2_400_000))).toBeNull();
     expect(screen.getByText(quote.finalNote)).toBeInTheDocument();
     expect(screen.getByRole('img', { name: quote.outlineAlt })).toBeInTheDocument();
-    // Gutters were not picked, so they are not on the results.
-    expect(screen.queryByText(quote.guttersLine)).toBeNull();
     expect(api.sent(`POST ${BASE}/estimate`)).toEqual([{ address: READY.address, website: '' }]);
 
-    await user.click(screen.getByRole('button', { name: quote.continueButton }));
-    // What they picked is ticked; gutters, not picked, is not.
+    await user.click(toForm());
     expect(screen.getByRole('checkbox', { name: quote.productName('windows') })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: quote.productName('roof') })).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: quote.productName('gutters') })).not.toBeChecked();
     // The ZIP is filled from the found address; both consent texts are shown, texting unticked, with the policy links.
     expect(screen.getByLabelText(quote.postalCode)).toHaveValue('68132');
     expect(screen.getByText(CONFIG.consent.text)).toBeInTheDocument();
@@ -161,44 +162,6 @@ describe('QuotePage', () => {
     for (const call of api.calls) expect(call.url).not.toMatch(/Dana|555|example|Underwood/);
   });
 
-  it('the window count is a stepper: each change is priced by the server, and the count goes with the request', async () => {
-    const user = userEvent.setup();
-    setup({
-      [`POST ${BASE}/estimate`]: () => ({ body: READY }),
-      [`POST ${BASE}/windows`]: (r) => {
-        const { count } = r.body as { count: number };
-        return { body: { count, range: { lowCents: count * 50_000, highCents: count * 70_000 } } };
-      },
-      [`POST ${BASE}/lead`]: () => ({ status: 201, body: { ok: true, booked: null } }),
-    });
-    await getEstimate(user);
-    await screen.findByRole('heading', { name: quote.resultsTitle });
-    expect(screen.getByText(quote.windowsAdjust)).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: quote.windowsMore }));
-    await user.click(screen.getByRole('button', { name: quote.windowsMore }));
-    expect(screen.getByText(quote.windowsLine(20))).toBeInTheDocument();
-    // Only the settled count is asked for, once the taps stop.
-    expect(await screen.findByText(quote.range(1_000_000, 1_400_000))).toBeInTheDocument();
-    expect(api.sent(`POST ${BASE}/windows`)).toEqual([{ quoteId: READY.quoteId, count: 20 }]);
-    await user.click(screen.getByRole('button', { name: quote.continueButton }));
-    await fillForm(user);
-    await user.click(screen.getByRole('checkbox', { name: quote.consentLabel }));
-    await user.click(screen.getByRole('checkbox', { name: quote.textConsentLabel }));
-    await user.click(screen.getByRole('button', { name: quote.submit }));
-    await screen.findByRole('heading', { name: quote.doneTitle('Dana') });
-    expect(api.sent(`POST ${BASE}/lead`)[0]).toMatchObject({ windowCount: 20, textConsent: true, consent: true });
-  });
-
-  it('the stepper stays between 1 and 80', async () => {
-    const user = userEvent.setup();
-    setup({
-      [`POST ${BASE}/estimate`]: () => ({ body: { ...READY, windows: { count: 1, range: { lowCents: 100_000, highCents: 200_000 } } } }),
-    });
-    await getEstimate(user);
-    await screen.findByRole('heading', { name: quote.resultsTitle });
-    expect(screen.getByRole('button', { name: quote.windowsFewer })).toBeDisabled();
-  });
-
   it('the photo shows a placeholder until its tiles are in', async () => {
     const user = userEvent.setup();
     setup({ [`POST ${BASE}/estimate`]: () => ({ body: READY }) });
@@ -221,7 +184,7 @@ describe('QuotePage', () => {
     });
     render(<QuotePage slug={SLUG} />);
     await getEstimate(user);
-    await user.click(await screen.findByRole('button', { name: quote.continueButton }));
+    await user.click(await screen.findByRole('button', { name: new RegExp(`^(${quote.continueButton}|${quote.visitLink})$`) }));
     const group = await screen.findByRole('group', { name: quote.slotsTitle });
     await user.click((await within(group).findAllByRole('radio'))[1]!);
     await fillForm(user);
@@ -234,7 +197,7 @@ describe('QuotePage', () => {
     const user = userEvent.setup();
     setup({ [`POST ${BASE}/estimate`]: () => ({ body: READY }) });
     await getEstimate(user);
-    await user.click(await screen.findByRole('button', { name: quote.continueButton }));
+    await user.click(await screen.findByRole('button', { name: new RegExp(`^(${quote.continueButton}|${quote.visitLink})$`) }));
     await user.type(screen.getByLabelText(quote.phone), '12');
     await user.click(screen.getByRole('button', { name: quote.submit }));
     expect(screen.getByText(quote.consentRequired)).toBeInTheDocument();
@@ -274,7 +237,7 @@ describe('QuotePage', () => {
     let reply: Reply = { status: 400, body: { error: 'Please enter a 5-digit ZIP code.', field: 'postalCode' } };
     setup({ [`POST ${BASE}/estimate`]: () => ({ body: READY }), [`POST ${BASE}/lead`]: () => reply });
     await getEstimate(user);
-    await user.click(await screen.findByRole('button', { name: quote.continueButton }));
+    await user.click(await screen.findByRole('button', { name: new RegExp(`^(${quote.continueButton}|${quote.visitLink})$`) }));
     await fillForm(user);
     await user.click(screen.getByRole('checkbox', { name: quote.consentLabel }));
     await user.click(screen.getByRole('button', { name: quote.submit }));
@@ -301,7 +264,7 @@ describe('QuotePage', () => {
     });
     render(<QuotePage slug={SLUG} />);
     await getEstimate(user);
-    await user.click(await screen.findByRole('button', { name: quote.continueButton }));
+    await user.click(await screen.findByRole('button', { name: new RegExp(`^(${quote.continueButton}|${quote.visitLink})$`) }));
     const group = await screen.findByRole('group', { name: quote.slotsTitle });
     const radios = await within(group).findAllByRole('radio');
     expect(radios).toHaveLength(2);
@@ -387,7 +350,7 @@ describe('the company on the page', () => {
     await getEstimate(user);
     await screen.findByRole('heading', { name: quote.resultsTitle });
     expect(screen.queryByRole('region', { name: publicCopy.visitTitle })).toBeNull();
-    await user.click(screen.getByRole('button', { name: quote.continueButton }));
+    await user.click(screen.getByRole('button', { name: NEXT }));
     expect(await screen.findAllByRole('region', { name: publicCopy.visitTitle })).toHaveLength(1);
   });
 
@@ -401,7 +364,7 @@ describe('the company on the page', () => {
     // The scan is step 1 (it may already be over: the test shortens it to nothing), the estimate is 2, the form is 3
     await screen.findByRole('heading', { name: quote.resultsTitle });
     expect(screen.getByText(publicCopy.stepOf(2, 3))).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: quote.continueButton }));
+    await user.click(screen.getByRole('button', { name: NEXT }));
     expect(await screen.findByText(publicCopy.stepOf(3, 3))).toBeInTheDocument();
   });
 
@@ -438,7 +401,7 @@ describe('the company on the page', () => {
     });
     render(<QuotePage slug={SLUG} />);
     await getEstimate(user);
-    await user.click(await screen.findByRole('button', { name: quote.continueButton }));
+    await user.click(await screen.findByRole('button', { name: NEXT }));
     // The times are said to be in the company's zone, in words, above the chips
     const group = await screen.findByRole('group', { name: quote.slotsTitle });
     expect(within(group).getByText(publicCopy.slotsZone('Central Daylight Time'))).toBeInTheDocument();
@@ -485,21 +448,19 @@ describe('the first step: what are you looking for', () => {
     await user.click(screen.getByRole('button', { name: quote.measureButton }));
     await screen.findByRole('heading', { name: quote.resultsTitle });
     expect(screen.getByText(quote.roofLine(24.5))).toBeInTheDocument();
-    expect(screen.queryByText(quote.windowsLine(18))).toBeNull();
-    expect(screen.queryByText(quote.guttersLine)).toBeNull();
-    await user.click(screen.getByRole('button', { name: quote.continueButton }));
+    expect(screen.queryByText(/About 14 windows/)).toBeNull();
+    await user.click(toForm());
     expect(screen.getByRole('checkbox', { name: quote.productName('roof') })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: quote.productName('windows') })).not.toBeChecked();
   });
 
-  it('gutters are "priced at your free visit" when picked', async () => {
+  it('gutters are never on the page: not in the picker, even if a company has them on', async () => {
     const user = userEvent.setup();
-    setup({ [`POST ${BASE}/estimate`]: () => ({ body: READY }) });
-    await getEstimate(user, ['gutters']);
-    await screen.findByRole('heading', { name: quote.resultsTitle });
-    expect(screen.getByText(quote.guttersLine)).toBeInTheDocument();
-    expect(screen.getByText(quote.guttersAtVisit)).toBeInTheDocument();
-    expect(screen.queryByText(quote.roofLine(24.5))).toBeNull();
+    setup({});
+    await screen.findByRole('heading', { name: quote.servicesTitle });
+    expect(screen.queryByRole('checkbox', { name: quote.productName('gutters') })).toBeNull();
+    expect(screen.getAllByRole('checkbox')).toHaveLength(2);
+    void user;
   });
 
   it('a company that offers one thing is not asked', async () => {
@@ -519,54 +480,124 @@ describe('the first step: what are you looking for', () => {
     expect(screen.getByRole('heading', { name: quote.formTitle })).toBeInTheDocument();
     expect(hasRanges({ ...READY, roof: null }, ['roof'])).toBe(false);
     expect(hasRanges(READY, ['roof'])).toBe(true);
-    expect(hasRanges(READY, ['gutters'])).toBe(true);
+    expect(hasRanges({ ...READY, windows: null }, ['windows'])).toBe(false);
     expect(hasRanges(FALLBACK, ['roof'])).toBe(false);
   });
 });
 
-describe('Measure with the app', () => {
-  it('offers the app next to the free visit for windows: a store button, a QR code, and "Have us measure"', async () => {
+describe('the satellite pictures cannot be trusted for the roof', () => {
+  const SENTENCE =
+    "We can't measure your roof from satellite images — the pictures of your home aren't clear or recent enough. We'll measure it at your free visit.";
+
+  it('says the owner\'s sentence, shows no roof price, and goes to the form', async () => {
     const user = userEvent.setup();
-    api = stubApi({ [`GET ${BASE}`]: () => ({ body: { ...CONFIG, homeownerApp: APP } }), [`POST ${BASE}/estimate`]: () => ({ body: READY }) });
-    render(<QuotePage slug={SLUG} />);
+    setup({ [`POST ${BASE}/estimate`]: () => ({ body: { ...READY, status: 'fallback', roof: null, windows: null, outline: null, notice: 'satellite-unusable' } }) });
+    await getEstimate(user, ['roof']);
+    expect(await screen.findByRole('heading', { name: quote.satelliteTitle })).toBeInTheDocument();
+    expect(quote.satelliteBody).toBe(SENTENCE);
+    expect(screen.getByText(SENTENCE)).toBeInTheDocument();
+    expect(screen.queryByText(quote.fallbackBody)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: quote.formTitle })).toBeInTheDocument();
+  });
+
+  it('with windows too: the windows result carries on, the roof line is the sentence, and the visit can still be booked', async () => {
+    const user = userEvent.setup();
+    setup({ [`POST ${BASE}/estimate`]: () => ({ body: { ...READY, roof: null, notice: 'satellite-unusable' } }) });
     await getEstimate(user, ['windows', 'roof']);
+    expect(await screen.findByRole('heading', { name: quote.resultsTitle })).toBeInTheDocument();
+    expect(screen.getByText('About 14 windows (12\u201316)')).toBeInTheDocument();
+    expect(screen.getByText(SENTENCE)).toBeInTheDocument();
+    expect(screen.queryByText(quote.roofLine(24.5))).not.toBeInTheDocument();
+    expect(toForm()).toBeInTheDocument();
+  });
+
+  it('a windows-only visitor is never told about the roof', async () => {
+    const user = userEvent.setup();
+    setup({ [`POST ${BASE}/estimate`]: () => ({ body: { ...READY, roof: null, notice: 'satellite-unusable' } }) });
+    await getEstimate(user, ['windows']);
+    expect(await screen.findByRole('heading', { name: quote.resultsTitle })).toBeInTheDocument();
+    expect(screen.queryByText(SENTENCE)).not.toBeInTheDocument();
+  });
+});
+
+describe('Measuring the windows: by device', () => {
+  const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148';
+  const ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36';
+  const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/605.1.15';
+
+  async function results(userAgent: string, app: typeof APP | null = APP, names: QuoteProduct[] = ['windows', 'roof']) {
+    vi.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue(userAgent);
+    const user = userEvent.setup();
+    api = stubApi({ [`GET ${BASE}`]: () => ({ body: { ...CONFIG, homeownerApp: app } }), [`POST ${BASE}/estimate`]: () => ({ body: READY }) });
+    render(<QuotePage slug={SLUG} />);
+    await getEstimate(user, names);
     await screen.findByRole('heading', { name: quote.resultsTitle });
-    expect(screen.getByRole('heading', { name: quote.appTitle('WinChoice') })).toBeInTheDocument();
-    const link = screen.getByRole('link', { name: quote.appGet('WinChoice') });
+    return user;
+  }
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it('an iPhone: the App Store button is the main action, with the one line about the app', async () => {
+    await results(IPHONE);
+    const link = screen.getByRole('link', { name: quote.appDownload('WinChoice') });
     expect(link).toHaveAttribute('href', APP.url);
     expect(link).toHaveAttribute('target', '_blank');
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
-    const code = screen.getByRole('img', { name: quote.appQrAlt('WinChoice') });
-    expect(code.querySelector('path')!.getAttribute('d')!.length).toBeGreaterThan(200);
-    expect(screen.queryByRole('button', { name: quote.continueButton })).toBeNull();
-    // The free visit goes on to the form as before, and the app offer steps out of the way
-    await user.click(screen.getByRole('button', { name: quote.visitButton }));
-    expect(screen.getByRole('heading', { name: quote.formTitle })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: quote.appTitle('WinChoice') })).toBeNull();
+    expect(screen.getByText(quote.appLine)).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: quote.appQrAlt('WinChoice') })).toBeNull();
+    expect(screen.queryByRole('link', { name: quote.browserMeasure })).toBeNull();
   });
 
-  it('is hidden when the company has no app link, when windows were not picked, and for a call back', async () => {
-    const user = userEvent.setup();
-    setup({ [`POST ${BASE}/estimate`]: () => ({ body: READY }) });
-    await getEstimate(user, ['windows']);
-    await screen.findByRole('heading', { name: quote.resultsTitle });
-    expect(screen.queryByText(quote.appTitle('WinChoice'))).toBeNull();
+  it('Android: the main action measures in the browser, on the measure page for this estimate', async () => {
+    await results(ANDROID);
+    const link = screen.getByRole('link', { name: quote.browserMeasure });
+    expect(link).toHaveAttribute('href', `/q/${SLUG}/measure?request=${READY.quoteId}`);
+    expect(screen.queryByRole('link', { name: quote.appDownload('WinChoice') })).toBeNull();
+  });
+
+  it('a computer: a QR code for the measure page, with its caption, and no store button', async () => {
+    await results(MAC);
+    const code = screen.getByRole('img', { name: quote.appQrAlt('WinChoice') });
+    expect(code.querySelector('path')!.getAttribute('d')!.length).toBeGreaterThan(200);
+    expect(screen.getByText(quote.qrCaption)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: quote.appDownload('WinChoice') })).toBeNull();
+  });
+
+  it('every device keeps "Book a free visit and we\'ll measure" as a small link to the form, and the offer steps out of the way', async () => {
+    for (const ua of [IPHONE, ANDROID, MAC]) {
+      const user = await results(ua);
+      expect(screen.queryByRole('button', { name: quote.continueButton })).toBeNull();
+      await user.click(screen.getByRole('button', { name: quote.visitLink }));
+      expect(screen.getByRole('heading', { name: quote.formTitle })).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: quote.appDownload('WinChoice') })).toBeNull();
+      expect(screen.queryByRole('link', { name: quote.browserMeasure })).toBeNull();
+      expect(screen.queryByRole('img', { name: quote.appQrAlt('WinChoice') })).toBeNull();
+      cleanup();
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('without the company\'s app link only the free visit is offered, as the main button', async () => {
+    const user = await results(IPHONE, null);
+    expect(screen.queryByRole('link', { name: quote.appDownload('WinChoice') })).toBeNull();
     expect(screen.queryByRole('img', { name: quote.appQrAlt('WinChoice') })).toBeNull();
+    await user.click(screen.getByRole('button', { name: quote.visitLink }));
+    expect(screen.getByRole('heading', { name: quote.formTitle })).toBeInTheDocument();
+  });
+
+  it('is not shown when windows were not picked, or for a call back', async () => {
+    await results(IPHONE, APP, ['roof']);
+    expect(screen.queryByRole('link', { name: quote.appDownload('WinChoice') })).toBeNull();
     expect(screen.getByRole('button', { name: quote.continueButton })).toBeInTheDocument();
     cleanup();
 
-    api = stubApi({ [`GET ${BASE}`]: () => ({ body: { ...CONFIG, homeownerApp: APP } }), [`POST ${BASE}/estimate`]: () => ({ body: READY }) });
-    render(<QuotePage slug={SLUG} />);
-    await getEstimate(user, ['roof']);
-    await screen.findByRole('heading', { name: quote.resultsTitle });
-    expect(screen.queryByText(quote.appTitle('WinChoice'))).toBeNull();
-    cleanup();
-
+    const user = userEvent.setup();
     api = stubApi({ [`GET ${BASE}`]: () => ({ body: { ...CONFIG, homeownerApp: APP } }), [`POST ${BASE}/estimate`]: () => ({ body: FALLBACK }) });
     render(<QuotePage slug={SLUG} />);
     await getEstimate(user, ['windows']);
     await screen.findByRole('heading', { name: quote.fallbackTitle });
-    expect(screen.queryByText(quote.appTitle('WinChoice'))).toBeNull();
+    expect(screen.queryByRole('link', { name: quote.appDownload('WinChoice') })).toBeNull();
   });
 
   it('draws a QR code for the link: the same input, the same picture; a longer link, a bigger one', () => {

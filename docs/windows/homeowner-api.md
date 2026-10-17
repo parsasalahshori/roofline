@@ -134,7 +134,7 @@ Public, no token. The words in `consent` are shown **verbatim** next to the two 
   "name": "Summit Ridge Roofing",
   "brandColor": null,
   "phone": "+14025550180",
-  "services": ["windows", "roof", "gutters"],
+  "services": ["windows", "roof"],
   "booking": true,
   "privacyUrl": "https://summit-ridge-roofing.roofline.test/privacy",
   "termsUrl": "https://summit-ridge-roofing.roofline.test/terms",
@@ -170,10 +170,11 @@ Public, no token. The words in `consent` are shown **verbatim** next to the two 
 
 ## POST /requests
 
-Body: `{ "address": "<5 to 200 characters>", "services": ["windows", "roof"] }` (1 to 3 of the company's services, no
+Body: `{ "address": "<5 to 200 characters>", "services": ["windows", "roof"] }` (1 or 2 of `windows`, `roof`, no
 repeats; a repeated or unknown value is a `400` with `field: "services.0"`, a known service the company does not offer is
-`422 service_not_offered`). The first call for a new address looks it up and measures it from above (a few seconds); an
-address measured in the last 30 days answers at once. `services` comes back in the fixed order windows, roof, gutters,
+`422 service_not_offered`: that includes `gutters`, which are measured by staff and never offered to homeowners, whatever the
+company has switched on). The first call for a new address looks it up and measures it from above (a few seconds); an
+address measured in the last 30 days answers at once. `services` comes back in the fixed order windows, roof,
 whatever order was sent.
 
 `201`:
@@ -194,20 +195,21 @@ whatever order was sent.
   },
   "estimate": {
     "windows": { "low": 14, "high": 28, "likely": 14 },
-    "roof": { "low": 12900, "high": 16500, "squares": 26.5 },
-    "gutters": "at-visit"
+    "roof": { "low": 12900, "high": 16500, "squares": 26.5 }
   },
-  "services": ["windows", "roof", "gutters"]
+  "services": ["windows", "roof"]
 }
 ```
 
 - `status: "callback"` (with `callbackReason`) means: no online estimate, the company will call. `estimate` then has no
   windows and no roof. Reasons: `unit` (an apartment, suite or unit), `address` (the address could not be pinned to
   one house), `home` (a house a person has to look at: very large, flat or hard to see), `busy` (nothing could be
-  measured right now: the company's daily limit, or the address lookup is down). The token is still returned: the
+  measured right now: the company's daily limit, or the address lookup is down), `satellite-unusable` (the satellite
+  pictures of the home are not clear or recent enough to measure the roof; see "Roof not measurable from satellite"
+  below). The token is still returned: the
   contact and booking calls work. Windows calls are refused (`callback_only`). Example (without the `requestId`, `token`
   and `expiresAt` that every `201` carries):
-  `{"status":"callback","callbackReason":"unit","home":{"address":"2200 Riverfront Dr Apt 1203, Omaha, NE 68102","floors":null,"outline":null},"estimate":{"windows":null,"roof":null,"gutters":null},"services":["windows","roof"]}`
+  `{"status":"callback","callbackReason":"unit","home":{"address":"2200 Riverfront Dr Apt 1203, Omaha, NE 68102","floors":null,"outline":null},"estimate":{"windows":null,"roof":null},"services":["windows","roof"]}`
 - `home.floors`: 1, 1.5, 2 or 3, or `null` when the height is not known. `home.outline`: the main roof's corners as
   `[longitude, latitude]` (`ring`, closed or not) and its `center`, to draw on the app's own map, or `null`. There is no
   photo of the house.
@@ -216,8 +218,35 @@ whatever order was sent.
   not asked for or cannot be counted.
 - `estimate.roof`: a price range in dollars (rounded out to hundreds) and the roof's size in squares. `null` when roof
   was not asked for or could not be priced.
-- `estimate.gutters`: `"at-visit"` when gutters were asked for: they are priced at the free visit, never online. A
-  gutters-only request is only looked up and checked (the same gates), it never uses a measurement.
+- `estimate.roofNote`: `{ "reason": "satellite-unusable", "message": "<sentence>" }`, present when roof was asked for but
+  the satellite images cannot be trusted for this home (see below). Then `estimate.roof` is `null`: show `message`, no roof price.
+- There is no gutters estimate: gutters are not offered to homeowners (until October 2026 `estimate.gutters` said
+  `"at-visit"`; the field is gone).
+
+### Roof not measurable from satellite
+
+The owner's rule: for a home with inaccurate images, say the roof cannot be examined through satellite. The server
+(`quote/gates.ts` `satelliteGate`) checks the roof's images for every home it measures, and any one of these makes them
+unusable for the roof:
+
+| Check | Limit |
+| --- | --- |
+| Google Solar `imageryQuality` | anything below `HIGH` (MEDIUM, LOW, BASE): the roof checks were benchmarked on HIGH only |
+| Google Solar `imageryDate` | older than 5 years (`QUOTE_GATES.maxImageryAgeYears`) |
+| The home's `yearBuilt` (when the company has it) | the imagery's year or later: the house is not in the picture |
+| Solar building | none within 30 m of the home |
+| The roof in 3D | a serious ("block") review reason except `edges-unverified`: roof hidden, inferred, from lidar, ... |
+| Outline vs the geocoded house | the point is more than 10 m outside the measured outline, or the outline has `outline-off` / `joined-buildings` |
+
+The homeowner hears one thing, whatever the cause: "We can't measure your roof from satellite images — the pictures of
+your home aren't clear or recent enough. We'll measure it at your free visit." (`SATELLITE_UNUSABLE_MESSAGE`). Staff keep
+the cause: the stored estimate's `result.satellite` (`problems`, `quality`, `date`) and a line on the job's timeline.
+
+- Roof asked for with windows: `status: "ready"`, `estimate.windows` as normal, `estimate.roof: null`, `estimate.roofNote` set.
+- Roof asked for and nothing else priceable (roof only): `status: "callback"`,
+  `callbackReason: "satellite-unusable"`, `estimate.roofNote` set. Booking and contact work.
+- Windows only: nothing changes (no note). The exception is a problem with the outline itself (wrong house, joined
+  buildings): windows are counted on that outline, so with roof asked for it is the callback above; without it, `home`.
 
 ## GET /requests/:id
 
@@ -228,9 +257,9 @@ Needs the token. The view of the whole request, and the answer to every change b
   "request": {
     "id": "d1a18ca3-63ed-447f-b53a-e1f6276ccf71",
     "status": "ready",
-    "services": ["windows", "roof", "gutters"],
+    "services": ["windows", "roof"],
     "home": { "address": "4810 Underwood Ave, Omaha, NE 68132", "floors": null, "outline": { "ring": ["..."], "center": [-96.124708, 41.3015969] } },
-    "estimate": { "windows": { "low": 14, "high": 28, "likely": 14 }, "roof": { "low": 12900, "high": 16500, "squares": 26.5 }, "gutters": "at-visit" },
+    "estimate": { "windows": { "low": 14, "high": 28, "likely": 14 }, "roof": { "low": 12900, "high": 16500, "squares": 26.5 } },
     "estimatedTotalOverride": null,
     "contactFiled": true,
     "createdAt": "2026-10-16T21:22:11.011Z",
@@ -307,7 +336,7 @@ Needs the token. The view of the whole request, and the answer to every change b
 - Optional keys are left out, never `null`: `windows[].label`, `windows[].uploadId`, `windows[].corners` (a room scan with
   no photo), `request.callbackReason` (unless `callback`), `booking`, `status`, `status.rep`, `quote.missingHint`. Keys
   that are always there but can be `null`: `request.estimatedTotalOverride`, `home.floors`, `home.outline`,
-  `estimate.windows`, `estimate.roof`, `estimate.gutters`, `quote`, `booking.visit`, and `status.dates.*` except
+  `estimate.windows`, `estimate.roof`, `quote`, `booking.visit`, and `status.dates.*` except
   `requestedAt`.
 - A window is **`quality: "check"`** when it is not a good measure (`reasons` says why in plain words, `uncertaintyLabel`
   says how far off it may be). A `check` window still counts in the quote; the free visit re-measures every window.
@@ -503,9 +532,9 @@ Coaching text for the card screen:
 ## What the company sees
 
 - A **customer** and the **address** (the one found, or as typed when the lookup was down), a **Lead job** with source
-  "Homeowner app" and a timeline line like: "Homeowner app request. Asked about windows, roof, gutters. Shown: Roof about 26.5
+  "Homeowner app" and a timeline line like: "Homeowner app request. Asked about windows, roof. Shown: Roof about 26.5
   squares, $12,900 to $16,500; 3 windows measured in the app (2 to check): Good $8,750, Better $11,650, Best $17,450 for 14
-  windows (11 estimated). Gutters are priced at the visit."
+  windows (11 estimated)."
 - The owner's **Today** list shows "Call the homeowner about their app request" until a visit is booked.
 - Booking a time adds the inspection to the calendar and a line on the timeline; "call me" adds a line and keeps the reminder.
 - The progress the app shows (`measured`, `ordered`) is what the company did at the address after the request came in.
@@ -519,11 +548,20 @@ Coaching text for the card screen:
 
 ## The instant quote page and the app
 
-`/q/:slug` (the company's web page) starts with "What are you looking for?" (roof, windows, gutters). On the results card
-for windows (after the address estimate came back with a window range) it offers "Measure with the WinChoice app" (a
-store button, and a QR code on a computer) or "Have us measure at a free visit". The offer appears only when the server
-has `HOMEOWNER_APP_URL` (the App Store or TestFlight link); the name is `HOMEOWNER_APP_NAME` (default `WinChoice`). The
-page's config (`GET /api/public/quote/:slug`) carries `homeownerApp: { url, name } | null`.
+`/q/:slug` (the company's web page) starts with "What are you looking for?" (roof, windows; never gutters). The windows
+result is a **count** with its plausible range ("About 14 windows (12-16)", from the same walls estimate as
+`estimate.windows`), never a price. The way to the exact price depends on the device and appears only when the server has
+`HOMEOWNER_APP_URL` (the App Store or TestFlight link; the name is `HOMEOWNER_APP_NAME`, default `WinChoice`; the page's
+config, `GET /api/public/quote/:slug`, carries `homeownerApp: { url, name } | null`):
+
+- iPhone (and iPad): the button "Download the WinChoice app to measure your windows" to the store link.
+- Android: "Measure your windows in your browser", to `/q/:slug/measure?request=<quote id>` (the page itself is built
+  separately; today it says it is coming).
+- A computer: a QR code of that measure link, "Scan with your phone: iPhone opens the app, Android measures in the browser".
+- Everyone: the small link "Book a free visit and we'll measure" goes on to the request form. With no `HOMEOWNER_APP_URL`
+  it is the only way on, as the main button.
+
+The roof keeps its price range ("Final price after a free in-home visit"), or the satellite sentence above.
 
 ## Trying it on this machine
 
@@ -531,11 +569,14 @@ page's config (`GET /api/public/quote/:slug`) carries `homeownerApp: { url, name
 npm run demo        # app on http://localhost:4500, database on 54339 (DEMO_PORT, DEMO_DB_PORT, DEMO_COMPOSE_PROJECT change them)
 ```
 
-- The demo company is **Summit Ridge Roofing**, slug `summit-ridge`: windows, roof and gutters on, online booking on.
+- The demo company is **Summit Ridge Roofing**, slug `summit-ridge`: windows and roof on for homeowners (gutters are on for staff), online booking on.
   The API is `http://localhost:4500/api/public/homeowner/summit-ridge`; the web page is `http://localhost:4500/q/summit-ridge`.
 - With no keys, the demo's address lookup puts any typed address on one of its real Omaha houses: the outline, roof size
   and window count come from that house. With `.env.keys` it uses real lookups (a few cents per new address; repeats within
   30 days are free).
+- With no Solar key the demo's fake Solar gives recent HIGH imagery everywhere except every eighth lookup lot: type
+  `107 Faded Photo Ln, Omaha, NE 68124` to see the "can't measure your roof from satellite images" path (LOW imagery from 2014);
+  `4810 Underwood Ave, Omaha, NE 68132` is a normal house.
 - `HOMEOWNER_APP_URL` is a placeholder App Store link in the demo, so the page shows the app offer.
 - The demo listens on `127.0.0.1` only. The iOS Simulator reaches it at `http://localhost:4500`; a real iPhone needs a tunnel.
 - Sign in at `http://localhost:4500` as `owner@summitridge.test` / `summit-ridge-demo` to see the lead (Jobs, Today, the
@@ -565,7 +606,7 @@ curl -s $B/company | jq '{name, services, booking, consent: {version: .consent.v
 
 # 2. A request: the home, the estimates, the token (shown once)
 curl -s -X POST $B/requests -H 'Content-Type: application/json' \
-  -d '{"address":"4810 Underwood Ave, Omaha, NE 68132","services":["windows","roof","gutters"]}' > req.json
+  -d '{"address":"4810 Underwood Ave, Omaha, NE 68132","services":["windows","roof"]}' > req.json
 REQ=$(jq -r .requestId req.json); TOKEN=$(jq -r .token req.json)
 jq '{status, estimate}' req.json
 
@@ -616,7 +657,7 @@ same window id, different window      409  {"error":"A different window with thi
 contact without the box ticked        400  {"error":"Please check the box so we can call or email you.","field":"contactConsent","code":"invalid_request"}
 contact with old consent words        409  {"error":"The wording on this screen was updated. Please go back and try again.","code":"consent_changed"}
 other phone for a filed request       409  {"error":"We already have your details for this request. Please call us to change them.","field":"phone","code":"contact_filed"}
-windows call on a gutters request     409  {"error":"This request is not about windows.","code":"windows_not_requested"}
+windows call on a roof-only request   409  {"error":"This request is not about windows.","code":"windows_not_requested"}
 a key the API does not know           400  {"error":"Please check this field.","code":"invalid_request"}   (no field: it is the whole body)
 a photo that claims too many pixels   415  {"error":"Upload a JPEG or PNG photo.","field":"photo","code":"unsupported_media"}
 a path that is not in the API         404  {"error":"We couldn't find that.","code":"not_found"}

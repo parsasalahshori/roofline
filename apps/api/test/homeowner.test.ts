@@ -15,7 +15,10 @@ import {
   quoteConsentText,
   quoteTextConsentText,
   type Ring,
+  SATELLITE_UNUSABLE_MESSAGE,
   windowSizeClass,
+  type LngLat,
+  type SolarBuilding,
 } from '@roofline/shared';
 import { HOMEOWNER_LIMITS, HOMEOWNER_UNKNOWN_REQUEST } from '../src/public/homeowner-auth.ts';
 import { UPLOAD_GUARD } from '../src/public/homeowner-upload.ts';
@@ -76,6 +79,26 @@ async function houseAt(address: string, scale = 1): Promise<void> {
   const [ready] = await q(`select 1 from building_footprint_tiles where quadkey = $1`, [tile]);
   if (ready) await insertFootprints(t.deps.pools.system, { tile, state: 'NE' }, [{ sourceRef: `house-${address}`, ring }]);
   else await seedFootprintFixture(t.deps.pools, [{ sourceRef: `house-${address}`, ring }]);
+  await solarAt(address);
+}
+
+/**
+ * Google Solar's answer for the house `houseAt` drew at `address`: HIGH imagery from June 2025 (well inside the quote
+ * page's age limit at NOW) unless `over` says otherwise. Without a building the instant quote would call the roof
+ * unmeasurable from satellite (quote/gates.ts satelliteGate).
+ */
+async function solarAt(address: string, over: Partial<SolarBuilding> = {}): Promise<void> {
+  const found = await t.deps.geocoder.geocode(address);
+  const at: LngLat = [found!.lng, found!.lat];
+  const building: SolarBuilding = {
+    center: at,
+    box: { sw: [at[0] - 0.00012, at[1] - 0.00008], ne: [at[0] + 0.00012, at[1] + 0.00008] },
+    imageryQuality: 'HIGH',
+    imageryDate: '2025-06-01',
+    segments: [{ pitchDeg: 26.6, azimuthDeg: 180, areaM2: 200, groundAreaM2: 180, center: at, box: null }],
+    ...over,
+  };
+  t.solar.set(at, building);
 }
 
 beforeEach(async () => {
@@ -175,7 +198,7 @@ describe('GET /company', () => {
       name,
       brandColor: '#155eab',
       phone: expect.stringMatching(/^\+1\d{10}$/),
-      services: ['windows', 'roof', 'gutters'],
+      services: ['windows', 'roof'],
       booking: false,
       privacyUrl: expect.stringMatching(/\/privacy$/),
       termsUrl: expect.stringMatching(/\/terms$/),
@@ -214,7 +237,7 @@ describe('POST /requests', () => {
     expect(body.estimate.windows!.likely).toBeLessThanOrEqual(body.estimate.windows!.high);
     expect(body.estimate.roof!.low).toBeLessThan(body.estimate.roof!.high);
     expect(body.estimate.roof!.low % 100).toBe(0);
-    expect(body.estimate.gutters).toBeNull();
+    expect(JSON.stringify(body)).not.toMatch(/gutter/i);
     expect(body.home.outline!.ring.length).toBeGreaterThanOrEqual(3);
     // The house was measured once, for the roof and the windows together
     expect(t.solar.calls.length).toBeGreaterThanOrEqual(solarBefore);
@@ -242,21 +265,20 @@ describe('POST /requests', () => {
     expect(text).not.toContain(ip);
   });
 
-  test('a gutters-only request is only looked up and checked: ready, "at-visit", nothing measured, no estimate stored', async () => {
-    const estimatesBefore = await count('quote_estimates', t.seed.a.companyId);
-    const solarBefore = t.solar.calls.length;
-    const { body, id } = await start({ services: ['gutters'] });
-    expect(body).toMatchObject({ status: 'ready', services: ['gutters'], estimate: { windows: null, roof: null, gutters: 'at-visit' } });
-    expect(await count('quote_estimates', t.seed.a.companyId)).toBe(estimatesBefore);
-    expect(t.solar.calls.length).toBe(solarBefore);
-    const [row] = await q(`select quote_estimate_id, property_id from homeowner_requests where id = $1`, [id]);
-    expect(row!.quote_estimate_id).toBeNull();
-    expect(row!.property_id).not.toBeNull();
+  test('gutters are not offered to homeowners: not in the company\'s services, and a request for them is a 422 service_not_offered', async () => {
+    // The company has gutters switched on for staff (see enable()), yet the app never sees them.
+    expect((await get('/company')).body.services).toEqual(['windows', 'roof']);
+    for (const services of [['gutters'], ['windows', 'gutters']]) {
+      const res = await send('post', '/requests', { address: ADDRESS, services });
+      expect(res.status, services.join()).toBe(422);
+      expect(res.body).toMatchObject({ field: 'services', code: 'service_not_offered' });
+    }
+    expect(await count('homeowner_requests', t.seed.a.companyId)).toBe(0);
   });
 
   test('an apartment is the call-back path: nothing measured, a reason, and the windows calls are refused', async () => {
-    const { body, id, token } = await start({ address: FLAT, services: ['windows', 'gutters'] });
-    expect(body).toMatchObject({ status: 'callback', callbackReason: 'unit', estimate: { windows: null, roof: null, gutters: 'at-visit' } });
+    const { body, id, token } = await start({ address: FLAT, services: ['windows', 'roof'] });
+    expect(body).toMatchObject({ status: 'callback', callbackReason: 'unit', estimate: { windows: null, roof: null } });
     expect(body.home.floors).toBeNull();
     expect(t.solar.calls).toHaveLength(0);
     const v = await view({ id, token, body });
@@ -269,6 +291,56 @@ describe('POST /requests', () => {
     expect(win.status).toBe(409);
     expect(win.body.code).toBe('callback_only');
     // Booking and contact still work for them (below).
+  });
+
+  describe('the satellite pictures cannot be trusted for the roof', () => {
+    const MESSAGE = SATELLITE_UNUSABLE_MESSAGE;
+    const withLow = async () => {
+      t.solar.clear();
+      await solarAt(ADDRESS, { imageryQuality: 'LOW', imageryDate: '2014-05-01' });
+    };
+
+    test('roof and windows: the windows are estimated, the roof has no price and says why', async () => {
+      await withLow();
+      const { body, id, token } = await start({ services: ['windows', 'roof'] });
+      expect(body).toMatchObject({ status: 'ready', estimate: { roof: null, roofNote: { reason: 'satellite-unusable', message: MESSAGE } } });
+      expect(body.estimate.windows).not.toBeNull();
+      expect(body.callbackReason).toBeUndefined();
+      // The same on a later read, and staff keep the cause.
+      const v = await view({ id, token, body });
+      expect(v.request.estimate).toMatchObject({ roof: null, roofNote: { message: MESSAGE } });
+      const [row] = await q(`select result->'satellite' as satellite from quote_estimates where company_id = $1`, [t.seed.a.companyId]);
+      expect(row!.satellite).toMatchObject({ problems: ['imagery-quality', 'imagery-old'], quality: 'LOW', date: '2014-05-01' });
+      expect(JSON.stringify(body)).not.toMatch(/imagery-|LOW|2014/);
+    });
+
+    test('the roof alone: a call back with the new reason, the sentence, and no price', async () => {
+      await withLow();
+      const { body } = await start({ services: ['roof'] });
+      expect(body).toMatchObject({ status: 'callback', callbackReason: 'satellite-unusable', estimate: { roof: null, windows: null, roofNote: { reason: 'satellite-unusable', message: MESSAGE } } });
+    });
+
+    test('windows only: carries on as normal, no roof note', async () => {
+      await withLow();
+      const { body } = await start({ services: ['windows'] });
+      expect(body).toMatchObject({ status: 'ready' });
+      expect(body.estimate.roofNote).toBeUndefined();
+      expect(body.estimate.windows).not.toBeNull();
+    });
+
+    test('a good house still gets its roof price and no note', async () => {
+      const { body } = await start({ services: ['windows', 'roof'] });
+      expect(body.estimate.roof).not.toBeNull();
+      expect(body.estimate.roofNote).toBeUndefined();
+    });
+
+    test('the same low-quality home is the same answer for the next visitor (stored), booking still works', async () => {
+      await withLow();
+      const first = await start({ services: ['roof'] });
+      const again = await start({ services: ['roof'] });
+      expect(again.body).toMatchObject({ status: 'callback', callbackReason: 'satellite-unusable' });
+      expect(first.id).not.toBe(again.id);
+    });
   });
 
   test('a lookup that did not land on the house, a house too big for a home and the daily limit are call backs with their own reasons', async () => {
@@ -322,15 +394,15 @@ describe('POST /requests', () => {
   test('ten new requests an hour per IP address, then a 429 with Retry-After and a code', async () => {
     const ip = '203.0.113.9';
     for (let i = 0; i < HOMEOWNER_LIMITS.newRequestsPerIpPerHour; i++) {
-      expect((await send('post', '/requests', { address: ADDRESS, services: ['gutters'] }, { ip })).status, `call ${i}`).toBe(201);
+      expect((await send('post', '/requests', { address: ADDRESS, services: ['windows'] }, { ip })).status, `call ${i}`).toBe(201);
     }
-    const over = await send('post', '/requests', { address: ADDRESS, services: ['gutters'] }, { ip });
+    const over = await send('post', '/requests', { address: ADDRESS, services: ['windows'] }, { ip });
     expect(over.status).toBe(429);
     expect(over.body.code).toBe('rate_limited');
     expect(over.headers['retry-after']).toBe('3600');
     expect(over.headers['cache-control']).toBe('no-store');
     // Another address is not held back
-    expect((await send('post', '/requests', { address: ADDRESS, services: ['gutters'] }, { ip: '203.0.113.10' })).status).toBe(201);
+    expect((await send('post', '/requests', { address: ADDRESS, services: ['windows'] }, { ip: '203.0.113.10' })).status).toBe(201);
   });
 });
 
@@ -412,7 +484,7 @@ describe('the token', () => {
 
   test('a browser from another site is refused on a change; a native app (no Origin) and the app origin pass', async () => {
     const s = await start();
-    const evil = await send('post', '/requests', { address: ADDRESS, services: ['gutters'] }, { origin: 'https://evil.example' });
+    const evil = await send('post', '/requests', { address: ADDRESS, services: ['windows'] }, { origin: 'https://evil.example' });
     expect(evil.status).toBe(403);
     expect(evil.body.code).toBe('cross_site');
     expect(evil.headers['cache-control']).toBe('no-store');
@@ -430,7 +502,7 @@ describe('the token', () => {
       const answers = await Promise.all(Array.from({ length: 40 }, () => get('/company', { ip })));
       for (const a of answers) expect(a.status).toBe(200);
     }
-    const over = await send('post', '/requests', { address: ADDRESS, services: ['gutters'] }, { ip, origin: 'https://evil.example' });
+    const over = await send('post', '/requests', { address: ADDRESS, services: ['windows'] }, { ip, origin: 'https://evil.example' });
     expect(over.status).toBe(429);
     expect(over.body.code).toBe('rate_limited');
     expect(over.headers['retry-after']).toBe('60');
