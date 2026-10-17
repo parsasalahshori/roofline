@@ -51,6 +51,18 @@ function ownerRoutes() {
 }
 
 describe('team tab', () => {
+  it('the person who is signed in is tagged You, and nobody else is', async () => {
+    api = stubApi(ownerRoutes());
+    renderAt(<TeamTab />);
+
+    const own = await screen.findByRole('row', { name: /Sam Roofer/ });
+    expect(within(own).getByText(settings.team.you)).toBeInTheDocument();
+    for (const other of [/Olive Office/, /Ray Rep/]) {
+      expect(within(screen.getByRole('row', { name: other })).queryByText(settings.team.you)).toBeNull();
+    }
+    expect(screen.getAllByText(settings.team.you)).toHaveLength(1);
+  });
+
   it('owner turns on spend approval for an office member', async () => {
     api = stubApi(ownerRoutes());
     const { user } = renderAt(<TeamTab />);

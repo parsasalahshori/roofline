@@ -91,6 +91,8 @@ export const settings = {
 
   team: {
     heading: 'Team',
+    /** The tag beside the name of the person who is signed in. */
+    you: 'You',
     /** Beside the heading: how many people are on the team. */
     count: (people: number) => (people === 1 ? '1 person' : `${people} people`),
     tableLabel: 'Team members',

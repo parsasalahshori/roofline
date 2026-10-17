@@ -24,6 +24,8 @@ const formatDate = (iso: string) => new Date(iso).toLocaleDateString('en-US', { 
 
 type MemberProps = {
   member: TeamMember;
+  /** This member is the person looking at the screen. */
+  isYou: boolean;
   isOwner: boolean;
   updating: boolean;
   change: (changes: MemberChanges) => void;
@@ -100,13 +102,16 @@ function StatusButton({ member, updating, change, size }: MemberProps & { size: 
   );
 }
 
-/** A person: their initials, their name, and their email under it. */
-function Person({ member }: { member: TeamMember }) {
+/** A person: their initials, their name (with a "You" beside it when it is the person looking), and their email under it. */
+function Person({ member, isYou }: { member: TeamMember; isYou: boolean }) {
   return (
     <div className={styles.person}>
       <Avatar name={member.name} size={32} />
       <div className={styles.who}>
-        <span className={styles.name}>{member.name}</span>
+        <span className={styles.nameLine}>
+          <span className={styles.name}>{member.name}</span>
+          {isYou ? <Tag>{settings.team.you}</Tag> : null}
+        </span>
         <span className={styles.email}>{member.email}</span>
       </div>
     </div>
@@ -118,7 +123,7 @@ function MemberRow(props: MemberProps) {
   return (
     <Tr>
       <Td>
-        <Person member={props.member} />
+        <Person member={props.member} isYou={props.isYou} />
       </Td>
       <Td>
         <RoleControl {...props} />
@@ -144,7 +149,7 @@ function MemberCard(props: MemberProps) {
   return (
     <li className={styles.card}>
       <div className={styles.cardHead}>
-        <Person member={props.member} />
+        <Person member={props.member} isYou={props.isYou} />
         <StatusTag member={props.member} />
       </div>
       <div className={styles.fact}>
@@ -243,6 +248,7 @@ export function TeamTab() {
 
   const propsFor = (member: TeamMember): MemberProps => ({
     member,
+    isYou: member.userId === me.data.user.id,
     isOwner,
     updating: saving.includes(member.id),
     change: (changes) => changeMember(member.id, changes),
