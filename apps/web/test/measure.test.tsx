@@ -7,7 +7,7 @@ import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { estimator } from '../src/copy/estimator.ts';
 import { legal } from '../src/copy/legal.ts';
 import { paidReports } from '../src/copy/billing.ts';
-import { liftMeasure, liftProposal } from '../src/copy/liftMeasure.ts';
+import { liftMeasure, liftMeasureSteps, liftProposal } from '../src/copy/liftMeasure.ts';
 import { measure } from '../src/copy/measure.ts';
 import { common } from '../src/copy/common.ts';
 import { wholeDollars } from '../src/features/measure/lift/proposalLines.ts';
@@ -1267,5 +1267,30 @@ describe('the measure card never hides the roof', () => {
     expect(420 - short.top - short.bottom).toBeGreaterThanOrEqual(120);
     // Closed, with no card measured yet, the usual framing
     expect(roofPadding(800, 700, 0, false)).toEqual({ top: 126, bottom: 189, left: 176, right: 176 });
+  });
+
+  it('roofPadding leaves the credits strip its room under the card on a wide map, and none on a narrow one where they are an "i" in the corner', () => {
+    const card = 300;
+    const wide = roofPadding(800, 900, card, true);
+    const narrow = roofPadding(600, 900, card, true);
+    // The card sits 14px up from the bottom edge, 30px where the strip runs under it; the roof keeps 18px clear of the card
+    expect(narrow.bottom).toBe(card + 14 + 18);
+    expect(wide.bottom).toBe(card + 30 + 18);
+  });
+
+  it('on the roof step a pinned bar names the tier, its squares and its total, and takes the phone to the proposal step', async () => {
+    await open();
+    const bar = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>('[data-quote-bar]');
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    expect(within(bar).getByText(liftProposal.quoteBar.label(liftProposal.tier.better, 12))).toBeTruthy();
+    expect(within(bar).getByText(wholeDollars(2300000))).toBeTruthy();
+    expect(document.querySelector('[data-step="roof"]')).not.toBeNull();
+    fireEvent.click(within(bar).getByRole('button', { name: liftMeasureSteps.proposal }));
+    // On the proposal step the bar gives way to the panel itself
+    await waitFor(() => expect(document.querySelector('[data-quote-bar]')).toBeNull());
+    expect(document.querySelector('[data-step="proposal"]')).not.toBeNull();
   });
 });
