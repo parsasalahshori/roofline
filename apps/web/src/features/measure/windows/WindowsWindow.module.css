@@ -162,6 +162,14 @@
   }
 }
 
+/* Its icon alone is a thumb-sized target on a phone (the kit's small button is 44px high there, but only as wide as its icon) */
+@media (max-width: 767.98px) {
+  .replay[data-variant] {
+    min-width: 44px;
+    justify-content: center;
+  }
+}
+
 .scaleNote {
   margin: 0;
   padding: 6px 16px;

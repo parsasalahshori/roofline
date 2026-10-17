@@ -85,6 +85,6 @@ export const measure = {
   },
   ownerLabel: 'Owner',
   roofAge: (years: number) => `${years} year old roof`,
-  hailSize: (inches: number) => `${inches} in. hail on record`,
+  hailSize: (inches: number) => `${inches} in hail on record`,
   whoAndTown: (name: string | null, town: string) => (name === null ? town : `${name}, ${town}`),
 } as const;

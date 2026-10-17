@@ -252,6 +252,43 @@ describe('Window factory order', () => {
     expect(within(rows[0] as HTMLElement).queryByText(/Smallest/)).toBeNull();
   });
 
+  it('why a window needs another look comes straight under its photo, before what each photo read, so it is in view beside the box that clears it', async () => {
+    await open();
+    pick('w3', 3, 'Living');
+    const reasons = within(detail()).getByRole('list', { name: copy.reasonsLabel });
+    const readings = within(detail()).getByRole('table', { name: copy.readings.title });
+    const photo = detail().querySelector('img');
+    expect(photo).not.toBeNull();
+    // Photo, then the reasons, then the readings table
+    expect(photo!.compareDocumentPosition(reasons) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(reasons.compareDocumentPosition(readings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('the panel that scrolls fades its bottom edge only while there is more under what it shows', async () => {
+    const scroller = () => detail().querySelector('[class*="detailScroll"]') as HTMLElement;
+    await open();
+    pick('w3', 3, 'Living');
+    // jsdom has no layout: nothing scrolls, so no fade
+    expect(scroller().hasAttribute('data-more')).toBe(false);
+    cleanup();
+
+    // A box taller than it shows (600 of 300 pixels, at the top): the fade is on
+    const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight');
+    const shown = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight');
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', { configurable: true, get: () => 600 });
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get: () => 300 });
+    try {
+      await open();
+      pick('w3', 3, 'Living');
+      await waitFor(() => expect(scroller().getAttribute('data-more')).toBe('true'));
+    } finally {
+      if (height) Object.defineProperty(HTMLElement.prototype, 'scrollHeight', height);
+      else delete (HTMLElement.prototype as unknown as Record<string, unknown>)['scrollHeight'];
+      if (shown) Object.defineProperty(HTMLElement.prototype, 'clientHeight', shown);
+      else delete (HTMLElement.prototype as unknown as Record<string, unknown>)['clientHeight'];
+    }
+  });
+
   it('the box that clears a Check is pinned under the options, outside the part that scrolls', async () => {
     await open();
     pick('w3', 3, 'Living');

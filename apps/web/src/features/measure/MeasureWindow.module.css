@@ -56,6 +56,16 @@
   }
 }
 
+/* A phone, the roof measured: the photo is taller than the screen. The legend and the card take 390px of a 470px photo, which
+   squeezed the roof into 110px with its labels touching and its lowest corner under the card; now it has room, and the page
+   scrolls to the numbers while the bar with the total stays pinned. Before the scan the photo keeps the screen's height, so
+   "Measure roof" is in view. */
+@container measure (max-width: 979.98px) {
+  .work[data-step="roof"][data-proposal="true"] {
+    min-height: 640px;
+  }
+}
+
 /* One step at a time: the numbered steps over the columns choose which */
 @container measure (max-width: 979.98px) {
   .work[data-step="requests"] > .main,
@@ -242,7 +252,8 @@
 /* A phone: on the roof step the recommended tier, its squares and its total stay at the bottom, above the tab bar, with the way to the proposal */
 .quoteBar {
   position: sticky;
-  z-index: 2;
+  /* Over the photo's own layers (the card is 3), which now scroll under it; under the phone tab bar (10) */
+  z-index: 6;
   bottom: 0;
   display: none;
   flex: none;

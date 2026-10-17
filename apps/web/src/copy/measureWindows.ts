@@ -49,6 +49,8 @@ export const measureWindows = {
   ladder: {
     label: 'How precisely the windows are measured',
     estimate: 'Estimate from walls',
+    /** The same rung on a phone, where the tile is too narrow for the long name (the phone mockup says Estimate) */
+    estimatePhone: 'Estimate',
     quote: 'Quote-grade',
     order: 'Order-grade',
     estimateNote: 'Count \u00b12 \u00b7 quote only',
@@ -85,7 +87,8 @@ export const measureWindows = {
     countsLabel: 'Estimated window counts',
     reasonsLabel: 'Why measure again',
     reasonUnclear: 'A photo of this window was steep or unclear: check its corners, or measure it by hand.',
-    reasonDoubt: (inches: string) => `The size could be off by ${inches} in, more than a factory order allows. Take another photo or measure by hand.`,
+    // The other reason already says to measure by hand: this one asks for the photo
+    reasonDoubt: (inches: string) => `The size could be off by ${inches} in, more than a factory order allows. Take another photo.`,
     streetDetail: 'Sized from the street photo, so it is good for a quote, not an order.',
     streetWas: (w: number, h: number) => `It was ${inches(w)} \u00d7 ${inches(h)} in before the door ruler.`,
     fine: 'Measured on site. Good to order from.',
@@ -340,7 +343,7 @@ export const measureWindows = {
   quoteFailed: 'We could not price these windows.',
   quoteLoading: 'Pricing the windows',
   send: 'Send proposal',
-  sendNext: 'Window proposals come next. For now, share this quote by hand.',
+  sendNext: 'Window proposals cannot be sent from here yet. Share this quote with the customer yourself.',
 } as const;
 
 /** Words for sizing windows from photos taken on site (features/measure/windows/photos). */

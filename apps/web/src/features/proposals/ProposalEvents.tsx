@@ -12,7 +12,8 @@ export function proposalEventLines(proposal: ProposalView, now: Date, timeZone: 
   if (proposal.sentAt !== null) lines.push({ key: 'sent', icon: 'arrow', text: proposals.sentOn(formatWhen(proposal.sentAt, now, timeZone)) });
   if (proposal.views.count > 0 && proposal.views.last !== null) {
     lines.push({ key: 'opened', icon: 'doc', text: proposals.eventsLine(proposal.views.count, formatLastOpened(proposal.views.last, now, timeZone)) });
-  } else if (proposal.sentAt !== null) {
+  } else if (proposal.sentAt !== null && proposal.signed === null && proposal.declined === null) {
+    // Not once a customer has signed or declined: that took opening it, whatever the count of views says
     lines.push({ key: 'unopened', icon: 'clock', text: proposals.eventsNone });
   }
   if (proposal.signed !== null) {

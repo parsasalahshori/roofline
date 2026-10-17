@@ -21,6 +21,7 @@ import {
 import { useId } from 'react';
 import { sizeCopy } from '../../../../copy/measureWindows.ts';
 import { windowOrder as copy } from '../../../../copy/windowOrder.ts';
+import { useMoreBelow } from '../../../today/useMoreBelow.ts';
 import { uploadSrc } from '../api.ts';
 import styles from './OrderWindow.module.css';
 import { orderReadings } from './readings.ts';
@@ -189,11 +190,13 @@ export function LineDetail({ line, checked, n, measurementId, locked, factor, on
   const setSafety = (next: Partial<SafetyAnswers>) => onEdit({ safety: { ...line.safety, ...next } });
   const showSuggestions = checked.suggestions.length > 0 && !line.tempered;
   const name = line.location.trim() === '' ? copy.windowNumber(n) : line.location;
+  // Beside the table the options scroll under the pinned box: the bottom edge fades while there is more to scroll to
+  const [scrollRef, moreBelow] = useMoreBelow<HTMLDivElement>();
 
   return (
     <Panel as="aside" title={copy.detailTitle(n, name)} tag={<LineStatus status={checked.status} />} padded={false} className={styles.detailPanel} data-detail={line.id} data-status={checked.status}>
       <div className={styles.detailFrame}>
-        <div className={styles.detailScroll}>
+        <div ref={scrollRef} className={styles.detailScroll} data-more={moreBelow ? 'true' : undefined}>
           <div className={styles.detailBody}>
             <div className={styles.detailLook}>
               {line.uploadId !== null ? (
@@ -201,8 +204,7 @@ export function LineDetail({ line, checked, n, measurementId, locked, factor, on
               ) : (
                 <p className={styles.noPhoto}>{copy.noPhoto}</p>
               )}
-              <Readings measured={line.measured} factor={factor} />
-
+              {/* Why it needs another look comes straight under the photo it is about, so it is on the first screen beside the box that clears it */}
               {checked.reasons.length > 0 ? (
                 <ul className={styles.reasons} aria-label={copy.reasonsLabel}>
                   {checked.reasons.map((r) => (
@@ -213,6 +215,7 @@ export function LineDetail({ line, checked, n, measurementId, locked, factor, on
                   ))}
                 </ul>
               ) : null}
+              <Readings measured={line.measured} factor={factor} />
             </div>
 
             <fieldset className={styles.options} disabled={locked}>
