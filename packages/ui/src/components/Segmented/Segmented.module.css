@@ -4,6 +4,8 @@
   padding: 3px;
   border-radius: var(--r-2);
   background: var(--sunken);
+  /* On a dark page the track is as dark as the ground: a hairline keeps it there */
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 
 .segment {

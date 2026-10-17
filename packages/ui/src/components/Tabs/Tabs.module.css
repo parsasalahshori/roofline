@@ -35,16 +35,25 @@
   font-weight: 600;
 }
 
-/* The current tab's rule sits on the bar's own rule */
+/* The first tab's words sit on the content edge, like the title above them (its padding is only for the others) */
+.list > li:first-child .tab {
+  padding-left: 0;
+}
+
+/* The current tab's rule sits on the bar's own rule and is as wide as the label */
 .tab[aria-current="page"]::after {
   content: "";
   position: absolute;
-  right: 8px;
+  right: 12px;
   bottom: -1px;
-  left: 8px;
+  left: 12px;
   height: 2px;
   border-radius: 2px 2px 0 0;
   background: var(--brand);
+}
+
+.list > li:first-child .tab[aria-current="page"]::after {
+  left: 0;
 }
 
 .count {

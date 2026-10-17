@@ -66,6 +66,9 @@ export function Page({
   const parent = phone && crumbs && crumbs.length > 1 ? crumbs[crumbs.length - 2] : undefined;
   // Without a top bar to hold them (a test; a phone has its own row) the bar controls sit in the row under the head
   const inlineBarActions = barActions && !slots.actions && !phone ? barActions : null;
+  // On a phone the subtitle leaves the title's block and takes a row of its own under the title and the shell's
+  // controls, so those controls stay level with the title however long the subtitle runs
+  const subtitleNode = subtitle && !titleHidden ? <p className={styles.subtitle}>{subtitle}</p> : null;
 
   return (
     <main
@@ -101,8 +104,9 @@ export function Page({
           <h1 id={titleId} className={cx(styles.title, titleHidden && 'visually-hidden')}>
             {heading ?? title}
           </h1>
-          {subtitle && !titleHidden ? <p className={styles.subtitle}>{subtitle}</p> : null}
+          {phone ? null : subtitleNode}
         </div>
+        {phone ? subtitleNode : null}
         {phone && !parent && slots.trailing && !titleHidden ? <div className={styles.trailing}>{slots.trailing}</div> : null}
         {actions && !titleHidden ? <div className={styles.actions}>{actions}</div> : null}
       </div>

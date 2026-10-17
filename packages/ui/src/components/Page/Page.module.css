@@ -138,10 +138,12 @@
     padding: max(16px, env(safe-area-inset-top, 0px)) 16px 24px;
   }
 
-  /* The head is at least as tall as the 44px controls in it, so the title is centred on them whatever else it holds */
+  /* The head is at least as tall as the 44px controls in it, so the title is centred on them whatever else it holds.
+     Its first row is the title with the shell's controls at the right; the subtitle and the page's buttons wrap under it */
   .head {
     flex-wrap: wrap;
     align-items: center;
+    gap: 0 16px;
     min-height: 44px;
     margin-bottom: 12px;
   }
@@ -151,14 +153,29 @@
     margin: 0;
   }
 
-  /* The title takes the row with the shell's controls; the page's own buttons wrap under it */
+  /* The title takes the row with the shell's controls; the subtitle and the page's own buttons wrap under it */
   .titles {
+    order: 1;
     flex: 1 1 0;
   }
 
+  .trailing {
+    order: 2;
+  }
+
+  /* The title is centred in the 44px row, so the subtitle tucks up under it */
+  .subtitle {
+    order: 3;
+    flex: 1 1 100%;
+    margin-top: -4px;
+    text-wrap: pretty;
+  }
+
   .actions {
+    order: 4;
     flex: 1 1 100%;
     justify-content: flex-start;
+    margin-top: 16px;
   }
 
   .title {

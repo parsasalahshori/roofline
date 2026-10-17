@@ -76,7 +76,7 @@ export function Listbox<V extends string = string>({
       type="button"
       className={cx(variant === 'field' ? fieldStyles.control : undefined, styles.trigger)}
       data-variant={variant}
-      data-placeholder={selected ? undefined : 'true'}
+      data-placeholder={selected && !(variant === 'field' && selected.value === '') ? undefined : 'true'}
       aria-haspopup="listbox"
       aria-expanded={open}
       aria-controls={open ? listId : undefined}

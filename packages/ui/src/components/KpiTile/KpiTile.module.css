@@ -24,6 +24,7 @@
   font: 600 var(--font-size-min)/1.2 var(--f-mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  text-wrap: balance;
 }
 
 .value {

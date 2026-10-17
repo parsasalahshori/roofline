@@ -35,6 +35,13 @@ dd {
   text-wrap: pretty;
 }
 
+/* A heading that has to wrap shares its words between the lines instead of stranding one on the last */
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
 /* One visible ring for everything keyboard-reachable: the company's brand colour, 3:1 or better on every surface */
 :focus-visible {
   outline: 2px solid var(--ring);

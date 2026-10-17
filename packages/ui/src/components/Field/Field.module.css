@@ -57,6 +57,7 @@ textarea.control {
   margin: 0;
   color: var(--ink-3);
   font-size: var(--font-size-min);
+  text-wrap: balance;
 }
 
 /* The error is ink on a --bad bar: --bad itself is under 4.5:1 as small text. */
