@@ -2,6 +2,7 @@ import { Button, Skeleton } from '@roofline/ui';
 import type { Tier } from '@roofline/shared';
 import { useState, type ReactNode } from 'react';
 import { liftProposal } from '../../../copy/liftMeasure.ts';
+import { useMoreBelow } from '../../today/useMoreBelow.ts';
 import type { MeasurementPreview } from '../types.ts';
 import { AiMark } from './AiMark.tsx';
 import { panelLines, squaresFor, wholeDollars, type PanelLine } from './proposalLines.ts';
@@ -135,6 +136,7 @@ export function TierPanel({
   onPick?: (tier: Tier) => void;
 }) {
   const [picked, setPicked] = useState<Tier | null>(null);
+  const [scrollRef, moreBelow] = useMoreBelow<HTMLDivElement>();
   const selected = pickedOption(options, picked, recommended);
   return (
     <aside className={styles.panel} aria-label={liftProposal.label}>
@@ -150,7 +152,7 @@ export function TierPanel({
         </div>
         {typeof subline === 'function' ? subline(selected?.tier) : subline}
       </div>
-      <div className={styles.scroll}>
+      <div ref={scrollRef} className={styles.scroll} data-more={moreBelow ? 'true' : undefined}>
         {options.length > 0 ? (
           <div className={styles.tiers} role="radiogroup" aria-label={liftProposal.tiersLabel}>
             {options.map((o) => (

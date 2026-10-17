@@ -1,9 +1,11 @@
-/* The "Measure roof" bar over the bottom of the photo, before it is measured. */
+/* The "Measure roof" bar over the bottom of the photo, before it is measured. On a wide map the credits run along the
+   bottom edge under it (6px up, 18px high), so the bar stands 30px up, where the measure card stands (14px inset and the
+   credits' 16px); a narrow map folds the credits into a corner "i" and the bar keeps its lower 20px. */
 .bar {
   position: absolute;
   z-index: 3;
   left: 50%;
-  bottom: 20px;
+  bottom: 30px;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -40,6 +42,7 @@
 
 @container (max-width: 640px) {
   .bar {
+    bottom: 20px;
     flex-wrap: wrap;
     justify-content: center;
   }

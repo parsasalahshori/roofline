@@ -256,7 +256,6 @@
 }
 
 .foot {
-  position: relative;
   display: flex;
   flex: none;
   flex-direction: column;
@@ -266,16 +265,11 @@
   background: var(--surface);
 }
 
-/* What scrolls under the footer fades out into it, so a heading or a row is never cut through by a hard edge (the scroll area's bottom padding keeps the last row clear of the fade) */
-.foot::before {
-  content: "";
-  position: absolute;
-  right: 0;
-  bottom: 100%;
-  left: 0;
-  height: 20px;
-  background: linear-gradient(to top, var(--surface), transparent);
-  pointer-events: none;
+/* While there is more to scroll to, what scrolls under the footer fades out into it: a heading or a row is never cut through
+   by a hard edge, and the fade says the column scrolls. At the end the fade goes and the scroll area's bottom padding keeps
+   the last row clear of the footer. */
+.scroll[data-more="true"] {
+  mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 36px), transparent);
 }
 
 .totalRow {
