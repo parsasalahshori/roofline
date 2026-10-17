@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import type { BaselineKey, TimeBaselineRow } from '@roofline/shared';
 import { Banner, Button, Field, Panel, Skeleton, UiLink } from '@roofline/ui';
 import { ApiError } from '../../api/client.ts';
 import { agentPage, timeBaselines as copy } from '../../copy/agents.ts';
+import { SaveBar } from '../settings/SaveBar.tsx';
 import { useSaveTimeBaselines, useTimeBaselines } from './api.ts';
 import { rateLabel } from './money.ts';
 import { RecountSection } from './RecountSection.tsx';
@@ -61,7 +62,14 @@ export function TimeBaselines() {
     setSaved(false);
     setDrafts((current) => ({ ...current, [key]: value }));
   };
-  const submit = () => {
+  const discard = () => {
+    setDrafts({});
+    setSaved(false);
+    save.reset();
+  };
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (hasError || !changed || save.isPending) return;
     save.mutate(
       { minutes: changes },
       {
@@ -74,87 +82,94 @@ export function TimeBaselines() {
   };
   const saveMessage = save.error instanceof ApiError ? save.error.message : copy.saveError;
 
+  const table = (
+    <div className={styles.tableWrap}>
+      <table className={styles.table}>
+        <caption className={styles.caption}>{copy.tableCaption}</caption>
+        <thead>
+          <tr>
+            <th scope="col">{copy.colWork}</th>
+            <th scope="col">{copy.colUnit}</th>
+            <th scope="col">{copy.colBasis}</th>
+            <th scope="col">{copy.colMinutes}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.rows.map((row) => {
+            const work = agentPage.baselineLabels[row.key];
+            const draft = draftOf(row);
+            const differs = Number(draft) !== row.defaultMinutes || validateMinutes(draft) !== null;
+            return (
+              <tr key={row.key}>
+                <th scope="row">{work}</th>
+                <td>
+                  <span className={styles.cellLabel}>{copy.colUnit}</span>
+                  {row.unit}
+                </td>
+                <td>
+                  <span className={styles.cellLabel}>{copy.colBasis}</span>
+                  {basisWords(row)}
+                </td>
+                <td>
+                  <span className={styles.cellLabel}>{copy.colMinutes}</span>
+                  {data.canEdit ? (
+                    <div className={styles.edit}>
+                      <Field
+                        label={`${copy.inputLabelPrefix} ${work}`}
+                        labelHidden
+                        type="number"
+                        inputMode="decimal"
+                        step={0.5}
+                        min={0}
+                        max={600}
+                        value={draft}
+                        error={errors.get(row.key) ?? undefined}
+                        onChange={(event) => edit(row.key, event.target.value)}
+                      />
+                      <span className={styles.hint}>{`${copy.defaultIs} ${row.defaultMinutes}`}</span>
+                      {differs ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          type="button"
+                          aria-label={`${copy.reset} ${copy.resetLabelSuffix} ${work}`}
+                          onClick={() => edit(row.key, String(row.defaultMinutes))}
+                        >
+                          {copy.reset}
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : (
+                    `${row.minutes} ${copy.minutesSuffix}`
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+
   return (
     <Panel title={copy.title}>
       <div className={styles.root}>
         <p className={styles.text}>{copy.intro}</p>
         <p className={styles.quiet}>{copy.onlyFinished}</p>
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <caption className={styles.caption}>{copy.tableCaption}</caption>
-            <thead>
-              <tr>
-                <th scope="col">{copy.colWork}</th>
-                <th scope="col">{copy.colUnit}</th>
-                <th scope="col">{copy.colBasis}</th>
-                <th scope="col">{copy.colMinutes}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.rows.map((row) => {
-                const work = agentPage.baselineLabels[row.key];
-                const draft = draftOf(row);
-                const differs = Number(draft) !== row.defaultMinutes || validateMinutes(draft) !== null;
-                return (
-                  <tr key={row.key}>
-                    <th scope="row">{work}</th>
-                    <td>
-                      <span className={styles.cellLabel}>{copy.colUnit}</span>
-                      {row.unit}
-                    </td>
-                    <td>
-                      <span className={styles.cellLabel}>{copy.colBasis}</span>
-                      {basisWords(row)}
-                    </td>
-                    <td>
-                      <span className={styles.cellLabel}>{copy.colMinutes}</span>
-                      {data.canEdit ? (
-                        <div className={styles.edit}>
-                          <Field
-                            label={`${copy.inputLabelPrefix} ${work}`}
-                            labelHidden
-                            type="number"
-                            inputMode="decimal"
-                            step={0.5}
-                            min={0}
-                            max={600}
-                            value={draft}
-                            error={errors.get(row.key) ?? undefined}
-                            onChange={(event) => edit(row.key, event.target.value)}
-                          />
-                          <span className={styles.hint}>{`${copy.defaultIs} ${row.defaultMinutes}`}</span>
-                          {differs ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              type="button"
-                              aria-label={`${copy.reset} ${copy.resetLabelSuffix} ${work}`}
-                              onClick={() => edit(row.key, String(row.defaultMinutes))}
-                            >
-                              {copy.reset}
-                            </Button>
-                          ) : null}
-                        </div>
-                      ) : (
-                        `${row.minutes} ${copy.minutesSuffix}`
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
         {data.canEdit ? (
-          <div className={styles.saveRow}>
-            <Button type="button" busy={save.isPending} disabled={hasError || !changed || save.isPending} onClick={submit}>
-              {save.isPending ? copy.saving : copy.save}
-            </Button>
-            {saved && !save.isPending ? <p role="status" className={styles.text}>{copy.saved}</p> : null}
+          <form onSubmit={submit} noValidate className={styles.form}>
+            {table}
+            {saved && !unsaved && !save.isPending ? <p role="status" className={styles.text}>{copy.saved}</p> : null}
             {save.isError ? <p role="alert" className={styles.problem}>{saveMessage}</p> : null}
-          </div>
+            {/* The bar waits at the foot of the screen while there is something to save, as on every other settings form */}
+            <SaveBar dirty={unsaved} saving={save.isPending} saveLabel={copy.save} saveDisabled={hasError || !changed} onDiscard={discard} />
+            {save.isPending ? <span className="visually-hidden">{copy.saving}</span> : null}
+          </form>
         ) : (
-          <p className={styles.text}>{copy.ownerOnly}</p>
+          <>
+            {table}
+            <p className={styles.text}>{copy.ownerOnly}</p>
+          </>
         )}
         <p className={styles.text}>
           {`${copy.ratePrefix} ${rateLabel(data.hourlyRateCents)} ${copy.rateSuffix}`}
