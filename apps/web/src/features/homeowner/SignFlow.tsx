@@ -4,7 +4,7 @@ import { Banner, Button, Checkbox, Field, Sheet } from '@roofline/ui';
 import { homeowner, money } from '../../copy/homeowner.ts';
 import { CheckIcon, PenIcon } from '../public/icons.tsx';
 import { useSignProposal, type SignBody } from './api.ts';
-import { financingOf } from './facts.ts';
+import { addressText, financingOf, productLine } from './facts.ts';
 import { SignaturePad } from './SignaturePad.tsx';
 import styles from './SignFlow.module.css';
 
@@ -83,25 +83,26 @@ export function SignFlow({ token, proposal, optionId, open, onClose, onSigned }:
         {option ? (
           <>
             <div className={styles.summary}>
-              <small>{homeowner.tierLabel[option.tier]}</small>
-              <small className={styles.right}>{proposal.address}</small>
-              <b>{option.name}</b>
+              <small>{homeowner.optionKicker(homeowner.tierLabel[option.tier])}</small>
+              <small className={styles.right}>{addressText(proposal.address)}</small>
+              <b>{productLine(option)}</b>
               <b className={styles.right}>{money(option.totalCents)}</b>
             </div>
             {financing !== null ? (
               <section className={styles.pay}>
                 <h3 className={styles.label}>{homeowner.howYouPay}</h3>
-                <div className={styles.payGrid}>
+                {/* Facts, not a choice: the API takes no payment method, and financing is a separate approval */}
+                <dl className={styles.payList}>
                   <div>
-                    <small>{homeowner.payTotal}</small>
-                    <b>{money(option.totalCents)}</b>
+                    <dt>{homeowner.payTotal}</dt>
+                    <dd>{money(option.totalCents)}</dd>
                   </div>
                   <div>
-                    <small>{homeowner.payMonthly}</small>
-                    <b>{homeowner.payMonthlyAmount(financing.monthly)}</b>
-                    <span>{homeowner.payMonthlyTerms(financing.apr, financing.months)}</span>
+                    <dt>{homeowner.payMonthly}</dt>
+                    <dd>{homeowner.payMonthlyAmount(financing.monthly)}</dd>
+                    <dd className={styles.payTerms}>{homeowner.payMonthlyTerms(financing.apr, financing.months)}</dd>
                   </div>
-                </div>
+                </dl>
               </section>
             ) : null}
             {proposal.estimateClause ? <p className={styles.clause}>{homeowner.estimateClause}</p> : null}

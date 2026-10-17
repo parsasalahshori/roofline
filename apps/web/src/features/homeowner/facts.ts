@@ -9,6 +9,21 @@ const positive = (value: number | null | undefined): value is number => typeof v
 /** 875 basis points become "8.75"; a whole rate drops its zeros, so 900 becomes "9". */
 export const formatApr = (aprBps: number): string => (aprBps / 100).toFixed(2).replace(/\.?0+$/, '');
 
+/**
+ * What the option is, for the line under its tier: its own name when that says more than the tier does ("Architectural +
+ * protection"), else the first thing it promises ("Architectural shingles, 50-year maker warranty"), so the tier is never
+ * printed twice ("Better" over "Better").
+ */
+export function productLine(option: Option): string {
+  const name = option.name.trim();
+  const tier = homeowner.tierLabel[option.tier];
+  if (name !== '' && name.toLowerCase() !== tier.toLowerCase()) return name;
+  return option.highlights.find((line) => line.trim() !== '') ?? (name === '' ? tier : name);
+}
+
+/** An address with its ZIP held to the state before it ("NE 68111"), so a narrow line never leaves the ZIP alone. */
+export const addressText = (address: string): string => address.replace(/ (\d{5}(?:-\d{4})?)$/, '\u00a0$1');
+
 /** The option the page opens on: the one most people pick (Better), else the middle one. */
 export function defaultOption(options: readonly Option[]): Option | undefined {
   return options.find((option) => option.tier === 'better') ?? options[Math.floor(options.length / 2)];

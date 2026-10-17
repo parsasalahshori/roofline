@@ -24,8 +24,3 @@
   font-weight: 600;
 }
 
-/* Saying "not right now" is not an alarm: the send button is ink, not red and not the company's colour */
-.send[data-variant="primary"] {
-  background: var(--ink);
-  color: var(--ink-inv);
-}

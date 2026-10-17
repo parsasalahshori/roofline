@@ -11,6 +11,8 @@ export const homeowner = {
   pageTitle: 'Your proposal',
   greeting: (firstName: string | null): string => (firstName ? `Hi ${firstName}, here is your proposal` : 'Here is your proposal'),
   forAddress: (address: string): string => `For ${address}`,
+  /** The small line over what an option is, on the sign sheet and the signed card: "Roof · Better". */
+  optionKicker: (tier: string): string => `Roof · ${tier}`,
   /** A plain date, no clock and no pressure: the price is simply good until then. */
   priceGoodUntil: (date: string): string => `Price good until ${date}.`,
   chooseOne: 'Pick the option that fits you best.',
@@ -46,7 +48,8 @@ export const homeowner = {
   stepChoose: 'Choose',
   stepSign: 'Sign',
   stepDone: 'Done',
-  howYouPay: "How you'll pay",
+  /** A read-only summary of the money (the API has no payment choice): the heading does not ask the homeowner to pick. */
+  howYouPay: "What you'll pay",
   payTotal: 'Total',
   payMonthly: 'Or monthly (estimate)',
   payMonthlyAmount: (monthly: string): string => `${monthly}/mo`,
@@ -72,10 +75,14 @@ export const homeowner = {
   declineKeep: 'Go back',
   // End states
   signedTitle: 'Thank you, your proposal is signed',
-  signedBy: (name: string, when: string, option: string): string => `Signed by ${name} on ${when} for ${option}`,
+  /** The date is on the card under it, so it is not said twice. */
+  signedBy: (name: string, tier: string): string => `Signed by ${name} for the ${tier} option.`,
   signedOn: (when: string): string => `Signed ${when}`,
   downloadPdf: 'Download your signed copy',
-  pdfPreparing: 'Your signed copy is being prepared. Check back in a minute.',
+  /** While the page is still asking for it, every few seconds. */
+  pdfPreparing: 'Your signed copy is being prepared. This page updates on its own.',
+  /** After the page has stopped asking (about two minutes). */
+  pdfPreparingLate: 'Your signed copy is still being prepared. Check back in a few minutes.',
   signedStepDone: 'Proposal signed',
   signedStepCopy: 'Your signed copy is saved as a PDF.',
   signedStepNext: 'What happens next',
@@ -83,7 +90,7 @@ export const homeowner = {
   declinedTitle: 'You said not right now',
   declinedBody: (company: string): string => `${company} has been told. You can call any time if you change your mind.`,
   expiredTitle: 'This proposal has expired',
-  expiredBody: (company: string): string => `Call ${company} for a fresh one.`,
+  expiredBody: (company: string): string => `${company} can send you a fresh one.`,
   goneTitle: "This proposal link doesn't work.",
   goneBody: 'Call the company that sent it and they will send a new one.',
   tryAgain: 'Try again',

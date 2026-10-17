@@ -1,5 +1,8 @@
-/* The signing sheet's body: where you are, what you sign, how it is paid, the name, the drawing, the one consent. */
+/* The signing sheet's body: where you are, what you sign, how it is paid, the name, the drawing, the one consent.
+   The sheet is portaled to the body of the document, outside the page, so it sets the ink for a ticked box itself. */
 .body {
+  --checkbox-fill: var(--ink);
+  --checkbox-tick: var(--ink-inv);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -77,7 +80,7 @@
   text-align: right;
 }
 
-/* How it would be paid: two facts side by side, no choice to make here */
+/* What it costs, as facts to read: rows in one sunken panel, with no card edges and no selected state, so nothing on it looks like a choice */
 .pay {
   display: flex;
   flex-direction: column;
@@ -89,36 +92,44 @@
   font: 600 0.8125rem/1.2 var(--f-ui);
 }
 
-.payGrid {
+.payList {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  margin: 0;
+  padding: 2px 14px;
+  border-radius: var(--r-3);
+  background: var(--surface-2);
 }
 
-.payGrid > div {
+.payList > div {
   display: grid;
-  gap: 3px;
-  align-content: start;
-  padding: 10px 12px;
-  border-radius: var(--r-2);
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--line-2);
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  align-items: baseline;
+  padding: 10px 0;
 }
 
-.payGrid small {
-  color: var(--ink-3);
-  font-size: var(--font-size-min);
+.payList > div + div {
+  border-top: 1px solid var(--line);
 }
 
-.payGrid b {
+.payList dt {
+  color: var(--ink-2);
+  font-size: 0.875rem;
+}
+
+.payList dd {
+  margin: 0;
   font: 650 0.9375rem/1.25 var(--f-ui);
   font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
-.payGrid span {
+/* The terms sit under the monthly amount, across the row */
+.payList .payTerms {
+  grid-column: 1 / -1;
   color: var(--ink-3);
-  font-size: var(--font-size-min);
-  font-variant-numeric: tabular-nums;
+  font: 400 var(--font-size-min)/1.3 var(--f-mono);
+  text-align: left;
 }
 
 .clause {
@@ -138,11 +149,6 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-/* A ticked box is ink, not the company's colour */
-.consent input[type="checkbox"] {
-  accent-color: var(--ink);
 }
 
 .note {

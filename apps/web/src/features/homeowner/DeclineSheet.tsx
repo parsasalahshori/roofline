@@ -25,7 +25,7 @@ export function DeclineSheet({ token, open, onClose, onDeclined }: DeclineSheetP
 
   const footer = (
     <>
-      <Button type="button" className={`${styles.action} ${styles.send}`} busy={decline.isPending} onClick={send}>
+      <Button type="button" variant="ink" className={styles.action} busy={decline.isPending} onClick={send}>
         {homeowner.declineSend}
       </Button>
       <Button type="button" variant="ghost" className={styles.action} onClick={onClose}>

@@ -109,7 +109,12 @@ export type ProposalView = {
   declined: { reason: string | null; at: string } | null; taskId: string | null; replacedById: string | null; canEdit: boolean;
 };
 export type PublicProposalView = {
-  companyName: string; companyPhone: string | null; firstName: string | null; address: string; validUntil: string;
+  companyName: string; companyPhone: string | null;
+  /** The company's one brand colour (#rgb or #rrggbb), or null for the default: the colour its instant quote page wears. */
+  accentColor: string | null;
+  /** The company's logo (an https address), or null. */
+  logoUrl: string | null;
+  firstName: string | null; address: string; validUntil: string;
   status: 'open' | 'signed' | 'declined' | 'expired'; basis: MeasurementKind;
   options: { id: string; tier: Tier; name: string; highlights: string[]; inclusions: string[]; totalCents: number; monthlyEstimateCents: number | null;
     financingTerms: FinancingTerms | null }[];

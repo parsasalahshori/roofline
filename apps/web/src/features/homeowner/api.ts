@@ -91,6 +91,16 @@ export function usePublicProposal(token: string): UseQueryResult<PublicProposalV
   });
 }
 
+/**
+ * How many answers the page has had for the proposal so far (the first read counts), so it can tell whether the poll for
+ * the signed copy is still going: it stops after SIGNED_PDF_POLL_LIMIT. Pass the query's `dataUpdatedAt`: reading it in
+ * the page's render is what draws the page again after every answer, even one that changed nothing.
+ */
+export function useProposalReads(token: string, answeredAt: number): number {
+  const client = useQueryClient();
+  return answeredAt === 0 ? 0 : (client.getQueryState(publicProposalKey(token))?.dataUpdateCount ?? 0);
+}
+
 /** POST .../view once per mount of the calling component (StrictMode safe) when `ready` is true. `optionId` is optional. */
 export function useRecordView(token: string, ready: boolean): void {
   // The token this mount has already recorded a view for. A ref survives StrictMode's double effect run, so one mount posts once.

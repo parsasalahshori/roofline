@@ -3,14 +3,14 @@ import { useParams } from 'react-router';
 import { Button, EmptyState, Skeleton } from '@roofline/ui';
 import { homeowner, money } from '../../copy/homeowner.ts';
 import { quote } from '../../copy/quote.ts';
-import { ArrowIcon, CameraIcon, CheckIcon, DocIcon } from '../public/icons.tsx';
+import { ArrowIcon, CameraIcon, CheckIcon, DocIcon, PhoneIcon } from '../public/icons.tsx';
 import { PublicHeader } from '../public/PublicHeader.tsx';
 import { usePublicBrand } from '../public/usePublicBrand.ts';
 import { RoofThumb } from '../quote/RoofThumb.tsx';
 import { SignFlow } from './SignFlow.tsx';
 import { DeclineSheet } from './DeclineSheet.tsx';
-import { usePublicProposal, useRecordView, signedPdfUrl } from './api.ts';
-import { defaultOption, financingOf, plainDate, roofCard } from './facts.ts';
+import { SIGNED_PDF_POLL_LIMIT, usePublicProposal, useProposalReads, useRecordView, signedPdfUrl } from './api.ts';
+import { addressText, defaultOption, financingOf, plainDate, roofCard } from './facts.ts';
 import type { HomeownerView } from './types.ts';
 import styles from './HomeownerPage.module.css';
 
@@ -37,7 +37,9 @@ export function HomeownerPage() {
   const token = params.token ?? '';
   const query = usePublicProposal(token);
   useRecordView(token, query.isSuccess);
-  // The company's one colour, when its payload has one (the API does not send it yet; the default blue stays until it does).
+  const reads = useProposalReads(token, query.dataUpdatedAt);
+  // The company's one colour (null: the default blue stays). It is set on the document root, so the sheets, which are
+  // portaled to the body, wear it too.
   usePublicBrand(query.data ? (query.data as HomeownerView).accentColor : null);
 
   const [pickedId, setPickedId] = useState<string | null>(null);
@@ -116,6 +118,21 @@ export function HomeownerPage() {
   const proposal = query.data as HomeownerView;
   const phone = proposal.companyPhone;
   const callLink = phone ? <Button variant="ghost" className={styles.link} href={`tel:${phone}`}>{homeowner.callUs(proposal.companyName)}</Button> : null;
+  // A page whose only way forward is a call (expired, declined) makes the call its one real action, in the thumb's place at the bottom
+  const callMain = (variant: 'primary' | 'default') =>
+    phone ? (
+      <div className={styles.dock}>
+        <Button
+          size="lg"
+          variant={variant === 'primary' ? undefined : 'ghost'}
+          className={variant === 'primary' ? styles.choose : styles.secondary}
+          href={`tel:${phone}`}
+        >
+          <PhoneIcon size={18} />
+          {homeowner.callUs(proposal.companyName)}
+        </Button>
+      </div>
+    ) : null;
   const chosen = chosenOptionId === null ? null : proposal.options.find((option) => option.id === chosenOptionId) ?? null;
   const picked = proposal.options.find((option) => option.id === pickedId) ?? defaultOption(proposal.options);
   const facts = roofCard(proposal.roof);
@@ -128,7 +145,7 @@ export function HomeownerPage() {
           <>
             <header className={styles.heading}>
               <h1 className={styles.title}>{homeowner.greeting(proposal.firstName)}</h1>
-              <p className={styles.lede}>{homeowner.forAddress(proposal.address)}</p>
+              <p className={styles.lede}>{homeowner.forAddress(addressText(proposal.address))}</p>
             </header>
 
             {facts !== null ? (
@@ -206,13 +223,15 @@ export function HomeownerPage() {
           </>
         ) : null}
 
-        {proposal.status === 'signed' && proposal.signed !== null ? <Signed proposal={proposal} token={token} /> : null}
+        {proposal.status === 'signed' && proposal.signed !== null ? (
+          <Signed proposal={proposal} token={token} polling={reads < SIGNED_PDF_POLL_LIMIT} />
+        ) : null}
 
         {proposal.status === 'declined' ? (
           <section className={styles.end}>
             <h1 className={styles.title}>{homeowner.declinedTitle}</h1>
             <p className={styles.lede}>{homeowner.declinedBody(proposal.companyName)}</p>
-            {callLink}
+            {callMain('default')}
           </section>
         ) : null}
 
@@ -220,7 +239,7 @@ export function HomeownerPage() {
           <section className={styles.end}>
             <h1 className={styles.title}>{homeowner.expiredTitle}</h1>
             <p className={styles.lede}>{homeowner.expiredBody(proposal.companyName)}</p>
-            {callLink}
+            {callMain('primary')}
           </section>
         ) : null}
       </main>
@@ -296,7 +315,7 @@ function OptionPanel({ option, estimate, validUntil, onChoose }: { option: Optio
 }
 
 /** The signed page: a green check, what was signed, a short timeline, and the signed copy to keep. */
-function Signed({ proposal, token }: { proposal: HomeownerView; token: string }) {
+function Signed({ proposal, token, polling }: { proposal: HomeownerView; token: string; polling: boolean }) {
   const signed = proposal.signed;
   if (signed === null) return null;
   const option = proposal.options.find((candidate) => candidate.id === signed.optionId);
@@ -307,13 +326,13 @@ function Signed({ proposal, token }: { proposal: HomeownerView; token: string })
         <CheckIcon size={26} />
       </span>
       <h1 className={styles.title}>{homeowner.signedTitle}</h1>
-      <p className={styles.lede}>{homeowner.signedBy(signed.name, when, option?.name ?? '')}</p>
+      <p className={styles.lede}>{homeowner.signedBy(signed.name, option ? homeowner.tierLabel[option.tier] : '')}</p>
 
       {option ? (
         <div className={styles.record}>
-          <small>{homeowner.tierLabel[option.tier]}</small>
+          <small>{homeowner.optionKicker(homeowner.tierLabel[option.tier])}</small>
           <small className={styles.right}>{homeowner.signedOn(when)}</small>
-          <b>{proposal.address}</b>
+          <b>{addressText(proposal.address)}</b>
           <b className={styles.right}>{money(option.totalCents)}</b>
         </div>
       ) : null}
@@ -325,7 +344,7 @@ function Signed({ proposal, token }: { proposal: HomeownerView; token: string })
           </i>
           <div>
             <b>{homeowner.signedStepDone}</b>
-            <span>{signed.pdfReady ? homeowner.signedStepCopy : homeowner.pdfPreparing}</span>
+            <span>{signed.pdfReady ? homeowner.signedStepCopy : polling ? homeowner.pdfPreparing : homeowner.pdfPreparingLate}</span>
           </div>
         </li>
         <li>

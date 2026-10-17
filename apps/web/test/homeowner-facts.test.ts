@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PublicProposalView } from '@roofline/shared';
 import { homeowner } from '../src/copy/homeowner.ts';
-import { defaultOption, financingOf, formatApr, plainDate, roofCard } from '../src/features/homeowner/facts.ts';
+import { addressText, defaultOption, financingOf, formatApr, plainDate, productLine, roofCard } from '../src/features/homeowner/facts.ts';
 
 /*
  * What the proposal page may say, from what the proposal carries: the plain validity date, the financing line (monthly,
@@ -122,5 +122,34 @@ describe('defaultOption', () => {
     expect(defaultOption([good, best])?.id).toBe('x');
     expect(defaultOption([good])?.id).toBe('g');
     expect(defaultOption([])).toBeUndefined();
+  });
+});
+
+describe('productLine', () => {
+  it("is the option's own name when it says more than the tier does", () => {
+    expect(productLine(option({ name: 'Architectural + protection', highlights: ['Ice and water shield'] }))).toBe('Architectural + protection');
+  });
+
+  it('is the first thing the option promises when its name is only its tier, so the tier is never printed twice', () => {
+    expect(productLine(option({ name: 'Better', highlights: ['', 'Architectural shingles, 50-year maker warranty', 'Ridge vent'] }))).toBe('Architectural shingles, 50-year maker warranty');
+    // Case does not matter, and neither do spaces round the name
+    expect(productLine(option({ name: '  better ', highlights: ['Upgraded underlayment'] }))).toBe('Upgraded underlayment');
+  });
+
+  it('falls back to the name, then the tier, when there is nothing to say', () => {
+    expect(productLine(option({ name: 'Better', highlights: [] }))).toBe('Better');
+    expect(productLine(option({ name: '', highlights: [] }))).toBe('Better');
+  });
+});
+
+describe('addressText', () => {
+  it('holds the ZIP to the state before it, so a narrow line never leaves it alone', () => {
+    expect(addressText('193 Ames Ave, Omaha, NE 68111')).toBe('193 Ames Ave, Omaha, NE\u00a068111');
+    expect(addressText('193 Ames Ave, Omaha, NE 68111-1234')).toBe('193 Ames Ave, Omaha, NE\u00a068111-1234');
+  });
+
+  it('leaves an address that does not end in a ZIP as it came', () => {
+    expect(addressText('193 Ames Ave, Omaha')).toBe('193 Ames Ave, Omaha');
+    expect(addressText('')).toBe('');
   });
 });
