@@ -34,7 +34,7 @@ export function JobsPage() {
         <>
           {canExport ? (
             <Button href="/api/export/jobs.csv" variant="default" {...{ download: true }}>
-              <Icon name="upload" size={16} />
+              <Icon name="download" size={16} />
               {jobs.export}
             </Button>
           ) : null}

@@ -87,6 +87,23 @@ describe('Button', () => {
     expect(screen.getByRole('button', { name: 'Go' })).toHaveAttribute('data-size', 'md');
   });
 
+  it('is flush on a side only when asked to be', () => {
+    render(
+      <>
+        <Button variant="ghost" flush="start">
+          Add
+        </Button>
+        <Button variant="ghost" flush="end">
+          Remove
+        </Button>
+        <Button variant="ghost">Plain</Button>
+      </>,
+    );
+    expect(screen.getByRole('button', { name: 'Add' })).toHaveAttribute('data-flush', 'start');
+    expect(screen.getByRole('button', { name: 'Remove' })).toHaveAttribute('data-flush', 'end');
+    expect(screen.getByRole('button', { name: 'Plain' })).not.toHaveAttribute('data-flush');
+  });
+
   it('is disabled and aria-busy while busy, and ignores clicks', async () => {
     const onClick = vi.fn();
     render(

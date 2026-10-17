@@ -251,7 +251,7 @@ export function CustomersPage() {
           {canExport ? (
             // A plain download link. Button passes the download attribute through to the anchor.
             <Button href="/api/export/customers.csv" variant="default" {...{ download: true }}>
-              <Icon name="upload" size={16} />
+              <Icon name="download" size={16} />
               {customers.list.download}
             </Button>
           ) : null}

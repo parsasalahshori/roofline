@@ -7,8 +7,9 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
+  --button-pad: 14px;
   min-height: 36px;
-  padding: 0 14px;
+  padding: 0 var(--button-pad);
   border: 1px solid transparent;
   border-radius: var(--r-2);
   background: transparent;
@@ -25,14 +26,23 @@
 }
 
 .button[data-size="sm"] {
+  --button-pad: 10px;
   min-height: 30px;
-  padding: 0 10px;
 }
 
 .button[data-size="lg"] {
+  --button-pad: 20px;
   min-height: 44px;
-  padding: 0 20px;
   font-size: var(--font-size-body);
+}
+
+/* Flush: the box reaches out past the content edge by its padding and its 1px border, so the words sit on the edge */
+.button[data-flush="start"] {
+  margin-inline-start: calc(-1 * (var(--button-pad) + 1px));
+}
+
+.button[data-flush="end"] {
+  margin-inline-end: calc(-1 * (var(--button-pad) + 1px));
 }
 
 .button[data-variant="primary"] {

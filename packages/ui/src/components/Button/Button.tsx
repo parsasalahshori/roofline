@@ -23,12 +23,23 @@ export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   target?: HTMLAttributeAnchorTarget;
   /** For a link: what the page it opens may know about this one ("noopener noreferrer" for another site). */
   rel?: string;
+  /**
+   * For a quiet button that stands alone under a field or beside text ("+ Add another phone"): pulls the box out by its
+   * own padding on that side, so its words line up with the content edge instead of sitting one padding inside it.
+   */
+  flush?: 'start' | 'end';
   /** The rendered button, or the anchor when there is an href. */
   ref?: Ref<HTMLButtonElement | HTMLAnchorElement>;
 };
 
-export function Button({ variant = 'primary', size = 'md', className, ...rest }: ButtonProps) {
+export function Button({ variant = 'primary', size = 'md', flush, className, ...rest }: ButtonProps) {
   return (
-    <Pressable {...rest} className={cx(styles.button, className)} data-variant={variant} data-size={size} />
+    <Pressable
+      {...rest}
+      className={cx(styles.button, className)}
+      data-variant={variant}
+      data-size={size}
+      data-flush={flush}
+    />
   );
 }
