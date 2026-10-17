@@ -91,6 +91,7 @@ type JobSeed = {
   rep: 'maddie' | 'caleb' | null;
   /** How long ago the customer and job were made. */
   daysAgo: number;
+  /** The words of the next step, without its day: the card says "Today" in a tag when it is due today, so the text does not. */
   nextStep?: string;
   /** 'today' or 'tomorrow' (the company's day) for the next step's due date. */
   due?: 'today' | 'tomorrow';
@@ -105,8 +106,8 @@ export const WINCHOICE_JOBS: readonly JobSeed[] = [
   { name: 'Sheila Moody', phone: '+15015550204', address: '5411 W 12th St', city: 'Little Rock', zip: '72204', location: [-92.3552, 34.7284], stage: 'won', valueCents: 1_420_000, rep: 'caleb', daysAgo: 9, nextStep: 'Order the windows', due: 'today' },
   { name: 'Gary Voss', phone: '+15015550205', address: '2208 Willow St', city: 'North Little Rock', zip: '72116', location: [-92.2641, 34.7693], stage: 'won', valueCents: 2_260_000, rep: 'maddie', daysAgo: 12, nextStep: 'Confirm the install day', due: 'tomorrow' },
   { name: 'Janet Holloway', phone: '+15015550206', address: '1105 Main St', city: 'North Little Rock', zip: '72114', location: [-92.2654, 34.7738], stage: 'installed', valueCents: 960_000, rep: 'caleb', daysAgo: 26 },
-  { name: 'Curtis Beal', phone: '+15015550207', address: '1520 Donaghey Ave', city: 'Conway', zip: '72032', location: [-92.4478, 35.0884], stage: 'inspection', valueCents: null, rep: 'maddie', daysAgo: 2, nextStep: 'Window visit today at 10:30', due: 'today' },
-  { name: 'Alma Reyes', phone: '+15015550208', address: '905 Oak St', city: 'Conway', zip: '72032', location: [-92.4421, 35.0857], stage: 'inspection', valueCents: null, rep: 'caleb', daysAgo: 3, nextStep: 'Window visit today at 1:00', due: 'today' },
+  { name: 'Curtis Beal', phone: '+15015550207', address: '1520 Donaghey Ave', city: 'Conway', zip: '72032', location: [-92.4478, 35.0884], stage: 'inspection', valueCents: null, rep: 'maddie', daysAgo: 2, nextStep: 'Window visit at 10:30', due: 'today' },
+  { name: 'Alma Reyes', phone: '+15015550208', address: '905 Oak St', city: 'Conway', zip: '72032', location: [-92.4421, 35.0857], stage: 'inspection', valueCents: null, rep: 'caleb', daysAgo: 3, nextStep: 'Window visit at 1:00', due: 'today' },
   { name: 'Dwight Cannon', phone: '+15015550209', address: '112 Odom Blvd', city: 'Maumelle', zip: '72113', location: [-92.4109, 34.8662], stage: 'lead', valueCents: null, rep: null, daysAgo: 0, nextStep: 'Call about their instant quote', due: 'today' },
   { name: 'Tamika Rhodes', phone: '+15015550210', address: '2400 E Kiehl Ave', city: 'Sherwood', zip: '72120', location: [-92.2204, 34.8149], stage: 'lead', valueCents: null, rep: null, daysAgo: 1 },
   { name: 'Walt Ingram', phone: '+15015550211', address: '1301 Military Rd', city: 'Benton', zip: '72015', location: [-92.5869, 34.5645], stage: 'lead', valueCents: null, rep: null, daysAgo: 2 },

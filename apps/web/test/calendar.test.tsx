@@ -998,3 +998,135 @@ describe('where the grid opens', () => {
     }
   });
 });
+
+describe('where the grid starts on a phone', () => {
+  const NOON_NOV_1 = new Date('2026-11-01T18:00:00.000Z');
+
+  /** Runs a body with the clock fixed (the grid reads the day's clock), and puts the real one back. */
+  async function atClock(clock: Date, body: () => Promise<void>) {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(clock);
+    try {
+      await body();
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  const gridOf = async () => (await screen.findByTestId('time-grid')).firstElementChild as HTMLElement;
+
+  it('pulls the hours up so the first visit is the first thing under the controls, and says which hours it left out', async () => {
+    await atClock(NOON_NOV_1, async () => {
+      // 9:00 AM Chicago is row 6; the grid starts a row above it (7:30 would be row 3: the first visit is 9:00)
+      renderCalendar(
+        '/calendar?date=2026-11-04',
+        { appointments: [makeAppointment({ id: 'a1', startsAt: '2026-11-04T15:00:00.000Z', endsAt: '2026-11-04T16:00:00.000Z' })] },
+        { phone: true },
+      );
+      await screen.findByTestId('appt-a1');
+      const grid = await gridOf();
+      expect(grid).toHaveAttribute('data-lead-rows', '5');
+      // The rows before 8:30 AM are not drawn: the first slot is 8:30, the visit sits a row below it, and it still says it is row 6
+      expect(screen.queryByTestId('slot-2026-11-04-08:00')).toBeNull();
+      expect(screen.getByTestId('slot-2026-11-04-08:30')).toBeInTheDocument();
+      const visit = screen.getByTestId('appt-a1');
+      expect(visit).toHaveAttribute('data-row-start', '6');
+      expect(visit.style.top).toBe('calc(1 * var(--row-h))');
+      // The hours before are named on the row above the grid: 6:00 AM, to the start of the grid at 8:30 AM
+      expect(screen.getByRole('button', { name: calendar.earlierHours('6:00 AM', '8:30 AM') })).toBeInTheDocument();
+    });
+  });
+
+  it('brings the hours back on a tap, and the row goes', async () => {
+    await atClock(NOON_NOV_1, async () => {
+      const { user } = renderCalendar(
+        '/calendar?date=2026-11-04',
+        { appointments: [makeAppointment({ id: 'a1', startsAt: '2026-11-04T15:00:00.000Z', endsAt: '2026-11-04T16:00:00.000Z' })] },
+        { phone: true },
+      );
+      await screen.findByTestId('appt-a1');
+      await user.click(screen.getByTestId('earlier-hours'));
+      expect(await gridOf()).not.toHaveAttribute('data-lead-rows');
+      expect(screen.queryByTestId('earlier-hours')).toBeNull();
+      // The first row of the window is on the grid again, and the visit is back at its own row
+      expect(screen.getByTestId('slot-2026-11-04-06:00')).toBeInTheDocument();
+      expect(screen.getByTestId('appt-a1').style.top).toBe('calc(6 * var(--row-h))');
+    });
+  });
+
+  it('follows the days shown: another day with an earlier visit starts the grid earlier, so nothing hides above it', async () => {
+    await atClock(NOON_NOV_1, async () => {
+      const { user } = renderCalendar(
+        '/calendar?date=2026-11-04',
+        {
+          appointments: [
+            makeAppointment({ id: 'late', startsAt: '2026-11-04T18:00:00.000Z', endsAt: '2026-11-04T19:00:00.000Z' }),
+            makeAppointment({ id: 'early', startsAt: '2026-11-05T13:00:00.000Z', endsAt: '2026-11-05T14:00:00.000Z' }),
+          ],
+        },
+        { phone: true },
+      );
+      // Wednesday's only visit is at noon (row 12): the grid starts a row above it
+      await screen.findByTestId('appt-late');
+      expect(await gridOf()).toHaveAttribute('data-lead-rows', '11');
+      // Thursday's first visit is at 7:00 AM (row 2): a tap on Thursday moves the start up with it, so that visit is not above the grid
+      await user.click(screen.getByRole('button', { name: 'Thu, Nov 5' }));
+      await screen.findByTestId('appt-early');
+      expect(await gridOf()).toHaveAttribute('data-lead-rows', '1');
+      expect(screen.getByRole('button', { name: calendar.earlierHours('6:00 AM', '6:30 AM') })).toBeInTheDocument();
+    });
+  });
+
+  it('draws the part of a busy block that is in view and leaves out one that ended above the start', async () => {
+    await atClock(NOON_NOV_1, async () => {
+      // The first visit is 10:00 AM (row 8): the grid starts at 9:30 (row 7). Busy 7:00-9:00 is above it; busy 9:00-11:00 runs into it
+      renderCalendar(
+        '/calendar?date=2026-11-04',
+        {
+          appointments: [makeAppointment({ id: 'a1', startsAt: '2026-11-04T16:00:00.000Z', endsAt: '2026-11-04T17:00:00.000Z' })],
+          busy: [
+            { userId: 'u2', start: '2026-11-04T13:00:00.000Z', end: '2026-11-04T15:00:00.000Z', allDay: false },
+            { userId: 'u2', start: '2026-11-04T15:00:00.000Z', end: '2026-11-04T17:00:00.000Z', allDay: false },
+          ],
+        },
+        { phone: true },
+      );
+      await screen.findByTestId('appt-a1');
+      expect(await gridOf()).toHaveAttribute('data-lead-rows', '7');
+      expect(screen.queryByTestId('busy-0')).toBeNull();
+      const running = screen.getByTestId('busy-1');
+      // Its own rows are 6 to 9; the part in view starts at the grid's first row and is three rows tall
+      expect(running).toHaveAttribute('data-row-start', '6');
+      expect(running.style.top).toBe('calc(0 * var(--row-h))');
+      expect(running.style.height).toBe('calc(3 * var(--row-h) - 2px)');
+    });
+  });
+
+  it('leaves the whole window when the day has no visit and is not today', async () => {
+    await atClock(NOON_NOV_1, async () => {
+      renderCalendar('/calendar?date=2026-11-04', {}, { phone: true });
+      const grid = await gridOf();
+      expect(grid).not.toHaveAttribute('data-lead-rows');
+      expect(screen.queryByTestId('earlier-hours')).toBeNull();
+    });
+  });
+
+  it('starts a few rows above the clock on today when there is no visit', async () => {
+    // Sunday Nov 1 2:00 PM CST is 20:00Z; the clock's row is (840 - 360) / 30 = 16, so the grid starts three rows above it
+    await atClock(new Date('2026-11-01T20:00:00.000Z'), async () => {
+      renderCalendar('/calendar?date=2026-11-01', {}, { phone: true });
+      expect(await gridOf()).toHaveAttribute('data-lead-rows', '13');
+    });
+  });
+
+  it('is the same grid on a desktop, which scrolls inside its panel: nothing is pulled up and there is no row for earlier hours', async () => {
+    await atClock(NOON_NOV_1, async () => {
+      renderCalendar('/calendar?view=week&date=2026-11-02', {
+        appointments: [makeAppointment({ id: 'a1', startsAt: '2026-11-04T15:00:00.000Z', endsAt: '2026-11-04T16:00:00.000Z' })],
+      });
+      await screen.findByTestId('appt-a1');
+      expect(await gridOf()).not.toHaveAttribute('data-lead-rows');
+      expect(screen.queryByTestId('earlier-hours')).toBeNull();
+    });
+  });
+});

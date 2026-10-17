@@ -14,6 +14,11 @@ export type GridViewProps = {
   people: CalendarPerson[];
   showCanceled: boolean;
   now: Date;
+  /**
+   * The page scrolls through the grid and the grid does not (a phone's day): the grid starts where the day's work does, a row above
+   * the first visit, and the hours before it are one tap away. Left out, the grid is its own scroll box and opens there by scrolling.
+   */
+  pageScrolls?: boolean;
   /** Called with the ISO instant of the clicked empty slot. */
   onSlot: (startIso: string) => void;
   onOpen: (appointmentId: string) => void;

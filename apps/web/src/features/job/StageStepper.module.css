@@ -94,9 +94,13 @@
   white-space: nowrap;
 }
 
+/* Lost is a way out of the five stages, not a sixth: no bar over it, and a hairline sets it apart from the row */
 .steps .lostButton {
   align-self: end;
   min-height: 36px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line-2);
+  border-radius: 0 var(--r-2) var(--r-2) 0;
   color: var(--ink-3);
 }
 

@@ -420,6 +420,14 @@ describe('Appointment form', () => {
     expect(await screen.findByLabelText(appointments.customerLabel)).toHaveValue('');
   });
 
+  it('says the customer line and the notes are optional: Save asks only for the day and the time', async () => {
+    setup();
+    renderAt(<AppointmentForm onDone={vi.fn()} />, '/appointments/new?kind=other');
+    expect(await screen.findByLabelText('Customer or job (optional)')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Notes (optional)' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Notes (optional)' })).toBeInTheDocument();
+  });
+
   it('Cancel goes back to the calendar', async () => {
     setup();
     renderAt(<AppointmentForm onDone={vi.fn()} />, '/appointments/new?kind=other');

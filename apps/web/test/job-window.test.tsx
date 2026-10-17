@@ -208,6 +208,18 @@ describe('job window', () => {
     expect(api.count('PATCH /api/jobs/j1')).toBe(0);
   });
 
+  it('Lost is drawn as a way out of the five stages and not a sixth: it has no bar and carries the glyph of an action', async () => {
+    signedIn(view());
+    renderJob();
+
+    const steps = await stepper();
+    // Five segments with a bar each; Lost is a button after them, outside every segment, with a glyph (decoration: the name is the word)
+    expect(steps.querySelectorAll('[data-step]')).toHaveLength(5);
+    const lost = within(steps).getByRole('button', { name: jobs.stage.lost });
+    expect(lost.closest('[data-step]')).toBeNull();
+    expect(lost.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+  });
+
   it('Book inspection link URL', async () => {
     signedIn(view());
     renderJob();

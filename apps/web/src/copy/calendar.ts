@@ -17,6 +17,8 @@ export const calendar = {
   gridLabel: 'Calendar time grid',
   /** The row of days on a phone. */
   dayStripLabel: 'Pick a day',
+  /** On a phone the grid starts at the day's first visit; this brings back the hours before it ("Show earlier hours (6:00 AM to 9:30 AM)"). */
+  earlierHours: (from: string, to: string) => `Show earlier hours (${from} to ${to})`,
   loadMore: 'Load more',
   tryAgain: 'Try again',
   empty: 'Nothing scheduled.',

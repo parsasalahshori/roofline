@@ -105,7 +105,8 @@ export const job = {
 
   proposalsTitle: 'Proposals',
   proposalsEmpty: 'No proposals yet.',
-  proposalsEmptyBody: 'Measure the roof, then send a Good, Better and Best proposal.',
+  /** For a roofing job and a windows job alike: what is measured depends on the company's trade. */
+  proposalsEmptyBody: 'Measure the home, then send a Good, Better and Best proposal.',
   tiersLabel: 'Options in this proposal',
   recommended: 'Recommended',
   /** The tag on a proposal the customer has opened: "Opened 2×". */

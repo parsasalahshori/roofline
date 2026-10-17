@@ -76,6 +76,11 @@
   white-space: nowrap;
 }
 
+/* A customer with no phone: a quiet dash where the number would be */
+.noPhone {
+  color: var(--ink-3);
+}
+
 /* The tags wrap inside their cell or card: a long one grows taller instead of running out of it */
 .tags {
   display: flex;

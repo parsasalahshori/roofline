@@ -7,6 +7,7 @@ import { errors } from '../../copy/errors.ts';
 import { WINDOW_COPY } from '../../copy/rail.ts';
 import { DetailPage } from '../jobs/DetailPage.tsx';
 import { AddressFields, EMPTY_ADDRESS, type AddressValue } from './AddressFields.tsx';
+import { FormActions } from './FormActions.tsx';
 import { useMe } from '../../api/hooks.ts';
 import { useCreateCustomer, useCreateProperty, type CustomerInput, type CustomerRecord } from './api.ts';
 import styles from './NewCustomer.module.css';
@@ -279,14 +280,19 @@ export function NewCustomer() {
           <Checkbox checked={textConsent} onChange={setTextConsent} label={create.newCustomer.textConsent} disabled={locked} />
         )}
 
-        <div className={styles.actions}>
-          <Button type="submit" variant="primary" className={styles.save} busy={pending}>
-            {pending ? create.saving : create.newCustomer.save}
-          </Button>
-          <Button href="/customers" variant="quiet">
-            {create.newCustomer.cancel}
-          </Button>
-        </div>
+        <FormActions
+          className={styles.actions}
+          save={
+            <Button type="submit" variant="primary" className={styles.save} busy={pending}>
+              {pending ? create.saving : create.newCustomer.save}
+            </Button>
+          }
+          cancel={
+            <Button href="/customers" variant="ghost">
+              {create.newCustomer.cancel}
+            </Button>
+          }
+        />
       </form>
     </DetailPage>
   );

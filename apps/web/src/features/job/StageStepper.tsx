@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { JobStage, JobView } from '@roofline/shared';
-import { Button, Tag } from '@roofline/ui';
+import { Button, Icon, Tag } from '@roofline/ui';
 import { job as copy } from '../../copy/job.ts';
 import { jobs } from '../../copy/jobs.ts';
 import { useIsPhone } from '../../shell/useIsPhone.ts';
@@ -16,8 +16,9 @@ export type StageStepperProps = { job: JobView['job']; canEdit: boolean };
 /**
  * The job's stage as five segments, each a bar over its name: the stages behind it dark, the one it is in drawn in that
  * stage's colour with the days it has been there, the ones ahead pale. A name is a button: it moves the job there. Won
- * without a value, and Lost, open the sheet that asks for it. Installed is only reachable from Won. A phone has no Lost
- * button here: the stage menu in its bar has it, with the L key.
+ * without a value, and Lost, open the sheet that asks for it. Installed is only reachable from Won. Lost is a way out of the
+ * pipeline and not a sixth stage: it has no bar, and stands apart from the five at the end of the row behind a hairline, with
+ * the glyph of an action. A phone has no Lost button here: the stage menu in its bar has it, with the L key.
  */
 export function StageStepper({ job, canEdit }: StageStepperProps) {
   const move = useMoveJob();
@@ -81,6 +82,7 @@ export function StageStepper({ job, canEdit }: StageStepperProps) {
             disabled={!canEdit || move.isPending}
             onClick={() => void choose('lost')}
           >
+            <Icon name="x" size={16} />
             {jobs.stage.lost}
           </Button>
         )}
