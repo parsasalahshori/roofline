@@ -310,6 +310,18 @@ describe('agents waiting', () => {
     expect(rows.find((i) => i.id === attention.taskId)?.href).toBe(`/jobs/${repJob}`);
   });
 
+  test('waiting: an attention task with no job (a storm plan) opens its own review for the owner and the office', async () => {
+    const plan = await newTask(t, 'a', { title: 'Storm plan for Bellevue', steps: NOOP });
+    await setTask(t, 'a', plan.taskId, { status: 'needs_attention' });
+
+    for (const who of ['owner', 'office'] as const) {
+      const row = (await waitingFor(who)).find((i) => i.id === plan.taskId);
+      expect(row).toMatchObject({ kind: 'attention', href: `/approvals/${plan.taskId}` });
+    }
+    // A rep never sees it: a task with no job is outside their scope
+    expect((await waitingFor('rep')).some((i) => i.id === plan.taskId)).toBe(false);
+  });
+
   test('expired drafts are not waiting', async () => {
     const { taskId } = await newTask(t, 'a', { title: 'Old plan', steps: NOOP });
     await setTask(t, 'a', taskId, { expiresAt: new Date(NOW.getTime() - MINUTE) });
