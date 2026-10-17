@@ -65,6 +65,9 @@ export const homeownerMeasure = {
   cardUploadFailed: "We couldn't send that photo. Please try again.",
   cardTooBig: 'That photo is too large. Please take it again with a normal camera setting.',
   cardCornerNames: ['top left', 'top right', 'bottom right', 'bottom left'] as const,
+  cardFind: 'Tap the middle of the card. We zoom in so you can mark its corners.',
+  cardZoomIn: 'Zoom in',
+  cardZoomOut: 'Zoom out',
   cardTapCard: (corner: string): string => `Tap the ${corner} corner of the card. Tap the tip of the rounded corner.`,
   cardTapFrame: (corner: string): string => `Tap the ${corner} corner of the window frame.`,
   cardPlaced: (n: number, of: number): string => `${n} of ${of} corners`,
@@ -113,7 +116,7 @@ export const homeownerMeasure = {
 
   // Quote
   quoteTitle: 'Your window price',
-  quoteIntro: 'Installed, with no surprises. Pick a level to ask about when we call.',
+  quoteIntro: 'Installed, with no surprises. Ask us about any of these when we call.',
   quoteTotal: (money: string): string => `${money} installed`,
   quoteEstimated: (n: number): string => `Includes ${n} ${n === 1 ? 'window' : 'windows'} we estimated from your address.`,
   quoteMeasured: (n: number): string => `Based on ${n} ${n === 1 ? 'window' : 'windows'} you measured.`,

@@ -53,6 +53,7 @@
   --ratio: 1;
 
   position: relative;
+  overflow: hidden;
   width: min(100%, calc(62dvh * var(--ratio)));
   user-select: none;
   touch-action: none;
@@ -232,4 +233,40 @@
   margin-top: 4px;
   font-size: 1.375rem;
   font-weight: 750;
+}
+
+/* The photo, as large as the zoom makes it, moved so the zoomed part is what shows in the frame */
+.tapInner {
+  position: absolute;
+}
+
+/* While corners are still being placed, a tap near a placed corner places the next one instead of grabbing that one */
+.tapFrame[data-placing="true"] button {
+  pointer-events: none;
+}
+
+.zoomRow {
+  display: flex;
+  gap: 8px;
+}
+
+/* The small buttons under the photo: outlined, 44px high, sharing the row */
+.ctl {
+  flex: 1 1 0;
+  min-height: 44px;
+  border: 1px solid var(--ds-hairline-strong, #c3cbd1) !important;
+}
+
+/* Everything that can be tapped on the measuring page is at least 44px high (the shared controls start at 40px) */
+.touch button,
+.touch a[href],
+.touch select,
+.touch input:not([type="checkbox"]):not([type="radio"]) {
+  min-height: 44px;
+}
+
+.touch a[href] {
+  display: inline-flex;
+  align-items: center;
+  min-width: 44px;
 }

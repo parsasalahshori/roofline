@@ -7,6 +7,7 @@ import { quoteApi, QuoteApiError } from './api.ts';
 import { Letterhead } from './Letterhead.tsx';
 import { MeasureFlow } from './measure/MeasureFlow.tsx';
 import { QrCode } from './QrCode.tsx';
+import styles from './measure/MeasureFlow.module.css';
 import q from './QuotePage.module.css';
 
 /**
@@ -62,7 +63,7 @@ export function MeasurePage({ slug }: { slug: string }) {
   const backHref = `/q/${slug}`;
 
   return (
-    <div className={q.page} style={style} data-measure-device={device}>
+    <div className={`${q.page} ${styles.touch}`} style={style} data-measure-device={device}>
       <Letterhead logoUrl={c.logoUrl} companyName={c.companyName} phone={c.phone} />
       {device === 'iphone' && app !== null && !anyway ? (
         <main className={q.column}>

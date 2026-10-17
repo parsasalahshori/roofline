@@ -14,9 +14,11 @@ const clampPoint = (x: number, y: number, w: number, h: number): Pt => [Math.rou
 
 /**
  * A photo to tap corners on: each tap on the photo places the next corner (the finger can keep moving it, with a
- * magnified view), and each placed corner can be dragged or nudged with the arrow keys afterwards. `locked` shows the
- * corners of an earlier step (the card) without letting them move. The coordinates are in the photo's own pixels
- * (`width` x `height` as the server displays it).
+ * magnified view), and each placed corner can be dragged or nudged with the arrow keys afterwards. `view` zooms the
+ * photo to a part of it (a small card needs it: its corners are only a few dozen pixels apart on screen). `onPick`
+ * turns a tap into a plain pick of a spot (no corner is placed). `locked` shows the corners of an earlier step (the
+ * card) without letting them move. The coordinates are in the photo's own pixels (`width` x `height` as the server
+ * displays it).
  */
 export function TapPhoto({
   src,
@@ -26,6 +28,8 @@ export function TapPhoto({
   onChange,
   max = 4,
   kind,
+  view = null,
+  onPick,
   locked = [],
   cornerLabel,
   areaLabel,
@@ -38,6 +42,10 @@ export function TapPhoto({
   max?: number;
   /** 'card' draws in blue and 'frame' in yellow (the staff measuring colours). */
   kind: 'card' | 'frame';
+  /** Zoom (1 = the whole photo) and the photo point the view is centred on; null shows it all. */
+  view?: { zoom: number; cx: number; cy: number } | null;
+  /** When given, a tap calls this with the spot instead of placing a corner. */
+  onPick?: ((p: Pt) => void) | undefined;
   /** Corners already fixed from an earlier step, drawn but not movable. */
   locked?: readonly Pt[];
   cornerLabel: (i: number) => string;
@@ -46,11 +54,16 @@ export function TapPhoto({
   const frameRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<{ i: number; x: number; y: number; fw: number; fh: number } | null>(null);
   const which = kind === 'card' ? 'paper' : 'window';
+  const zoom = Math.max(1, view?.zoom ?? 1);
+  const vw = width / zoom;
+  const vh = height / zoom;
+  const x0 = Math.min(width - vw, Math.max(0, (view?.cx ?? width / 2) - vw / 2));
+  const y0 = Math.min(height - vh, Math.max(0, (view?.cy ?? height / 2) - vh / 2));
 
   const toPhoto = (e: { clientX: number; clientY: number }): Pt => {
     const r = frameRef.current?.getBoundingClientRect();
     if (!r || r.width === 0 || r.height === 0) return [0, 0];
-    return clampPoint(((e.clientX - r.left) / r.width) * width, ((e.clientY - r.top) / r.height) * height, width, height);
+    return clampPoint(x0 + ((e.clientX - r.left) / r.width) * vw, y0 + ((e.clientY - r.top) / r.height) * vh, width, height);
   };
   const grab = (e: ReactPointerEvent) => {
     try {
@@ -66,7 +79,13 @@ export function TapPhoto({
 
   // A tap on the photo places the next corner and starts dragging it
   const onDown = (e: ReactPointerEvent) => {
-    if (e.button !== 0 || points.length >= max) return;
+    if (e.button !== 0) return;
+    if (onPick !== undefined) {
+      e.preventDefault();
+      onPick(toPhoto(e));
+      return;
+    }
+    if (points.length >= max) return;
     e.preventDefault();
     grab(e);
     const [x, y] = toPhoto(e);
@@ -106,11 +125,11 @@ export function TapPhoto({
         className={pm.loupe}
         role="img"
         aria-label={copy.cardLoupe}
-        data-side={drag.x < width / 2 ? 'right' : 'left'}
+        data-side={drag.x < x0 + vw / 2 ? 'right' : 'left'}
         style={{
           backgroundImage: `url("${src}")`,
-          backgroundSize: `${drag.fw * LOUPE_ZOOM}px ${drag.fh * LOUPE_ZOOM}px`,
-          backgroundPosition: `${LOUPE_PX / 2 - (drag.x / width) * drag.fw * LOUPE_ZOOM}px ${LOUPE_PX / 2 - (drag.y / height) * drag.fh * LOUPE_ZOOM}px`,
+          backgroundSize: `${drag.fw * zoom * LOUPE_ZOOM}px ${drag.fh * zoom * LOUPE_ZOOM}px`,
+          backgroundPosition: `${LOUPE_PX / 2 - (drag.x / width) * drag.fw * zoom * LOUPE_ZOOM}px ${LOUPE_PX / 2 - (drag.y / height) * drag.fh * zoom * LOUPE_ZOOM}px`,
         }}
       >
         <span className={pm.cross} data-which={which} aria-hidden="true" />
@@ -127,31 +146,38 @@ export function TapPhoto({
         aria-label={areaLabel}
         data-tap-frame=""
         data-placed={points.length}
+        data-placing={onPick === undefined && points.length < max ? 'true' : undefined}
+        data-zoom={zoom}
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={() => setDrag(null)}
         onPointerCancel={() => setDrag(null)}
       >
-        <img className={pm.photo} src={src} alt="" draggable={false} />
-        <svg className={pm.quads} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden="true">
-          {locked.length >= 3 ? <polygon className={pm.paper} points={poly(locked)} vectorEffect="non-scaling-stroke" /> : null}
-          {points.length >= 2 ? <polygon className={kind === 'card' ? pm.paper : pm.window} points={poly(points)} vectorEffect="non-scaling-stroke" /> : null}
-        </svg>
-        {points.map(([x, y], i) => (
-          <Button
-            key={i}
-            variant="ghost"
-            className={pm.handle}
-            data-which={which}
-            data-corner={i}
-            style={{ left: pct(x, width), top: pct(y, height) }}
-            aria-label={cornerLabel(i)}
-            onPointerDown={onHandleDown(i)}
-            onKeyDown={onKey(i)}
-          >
-            <span className={pm.dot} aria-hidden="true" />
-          </Button>
-        ))}
+        <div
+          className={styles.tapInner}
+          style={{ width: `${zoom * 100}%`, height: `${zoom * 100}%`, left: `${-(x0 / vw) * 100}%`, top: `${-(y0 / vh) * 100}%` }}
+        >
+          <img className={pm.photo} src={src} alt="" draggable={false} />
+          <svg className={pm.quads} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden="true">
+            {locked.length >= 3 ? <polygon className={pm.paper} points={poly(locked)} vectorEffect="non-scaling-stroke" /> : null}
+            {points.length >= 2 ? <polygon className={kind === 'card' ? pm.paper : pm.window} points={poly(points)} vectorEffect="non-scaling-stroke" /> : null}
+          </svg>
+          {points.map(([x, y], i) => (
+            <Button
+              key={i}
+              variant="ghost"
+              className={pm.handle}
+              data-which={which}
+              data-corner={i}
+              style={{ left: pct(x, width), top: pct(y, height) }}
+              aria-label={cornerLabel(i)}
+              onPointerDown={onHandleDown(i)}
+              onKeyDown={onKey(i)}
+            >
+              <span className={pm.dot} aria-hidden="true" />
+            </Button>
+          ))}
+        </div>
         {loupe}
       </div>
     </div>

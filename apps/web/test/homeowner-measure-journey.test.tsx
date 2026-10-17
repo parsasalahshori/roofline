@@ -83,8 +83,11 @@ describe('the homeowner measures a window in the browser, with a bank card', () 
     await screen.findByRole('heading', { name: copy.measureTitle });
     await user.upload(screen.getByLabelText(copy.cardPhotoLabel), new File(['jpeg'], 'w.jpg', { type: 'image/jpeg' }));
     const frame = await screen.findByRole('group', { name: copy.cardPhotoArea });
-    expect(screen.getByText(copy.cardTapCard(copy.cardCornerNames[0]))).toBeInTheDocument();
-    for (const [x, y] of [[100, 150], [130, 150], [130, 170], [100, 170]] as const) tap(frame, x, y);
+    // First the middle of the card (the view zooms to 5x there: 600 x 800 photo pixels around it), then its four corners
+    expect(screen.getByText(copy.cardFind)).toBeInTheDocument();
+    tap(frame, 115, 160);
+    expect(await screen.findByText(copy.cardTapCard(copy.cardCornerNames[0]))).toBeInTheDocument();
+    for (const [x, y] of [[75, 150], [225, 150], [225, 250], [75, 250]] as const) tap(screen.getByRole('group', { name: copy.cardPhotoArea }), x, y);
     expect(await screen.findByText(copy.cardTapFrame(copy.cardCornerNames[0]))).toBeInTheDocument();
     for (const [x, y] of [[40, 40], [260, 40], [260, 360], [40, 360]] as const) tap(screen.getByRole('group', { name: copy.cardPhotoArea }), x, y);
     await user.click(await screen.findByRole('button', { name: copy.cardUse }));
