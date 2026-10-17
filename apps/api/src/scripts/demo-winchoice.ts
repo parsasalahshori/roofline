@@ -271,7 +271,7 @@ export async function seedWinChoiceWorld(pools: Pools, ownerUrl: string, now: Da
     });
 
     // 4. Front Desk: two calls with transcripts and two text threads.
-    await seedFrontDesk(pools, ctx, now, DEMO_WINCHOICE_NAME);
+    await seedFrontDesk(pools, ctx, now, DEMO_WINCHOICE_NAME, made);
 
     // 5. The Agents dashboard: finished work for all six agents.
     await seedAgentsDashboardActivity(q, companyId, now);
@@ -302,11 +302,46 @@ async function winChoiceCounts(q: Query, companyId: string): Promise<Record<stri
   };
 }
 
-/** The Front Desk threads: two calls (a booked window visit, an urgent message) and two text threads. */
-async function seedFrontDesk(pools: Pools, ctx: TenantContext, now: Date, companyName: string): Promise<void> {
+/** The callers Front Desk knows by name: two new customers (a home each, no job yet). The third caller gave a first name and no number on file. */
+const FRONT_DESK_PEOPLE = {
+  denise: { name: 'Denise Harlan', phone: '+15015550331', address: '7420 Kanis Rd', zip: '72204', location: [-92.3721, 34.7468] as LngLat },
+  marcus: { name: 'Marcus Tillery', phone: '+15015550334', address: '310 Pleasant Valley Dr', zip: '72212', location: [-92.3702, 34.7581] as LngLat },
+  ernest: { phone: '+15015550332' },
+} as const;
+
+/**
+ * The Front Desk threads: two calls (a booked window visit, an urgent message) and two text threads. The callers who booked have a
+ * name and a home (Denise Harlan and Marcus Tillery are new customers); the texter is Dwight Cannon, the Maumelle lead of the pipeline;
+ * Ernest, who left the urgent message, is the one caller not yet on file. The text-back thread opens with the text Front Desk sent.
+ */
+async function seedFrontDesk(
+  pools: Pools,
+  ctx: TenantContext,
+  now: Date,
+  companyName: string,
+  made: Record<string, { jobId: string; customerId: string; propertyId: string }>,
+): Promise<void> {
   const { companyId } = ctx;
   const at = (minutesAgo: number) => new Date(now.getTime() - minutesAgo * MINUTE);
   await withTenant(pools, ctx, async (tx) => {
+    const newCustomer = async (p: { name: string; phone: string; address: string; zip: string; location: LngLat }): Promise<string> => {
+      const [first, ...rest] = p.name.split(' ');
+      const customer = await createCustomer(
+        tx,
+        ctx,
+        { displayName: p.name, firstName: first ?? p.name, lastName: rest.join(' ') || null, phones: [{ e164: p.phone, label: 'mobile', primary: true }], smsConsentStatus: 'express' },
+        { now: at(60 * 24 * 2) },
+      );
+      await createProperty(tx, ctx, { customerId: customer.id, addressLine: p.address, city: 'Little Rock', state: 'AR', zip: p.zip, location: p.location }, { now: at(60 * 24 * 2) });
+      return customer.id;
+    };
+    const denise = FRONT_DESK_PEOPLE.denise;
+    const marcus = FRONT_DESK_PEOPLE.marcus;
+    const deniseId = await newCustomer(denise);
+    const marcusId = await newCustomer(marcus);
+    const dwight = WINCHOICE_JOBS.find((job) => job.name === 'Dwight Cannon')!;
+    const dwightId = made[dwight.address]!.customerId;
+
     const conversation = async (o: {
       channel: 'voice' | 'sms';
       phone: string;
@@ -372,13 +407,15 @@ async function seedFrontDesk(pools: Pools, ctx: TenantContext, now: Date, compan
 
     const windowCall = await conversation({
       channel: 'voice',
-      phone: '+15015550331',
+      phone: denise.phone,
+      customerId: deniseId,
       outcome: 'booked',
       unread: 1,
-      summary: 'A caller wants quotes on all 14 windows in her house and booked a free visit for Thursday at 10:00 AM.',
+      summary: 'Denise wants quotes on all 14 windows in her house and booked a free visit for Thursday at 10:00 AM.',
+      identity: 'matched',
       minutesAgo: 34,
     });
-    const windowCallId = await call(windowCall, '+15015550331', 37, 151);
+    const windowCallId = await call(windowCall, denise.phone, 37, 151);
     await turns(
       windowCall,
       windowCallId,
@@ -399,13 +436,13 @@ async function seedFrontDesk(pools: Pools, ctx: TenantContext, now: Date, compan
 
     const messageCall = await conversation({
       channel: 'voice',
-      phone: '+15015550332',
+      phone: FRONT_DESK_PEOPLE.ernest.phone,
       outcome: 'message',
       unread: 1,
       summary: 'A caller has a cracked bedroom window that will not close and asked for a call back today.',
       minutesAgo: 95,
     });
-    const messageCallId = await call(messageCall, '+15015550332', 98, 84);
+    const messageCallId = await call(messageCall, FRONT_DESK_PEOPLE.ernest.phone, 98, 84);
     await turns(
       messageCall,
       messageCallId,
@@ -423,23 +460,26 @@ async function seedFrontDesk(pools: Pools, ctx: TenantContext, now: Date, compan
       98,
     );
 
-    const textA = await conversation({ channel: 'sms', phone: '+15015550333', unread: 2, minutesAgo: 8 });
+    const textA = await conversation({ channel: 'sms', phone: dwight.phone, customerId: dwightId, unread: 2, identity: 'matched', minutesAgo: 8 });
     await turns(
       textA,
       null,
       [
+        { speaker: 'assistant', text: `Hi, this is ${companyName}. Sorry we missed your call. How can we help?` },
         { speaker: 'caller', text: 'Hi, do you replace windows in Maumelle? I need a price for 9 of them.' },
         { speaker: 'caller', text: 'I can be home any afternoon this week.' },
       ],
-      10,
+      12,
       2,
     );
 
     const textB = await conversation({
       channel: 'sms',
-      phone: '+15015550334',
+      phone: marcus.phone,
+      customerId: marcusId,
       outcome: 'booked',
-      summary: 'A homeowner asked about financing and booked a Saturday window visit.',
+      summary: 'Marcus asked about financing and booked a Saturday window visit.',
+      identity: 'matched',
       minutesAgo: 210,
     });
     await turns(
