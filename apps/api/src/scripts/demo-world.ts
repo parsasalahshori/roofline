@@ -941,6 +941,9 @@ export async function seedDemoWorld(pools: Pools, ownerUrl: string, now: Date, o
       const install = await book({ kind: 'install', job: moveJob, title: `Roof install: ${moveJob.displayName}`, userId: jordanId, start: await localAt(3, '10:00'), end: await localAt(3, '14:00') });
       const newStart = await localAt(6, '10:00');
       const newEnd = await localAt(6, '14:00');
+      // Whose install moves, and where: the card and the review say it, so a move is never approved blind
+      const [moveHome] = await q(`select address_line from properties where id = $1`, [moveJob.propertyId]);
+      const whose = `${moveJob.displayName}'s install${moveHome ? ` at ${String(moveHome.address_line)}` : ''}`;
       await createTask(
         tx,
         ctx,
@@ -948,12 +951,12 @@ export async function seedDemoWorld(pools: Pools, ownerUrl: string, now: Date, o
           agent: 'scheduler',
           kind: 'weather_moves',
           title: 'Rain on the install day: move 1 install?',
-          summary: 'Heavy rain is forecast on the install day; this install can move to a clear day.',
+          summary: `Heavy rain is forecast on the install day for ${whose}; it can move to a clear day.`,
           expiresAt: install.startsAt,
           steps: [
             {
               type: 'move_appointment',
-              payload: { appointmentId: install.id, start: newStart.toISOString(), end: newEnd.toISOString(), userId: jordanId, reason: 'Rain is forecast on the install day, so it moves to a clear day.' },
+              payload: { appointmentId: install.id, start: newStart.toISOString(), end: newEnd.toISOString(), userId: jordanId, reason: `Rain is forecast on the install day, so ${whose} moves to a clear day.` },
             },
           ],
         },
