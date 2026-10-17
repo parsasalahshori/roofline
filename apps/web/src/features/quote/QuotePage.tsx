@@ -8,7 +8,7 @@ import { detectDevice, type Device } from '../../lib/device.ts';
 import { formatPhone } from '../../lib/phone.ts';
 import { ScanOverlay } from '../measure/lift/ScanOverlay.tsx';
 import { readScanMs, stageAt, type ScanStage } from '../measure/lift/scan.ts';
-import { ArrowIcon, CheckIcon, HomeIcon, MinusIcon, PlusIcon } from '../public/icons.tsx';
+import { ArrowIcon, CheckIcon, HomeIcon } from '../public/icons.tsx';
 import { PublicHeader } from '../public/PublicHeader.tsx';
 import { StepProgress } from '../public/StepProgress.tsx';
 import { TrustRow } from '../public/TrustRow.tsx';
