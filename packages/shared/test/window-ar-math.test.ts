@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AR_POINT_SIGMA_M, AR_SCALE_SIGMA, arCornerOrder, INCHES_PER_METRE, sizeFromArPoints, type ArPoint, type ArQuad } from '../src/window-photo-math.ts';
+import { AR_POINT_SIGMA_M, AR_SCALE_SIGMA, AR_SCALE_SIGMA_BY_DEVICE, arCornerOrder, INCHES_PER_METRE, sizeFromArPoints, type ArPoint, type ArQuad } from '../src/window-photo-math.ts';
 
 // A seeded random source so the noise trials are the same on every run.
 function rng(seed: number) {
@@ -61,7 +61,7 @@ describe('sizeFromArPoints', () => {
     expect(u()).toBeCloseTo(u('webxr'), 12);
     expect(u('arkit-lidar')).toBeLessThan(u('arkit'));
     expect(u('arkit')).toBeLessThan(u('webxr'));
-    expect(u('arkit-lidar')).toBeCloseTo(Math.hypot(0.0025 * INCHES_PER_METRE, 0.3), 9);
+    expect(u('arkit-lidar')).toBeCloseTo(Math.hypot(0.0025 * INCHES_PER_METRE, AR_SCALE_SIGMA_BY_DEVICE['arkit-lidar'] * 30), 9);
   });
 
   it('a measured corner spread larger than the device noise replaces it for that corner; a smaller one does not', () => {
@@ -72,8 +72,14 @@ describe('sizeFromArPoints', () => {
     // One corner at 10 mm: point term sqrt(3 x 2.5^2 + 10^2) / 2 mm
     const one = sizeFromArPoints(q, { device: 'arkit-lidar', cornerSpreadM: [0.01, 0, 0, 0] })!;
     const pointIn = (Math.sqrt(3 * 0.0025 ** 2 + 0.01 ** 2) / 2) * INCHES_PER_METRE;
-    expect(one.uncertaintyIn.width).toBeCloseTo(Math.hypot(pointIn, 0.3), 9);
-    expect(one.uncertaintyIn.height).toBeCloseTo(Math.hypot(pointIn, 0.4), 9);
+    expect(one.uncertaintyIn.width).toBeCloseTo(Math.hypot(pointIn, AR_SCALE_SIGMA_BY_DEVICE['arkit-lidar'] * 30), 9);
+    expect(one.uncertaintyIn.height).toBeCloseTo(Math.hypot(pointIn, AR_SCALE_SIGMA_BY_DEVICE['arkit-lidar'] * 40), 9);
+  });
+
+  it('a typical 36 in window measured with LiDAR reports about 1/4 in (0.2-0.25), the figure the app promises', () => {
+    const s = sizeFromArPoints(frame(36, 48, 0, 0, 0, [0, 1.4, -1.8]), { device: 'arkit-lidar' })!;
+    expect(s.uncertaintyIn.width).toBeGreaterThan(0.2);
+    expect(s.uncertaintyIn.width).toBeLessThanOrEqual(0.25);
   });
 
   it('corners are ordered by gravity, never by tap order: all 24 tap orders give the same size, ± and quality', () => {

@@ -46,11 +46,11 @@ extension HomeownerStore {
         return .corners
     }
 
-    /// "About 1/8 inch · best": what each method says about itself.
+    /// "About 1/4 inch · best": what each method says about itself.
     func methodAccuracy(_ m: MeasureMethod) -> (text: String, best: Bool) {
         switch m {
         case .corners:
-            return capabilities.depthSensor ? ("\(SizeWording.accuracyRange(lowIn: 0.125, highIn: 0.125)) · best", true)
+            return capabilities.depthSensor ? ("\(SizeWording.accuracyRange(lowIn: 0.25, highIn: 0.25)) · best", true)
                                             : (SizeWording.accuracyRange(lowIn: 0.375, highIn: 0.375), false)
         case .roomScan: return ("\(SizeWording.accuracyRange(lowIn: 1, highIn: 1)) · good for a quote", false)
         case .card: return (SizeWording.accuracyRange(lowIn: 0.25, highIn: 0.5), false)

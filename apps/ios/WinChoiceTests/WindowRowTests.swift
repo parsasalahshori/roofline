@@ -99,7 +99,7 @@ final class WindowRowTests: XCTestCase {
 
     func testEachMethodSaysWhatItCanDoInWholeWords() {
         let pro = StoreHarness(capabilities: .depthSensorPhone("iPhone 15 Pro")).store
-        XCTAssertEqual(pro.methodAccuracy(.corners).text, "About 1/8 inch · best")
+        XCTAssertEqual(pro.methodAccuracy(.corners).text, "About 1/4 inch · best")
         XCTAssertTrue(pro.methodAccuracy(.corners).best)
         XCTAssertEqual(pro.methodAccuracy(.roomScan).text, "About 1 inch · good for a quote")
         XCTAssertEqual(pro.methodAccuracy(.card).text, "About 1/4 to 1/2 inch")

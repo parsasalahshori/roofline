@@ -24,7 +24,7 @@ form, then "We'll call you"); a roof-only request skips the window screens. It r
 
 Three ways to measure, each saved as one window:
 
-- **Tap the 4 corners** (ARKit, any iPhone with AR; a depth sensor is "about 1/8 inch · best"): `ArMeasureController` with the
+- **Tap the 4 corners** (ARKit, any iPhone with AR; a depth sensor is "about 1/4 inch · best"): `ArMeasureController` with the
   tape-style HUD, scale kind `ar`.
 - **Scan the whole room** (RoomPlan, depth-sensor iPhones): finds every window in the room, a 3D / plan review where each can be
   left out or moved to another room, scale kind `roomplan`.
@@ -34,7 +34,7 @@ Three ways to measure, each saved as one window:
   EXIF tag kept (no location).
 
 Wording rules (`Core/Sources/RooflineCore/SizeWording.swift`): whole inches and eighths ("35 5/8", never a decimal), accuracy rounded
-**up** and written "about 1/8 inch" (a plus-or-minus only ever follows "about"), "depth sensor" not "LiDAR", "bank card" not "ID-1".
+**up** and written "about 1/4 inch" (a plus-or-minus only ever follows "about"), "depth sensor" not "LiDAR", "bank card" not "ID-1".
 
 ### The server
 

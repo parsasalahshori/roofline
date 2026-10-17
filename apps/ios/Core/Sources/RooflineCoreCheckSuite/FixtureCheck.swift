@@ -98,6 +98,8 @@ public func arFixtureCheck(path: String?) -> Check {
             ctx.near((k["maxOffPlaneIn"] as? NSNumber)?.doubleValue, ArLimits.maxOffPlaneIn, 0, "maxOffPlaneIn")
             ctx.near((k["maxCornerOffDeg"] as? NSNumber)?.doubleValue, ArLimits.maxCornerOffDeg, 0, "maxCornerOffDeg")
             ctx.near((k["maxSideDiff"] as? NSNumber)?.doubleValue, ArLimits.maxSideDiff, 0, "maxSideDiff")
+            let byDevice = k["scaleSigmaByDevice"] as? [String: Any] ?? [:]
+            for d in ArDevice.allCases { ctx.near((byDevice[d.rawValue] as? NSNumber)?.doubleValue, ArLimits.scale(d), 0, "scaleSigmaByDevice \(d.rawValue)") }
             let sig = k["pointSigmaM"] as? [String: Any] ?? [:]
             for d in ArDevice.allCases { ctx.near((sig[d.rawValue] as? NSNumber)?.doubleValue, ArLimits.pointSigmaM[d]!, 0, "pointSigmaM \(d.rawValue)") }
         }

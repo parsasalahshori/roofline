@@ -74,7 +74,7 @@ struct RoomScanReview: View {
                     if rows.count > 0 {
                         SmallNote(text: "Tap a window to leave it out. Touch and hold to move it to another room.").padding(.top, 8).padding(.horizontal, 6)
                     }
-                    InfoPanel(icon: .alert, text: "Good enough for your quote. Want it closer? Tap the 4 corners of each window (about 1/8 inch). Your rep checks every size anyway.", tint: Theme.infoTint, iconColor: Theme.info).padding(.top, 14)
+                    InfoPanel(icon: .alert, text: "Good enough for your quote. Want it closer? Tap the 4 corners of each window (about 1/4 inch). Your rep checks every size anyway.", tint: Theme.infoTint, iconColor: Theme.info).padding(.top, 14)
                     WCScrollFooter()
                 }
                 .padding(.horizontal, Theme.gutter)

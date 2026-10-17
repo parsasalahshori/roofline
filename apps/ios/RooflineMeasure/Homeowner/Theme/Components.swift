@@ -376,7 +376,7 @@ struct WCChip: View {
     }
 }
 
-/// A small status tag: icon-less words on a tint ("About 1/8 inch · best", "Check").
+/// A small status tag: icon-less words on a tint ("About 1/4 inch · best", "Check").
 struct WCTag: View {
     enum Kind { case ok, info, warn, plain, blue }
     let text: String

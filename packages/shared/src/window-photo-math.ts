@@ -150,8 +150,15 @@ export const AR_POINT_SIGMA_M: Readonly<Record<ArDevice, number>> = { webxr: 0.0
  * AR's world scale error, as a share of a length (1 sigma). Visual-inertial tracking gets scale from the phone's motion
  * sensors and is commonly a percent or so off over a metre; LiDAR helps but the frame is still tracked. UNCALIBRATED
  * until the field test, like AR_POINT_SIGMA_M. Added in quadrature so AR is not overconfident on big windows.
+ * This is the default (phones without depth, Android).
  */
 export const AR_SCALE_SIGMA = 0.01;
+/**
+ * The same by device. With LiDAR depth ARKit's scale is anchored to measured distances, 0.6%: a typical 36 in window
+ * then reports about 1/4 in (hypot(2.5 mm = 0.098 in, 0.6% of 36 in = 0.216 in) = 0.24 in), which is what the app's
+ * copy promises ("about 1/4 inch"). UNCALIBRATED until the field test.
+ */
+export const AR_SCALE_SIGMA_BY_DEVICE: Readonly<Record<ArDevice, number>> = { webxr: AR_SCALE_SIGMA, arkit: AR_SCALE_SIGMA, 'arkit-lidar': 0.006 };
 /** The four points further than this off their best-fit plane (inches) are not one flat frame: 'check'. */
 export const AR_MAX_OFF_PLANE_IN = 0.5;
 /** A corner further than this off square (degrees): 'check'. */
@@ -163,8 +170,8 @@ export type ArSizingOptions = {
   /** Which AR measured the points (absent: 'webxr', the Android web app, which does not say). */
   device?: ArDevice | undefined;
   /**
-   * The measured spread of each corner, metres, 1 sigma, in the same order as the points (the iPhone averages ~15
-   * raycasts per corner and reports how far they wandered). Each corner's noise is the larger of this and the device's.
+   * The measured spread of each corner, metres, 1 sigma, in the same order as the points (the iPhone averages ~45
+   * raycasts per corner, ~1 s, and reports the spread of their block means). Each corner's noise is the larger of this and the device's.
    */
   cornerSpreadM?: readonly [number, number, number, number] | undefined;
 };
@@ -174,7 +181,7 @@ export type ArSize = {
   heightIn: number;
   /**
    * About 1 sigma, inches: the device's point noise (or the measured corner spread), AR's scale error (1% of the
-   * side), half the difference between opposite sides and how far the four points are from a flat rectangle.
+   * side, 0.6% with LiDAR), half the difference between opposite sides and how far the four points are from a flat rectangle.
    */
   uncertaintyIn: { width: number; height: number };
   quality: 'good' | 'check';
@@ -225,7 +232,7 @@ export function arCornerOrder(p: readonly ArPoint[]): [number, number, number, n
  * or opposite sides differ by more than 3%. Uncertainty per dimension, added in quadrature: the point noise (a mean of
  * two sides, each the difference of two points: sqrt(sum of the four corners' sigma^2) / 2, which is the device sigma
  * when every corner has it; a corner's sigma is the larger of the device's and its measured spread), AR's scale error
- * (AR_SCALE_SIGMA of the side), half the difference between the two opposite sides, and the off-plane residual. Null
+ * (AR_SCALE_SIGMA_BY_DEVICE of the side), half the difference between the two opposite sides, and the off-plane residual. Null
  * for degenerate input (non-finite or a side of zero length).
  */
 export function sizeFromArPoints(pointsM: ArQuad, options: ArSizingOptions = {}): ArSize | null {
@@ -273,7 +280,8 @@ export function sizeFromArPoints(pointsM: ArQuad, options: ArSizingOptions = {})
   };
   const cornerSigmaIn = order.map((i) => Math.max(deviceSigmaM, spread(i)) * INCHES_PER_METRE);
   const pointIn = Math.sqrt(cornerSigmaIn.reduce((s, v) => s + v * v, 0)) / 2;
-  const u = (side: number, diff: number) => Math.sqrt(pointIn * pointIn + (AR_SCALE_SIGMA * side) ** 2 + (diff / 2) ** 2 + rmsOff * rmsOff);
+  const scaleSigma = AR_SCALE_SIGMA_BY_DEVICE[options.device ?? 'webxr'] ?? AR_SCALE_SIGMA;
+  const u = (side: number, diff: number) => Math.sqrt(pointIn * pointIn + (scaleSigma * side) ** 2 + (diff / 2) ** 2 + rmsOff * rmsOff);
   return {
     widthIn,
     heightIn,

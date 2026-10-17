@@ -74,8 +74,11 @@ let sizingChecks: [Check] = [
         ctx.near(small.uncertaintyWidthIn, lidar.uncertaintyWidthIn, 1e-12, "spread below the device sigma: the device wins")
         let wide = sizeFromArPoints(r, device: .arkitLidar, cornerSpreadM: [0.012, 0.0025, 0.0025, 0.0025])!
         let pin = (0.012 * 0.012 + 3 * 0.0025 * 0.0025).squareRoot() / 2 * 39.37007874
-        ctx.near(wide.uncertaintyWidthIn, (pin * pin + 0.36 * 0.36).squareRoot(), 1e-12)
+        ctx.near(wide.uncertaintyWidthIn, (pin * pin + (ArLimits.scale(.arkitLidar) * 36) * (ArLimits.scale(.arkitLidar) * 36)).squareRoot(), 1e-12)
         ctx.near(ArLimits.sigma(nil), 0.006)
+        ctx.expect(lidar.uncertaintyWidthIn > 0.2 && lidar.uncertaintyWidthIn <= 0.25, "a 36 in window with LiDAR reports about 1/4 in: \(lidar.uncertaintyWidthIn)")
+        ctx.near(ArLimits.scale(nil), 0.01)
+        ctx.near(ArLimits.scale(.arkitLidar), 0.006)
         ctx.near(previewArSize(r, device: .arkit, cornerSpreadM: nil)?.uncertaintyWidthIn, plain.uncertaintyWidthIn, 0)
     },
 ]

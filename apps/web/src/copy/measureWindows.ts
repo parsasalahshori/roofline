@@ -55,7 +55,7 @@ export const measureWindows = {
     order: 'Order-grade',
     estimateNote: 'Count \u00b12 \u00b7 quote only',
     quoteNote: 'Room scan \u00b7 size \u00b11 in',
-    orderNote: 'LiDAR or sheet photo \u00b7 \u00b11/8 in',
+    orderNote: 'LiDAR or sheet photo \u00b7 \u00b11/4 in',
     of: (total: number) => ` of ${total}`,
   },
 

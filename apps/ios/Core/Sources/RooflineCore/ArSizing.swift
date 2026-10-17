@@ -24,8 +24,12 @@ public enum ArLimits {
     public static let maxSideDiff = 0.03
     /// Per-point AR noise, metres, 1 sigma, by device (AR_POINT_SIGMA_M). UNCALIBRATED until the field test.
     public static let pointSigmaM: [ArDevice: Double] = [.webxr: 0.006, .arkit: 0.004, .arkitLidar: 0.0025]
-    /// AR's world scale error as a share of a length, 1 sigma (AR_SCALE_SIGMA).
+    /// AR's world scale error as a share of a length, 1 sigma (AR_SCALE_SIGMA): the default, for phones without depth.
     public static let scaleSigma = 0.01
+    /// The same by device (AR_SCALE_SIGMA_BY_DEVICE): with LiDAR depth the scale is anchored to measured distances, so a
+    /// typical 36 in window comes out about 1/4 in (hypot(2.5 mm, 0.6% of 36 in) = 0.24 in).
+    public static let scaleSigmaByDevice: [ArDevice: Double] = [.webxr: 0.01, .arkit: 0.01, .arkitLidar: 0.006]
+    public static func scale(_ device: ArDevice?) -> Double { scaleSigmaByDevice[device ?? .webxr] ?? scaleSigma }
 
     /// The device's point sigma; absent means 'webxr' (the Android web app does not say).
     public static func sigma(_ device: ArDevice?) -> Double { pointSigmaM[device ?? .webxr] ?? 0.006 }
@@ -113,7 +117,7 @@ public func gravityOrderedCorners(_ points: [Vec3], viewer: Vec3? = nil) -> [Vec
 /// and right; 'check' when the points are not one flat frame (> 0.5 in), a corner is > 4 degrees off square, or
 /// opposite sides differ by > 3%. Uncertainty per dimension, in quadrature: the point noise (sqrt of the sum of the four
 /// corners' sigma^2, over 2; a corner's sigma is the larger of the device's and its measured spread), the scale error
-/// (1% of the side), half the difference between opposite sides, and the off-plane rms.
+/// (a share of the side by device: 1%, 0.6% with LiDAR), half the difference between opposite sides, and the off-plane rms.
 /// Nil for degenerate input (not four finite points, or a side of zero length).
 public func sizeFromArPoints(_ pointsM: [Vec3], device: ArDevice? = nil, cornerSpreadM: [Double]? = nil) -> ArSize? {
     guard pointsM.count == 4, pointsM.allSatisfy({ $0.isFinite }) else { return nil }
@@ -161,7 +165,7 @@ public func sizeFromArPoints(_ pointsM: [Vec3], device: ArDevice? = nil, cornerS
     let cornerSigmaIn = order.map { max(deviceSigmaM, spread($0)) * inchesPerMetre }
     let pointIn = cornerSigmaIn.reduce(0) { $0 + $1 * $1 }.squareRoot() / 2
     func u(_ side: Double, _ diff: Double) -> Double {
-        let scale = ArLimits.scaleSigma * side
+        let scale = ArLimits.scale(device) * side
         return (pointIn * pointIn + scale * scale + (diff / 2) * (diff / 2) + rmsOff * rmsOff).squareRoot()
     }
     return ArSize(

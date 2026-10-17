@@ -70,7 +70,7 @@ public struct MeasureCapabilities: Equatable, Sendable {
     /// Screen 04's blue note about the depth sensor.
     public var depthSentence: String {
         depthSensor
-            ? "Your \(deviceName) has a depth sensor, so sizes come out accurate to about 1/8 inch."
+            ? "Your \(deviceName) has a depth sensor, so sizes come out accurate to about 1/4 inch."
             : "Your \(deviceName) has no depth sensor, so sizes come out accurate to about 3/8 inch. A rep checks every size anyway."
     }
 }

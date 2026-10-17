@@ -11,6 +11,11 @@
       "arkit-lidar": 0.0025
     },
     "scaleSigma": 0.01,
+    "scaleSigmaByDevice": {
+      "webxr": 0.01,
+      "arkit": 0.01,
+      "arkit-lidar": 0.006
+    },
     "maxOffPlaneIn": 0.5,
     "maxCornerOffDeg": 4,
     "maxSideDiff": 0.03
@@ -135,8 +140,8 @@
         "widthIn": 36,
         "heightIn": 59.999999999999986,
         "uncertaintyIn": {
-          "width": 0.37321243196731974,
-          "height": 0.608019341283615
+          "width": 0.23736789878785472,
+          "height": 0.3732124319673196
         },
         "quality": "good",
         "reasons": [],
@@ -179,8 +184,8 @@
         "widthIn": 29.999999999999993,
         "heightIn": 48,
         "uncertaintyIn": {
-          "width": 0.3157333041903581,
-          "height": 0.48998726450282487
+          "width": 0.20515242961018335,
+          "height": 0.30435426623420486
         },
         "quality": "good",
         "reasons": [],
@@ -311,8 +316,8 @@
         "widthIn": 36,
         "heightIn": 48.00000000000001,
         "uncertaintyIn": {
-          "width": 0.37321243196731974,
-          "height": 0.4899872645028249
+          "width": 0.23736789878785472,
+          "height": 0.30435426623420486
         },
         "quality": "good",
         "reasons": [],
@@ -399,8 +404,8 @@
         "widthIn": 32,
         "heightIn": 53.999999999999986,
         "uncertaintyIn": {
-          "width": 0.3347947421554903,
-          "height": 0.5488966381523585
+          "width": 0.21575801114897505,
+          "height": 0.3386200221117487
         },
         "quality": "good",
         "reasons": [],
@@ -443,8 +448,8 @@
         "widthIn": 96,
         "heightIn": 60,
         "uncertaintyIn": {
-          "width": 0.9650323929148499,
-          "height": 0.6080193412836151
+          "width": 0.5843487994126122,
+          "height": 0.37321243196731974
         },
         "quality": "good",
         "reasons": [],
@@ -531,8 +536,8 @@
         "widthIn": 36.000000000000014,
         "heightIn": 48,
         "uncertaintyIn": {
-          "width": 0.3732124319673199,
-          "height": 0.48998726450282487
+          "width": 0.2373678987878548,
+          "height": 0.30435426623420486
         },
         "quality": "good",
         "reasons": [],
@@ -624,8 +629,8 @@
         "widthIn": 36,
         "heightIn": 59.999999999999986,
         "uncertaintyIn": {
-          "width": 0.37321243196731974,
-          "height": 0.608019341283615
+          "width": 0.23736789878785472,
+          "height": 0.3732124319673196
         },
         "quality": "good",
         "reasons": [],
@@ -673,8 +678,8 @@
         "widthIn": 36,
         "heightIn": 59.999999999999986,
         "uncertaintyIn": {
-          "width": 0.43893706967058244,
-          "height": 0.650435047588149
+          "width": 0.33124273747660904,
+          "height": 0.4389370696705824
         },
         "quality": "good",
         "reasons": [],
@@ -766,8 +771,8 @@
         "widthIn": 32.99219770905299,
         "heightIn": 57.02923077451605,
         "uncertaintyIn": {
-          "width": 0.3454120330928475,
-          "height": 0.5793395709467221
+          "width": 0.22281477865313812,
+          "height": 0.3570504390836391
         },
         "quality": "good",
         "reasons": [],
@@ -854,8 +859,8 @@
         "widthIn": 36.04335057576613,
         "heightIn": 48.03253003743052,
         "uncertaintyIn": {
-          "width": 0.7289510461354924,
-          "height": 0.7945745029164436
+          "width": 0.669496637732755,
+          "height": 0.6954801998690738
         },
         "quality": "check",
         "reasons": [
