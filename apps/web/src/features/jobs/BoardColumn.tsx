@@ -2,6 +2,7 @@ import type { BoardColumn as BoardColumnData, BoardStage, JobCard } from '@roofl
 import { Button, Icon, IconButton } from '@roofline/ui';
 import { useRef, useState, type DragEvent } from 'react';
 import { jobs } from '../../copy/jobs.ts';
+import { useMoreBelow } from '../today/useMoreBelow.ts';
 import { useColumnPages, type BoardFilterParams } from './api.ts';
 import { formatDollars } from './format.ts';
 import { JobCardView } from './JobCardView.tsx';
@@ -27,6 +28,7 @@ export type BoardColumnProps = {
 /** One stage of the board: its header (dot, name, count, money, share), its cards, and a drop target for dragged cards. */
 export function BoardColumn({ column, filter, today, share, dragging, onDragStart, onDragEnd, onDropJob }: BoardColumnProps) {
   const { visible, remaining, busy, more } = useColumnPages(column, filter);
+  const [cardsRef, moreBelow] = useMoreBelow<HTMLDivElement>();
   const label = jobs.stage[column.stage];
   // dragenter and dragleave fire for every child the pointer crosses; the depth tells when it has truly left the lane
   const depth = useRef(0);
@@ -100,7 +102,7 @@ export function BoardColumn({ column, filter, today, share, dragging, onDragStar
           </>
         ) : null}
       </header>
-      <div className={styles.cards}>
+      <div ref={cardsRef} className={styles.cards} data-more={moreBelow ? 'true' : undefined}>
         {visible.length === 0 ? <p className={styles.empty}>{jobs.columnEmpty}</p> : null}
         {visible.map((job) => (
           <JobCardView

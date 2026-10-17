@@ -34,6 +34,8 @@ export const jobs = {
   totalWord: 'total',
   /** A lane whose jobs have no value yet: said in words rather than as "$0". */
   noValueYet: 'No value yet',
+  /** Where a job's value would be in a table, until it has one. */
+  noValueDash: '–',
   addToStage: (stage: string) => `Add a job to ${stage}`,
   lostDrawer: (count: number) => `Lost (${count})`,
   lostDrawerEmpty: 'No lost jobs.',
@@ -59,9 +61,17 @@ export const jobs = {
   /** The aging figure on a card: "4d". */
   daysShort: (n: number) => `${n}d`,
   stuck: (n: number) => `Stuck ${n} days`,
-  /** The next-step line on a card: the step, then when ("today", "Oct 14"). */
-  nextStepLine: (text: string, when: string | null) => (when === null ? text : `${text} · ${when}`),
-  today: 'today',
+  /**
+   * The next-step line on a card: the step, then when ("Oct 14"). The step's last word, the dot and the date are bound with
+   * no-break spaces (and the date's own space), so a line never ends on the dot and a date never splits in two.
+   */
+  nextStepLine: (text: string, when: string | null) => {
+    if (when === null) return text;
+    const cut = text.lastIndexOf(' ');
+    const head = cut === -1 ? '' : text.slice(0, cut + 1);
+    const last = cut === -1 ? text : text.slice(cut + 1);
+    return `${head}${last}\u00a0·\u00a0${when.replace(' ', '\u00a0')}`;
+  },
   /** The one tag a card can carry, when the job's own dates say so. */
   tagToday: 'Today',
   tagOverdue: 'Overdue',

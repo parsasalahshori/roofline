@@ -93,6 +93,13 @@ describe('customer picker', () => {
     expect(api.count('GET /api/customers?q=smi&limit=8')).toBe(1);
   });
 
+  it('the empty search box says what to type', () => {
+    api = stubApi({});
+    renderWithProviders(<CustomerPicker selected={null} onSelect={vi.fn()} />);
+
+    expect(screen.getByLabelText(create.newJob.searchCustomer)).toHaveAttribute('placeholder', create.newJob.searchPlaceholder);
+  });
+
   it('picker shows no matches text', async () => {
     api = stubApi({ 'GET /api/customers?q=zzz&limit=8': () => ({ body: { customers: [], total: 0 } }) });
     const user = renderWithProviders(<CustomerPicker selected={null} onSelect={vi.fn()} />);

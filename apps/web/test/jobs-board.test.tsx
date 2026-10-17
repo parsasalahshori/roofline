@@ -805,9 +805,13 @@ describe('board cards and lanes', () => {
 
     const link = await screen.findByRole('link', { name: /Ashley Thomas/ });
     expect(link).toHaveTextContent('193 Ames Ave');
-    expect(link).toHaveTextContent('Call about financing · today');
+    // Due today: the Today tag says it and the line does not say it a second time
+    expect(link).toHaveTextContent('Call about financing');
+    expect(link).not.toHaveTextContent('Call about financing ·');
     expect(link).toHaveTextContent('$11,000');
     expect(link).toHaveTextContent('Casey Moreno');
+    // A narrow lane may end the name in an ellipsis: the whole name is the hover text
+    expect(within(link).getByText('Casey Moreno').closest('[title]')).toHaveAttribute('title', 'Casey Moreno');
     // The aging reads in words for a screen reader and as "4d" on the card
     expect(link).toHaveTextContent(jobs.daysInStage(4));
     expect(link).toHaveTextContent(jobs.daysShort(4));
@@ -824,6 +828,41 @@ describe('board cards and lanes', () => {
     expect(within(link).queryByText(jobs.tagOverdue)).not.toBeInTheDocument();
     expect(link).not.toHaveTextContent('$');
     expect(link).toHaveTextContent(jobs.unassigned);
+  });
+
+  it('a next step on another day keeps its date, and the last word, the dot and the date cannot be pulled apart', async () => {
+    signedIn(
+      boardOf([
+        column('won', [job({ id: 'j1', stage: 'won', nextStep: 'Confirm the install day', nextStepOn: '2099-10-17' })]),
+      ]),
+    );
+    renderApp('/jobs');
+
+    const link = await screen.findByRole('link', { name: /Pat Homeowner/ });
+    expect(link).toHaveTextContent('Confirm the install day · Oct 17');
+    // No tag: nothing is due today and nothing is late
+    expect(within(link).queryByText(jobs.tagToday)).not.toBeInTheDocument();
+    // The break may fall before "day" and nowhere after it: the spaces around the dot and inside the date do not break
+    expect(link.textContent).toContain('Confirm the install day\u00a0·\u00a0Oct\u00a017');
+  });
+
+  it('a lane fades at its bottom edge only while there is more to scroll to', async () => {
+    const scrollHeight = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(600);
+    const clientHeight = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(200);
+    try {
+      signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead' })])]));
+      renderApp('/jobs');
+
+      const lane = (await screen.findByRole('region', { name: jobs.stage.lead })).querySelector('[data-more]');
+      expect(lane).toHaveAttribute('data-more', 'true');
+      // Scrolled to the end, the fade goes
+      scrollHeight.mockReturnValue(200);
+      fireEvent.scroll(lane as HTMLElement);
+      await waitFor(() => expect(lane).not.toHaveAttribute('data-more'));
+    } finally {
+      scrollHeight.mockRestore();
+      clientHeight.mockRestore();
+    }
   });
 
   it('a next step that is past due is tagged Overdue, and a stuck job says so', async () => {
@@ -976,6 +1015,17 @@ describe('jobs list', () => {
     expect(within(row).getByText('Casey Moreno')).toBeInTheDocument();
     expect(within(row).getByText(jobs.daysShort(4))).toBeInTheDocument();
     expect(within(row).getByRole('button', { name: jobs.moveTo })).toBeInTheDocument();
+  });
+
+  it('a job with no value yet has a quiet dash in the Value column and says so in words', async () => {
+    signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead', customerName: 'Pat Homeowner', valueCents: null })])]));
+    renderApp('/jobs?view=list');
+
+    const table = await screen.findByRole('table', { name: jobs.listLabel });
+    const row = within(table).getByRole('row', { name: /Pat Homeowner/ });
+    const dash = within(row).getByText(jobs.noValueDash);
+    expect(dash).toHaveAttribute('aria-hidden', 'true');
+    expect(within(row).getByText(jobs.noValueYet)).toHaveClass('visually-hidden');
   });
 
   it('an empty list says what is missing and offers a New job button', async () => {

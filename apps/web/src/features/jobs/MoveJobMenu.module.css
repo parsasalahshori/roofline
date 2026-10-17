@@ -25,9 +25,15 @@
   height: 36px;
 }
 
+/* A thumb: the chevron on a card and the "Move to..." button of a job's bar are 44px each way */
 @media (max-width: 767.98px) {
   .tall[aria-haspopup] {
     width: 44px;
     height: 44px;
+  }
+
+  .target[aria-haspopup] {
+    min-width: 44px;
+    min-height: 44px;
   }
 }

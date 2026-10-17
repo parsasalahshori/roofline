@@ -88,7 +88,18 @@ function ListStage({ column, filter, phone }: ListStageProps) {
           <Td>
             <StageTag stage={job.stage} />
           </Td>
-          <Td numeric>{job.valueCents === null ? '' : formatDollars(job.valueCents)}</Td>
+          <Td numeric>
+            {job.valueCents === null ? (
+              <>
+                <span aria-hidden="true" className={styles.noValue}>
+                  {jobs.noValueDash}
+                </span>
+                <span className="visually-hidden">{jobs.noValueYet}</span>
+              </>
+            ) : (
+              formatDollars(job.valueCents)
+            )}
+          </Td>
           <Td>
             <Rep job={job} />
           </Td>

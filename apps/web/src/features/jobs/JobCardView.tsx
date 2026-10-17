@@ -33,10 +33,10 @@ function cardTag(job: JobCard, today: string): CardTag | null {
   return null;
 }
 
-/** "today" or "Oct 14", for the next-step line. */
+/** "Oct 14", for the next-step line. A step due today has its Today tag and says nothing more: the tag is the word for it. */
 function whenText(job: JobCard, today: string): string | null {
-  if (job.nextStepOn === null) return null;
-  return job.nextStepOn.slice(0, 10) === today ? jobs.today : formatShortDay(job.nextStepOn);
+  if (job.nextStepOn === null || job.nextStepOn.slice(0, 10) === today) return null;
+  return formatShortDay(job.nextStepOn);
 }
 
 /** Days in the stage as a short bar and a mono "4d": amber after three days, or when the job is stuck. */
@@ -113,7 +113,7 @@ export function JobCardView({ job, today: todayProp, dragging = false, onDragSta
         <span className={styles.footer}>
           {job.valueCents !== null ? <span className={styles.value}>{formatDollars(job.valueCents)}</span> : null}
           {job.assigned !== null ? (
-            <span className={styles.rep}>
+            <span className={styles.rep} title={job.assigned.name}>
               <Avatar name={job.assigned.name} size={24} />
               <span className={job.valueCents === null ? styles.repName : 'visually-hidden'}>{job.assigned.name}</span>
             </span>

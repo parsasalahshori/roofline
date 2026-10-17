@@ -49,6 +49,7 @@ export function CustomerPicker({ selected, onSelect }: CustomerPickerProps) {
     <div className={styles.picker}>
       <Field
         label={create.newJob.searchCustomer}
+        placeholder={create.newJob.searchPlaceholder}
         type="search"
         autoComplete="off"
         value={text}

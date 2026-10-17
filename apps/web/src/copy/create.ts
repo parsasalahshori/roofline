@@ -39,6 +39,8 @@ export const create = {
     stepHome: 'Home',
     stepDetails: 'Details',
     searchCustomer: 'Find a customer',
+    /** In the search box until something is typed: the customers list's search reads the same two things. */
+    searchPlaceholder: 'Name or phone number',
     noMatches: 'No customers match.',
     newCustomer: 'New customer',
     useExisting: 'Pick an existing customer',

@@ -731,6 +731,27 @@ describe('on a phone', () => {
     expect(main.queryByRole('button', { name: jobs.moveToStage(jobs.stage.proposal) })).not.toBeInTheDocument();
   });
 
+  it('Inspection is written short in the steps so it does not run into Proposal, and its button is still named in full', async () => {
+    phoneMode.phone = true;
+    signedIn(view());
+    renderJob();
+
+    const steps = within(await stepper());
+    const inspection = steps.getByRole('button', { name: jobs.stage.inspection });
+    expect(inspection).toHaveTextContent(job.stageShort.inspection ?? '');
+    expect(inspection).not.toHaveTextContent(jobs.stage.inspection);
+    // The other four keep their names whole
+    expect(steps.getByRole('button', { name: jobs.stage.proposal })).toHaveTextContent(jobs.stage.proposal);
+    expect(steps.getByRole('button', { name: jobs.stage.installed })).toHaveTextContent(jobs.stage.installed);
+  });
+
+  it('on a desktop every step is written whole', async () => {
+    signedIn(view());
+    renderJob();
+
+    expect(within(await stepper()).getByRole('button', { name: jobs.stage.inspection })).toHaveTextContent(jobs.stage.inspection);
+  });
+
   it('the phone number is not repeated under the name: the Call tile has it', async () => {
     phoneMode.phone = true;
     signedIn(view(withContact()));

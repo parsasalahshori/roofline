@@ -38,6 +38,7 @@
 /* The whole top of the card is the link: a target with a visible focus ring */
 .link {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
   padding: 10px 12px;
   border-radius: var(--r-2);
@@ -58,7 +59,7 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 4px 6px;
+  gap: 4px;
   min-width: 0;
 }
 
@@ -73,7 +74,13 @@
 .tag {
   flex: none;
   height: 20px;
-  padding: 0 6px;
+  padding: 0 5px;
+}
+
+/* A little smaller than a tag elsewhere, so a name of ordinary length and its tag share a lane's width */
+.tag svg {
+  width: 12px;
+  height: 12px;
 }
 
 .address {

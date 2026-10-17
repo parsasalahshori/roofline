@@ -152,12 +152,18 @@
 
 .cards {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   flex: 1 1 auto;
   align-content: start;
   gap: 8px;
   min-height: 80px;
   padding: 0 8px 8px;
   overflow-y: auto;
+}
+
+/* While there is more to scroll to, the lane fades at its bottom edge: a card cut there reads as "scroll", not as a fault */
+.cards[data-more="true"] {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent);
 }
 
 /* An empty lane shows the shape of a card in a dashed outline, not a bare sentence */
