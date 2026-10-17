@@ -53,10 +53,10 @@
 
 @media (max-width: 767.98px) {
   .segment {
-    min-height: 40px;
+    min-height: 44px;
   }
 
   .track[data-size="sm"] .segment {
-    min-height: 34px;
+    min-height: 44px;
   }
 }

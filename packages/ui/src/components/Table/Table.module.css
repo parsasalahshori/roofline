@@ -28,6 +28,17 @@
   vertical-align: middle;
 }
 
+/* The first and last cells line up with the 16px a Panel's title and forms are set in */
+.th:first-child,
+.td:first-child {
+  padding-left: 16px;
+}
+
+.th:last-child,
+.td:last-child {
+  padding-right: 16px;
+}
+
 .th[data-numeric="true"],
 .td[data-numeric="true"] {
   text-align: right;

@@ -28,6 +28,13 @@ h4 {
   letter-spacing: -0.005em;
 }
 
+/* Paragraphs avoid a last line of one word ("plan." alone), where the browser can */
+p,
+li,
+dd {
+  text-wrap: pretty;
+}
+
 /* One visible ring for everything keyboard-reachable: the company's brand colour, 3:1 or better on every surface */
 :focus-visible {
   outline: 2px solid var(--ring);

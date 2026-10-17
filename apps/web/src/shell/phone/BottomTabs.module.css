@@ -70,6 +70,12 @@
   box-shadow: var(--e-2);
 }
 
+/* The tile is taller than the other glyphs, which would carry its label 3px below theirs: the five names share a baseline */
+.nav .tab[data-tab="measure"] .label {
+  position: relative;
+  top: -3px;
+}
+
 .nav .tab[data-tab="measure"][data-current="true"] .glyph {
   box-shadow:
     0 0 0 2px var(--surface),

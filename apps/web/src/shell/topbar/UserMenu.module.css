@@ -19,10 +19,22 @@
   background: var(--sunken);
 }
 
-/* At the foot of the rail: initials, the name and the role in one row */
+/* At the foot of the rail: the setup link, then initials, the name and the role in one row */
 .root[data-variant="rail"] {
+  flex-wrap: wrap;
   width: 100%;
   gap: 4px;
+}
+
+/* The setup link takes a row of its own above the person, and no room when it has nothing to say */
+.setup {
+  flex: 1 1 100%;
+  order: -1;
+  min-width: 0;
+}
+
+.setup:empty {
+  display: none;
 }
 
 .root[data-variant="rail"] .trigger {
@@ -59,11 +71,11 @@
   font-weight: 400;
 }
 
-/* Phone: a 40px target around the 28px circle */
+/* Phone: a 44px target around the 28px circle */
 @media (max-width: 767.98px) {
   .root .trigger {
-    min-width: 40px;
-    min-height: 40px;
+    min-width: 44px;
+    min-height: 44px;
   }
 }
 

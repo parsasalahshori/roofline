@@ -90,7 +90,10 @@ function ReviewRow({ step, mode, copy, pending, error, onToggle, onEdit, onRetry
   const canEdit = reviewing && step.editable && step.open && step.canApprove && onEdit !== undefined;
   const canRetry = !reviewing && RETRYABLE.has(step.status) && step.canApprove && onRetry !== undefined;
   const resultLines = step.result ? copy.resultLines(step.result) : [];
-  const hasFacts = preview.recipientCount !== undefined || Boolean(preview.sendTime);
+  // "Text 13 customers" already says who: the same words again under the title say nothing new
+  const recipientsLine = preview.recipientCount === undefined ? null : copy.recipients(preview.recipientCount);
+  const showRecipients = recipientsLine !== null && !step.title.includes(recipientsLine);
+  const hasFacts = showRecipients || Boolean(preview.sendTime);
   const compact = step.compact === true;
 
   return (
@@ -125,7 +128,7 @@ function ReviewRow({ step, mode, copy, pending, error, onToggle, onEdit, onRetry
 
         {hasFacts ? (
           <ul className={styles.facts}>
-            {preview.recipientCount !== undefined ? <li>{copy.recipients(preview.recipientCount)}</li> : null}
+            {showRecipients ? <li>{recipientsLine}</li> : null}
             {preview.sendTime ? <li>{copy.sendTime(preview.sendTime)}</li> : null}
           </ul>
         ) : null}

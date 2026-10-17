@@ -118,7 +118,7 @@
 
 @media (max-width: 767.98px) {
   .trigger[data-variant="chip"] {
-    min-height: 40px;
+    min-height: 44px;
   }
 
   .option {

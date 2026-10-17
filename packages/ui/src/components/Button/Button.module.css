@@ -1,5 +1,5 @@
 /*
- * Buttons. Heights: sm 30, md 36, lg 44 on a desktop; 40, 44 and 52 on a phone. Fonts never go under 13px.
+ * Buttons. Heights: sm 30, md 36, lg 44 on a desktop; 44, 44 and 52 on a phone. Fonts never go under 13px.
  * The company's colour is only ever the primary button's fill, and its text is the computed --brand-ink.
  */
 .button {
@@ -94,40 +94,55 @@
   background: var(--bad);
 }
 
-.button:disabled,
-.button[aria-disabled="true"] {
-  opacity: 0.55;
+/*
+ * Disabled is a quiet neutral button whose words stay readable, whatever the variant: the brand fill used to go faint
+ * (white on a 55% brand fill measured 2.4:1) and looked like an unfinished block. Busy is different: it is a
+ * button at work, so it keeps its own colours, a little dimmed, and a progress cursor.
+ */
+.button[data-variant]:disabled:not([aria-busy="true"]),
+.button[data-variant][aria-disabled="true"]:not([aria-busy="true"]) {
+  border-color: var(--line-2);
+  background: var(--surface-2);
+  color: var(--ink-3);
   cursor: not-allowed;
 }
 
-.button[data-variant="primary"]:disabled:hover,
-.button[data-variant="primary"][aria-disabled="true"]:hover {
-  background: var(--brand);
-}
-
-.button[data-variant="ink"]:disabled:hover,
-.button[data-variant="ink"][aria-disabled="true"]:hover {
-  background: var(--ink);
-}
-
-.button[data-variant="default"]:disabled:hover,
-.button[data-variant="default"][aria-disabled="true"]:hover {
-  border-color: var(--line-2);
+.button[data-variant="default"]:disabled:not([aria-busy="true"]),
+.button[data-variant="default"][aria-disabled="true"]:not([aria-busy="true"]) {
   background: var(--surface);
 }
 
-.button[data-variant="quiet"]:disabled:hover,
-.button[data-variant="quiet"][aria-disabled="true"]:hover {
-  background: var(--surface-2);
-}
-
-.button[data-variant="ghost"]:disabled:hover,
-.button[data-variant="ghost"][aria-disabled="true"]:hover {
+.button[data-variant="ghost"]:disabled:not([aria-busy="true"]),
+.button[data-variant="ghost"][aria-disabled="true"]:not([aria-busy="true"]) {
+  border-color: transparent;
   background: transparent;
 }
 
 .button[aria-busy="true"] {
+  opacity: 0.6;
   cursor: progress;
+}
+
+/* A busy button keeps its fill on hover */
+.button[data-variant="primary"][aria-busy="true"]:hover {
+  background: var(--brand);
+}
+
+.button[data-variant="ink"][aria-busy="true"]:hover {
+  background: var(--ink);
+}
+
+.button[data-variant="default"][aria-busy="true"]:hover {
+  border-color: var(--line-2);
+  background: var(--surface);
+}
+
+.button[data-variant="quiet"][aria-busy="true"]:hover {
+  background: var(--surface-2);
+}
+
+.button[data-variant="ghost"][aria-busy="true"]:hover {
+  background: transparent;
 }
 
 /* A thumb needs more: one step taller on a phone */
@@ -138,7 +153,7 @@
   }
 
   .button[data-size="sm"] {
-    min-height: 40px;
+    min-height: 44px;
   }
 
   .button[data-size="lg"] {

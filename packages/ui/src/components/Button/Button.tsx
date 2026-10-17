@@ -9,7 +9,7 @@ import styles from './Button.module.css';
  * the quietest. danger: holds, deletes and anything that cannot be undone.
  */
 export type ButtonVariant = 'primary' | 'ink' | 'default' | 'quiet' | 'ghost' | 'danger';
-/** sm 30px, md 36px, lg 44px on a desktop; on a phone each is one step taller for a thumb (40, 44, 52). */
+/** sm 30px, md 36px, lg 44px on a desktop; on a phone a thumb gets 44, 44 and 52. */
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {

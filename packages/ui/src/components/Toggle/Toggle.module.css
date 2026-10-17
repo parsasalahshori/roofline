@@ -49,3 +49,10 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* A thumb: 44px tall on a phone */
+@media (max-width: 767.98px) {
+  .toggle {
+    min-height: 44px;
+  }
+}
