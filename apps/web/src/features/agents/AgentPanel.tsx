@@ -2,6 +2,7 @@ import { Banner, Icon, Panel, Skeleton, UiLink } from '@roofline/ui';
 import type { ScreenAgent } from '@roofline/shared';
 import { agentsDash } from '../../copy/agents.ts';
 import { AGENT_LABEL } from '../../copy/status.ts';
+import { keepAddressTogether } from './addressText.ts';
 import { AgentGlyph } from './AgentGlyph.tsx';
 import { agoWords } from './agentTheme.ts';
 import { useAgentDetail, useAgentFeed } from './api.ts';
@@ -77,10 +78,10 @@ export function AgentPanel({ agent, now }: { agent: ScreenAgent; now: number }) 
               {rows.map((row) => (
                 <li key={row.id} className={styles.feedRow}>
                   {row.href === null ? (
-                    <span>{row.text}</span>
+                    <span>{keepAddressTogether(row.text)}</span>
                   ) : (
                     <UiLink href={row.href} className={styles.feedLink}>
-                      {row.text}
+                      {keepAddressTogether(row.text)}
                     </UiLink>
                   )}{' '}
                   <span className={styles.when}>{agoWords(row.at, now)}</span>

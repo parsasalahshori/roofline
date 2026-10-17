@@ -5,6 +5,7 @@ import { agents, agentsCommon } from '../../copy/agents.ts';
 import { AGENT_LABEL } from '../../copy/status.ts';
 import { InlineError } from '../approvals/InlineError.tsx';
 import { useCompany } from '../settings/api.ts';
+import { keepAddressTogether } from './addressText.ts';
 import { AgentGlyph } from './AgentGlyph.tsx';
 import { useWaiting } from './api.ts';
 import { agentTimeLabel } from './time.ts';
@@ -38,7 +39,7 @@ function WaitingGroup({ group, zone }: { group: Group; zone: string | undefined 
           <li key={item.id} className={styles.row}>
             <AgentGlyph agent={item.agent} />
             <div className={styles.text}>
-              <p className={styles.sentence}>{item.text}</p>
+              <p className={styles.sentence}>{keepAddressTogether(item.text)}</p>
               <p className={styles.meta}>
                 <span className={styles.agent}>{AGENT_LABEL[item.agent]}</span>
                 <time dateTime={item.since} className={styles.time}>

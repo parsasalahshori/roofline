@@ -5,6 +5,7 @@ import { agents, agentsCommon } from '../src/copy/agents.ts';
 import { agentsKeys } from '../src/features/agents/api.ts';
 import { AGENT_LABEL } from '../src/copy/status.ts';
 import { ActivityFeed } from '../src/features/agents/ActivityFeed.tsx';
+import { DASH_ORDER } from '../src/features/agents/agentTheme.ts';
 import { type Routes, renderAt, stubApi } from './helpers.tsx';
 
 let api: ReturnType<typeof stubApi>;
@@ -42,6 +43,24 @@ describe('ActivityFeed', () => {
     expect(within(rows[1]!).getByText(AGENT_LABEL.storm_scout)).toBeTruthy();
     expect(within(rows[1]!).queryByRole('link')).toBeNull();
     expect(rows[0]!.querySelector('time')?.getAttribute('datetime')).toBe('2026-10-12T15:05:00.000Z');
+  });
+
+  it('has a chip for every agent, in the order of the Overview cards', async () => {
+    show({ 'GET /api/agents/feed': () => ({ body: { items: [item('a', { agent: 'claims' })], nextCursor: null } }) });
+    await screen.findByText('Did thing a');
+    const group = screen.getByRole('group', { name: agents.feedFiltersLabel });
+    expect(within(group).getAllByRole('button').map((button) => button.textContent)).toEqual([
+      agents.feedFilterAll,
+      ...DASH_ORDER.map((agent) => AGENT_LABEL[agent]),
+    ]);
+    // The agents that came later (Claims, Scheduler, Follow-up) have rows in the feed, so they have chips
+    expect(within(group).getByRole('button', { name: AGENT_LABEL.claims })).toBeTruthy();
+  });
+
+  it('keeps a house number with its street where a line breaks', async () => {
+    show({ 'GET /api/agents/feed': () => ({ body: { items: [item('a', { text: 'Booked an inspection at 305 Ridgeway Dr' })], nextCursor: null } }) });
+    const sentence = await screen.findByText('Booked an inspection at 305 Ridgeway Dr');
+    expect(sentence.textContent).toContain('305\u00A0Ridgeway');
   });
 
   it('filters by agent and back to All', async () => {
