@@ -1,7 +1,7 @@
 /*
  * The Agents overview. The page can be any width, so the layout answers to the width of this container, not the
- * screen: wide is the cards (two or three across) with the picked agent's panel beside them, middle is the panel
- * below, and on a phone there is no panel and the cards are one column.
+ * screen: wide is the cards (two or three across) with the picked agent's panel beside them; narrower has no panel, the
+ * cards fill the width, and each card opens its agent's page. The width that decides is SIDE_PANEL_REM in sidePanel.ts.
  */
 .body,
 .loading {
@@ -64,7 +64,7 @@
   text-underline-offset: 2px;
 }
 
-/* A phone has no panel beside the cards and its touch targets are taller */
+/* A phone's touch targets are taller */
 @media (max-width: 767.98px) {
   .link {
     display: inline-flex;

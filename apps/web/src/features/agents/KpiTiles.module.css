@@ -24,6 +24,12 @@
   align-self: flex-end;
 }
 
+/* "full-time staff" is long: it takes its own line under the number rather than breaking at its hyphen */
+.staff dd > span:last-child {
+  display: block;
+  margin: 6px 0 0;
+}
+
 /* "about" before an estimated figure: the figure is what reads first */
 .about {
   color: var(--ink-3);

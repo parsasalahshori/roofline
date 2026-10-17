@@ -60,9 +60,11 @@ export function ClaimsBoard() {
   const board = useClaimsBoard();
   const zone = useCompanyZone();
   const rows = board.data;
+  // The empty state brings its own room; the panel's padding on top of it made the box tall for one line
+  const empty = !board.isPending && !board.isError && rows !== undefined && rows.length === 0;
 
   return (
-    <Panel title={claims.boardTitle}>
+    <Panel title={claims.boardTitle} padded={!empty}>
       {board.isPending ? (
         <div role="status" aria-label={claims.boardLoading}>
           <Skeleton lines={4} />

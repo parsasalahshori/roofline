@@ -171,6 +171,11 @@ test('Approve stays pinned', async ({ page, loginAs, markTodaySeen, scenario }) 
   const button = page.getByRole('button', { name: 'Approve 3 steps · up to $270' });
   await expect(button).toBeVisible();
   await expectAboveTabs(page, button);
+  // The whole button is on the screen, however long its words are: its edges are inside the viewport
+  const box = await button.boundingBox();
+  const screenWidth = page.viewportSize()?.width ?? 0;
+  expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
+  expect((box?.x ?? 0) + (box?.width ?? Infinity)).toBeLessThanOrEqual(screenWidth);
 
   await page.mouse.move(187, 400);
   await page.mouse.wheel(0, 2000);
@@ -354,6 +359,24 @@ test('on a phone an agent card is the way to its page, and the page has the way 
   // The way back to Agents is above the title
   await expect(page.getByRole('link', { name: 'Agents', exact: true }).first()).toHaveAttribute('href', '/agents');
   await noSideScroll(page);
+});
+
+test('the period picker on an agent page fits a 360px phone', async ({ page, loginAs, markTodaySeen, agentsSeed }) => {
+  void agentsSeed;
+  await loginAs(page, 'owner');
+  await markTodaySeen('owner@a.test');
+  // The shell hides sideways overflow, so a page that is too wide never scrolls: it is cut off at the edge. Measure the
+  // choices themselves: every one of the four has to end inside the screen.
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.goto('/agents/storm-scout');
+  const choices = page.getByRole('radiogroup', { name: 'Time period' }).getByRole('radio');
+  await expect(choices).toHaveCount(4, { timeout: 20_000 });
+  for (let index = 0; index < 4; index += 1) {
+    const box = await choices.nth(index).boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(360);
+  }
 });
 
 test('S1 pages do not scroll sideways', async ({ page, loginAs, markTodaySeen, scenario, db }) => {

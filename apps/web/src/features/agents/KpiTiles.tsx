@@ -48,6 +48,7 @@ export function KpiTiles({ cards, dashboard }: KpiTilesProps) {
         meta={agentsDash.hoursSub}
       />
       <KpiTile
+        className={styles.staff}
         label={agentsDash.fullTimeLead}
         value={
           minutes === null ? (

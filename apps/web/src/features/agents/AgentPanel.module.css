@@ -115,6 +115,8 @@
 }
 
 .when {
+  display: block;
+  margin-top: 3px;
   color: var(--ink-3);
   font: 500 var(--font-size-min)/1 var(--f-mono);
   white-space: nowrap;

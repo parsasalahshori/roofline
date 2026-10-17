@@ -204,9 +204,10 @@
 }
 
 @media (max-width: 767.98px) {
+  /* The rows start where the panel's title starts: 16px in, as on a desktop */
   .row {
     gap: 8px;
-    padding: 12px;
+    padding: 12px 16px;
   }
 
   .footerActions > * {

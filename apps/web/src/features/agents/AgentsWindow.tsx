@@ -12,7 +12,9 @@ import { DASH_ORDER } from './agentTheme.ts';
 import { useAgentDetail, useAgentsDashboard, useAgentsOverview } from './api.ts';
 import { Handoffs } from './Handoffs.tsx';
 import { KpiTiles } from './KpiTiles.tsx';
+import { SIDE_PANEL_REM } from './sidePanel.ts';
 import { agentSlug } from './slugs.ts';
+import { useContainerWide } from './useContainerWide.ts';
 import styles from './AgentsWindow.module.css';
 
 /** The agent whose panel is open when the window first shows. */
@@ -44,9 +46,10 @@ function OverviewSkeleton() {
 }
 
 /**
- * The Agents overview: the totals as tiles, one card per agent with the panel of the one you picked beside them (on a
- * phone a card opens the agent's own page), and the jobs handed from agent to agent today. Money and time are
- * estimates; every number comes from the overview and dashboard endpoints.
+ * The Agents overview: the totals as tiles, one card per agent with the panel of the one you picked beside them, and the
+ * jobs handed from agent to agent today. Where the panel has no room beside the cards (a phone, a tablet) there is no
+ * panel, and a card opens the agent's own page instead: a panel stacked under a long page would change out of sight.
+ * Money and time are estimates; every number comes from the overview and dashboard endpoints.
  */
 export function AgentsWindow() {
   const overview = useAgentsOverview();
@@ -54,6 +57,9 @@ export function AgentsWindow() {
   const data = overview.data;
   const role = useMe().data?.role;
   const phone = useIsPhone();
+  // The page itself answers to the width of this box, as the layout does, so the two agree on when the panel fits
+  const [body, setBody] = useState<HTMLDivElement | null>(null);
+  const sideBySide = useContainerWide(body, SIDE_PANEL_REM) && !phone;
   const [selected, setSelected] = useState<ScreenAgent>(FIRST_SELECTED);
   const [clock] = useState(() => Date.now());
   // The same query the panel uses: its rules fill in the "turn on" sheet of a paused agent.
@@ -69,7 +75,7 @@ export function AgentsWindow() {
       ) : !data ? (
         <OverviewSkeleton />
       ) : (
-        <div className={styles.body}>
+        <div className={styles.body} ref={setBody}>
           {overview.isError ? <Banner tone="warning">{agentsCommon.refreshFailed}</Banner> : null}
           <KpiTiles cards={data.cards} dashboard={numbers} />
           <div className={styles.split}>
@@ -89,12 +95,12 @@ export function AgentsWindow() {
                         card={card}
                         minutesThisWeek={info ? info.minutesThisWeek : null}
                         latest={info?.latest ?? null}
-                        selected={!phone && agent === selected}
+                        selected={sideBySide && agent === selected}
                         onSelect={() => setSelected(agent)}
                         isOwner={role === 'owner'}
                         rules={agent === selected ? detail.data?.rules : undefined}
                         now={now}
-                        href={phone ? `/agents/${agentSlug(agent)}` : undefined}
+                        href={sideBySide ? undefined : `/agents/${agentSlug(agent)}`}
                       />
                     );
                   })}
@@ -114,11 +120,11 @@ export function AgentsWindow() {
                 ) : null}
               </div>
             </div>
-            {phone ? null : (
+            {sideBySide ? (
               <div className={styles.side}>
                 <AgentPanel agent={selected} now={now} />
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       )}

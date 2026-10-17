@@ -85,9 +85,10 @@
   gap: 16px;
 }
 
+/* The same columns as the cards that will come (.grid above), with the empty tracks folded away: two outlines take two real columns */
 .ghosts {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr));
   gap: 12px;
 }
 

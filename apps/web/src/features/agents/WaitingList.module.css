@@ -82,6 +82,11 @@
     flex-wrap: wrap;
   }
 
+  /* The words fill the line beside the glyph (22px and the 12px gap); the button wraps to its own line under them */
+  .text {
+    flex-basis: calc(100% - 34px);
+  }
+
   .open {
     margin-left: 34px;
   }

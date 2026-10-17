@@ -80,9 +80,20 @@
   .buttons {
     flex: 1 1 100%;
     flex-wrap: nowrap;
+    gap: 4px;
   }
 
-  .buttons > :last-child {
-    flex: 1 1 auto;
+  /* Not now keeps its word and a little room, so the decision beside it has the width the screen allows */
+  .row .buttons > :first-child {
+    flex: none;
+    padding-inline: 10px;
+  }
+
+  /* The decision takes the rest of the line. On a narrow phone its words wrap rather than run off the edge of the screen. */
+  .row .buttons > :last-child {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 8px 12px;
+    white-space: normal;
   }
 }

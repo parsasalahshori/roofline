@@ -1,0 +1,15 @@
+/*
+ * Four choices run 350px wide in one row. On a screen narrower than 380px that is wider than the screen and the edge cuts
+ * the last one off, so there they sit two by two, each cell half the row.
+ */
+@media (max-width: 379.98px) {
+  .picker[role="radiogroup"] {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .picker[role="radiogroup"] > [role="radio"] {
+    justify-content: center;
+  }
+}

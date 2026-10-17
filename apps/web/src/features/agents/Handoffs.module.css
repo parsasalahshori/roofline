@@ -49,11 +49,24 @@
   margin-left: 8px;
   font-family: var(--f-mono);
   font-size: var(--font-size-min);
+  white-space: nowrap;
 }
 
 .when::before {
   content: "\00b7";
   margin-right: 8px;
+}
+
+@media (max-width: 767.98px) {
+  .when {
+    display: block;
+    margin-left: 0;
+    margin-top: 2px;
+  }
+
+  .when::before {
+    display: none;
+  }
 }
 
 .empty {

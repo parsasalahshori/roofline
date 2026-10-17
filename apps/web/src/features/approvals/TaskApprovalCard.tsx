@@ -22,8 +22,12 @@ export const reviewHref = (taskId: string): string => '/approvals/' + encodeURIC
  * decide (the same request the review screen sends with nothing changed); a plan with several steps opens the review
  * screen instead, where each step has its switch. Edit opens the step's own sheet when one step can be edited, the review
  * screen otherwise. Not now asks for an optional reason. The keys 1, E and H press these three buttons.
+ *
+ * `href` is where the plan's own screen is: the link a plan with several steps has instead of a yes, where Edit goes when no
+ * single step can be edited right here, and where "See progress" goes after a yes. It is the review screen under
+ * /approvals unless the page that shows the card keeps its plans elsewhere (Storm: /storm/plans/<id>).
  */
-export function TaskApprovalCard({ task, now }: { task: TaskView; now: number }) {
+export function TaskApprovalCard({ task, now, href }: { task: TaskView; now: number; href?: string }) {
   const toast = useToast();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -43,7 +47,7 @@ export function TaskApprovalCard({ task, now }: { task: TaskView; now: number })
     onSaved: () => void queryClient.invalidateQueries({ queryKey: keys.approvals }),
   });
 
-  const href = reviewHref(task.id);
+  const planHref = href ?? reviewHref(task.id);
   const open = openSteps(task);
   const quick = quickApprovable(task);
 
@@ -55,7 +59,7 @@ export function TaskApprovalCard({ task, now }: { task: TaskView; now: number })
     approve.mutateAsync({ steps: seenSteps(task) }).then(
       () => {
         toast.show(approvals.approved(task.title), 'success', {
-          action: { label: approvals.seeProgress, onClick: () => void navigate(href) },
+          action: { label: approvals.seeProgress, onClick: () => void navigate(planHref) },
         });
       },
       (failure: Error) => {
@@ -77,7 +81,7 @@ export function TaskApprovalCard({ task, now }: { task: TaskView; now: number })
         const editable = fresh.steps.filter((step) => isOpen(step, fresh) && step.canApprove && isEditable(step));
         const only = editable[0];
         if (editable.length === 1 && only !== undefined) stepSheet.open(only.id);
-        else void navigate(href);
+        else void navigate(planHref);
       })
       .catch((failure: Error) => setError(errorSentence(failure)))
       .finally(() => setLoadingEdit(false));
@@ -87,7 +91,7 @@ export function TaskApprovalCard({ task, now }: { task: TaskView; now: number })
     ? { label: approvals.approve, onClick: onApprove, busy: approve.isPending || approve.isSuccess, keyHint: '1' }
     : {
         label: open.length > 1 ? approvals.reviewSteps(open.length) : approvals.reviewPlan,
-        href,
+        href: planHref,
         keyHint: '1',
         icon: 'arrow',
       };

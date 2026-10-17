@@ -204,3 +204,98 @@ test.describe('queue on a phone', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   });
 });
+
+test.describe('a card in a narrow column', () => {
+  // Home holds the card in a column of 340 to 404px beside the map, on a page as wide as any desktop: no phone rules apply
+  for (const width of [340, 404]) {
+    test(`at ${width}px the facts and the buttons wrap, nothing sticks out and the drafted line is whole`, async ({
+      page,
+      loginAs,
+      markTodaySeen,
+      scenario,
+      db,
+      pools,
+    }) => {
+      await seedWeatherMovePlan(pools, db, scenario.a.companyId);
+      await loginAs(page, 'owner');
+      await markTodaySeen('owner@a.test');
+      await page.goto('/approvals');
+
+      const cards = page.getByRole('list', { name: 'Plans waiting for your OK' }).getByRole('article');
+      await expect(cards.first()).toBeVisible({ timeout: 15_000 });
+      expect(await cards.count()).toBeGreaterThanOrEqual(2);
+      await cards.evaluateAll((all, columnWidth) => {
+        for (const card of all as HTMLElement[]) {
+          card.style.width = columnWidth + 'px';
+          card.style.justifySelf = 'start';
+        }
+      }, width);
+
+      // The shell hides sideways overflow and each card clips its own, so a page-width check cannot see a card that spills:
+      // every box inside a card is measured against the card
+      const problems = await cards.evaluateAll((all) => {
+        const found: string[] = [];
+        for (const card of all) {
+          const box = card.getBoundingClientRect();
+          const name = card.querySelector('h3')?.textContent ?? 'a card';
+          if (card.scrollWidth > card.clientWidth + 1) found.push(`${name}: the card scrolls sideways`);
+          for (const element of card.querySelectorAll('*')) {
+            const rect = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            // Text that is there for a screen reader only is clipped to a point on purpose
+            if (rect.width === 0 || rect.height === 0 || style.clip !== 'auto') continue;
+            if (rect.right > box.right + 0.5 || rect.left < box.left - 0.5) {
+              found.push(`${name}: <${element.tagName.toLowerCase()}> "${(element.textContent ?? '').trim().slice(0, 30)}" sticks out of the card`);
+            }
+            if (style.textOverflow === 'ellipsis' && element.scrollWidth > element.clientWidth + 1) {
+              found.push(`${name}: "${(element.textContent ?? '').trim()}" is cut with an ellipsis`);
+            }
+          }
+        }
+        return found;
+      });
+      expect(problems).toEqual([]);
+
+      // The buttons share a row when they fit and wrap when they do not: none is narrower than its own words
+      for (const card of await cards.all()) {
+        for (const button of await card.getByRole('button').all()) {
+          const fits = await button.evaluate((element) => element.scrollWidth <= element.clientWidth + 1);
+          expect(fits).toBe(true);
+        }
+      }
+    });
+  }
+});
+
+test.describe('the trail in a tight top bar', () => {
+  test.use({ viewport: { width: 768, height: 900 } });
+
+  test('a long plan title gives way with an ellipsis and the link up the trail keeps its words', async ({ page, loginAs, markTodaySeen, scenario }) => {
+    await loginAs(page, 'owner');
+    await markTodaySeen('owner@a.test');
+    await page.goto('/approvals/' + scenario.taskId);
+    const trail = page.getByRole('navigation', { name: 'Breadcrumb' });
+    const parent = trail.getByRole('link').first();
+    await expect(parent).toBeVisible({ timeout: 15_000 });
+
+    // Make the page's own crumb far too long for the bar. A page with a long title does this for real.
+    await trail.locator('[aria-current="page"]').evaluate((element) => {
+      element.textContent = 'A plan whose name runs on and on and on and on and on and on and on and on and on and on and on';
+    });
+
+    const measured = await trail.evaluate((nav) => {
+      const link = nav.querySelector('a');
+      const separator = nav.querySelector('li[aria-hidden="true"]');
+      const here = nav.querySelector('[aria-current="page"]');
+      if (!link || !separator || !here) return null;
+      return {
+        // The link's words end before the separator begins; a negative gap is the separator drawn over them
+        gap: separator.getBoundingClientRect().left - link.getBoundingClientRect().right,
+        hereCut: here.scrollWidth > here.clientWidth,
+      };
+    });
+    expect(measured).not.toBeNull();
+    expect(measured!.gap).toBeGreaterThanOrEqual(0);
+    expect(measured!.hereCut).toBe(true);
+  });
+});
