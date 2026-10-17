@@ -35,11 +35,18 @@ vi.mock('../src/features/proposals/OptionCard.tsx', () => ({
     option: { id: string; name: string };
     editable: boolean;
     open?: boolean;
+    signed?: boolean;
     onSelect?: () => void;
     radioName?: string;
     onChange: (patch: { enabled?: boolean }) => void;
   }) => (
-    <div data-testid={`option-${props.option.id}`} data-editable={String(props.editable)} data-open={String(props.open)} data-pickable={String(props.onSelect !== undefined)}>
+    <div
+      data-testid={`option-${props.option.id}`}
+      data-editable={String(props.editable)}
+      data-open={String(props.open)}
+      data-signed={String(props.signed === true)}
+      data-pickable={String(props.onSelect !== undefined)}
+    >
       {props.option.name}
       {props.onSelect ? (
         <input type="radio" name={props.radioName} aria-label={`pick-${props.option.id}`} checked={props.open} onChange={props.onSelect} />
@@ -196,6 +203,32 @@ describe('ProposalWindow page', () => {
     await user.click(group.getByRole('radio', { name: 'pick-o3' }));
     expect(screen.getByTestId('option-o3')).toHaveAttribute('data-open', 'true');
     expect(screen.getByTestId('option-o2')).toHaveAttribute('data-open', 'false');
+  });
+
+  it('a signed proposal opens the option the customer signed, and marks it, wherever the recommended one is', () => {
+    mocks.proposal = make({ status: 'signed', canEdit: false, signed: { optionId: 'o3', name: 'Dana Smith', at: '2026-10-13T20:00:00Z' } });
+    show();
+    expect(screen.getByTestId('option-o3')).toHaveAttribute('data-open', 'true');
+    expect(screen.getByTestId('option-o2')).toHaveAttribute('data-open', 'false');
+    expect(screen.getByTestId('option-o3')).toHaveAttribute('data-signed', 'true');
+    expect(screen.getByTestId('option-o1')).toHaveAttribute('data-signed', 'false');
+    expect(screen.getByTestId('option-o2')).toHaveAttribute('data-signed', 'false');
+  });
+
+  it('on a phone the signed option is the tab that opens first', () => {
+    phoneMode.phone = true;
+    mocks.proposal = make({ status: 'signed', canEdit: false, signed: { optionId: 'o1', name: 'Dana Smith', at: '2026-10-13T20:00:00Z' } });
+    show();
+    const tabs = within(screen.getByRole('radiogroup', { name: proposals.tiersLabel }));
+    expect(tabs.getByRole('radio', { name: /^Good/ })).toBeChecked();
+    expect(screen.getByTestId('option-o1').closest('[hidden]')).toBeNull();
+    expect(screen.getByTestId('option-o2').closest('[hidden]')).not.toBeNull();
+  });
+
+  it('a proposal nobody has signed marks no option as signed', () => {
+    mocks.proposal = make();
+    show();
+    for (const id of ['o1', 'o2', 'o3']) expect(screen.getByTestId(`option-${id}`)).toHaveAttribute('data-signed', 'false');
   });
 
   it('the rows share one radio name, and the arrow keys move the pick between them, round the ends', async () => {

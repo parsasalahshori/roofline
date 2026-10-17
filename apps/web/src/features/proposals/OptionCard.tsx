@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { ADD_ON_UNITS, materialNames, priceTier, toSurfaceArea } from '@roofline/shared';
-import type { AddOn, MeasuredQuantities, MeasurementKind, Pricebook, ProposalOptionView, Scope, Tier } from '@roofline/shared';
+import type { AddOn, MeasuredQuantities, MeasurementKind, Pricebook, ProposalOptionView, Scope } from '@roofline/shared';
 import { Button, Field, Icon, IconButton, Listbox, Table, Tag, Td, Th, Toggle, Tr } from '@roofline/ui';
 import { proposals } from '../../copy/proposals.ts';
 import type { OptionPatch } from './api.ts';
+import { RECOMMENDED_TIER } from './tiers.ts';
 import styles from './OptionCard.module.css';
 
 export type OptionCardProps = {
@@ -25,6 +26,8 @@ export type OptionCardProps = {
   onSelect?: () => void;
   /** The name the three rows' radios share, so the arrow keys move between them. */
   radioName?: string;
+  /** True for the option the customer signed. */
+  signed?: boolean;
 };
 
 /** The measured quantities the add-ons are charged against, taken from a saved scope. */
@@ -72,9 +75,6 @@ const signatureOf = (option: ProposalOptionView): string =>
 const unitOptions = ADD_ON_UNITS.map((unit) => ({ value: unit, label: proposals.addOnUnitLabel[unit] }));
 const materialOptions = (Object.keys(materialNames) as Scope['material'][]).map((key) => ({ value: key, label: materialNames[key] }));
 
-/** The option the pages call out: the one most people choose. The job page and the measure screen follow the same rule. */
-const RECOMMENDED_TIER: Tier = 'better';
-
 function RemoveIcon() {
   return (
     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" focusable="false">
@@ -83,7 +83,7 @@ function RemoveIcon() {
   );
 }
 
-export function OptionCard({ option, editable, basis, prices, onChange, open = true, onSelect, radioName }: OptionCardProps) {
+export function OptionCard({ option, editable, basis, prices, onChange, open = true, onSelect, radioName, signed = false }: OptionCardProps) {
   const signature = signatureOf(option);
   const [seen, setSeen] = useState(signature);
   const [draft, setDraft] = useState<Draft>(() => draftOf(option));
@@ -143,6 +143,11 @@ export function OptionCard({ option, editable, basis, prices, onChange, open = t
           {recommended ? (
             <Tag tone="brand" icon="star">
               {proposals.recommended}
+            </Tag>
+          ) : null}
+          {signed ? (
+            <Tag tone="ok" icon="check">
+              {proposals.optionSigned}
             </Tag>
           ) : null}
           {draft.enabled ? null : (

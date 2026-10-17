@@ -608,6 +608,44 @@ describe('visits, quotes and agent tasks', () => {
     expect(visits.getByRole('link', { name: job.bookInspection })).toBeInTheDocument();
   });
 
+  it('on a phone the booking buttons are a row under the visits, and the panel head keeps only its title', async () => {
+    phoneMode.phone = true;
+    signedIn(view());
+    renderJob();
+
+    const visits = within(await screen.findByRole('region', { name: job.appointmentsTitle }));
+    const inspection = visits.getByRole('link', { name: job.bookInspection });
+    const install = visits.getByRole('link', { name: job.bookInstall });
+    expect(inspection.parentElement).toBe(install.parentElement);
+    const head = visits.getByRole('heading', { name: job.appointmentsTitle }).parentElement?.parentElement;
+    expect(head).not.toContainElement(inspection);
+    expect(head).not.toContainElement(install);
+    // under the visit, not above it
+    const visit = visits.getByRole('link', { name: /Inspection/ });
+    expect(visit.compareDocumentPosition(inspection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('on a phone with no visits, the booking row follows the empty note', async () => {
+    phoneMode.phone = true;
+    signedIn(view({ appointments: [] }));
+    renderJob();
+
+    const visits = within(await screen.findByRole('region', { name: job.appointmentsTitle }));
+    const note = visits.getByText(job.appointmentsEmpty);
+    const inspection = visits.getByRole('link', { name: job.bookInspection });
+    expect(note.compareDocumentPosition(inspection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('on a phone someone who cannot edit the job gets no booking buttons', async () => {
+    phoneMode.phone = true;
+    signedIn(view({ can: { edit: false } }));
+    renderJob();
+
+    const visits = within(await screen.findByRole('region', { name: job.appointmentsTitle }));
+    expect(visits.queryByRole('link', { name: job.bookInspection })).toBeNull();
+    expect(visits.queryByRole('link', { name: job.bookInstall })).toBeNull();
+  });
+
   it('a quote says Draft or Final in a tag, with its total', async () => {
     signedIn(
       view({

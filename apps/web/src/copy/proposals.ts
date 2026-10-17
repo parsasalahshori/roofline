@@ -93,6 +93,8 @@ export const proposals = {
   // --- the options as rows and, on a phone, tabs ---
   tiersLabel: 'Options',
   recommended: 'Recommended',
+  /** On the option the customer signed, so the owner sees which of the three it was. */
+  optionSigned: 'Signed',
   optionLeftOut: 'Left out',
   /** The one line under an option's name: what it is made of and the waste it allows for. */
   specLine: (material: string, wastePercent: number): string => `${material} · ${wastePercent}% waste`,

@@ -10,12 +10,10 @@ import { EmptyPanel, LoadError, RowsSkeleton } from '../jobs/states.tsx';
 import { useCompanyZone } from '../jobs/useCompanyToday.ts';
 import { useCopyLink } from '../proposals/api.ts';
 import { ProposalEvents, proposalEventLines } from '../proposals/ProposalEvents.tsx';
+import { RECOMMENDED_TIER } from '../proposals/tiers.ts';
 import { StatusTag } from '../proposals/StatusTag.tsx';
 import { useJobProposals } from './api.ts';
 import styles from './JobProposals.module.css';
-
-/** The option the pages call out: the one most people choose. The measure screen follows the same rule. */
-const RECOMMENDED_TIER = 'better';
 
 /** The lowest enabled option's total as a line, or null when there is none. Instant numbers say Estimate. */
 function proposalFromText(proposal: ProposalView): string | null {

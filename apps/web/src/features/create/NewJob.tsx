@@ -292,7 +292,7 @@ export function NewJob() {
             <div className={styles.fields}>
               <Listbox label={create.newJob.stage} value={stage} options={stageOptions} onChange={setStage} />
               <Listbox label={create.newJob.source} value={source} options={sourceOptions} onChange={setSource} />
-              <Field label={create.newJob.rep} name="rep" value={create.newJob.repYou} readOnly />
+              <Field className={styles.fixed} label={create.newJob.rep} name="rep" value={create.newJob.repYou} readOnly />
               <Field
                 label={create.newJob.value}
                 name="value"

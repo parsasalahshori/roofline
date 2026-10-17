@@ -1,5 +1,5 @@
 import type { ConsentStatus, CustomerView } from '@roofline/shared';
-import { Button, Checkbox, Field, IconButton, Listbox, Sheet, Toggle, UiLink, useToast, type ListboxOption } from '@roofline/ui';
+import { Button, Checkbox, Field, Icon, IconButton, Listbox, Sheet, Toggle, UiLink, useToast, type ListboxOption } from '@roofline/ui';
 import { useId, useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client.ts';
 import { common } from '../../copy/common.ts';
@@ -217,6 +217,7 @@ export function EditCustomerSheet({ view, onDone }: EditCustomerSheetProps) {
             className={styles.addRow}
             onClick={() => setPhones((rows) => [...rows, { key: freshKey(), number: '', label: '' }])}
           >
+            <Icon name="plus" size={16} />
             {customers.edit.addPhone}
           </Button>
         </section>
@@ -244,6 +245,7 @@ export function EditCustomerSheet({ view, onDone }: EditCustomerSheetProps) {
             </div>
           ))}
           <Button variant="ghost" className={styles.addRow} onClick={() => setEmails((rows) => [...rows, { key: freshKey(), value: '' }])}>
+            <Icon name="plus" size={16} />
             {customers.edit.addEmail}
           </Button>
         </section>

@@ -22,12 +22,10 @@ import { formatDay } from './format.ts';
 import { OptionCard } from './OptionCard.tsx';
 import { ProposalEvents, proposalEventLines } from './ProposalEvents.tsx';
 import { StatusTag } from './StatusTag.tsx';
+import { RECOMMENDED_TIER } from './tiers.ts';
 import styles from './ProposalWindow.module.css';
 
 const JOBS_CRUMB = { label: WINDOW_COPY.jobs.title, href: '/jobs' } as const;
-
-/** The option the pages call out: the one most people choose. */
-const RECOMMENDED_TIER = 'better';
 
 /** The text message; edits stay local and save when the field loses focus with a changed value. */
 function MessageBox({ body, editable, onCommit }: { body: string; editable: boolean; onCommit: (body: string) => void }) {
@@ -80,9 +78,13 @@ function ProposalBody({ proposal }: { proposal: ProposalView }) {
   const canRevise = ['sent', 'viewed', 'ready', 'declined', 'expired'].includes(status);
   const canCopyLink = ['sent', 'viewed', 'signed', 'declined', 'expired'].includes(status);
 
-  // On a phone one option shows at a time, chosen from three tabs; the recommended one first. All stay mounted so a
-  // change that has not been saved yet is not lost when the tab is left.
-  const firstShown = (proposal.options.find((option) => option.tier === RECOMMENDED_TIER) ?? proposal.options[0])?.id ?? '';
+  // On a phone one option shows at a time, chosen from three tabs; the one the customer signed first, else the
+  // recommended one. All stay mounted so a change that has not been saved yet is not lost when the tab is left.
+  const signedId = proposal.signed?.optionId ?? null;
+  const firstShown =
+    (proposal.options.find((option) => option.id === signedId) ??
+      proposal.options.find((option) => option.tier === RECOMMENDED_TIER) ??
+      proposal.options[0])?.id ?? '';
   const [picked, setPicked] = useState(firstShown);
   const shown = proposal.options.some((option) => option.id === picked) ? picked : firstShown;
 
@@ -184,6 +186,7 @@ function ProposalBody({ proposal }: { proposal: ProposalView }) {
                   basis={proposal.basis}
                   prices={prices}
                   open={option.id === shown}
+                  signed={option.id === signedId}
                   onSelect={phone ? undefined : () => setPicked(option.id)}
                   radioName={radioName}
                   onChange={(change) => patch.mutate({ options: [{ id: option.id, ...change }] })}

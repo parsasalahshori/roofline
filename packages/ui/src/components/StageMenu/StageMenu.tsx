@@ -157,7 +157,7 @@ function StageList({ id, heading, stages, current, extras, onPick, onEscape, onT
           </kbd>
         </div>
       ))}
-      {extras.length > 0 ? <hr className={styles.rule} /> : null}
+      {extras.length > 0 ? <hr className={styles.rule} aria-hidden="true" /> : null}
       {extras.map((extra, offset) => {
         const index = stages.length + offset;
         return (
