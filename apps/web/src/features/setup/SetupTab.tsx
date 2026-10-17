@@ -1,5 +1,6 @@
-import type { SetupItemView } from '@roofline/shared';
+import { FOUNDATION_ITEMS, type SetupItemView } from '@roofline/shared';
 import { Banner, Panel, ProgressRing, Skeleton } from '@roofline/ui';
+import { Fragment } from 'react';
 import { ApiError } from '../../api/client.ts';
 import { useMe } from '../../api/hooks.ts';
 import { setup } from '../../copy/setup.ts';
@@ -42,6 +43,8 @@ export function SetupTab() {
 
   const { done, total } = view.progress;
   const next = nextStep(view.items, isOwner);
+  // The count above is over the five first steps; the rows after them are listed apart so the two never disagree
+  const firstLater = view.items.findIndex((item) => !FOUNDATION_ITEMS.includes(item.key));
   return (
     <Panel title={setup.heading} padded={false}>
       <div className={styles.summary}>
@@ -53,8 +56,16 @@ export function SetupTab() {
         {isOwner ? null : <p className={styles.note}>{setup.ownerNote}</p>}
       </div>
       <ol aria-label={setup.listLabel} className={styles.list}>
-        {view.items.map((item) => (
-          <SetupRow key={item.key} item={item} canAct={isOwner} next={item.key === next} />
+        {view.items.map((item, index) => (
+          <Fragment key={item.key}>
+            {index === firstLater ? (
+              <li role="presentation" className={styles.later}>
+                <span>{setup.laterHeading}</span>
+                <span className={styles.laterNote}>{setup.laterNote}</span>
+              </li>
+            ) : null}
+            <SetupRow item={item} canAct={isOwner} next={item.key === next} />
+          </Fragment>
         ))}
       </ol>
     </Panel>

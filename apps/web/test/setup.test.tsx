@@ -117,6 +117,21 @@ describe('setup tab', () => {
     expect(screen.getByText('Waiting on phone carriers (usually 10–15 days)')).toBeInTheDocument();
   });
 
+  it('sets the steps that are not in the count apart, after the five that are', async () => {
+    signedInApi(viewOf());
+    renderApp('/settings/setup');
+
+    const list = await stepList();
+    // The divider is not a row, so the list still has its nine steps
+    expect(within(list).getAllByRole('listitem')).toHaveLength(9);
+    const divider = within(list).getByText(setup.laterHeading).closest('li') as HTMLElement;
+    expect(within(divider).getByText(setup.laterNote)).toBeInTheDocument();
+    // Five steps come before it, four after
+    const everything = Array.from(list.children);
+    expect(everything.indexOf(divider)).toBe(5);
+    expect(everything).toHaveLength(10);
+  });
+
   it('no step says it is coming later: every feature has shipped', async () => {
     signedInApi(viewOf());
     renderApp('/settings/setup');

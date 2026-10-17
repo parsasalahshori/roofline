@@ -53,6 +53,9 @@ export const setup = {
   listLabel: 'Setup steps',
   progress: (done: number, total: number) => `${done} of ${total} setup steps done`,
   ringLabel: (done: number, total: number) => `${done} of ${total} setup steps done`,
+  /** The divider before the steps that are not in the count above it. */
+  laterHeading: 'More to set up',
+  laterNote: 'Not in the count above',
   ownerNote: 'Your owner finishes setup.',
   chips: {
     todo: 'To do',
