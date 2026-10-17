@@ -36,7 +36,7 @@ test('the three G1 agents start paused, Turn on Follow-up shows its rules, and R
   await expect(sheet.getByText('This is what I will do. I only draft texts for you to approve.')).toBeVisible();
   await sheet.getByRole('button', { name: 'Turn on', exact: true }).click();
   await expect(sheet).toHaveCount(0);
-  await expect(page.getByRole('switch', { name: 'Paused' })).not.toBeChecked();
+  await expect(page.getByRole('switch', { name: 'Running' })).toBeChecked();
 
   // An unbooked lead that is old enough, then ask the agent to look now.
   const lead = await seedOldLead(db, scenario.a.companyId);

@@ -44,7 +44,7 @@ export function KpiTiles({ cards, dashboard }: KpiTilesProps) {
             </>
           )
         }
-        unit={agentsDash.hoursUnit}
+        unit={hours === 1 ? agentsDash.hoursUnitOne : agentsDash.hoursUnit}
         meta={agentsDash.hoursSub}
       />
       <KpiTile

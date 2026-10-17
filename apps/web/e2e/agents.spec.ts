@@ -113,8 +113,8 @@ test('agents window: totals tiles show tasks, hours and office time, marked as e
   const tiles = page.getByRole('region', { name: 'Totals for your agents' });
   await expect(tiles).toBeVisible({ timeout: 15_000 });
   await expect(tiles.getByText('Tasks today', { exact: true })).toBeVisible();
-  await expect(tiles.getByText('Hours saved this week', { exact: true })).toBeVisible();
-  await expect(tiles.getByText('Office time saved this week', { exact: true })).toBeVisible();
+  await expect(tiles.getByText('Saved this week', { exact: true })).toBeVisible();
+  await expect(tiles.getByText('Office time saved', { exact: true })).toBeVisible();
   // Estimated money and time say so.
   await expect(tiles.getByText(/^about \$[\d,]+$/)).toBeVisible();
   await expect(tiles).toContainText('(estimate)');
@@ -162,15 +162,16 @@ test('agent page: the owner pauses Storm Scout through the confirm sheet and the
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   await page.goto('/agents/storm-scout');
-  const pause = page.getByRole('switch', { name: 'Paused' });
+  // The page's switch means what the card's does: on is running
+  const pause = page.getByRole('switch', { name: 'Running' });
   await expect(pause).toBeVisible({ timeout: 15_000 });
-  await expect(pause).toHaveAttribute('aria-checked', 'false');
+  await expect(pause).toHaveAttribute('aria-checked', 'true');
   await pause.click();
   const sheet = page.getByRole('dialog', { name: 'Pause this agent?' });
   await expect(sheet).toBeVisible();
   await sheet.getByRole('button', { name: 'Pause', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Pause this agent?' })).toHaveCount(0, { timeout: 15_000 });
-  await expect(pause).toHaveAttribute('aria-checked', 'true', { timeout: 15_000 });
+  await expect(pause).toHaveAttribute('aria-checked', 'false', { timeout: 15_000 });
 
   await page.goto('/agents');
   await expect(card(page, 'Storm Scout')).toContainText('Paused', { timeout: 15_000 });

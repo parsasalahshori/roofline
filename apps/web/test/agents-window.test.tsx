@@ -2,7 +2,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
 import { RouterProvider } from 'react-router';
-import type { AgentCard, AgentsOverview } from '@roofline/shared';
+import { hoursLabel, type AgentCard, type AgentsOverview } from '@roofline/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
@@ -165,7 +165,7 @@ describe('Agents window', () => {
     expect(await within(card).findByText('Booked an inspection')).toBeInTheDocument();
     expect(within(card).getByText('64')).toBeInTheDocument();
     expect(within(card).getByText('90%')).toBeInTheDocument();
-    expect(within(card).getByText(`${agentsDash.about} 31 ${agentsDash.hoursUnit}`)).toBeInTheDocument();
+    expect(within(card).getByText(hoursLabel(31 * 60))).toBeInTheDocument();
     expect(within(card).getByText(agentsDash.running)).toBeInTheDocument();
   });
 

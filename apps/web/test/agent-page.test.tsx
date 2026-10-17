@@ -292,7 +292,18 @@ describe('agent page', () => {
     expect(within(trail).getByRole('link', { name: WINDOW_COPY.agents.title })).toHaveAttribute('href', '/agents');
     expect(within(trail).getByText(AGENT_LABEL.storm_scout)).toHaveAttribute('aria-current', 'page');
     const controls = within(page).getByRole('region', { name: agentPage.controlsTitle });
-    expect(within(controls).getByText(agentsDash.running).closest('[data-tone]')).toHaveAttribute('data-tone', 'ok');
+    // The tag beside the title and the switch under it say the same word, "Running": the switch is on
+    const tag = within(controls).getAllByText(agentsDash.running).find((node) => node.closest('[data-tone]') !== null);
+    expect(tag?.closest('[data-tone]')).toHaveAttribute('data-tone', 'ok');
+    expect(within(controls).getByRole('switch', { name: agentPage.runningLabel })).toBeChecked();
+  });
+
+  it('the page switch means what the card switch means: on is running, off is paused', async () => {
+    setup('/agents/storm-scout', 'owner', { [GET]: () => ({ body: { ...DETAIL, paused: PAUSED } }) });
+    const off = await screen.findByRole('switch', { name: agentPage.runningLabel });
+    expect(off).not.toBeChecked();
+    // The word does not flip to "Paused" when it is off: the agent's state is the tag's
+    expect(screen.queryByRole('switch', { name: agentPage.pauseLabel })).toBeNull();
   });
 
   it('the figures over the page: what it saved, what it finished today and how often it succeeds', async () => {

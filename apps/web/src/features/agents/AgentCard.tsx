@@ -1,11 +1,11 @@
 import { useId } from 'react';
 import { Button, Tag, UiLink } from '@roofline/ui';
-import type { AgentCard as AgentCardData, RuleSentence } from '@roofline/shared';
-import { agentsDash } from '../../copy/agents.ts';
+import { hoursLabel, type AgentCard as AgentCardData, type RuleSentence } from '@roofline/shared';
+import { agentsDash, agentsWindow } from '../../copy/agents.ts';
 import { AGENT_LABEL } from '../../copy/status.ts';
 import { AgentGlyph } from './AgentGlyph.tsx';
 import { agentStatus } from './agentStatus.ts';
-import { agoWords, wholeHours } from './agentTheme.ts';
+import { agoWords } from './agentTheme.ts';
 import { DayBars } from './DayBars.tsx';
 import { PauseSwitch } from './PauseSwitch.tsx';
 import styles from './AgentCard.module.css';
@@ -75,7 +75,7 @@ export function AgentCard({ card, minutesThisWeek, latest, selected, onSelect, i
             <dt className="visually-hidden">{agentsDash.successLine}</dt>
             <dd>
               {card.successRate === null ? (
-                <span className={styles.muted}>{agentsDash.noSuccess}</span>
+                <span className={styles.muted}>{agentsWindow.successRateNone}</span>
               ) : (
                 <>
                   <span className={styles.value}>{`${Math.round(card.successRate * 100)}%`}</span>
@@ -89,7 +89,7 @@ export function AgentCard({ card, minutesThisWeek, latest, selected, onSelect, i
             <dd>
               {minutesThisWeek === null ? null : (
                 <>
-                  <span className={styles.value}>{`${agentsDash.about} ${wholeHours(minutesThisWeek)} ${agentsDash.hoursUnit}`}</span>
+                  <span className={styles.value}>{hoursLabel(minutesThisWeek)}</span>
                   <span className={styles.muted}>{agentsDash.savedLine}</span>
                 </>
               )}

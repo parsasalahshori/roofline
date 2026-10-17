@@ -35,7 +35,8 @@ export function AgentPanel({ agent, now }: { agent: ScreenAgent; now: number }) 
       <div className={styles.body}>
         <div className={styles.intro}>
           <p className={styles.blurb}>{agentsDash.blurb[agent]}</p>
-          {d ? <RunNowButton agent={agent} runNow={d.runNow} paused={d.paused !== null} label={agentsDash.runNow} /> : null}
+          {/* Front Desk's "answers as calls come in" would say the blurb over again: the panel leaves it out */}
+          {d && d.runNow.kind !== 'answers_calls' ? <RunNowButton agent={agent} runNow={d.runNow} paused={d.paused !== null} label={agentsDash.runNow} /> : null}
         </div>
         <section className={styles.section}>
           <div className={styles.sectionHead}>

@@ -2,9 +2,9 @@ import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AgentCard as AgentCardData } from '@roofline/shared';
+import { hoursLabel, type AgentCard as AgentCardData } from '@roofline/shared';
 import { Providers, createQueryClient } from '../src/app/providers.tsx';
-import { agentsDash } from '../src/copy/agents.ts';
+import { agentsDash, agentsWindow } from '../src/copy/agents.ts';
 import { AgentCard } from '../src/features/agents/AgentCard.tsx';
 import { ACCOUNT, SHELL_ROUTES, stubApi } from './helpers.tsx';
 
@@ -63,7 +63,7 @@ describe('AgentCard', () => {
     expect(screen.getByText('636')).toBeTruthy();
     expect(screen.getByText(agentsDash.tasksTodayLine)).toBeTruthy();
     expect(screen.getByText('92%')).toBeTruthy();
-    expect(screen.getByText(`${agentsDash.about} 18 ${agentsDash.hoursUnit}`)).toBeTruthy();
+    expect(screen.getByText(hoursLabel(1080))).toBeTruthy();
     expect(screen.getAllByText(agentsDash.savedLine).length).toBeGreaterThan(0);
     expect(screen.queryByText(/Waiting/)).toBeNull();
     expect(screen.getByText('Scored 636 roofs in last night’s hail path')).toBeTruthy();
@@ -72,10 +72,21 @@ describe('AgentCard', () => {
     expect(screen.getByRole('img', { name: new RegExp(agentsDash.cardSparkLabel) })).toBeTruthy();
   });
 
-  it('says no runs yet when the success rate is not known', () => {
+  it('says there are not enough runs yet when the success rate is not known, as the agent page does', () => {
     show(fixture({ successRate: null }));
-    expect(screen.getByText(agentsDash.noSuccess)).toBeTruthy();
+    expect(screen.getByText(agentsWindow.successRateNone)).toBeTruthy();
     expect(screen.queryByText(/%/)).toBeNull();
+    // Not "no runs yet": the card also says how many tasks the agent finished today
+    expect(screen.queryByText(/no runs/i)).toBeNull();
+  });
+
+  it.each([
+    [60, 'about 1 hour'],
+    [30, 'about 0.5 hours'],
+    [10, 'less than half an hour'],
+  ])('writes %i minutes saved as "%s", never "1 hrs"', (minutes, words) => {
+    show(fixture(), { minutes });
+    expect(screen.getByText(words)).toBeTruthy();
   });
 
   it('says nothing yet when there is no latest action', () => {
