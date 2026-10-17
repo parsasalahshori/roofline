@@ -6,15 +6,20 @@
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 12px;
+  gap: 6px;
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
-/* The words of the line under the title read as one line: a dot after each but the last */
+/* The status tag keeps its room from the words after it */
+.meta > :first-child {
+  margin-right: 6px;
+}
+
+/* The words of the line under the title read as one line: a dot after each but the last, centred in the gap (6px each side, as the dot inside a part) */
 .part:not(:last-child)::after {
   content: '\00b7';
-  margin-left: 10px;
+  margin-left: 6px;
   color: var(--ink-3);
 }
 
