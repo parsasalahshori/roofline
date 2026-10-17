@@ -113,11 +113,11 @@ describe('a window measured in AR (Android WebXR)', () => {
   it("the iPhone's device and corner spread set the ±", () => {
     const lidar = input(30.25, 48.5);
     const w = sizePhotoWindow({ ...lidar, scale: { ...lidar.scale, device: 'arkit-lidar' } }, photo)!;
-    // 2.5 mm (0.098 in) and 1%
-    expect(w.uncertaintyIn).toEqual({ width: 0.32, height: 0.49 });
+    // 2.5 mm (0.098 in) and 0.6% (LiDAR's scale term): about 1/4 in on a 36 in window
+    expect(w.uncertaintyIn).toEqual({ width: 0.21, height: 0.31 });
     const spread = sizePhotoWindow({ ...lidar, scale: { ...lidar.scale, device: 'arkit-lidar', cornerSpreadM: [0.02, 0.02, 0.02, 0.02] } }, photo)!;
     // 2 cm a corner (0.787 in) is more than the device's 2.5 mm: it is used
-    expect(spread.uncertaintyIn!.width).toBe(0.84);
+    expect(spread.uncertaintyIn!.width).toBe(0.81);
   });
 
   it('tapped in any order (here TL, BL, BR, TR) the width and height do not swap', () => {
