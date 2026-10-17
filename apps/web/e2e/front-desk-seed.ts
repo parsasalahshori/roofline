@@ -12,6 +12,7 @@ import {
   type TenantContext,
   type ToolCallRecord,
 } from '@roofline/db';
+import { daytimeZone } from './daytime-zone.ts';
 import { readStack, type Scenario } from './fixtures.ts';
 
 /*
@@ -48,16 +49,6 @@ const ctxOf = (scenario: Scenario): TenantContext => ({
   role: 'system',
   canApproveSpend: false,
 });
-
-/** A zone whose wall clock is between 10:00 and 17:59 now, so a staff text is never held for quiet hours. */
-export function daytimeZone(now: Date): string {
-  const zones = ['America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'America/Anchorage', 'Pacific/Honolulu'];
-  for (const zone of zones) {
-    const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: 'numeric', hourCycle: 'h23' }).format(now));
-    if (hour >= 10 && hour < 18) return zone;
-  }
-  return 'America/Chicago';
-}
 
 let sidCounter = 0;
 const nextSid = () => `CA${'e2'}${(++sidCounter).toString(16).padStart(30, '0')}`;
