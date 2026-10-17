@@ -5,6 +5,12 @@ import Foundation
 public struct CornerCapture: Sendable {
     /// A tap whose depth points are mostly further than this off the wall plane is refused (through the glass).
     public static let maxOffPlaneM = 0.05
+    /// Only depth points this close (metres, along the wall) to the tapped corner count for the off-wall check, and the
+    /// app only reads this far around the reticle: wide enough for a few good points, narrow enough that at an inside
+    /// frame corner the glass behind it does not outvote the frame (it was ~4.7 cm, which refused correct taps).
+    public static let depthRadiusM = 0.02
+    /// Fewest depth points near the tap to judge by (fewer: the check is skipped, nothing is refused on thin evidence).
+    public static let minDepthPoints = 6
     /// A corner closer than this to one already placed is a double tap.
     public static let minCornerGapM = 0.02
 
@@ -60,13 +66,18 @@ public struct CornerCapture: Sendable {
         return true
     }
 
-    /// Try to place the next corner from its averaged samples. `depthPoints`: LiDAR points around the reticle (or
-    /// raw surface hits) for the off-wall check; empty on phones without depth.
+    /// Try to place the next corner from its averaged samples. `depthPoints`: high-confidence LiDAR points around the
+    /// reticle (or raw surface hits) for the off-wall check; empty on phones without depth. Only the points within
+    /// `depthRadiusM` of the corner (measured along the wall) are judged; with fewer than `minDepthPoints` of them the
+    /// check is skipped. The tap is refused when more than half of them are further than `maxOffPlaneM` off the wall.
     public mutating func place(_ estimate: CornerEstimate, depthPoints: [Vec3] = []) -> PlaceResult {
         guard corners.count < 4 else { return .alreadyFour }
-        if let wall = wallPlane, !depthPoints.isEmpty, offPlaneShare(wall: wall, points: depthPoints, maxOffsetM: Self.maxOffPlaneM) > 0.5 {
-            let d = median(depthPoints.map { wall.distance($0) }) ?? 0
-            return .offWall(distanceM: d)
+        if let wall = wallPlane {
+            let near = depthPoints.filter { $0.isFinite && wall.project($0).distance(to: wall.project(estimate.point)) <= Self.depthRadiusM }
+            if near.count >= Self.minDepthPoints, offPlaneShare(wall: wall, points: near, maxOffsetM: Self.maxOffPlaneM) > 0.5 {
+                let d = median(near.map { wall.distance($0) }) ?? 0
+                return .offWall(distanceM: d)
+            }
         }
         if corners.contains(where: { $0.point.distance(to: estimate.point) < Self.minCornerGapM }) { return .tooCloseToCorner }
         corners.append(estimate)

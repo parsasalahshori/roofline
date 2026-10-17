@@ -14,16 +14,38 @@ let samplingChecks: [Check] = [
         ctx.expect(e.spreadM < 0.002, "spread \(e.spreadM)")
         ctx.expect(robustMean(Array(pts.prefix(3)), minCount: 5) == nil, "too few")
     },
-    Check("CornerSampler: fills to 15, estimate needs 5") { ctx in
+    Check("CornerSampler: fills to 45 (about a second), estimate needs 20") { ctx in
         var s = CornerSampler()
-        for _ in 0..<4 { s.add(Vec3(0, 1, -1)) }
-        ctx.expect(s.estimate() == nil, "4 is too few")
-        for _ in 0..<20 { s.add(Vec3(0, 1, -1)) }
-        ctx.equal(s.count, 15)
+        for _ in 0..<19 { s.add(Vec3(0, 1, -1)) }
+        ctx.expect(s.estimate() == nil, "19 is too few")
+        for _ in 0..<60 { s.add(Vec3(0, 1, -1)) }
+        ctx.equal(s.count, 45)
         ctx.expect(s.isFull, "full")
         ctx.near(s.estimate()?.spreadM, 0, 1e-12)
         s.add(Vec3(.nan, 0, 0))
-        ctx.equal(s.count, 15)
+        ctx.equal(s.count, 45)
+    },
+    Check("robustMean spread: block means, honest about correlated samples") { ctx in
+        // Independent noise (sigma 2 mm per sample) averages down inside a block: the spread is well under a sample's
+        var state: UInt64 = 12345
+        func rnd() -> Double { // uniform -1...1, then scaled to sigma 2 mm
+            state = state &* 6364136223846793005 &+ 1442695040888963407
+            return (Double(state >> 11) / Double(1 << 53) * 2 - 1) * 0.002 * 3.0.squareRoot()
+        }
+        let c = Vec3(0.4, 1.6, -1.5)
+        let noisy = (0..<45).map { _ in c + Vec3(rnd(), rnd(), rnd()) }
+        let n = robustMean(noisy, minCount: 20)!
+        let perSample = (noisy.reduce(0.0) { $0 + ($1 - Vec3.mean(noisy)!).dot($1 - Vec3.mean(noisy)!) } / 45).squareRoot()
+        ctx.expect(n.spreadM < perSample * 0.7, "independent noise: block spread \(n.spreadM) vs per-sample \(perSample)")
+        // A slow drift (4 mm over the second) is the same in every frame of a block: the spread keeps it
+        let drift = (0..<45).map { c + Vec3(0.004 * Double($0) / 44, 0, 0) }
+        let d = robustMean(drift, minCount: 20)!
+        let driftRms = (drift.reduce(0.0) { $0 + ($1 - Vec3.mean(drift)!).dot($1 - Vec3.mean(drift)!) } / 45).squareRoot()
+        ctx.expect(d.spreadM > driftRms * 0.8, "drift: block spread \(d.spreadM) vs per-sample \(driftRms)")
+        ctx.expect(d.spreadM > n.spreadM, "a wandering corner reports more spread than a steady noisy one")
+        // Too few for blocks: the RMS of the samples
+        let few = robustMean([c, c + Vec3(0.002, 0, 0), c, c + Vec3(0.002, 0, 0)], minCount: 1)!
+        ctx.near(few.spreadM, 0.001, 1e-9)
     },
     Check("StillnessDetector: still, then moving, then turning") { ctx in
         var d = StillnessDetector()
@@ -95,16 +117,51 @@ let captureChecks: [Check] = [
         c.setTracking(normal: true)
         c.setWallPlane(Plane(point: Vec3(0, 0, -2), normal: Vec3(0, 0, -1)), viewer: Vec3(0, 1.4, 0))
         ctx.near(c.wallPlane?.normal.z, 1, 1e-12, "turned toward the camera")
-        let glass = (0..<8).map { Vec3(Double($0) * 0.01, 1, -2.25) }
-        if case .offWall(let d) = c.place(CornerEstimate(point: Vec3(0, 1, -2), spreadM: 0, used: 15, rejected: 0), depthPoints: glass) {
+        // A 2 cm disc of depth points around the tap, all 25 cm behind the wall
+        func disc(z: Double, cx: Double = 0) -> [Vec3] {
+            var out: [Vec3] = []
+            for i in -3...3 { for j in -3...3 { out.append(Vec3(cx + Double(i) * 0.005, 1 + Double(j) * 0.005, z)) } }
+            return out.filter { ($0 - Vec3(0, 1, $0.z)).length <= 0.02 + 1e-9 }
+        }
+        let glass = disc(z: -2.25)
+        ctx.expect(glass.count >= CornerCapture.minDepthPoints, "enough points: \(glass.count)")
+        if case .offWall(let d) = c.place(CornerEstimate(point: Vec3(0, 1, -2), spreadM: 0, used: 45, rejected: 0), depthPoints: glass) {
             ctx.near(d, 0.25, 1e-9)
         } else {
             ctx.expect(false, "should be refused")
         }
-        let frame = (0..<8).map { Vec3(Double($0) * 0.01, 1, -1.99) }
-        ctx.equal(c.place(CornerEstimate(point: Vec3(0, 1, -1.99), spreadM: 0, used: 15, rejected: 0), depthPoints: frame), .placed(index: 0))
+        let frame = disc(z: -1.99)
+        ctx.equal(c.place(CornerEstimate(point: Vec3(0, 1, -1.99), spreadM: 0, used: 45, rejected: 0), depthPoints: frame), .placed(index: 0))
         c.setWallPlane(Plane(point: .zero, normal: .up), viewer: .zero)
         ctx.expect(c.wallPlane?.isVertical == true, "a floor is not taken as the wall")
+    },
+    Check("CornerCapture: the off-wall check looks 2 cm around the tap, so a thin frame member is not refused") { ctx in
+        var c = CornerCapture()
+        c.setTracking(normal: true)
+        c.setWallPlane(Plane(point: Vec3(0, 0, -2), normal: Vec3(0, 0, -1)), viewer: Vec3(0, 1.4, 0))
+        // A 3 cm wide frame member (|x| <= 1.5 cm) on the wall, glass 8 cm back on both sides of it
+        var pts: [Vec3] = []
+        for i in -12...12 { for j in -12...12 {
+            let x = Double(i) * 0.005
+            pts.append(Vec3(x, 1 + Double(j) * 0.005, abs(x) <= 0.0151 ? -1.99 : -2.08))
+        } }
+        let wide = pts.filter { Vec3($0.x, $0.y - 1, 0).length <= 0.05 }
+        ctx.expect(offPlaneShare(wall: c.wallPlane!, points: wide) > 0.5, "the old ~5 cm window is mostly glass here")
+        ctx.equal(c.place(CornerEstimate(point: Vec3(0, 1, -1.99), spreadM: 0, used: 45, rejected: 0), depthPoints: pts), .placed(index: 0))
+        // The same neighbourhood with the tap on the glass itself is still refused
+        if case .offWall = c.place(CornerEstimate(point: Vec3(0.05, 1.05, -2.08), spreadM: 0, used: 45, rejected: 0), depthPoints: pts) {} else {
+            ctx.expect(false, "a tap on the glass should be refused")
+        }
+    },
+    Check("CornerCapture: too little depth near the tap judges nothing") { ctx in
+        var c = CornerCapture()
+        c.setTracking(normal: true)
+        c.setWallPlane(Plane(point: Vec3(0, 0, -2), normal: Vec3(0, 0, -1)), viewer: Vec3(0, 1.4, 0))
+        let few = (0..<3).map { Vec3(Double($0) * 0.005, 1, -2.3) }
+        ctx.equal(c.place(CornerEstimate(point: Vec3(0, 1, -2), spreadM: 0, used: 45, rejected: 0), depthPoints: few), .placed(index: 0))
+        // Far from the tap does not count either
+        let farGlass = (0..<30).map { Vec3(0.1 + Double($0) * 0.005, 1, -2.3) }
+        ctx.equal(c.place(CornerEstimate(point: Vec3(0, 1.2, -2), spreadM: 0, used: 45, rejected: 0), depthPoints: farGlass), .placed(index: 1))
     },
     Check("CornerCapture.finished: projected onto the plane, gravity-ordered, spreads follow their corners") { ctx in
         var c = CornerCapture()
