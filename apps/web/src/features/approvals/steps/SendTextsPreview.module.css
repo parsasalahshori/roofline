@@ -1,4 +1,4 @@
-/* The personal texts preview: one row per text with its label, the words as sent and a Remove button. */
+/* The personal texts preview: one row per text: who it is for with its Remove button on one line, then the words as sent. */
 .preview {
   display: flex;
   flex-direction: column;
@@ -8,9 +8,8 @@
 
 .row {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
+  gap: 4px;
   min-width: 0;
   padding: 12px;
   border: 1px solid var(--line);
@@ -18,10 +17,12 @@
   background: var(--surface-2);
 }
 
-.text {
+/* The name and the button share a line, centred on each other: the button is no longer a word floating beside the first line of the text */
+.head {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   min-width: 0;
 }
 

@@ -106,6 +106,17 @@ describe('the texts preview', () => {
     ]);
   });
 
+  it('puts Remove on the line of the name it belongs to, above the words, as a button with an outline', () => {
+    renderAt(<SendTextsPreview step={step(2)} canApprove={true} taskId="t1" onSavePayload={() => {}} />);
+    const remove = screen.getAllByRole('button', { name: 'Remove' })[0]!;
+    expect(remove).toHaveAttribute('data-variant', 'default');
+    expect(remove).toHaveAttribute('data-size', 'sm');
+    // The name and the button are in one head; the words are not
+    const head = remove.parentElement!;
+    expect(head).toContainElement(screen.getAllByText('Customer 1')[0]!);
+    expect(head).not.toContainElement(screen.getAllByText('Body number 1')[0]!);
+  });
+
   it('offers no Remove once the plan can no longer change', () => {
     renderAt(<SendTextsPreview step={step(3)} canApprove={true} taskId="t1" />);
     expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull();
