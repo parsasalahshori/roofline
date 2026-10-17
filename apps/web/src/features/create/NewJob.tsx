@@ -210,6 +210,7 @@ export function NewJob() {
                 <Button
                   variant="ghost"
                   size="sm"
+                  flush="start"
                   className={styles.link}
                   onClick={() => {
                     chooseCustomer(null);
@@ -248,6 +249,7 @@ export function NewJob() {
                 <Button
                   variant="ghost"
                   size="sm"
+                  flush="start"
                   className={`${styles.link} ${styles.wide}`}
                   onClick={() => {
                     setMode('existing');
