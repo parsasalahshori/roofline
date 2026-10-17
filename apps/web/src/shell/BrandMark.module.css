@@ -28,10 +28,16 @@
   letter-spacing: -0.02em;
 }
 
-/* A logo is drawn whole on a light tile, so a dark mark stays readable in the dark theme too */
+/*
+ * A logo is drawn on a light tile, so a dark mark stays readable in the dark theme too. A square logo shows whole; a
+ * wide one (an icon then the name, like WinChoice's) shows its left square, which is the icon: the name is beside it.
+ */
 .logo {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  padding: 2px;
+  box-sizing: border-box;
+  object-fit: cover;
+  object-position: left center;
   background: #ffffff;
 }

@@ -43,6 +43,8 @@ export const DEMO_WINCHOICE_QUOTE_SLUG = 'winchoice';
 export const DEMO_WINCHOICE_NAME = 'WinChoice (demo)';
 /** The brand colour the company wears: the app's primary action red. Stored as the quote page's accent colour. */
 export const DEMO_WINCHOICE_BRAND_COLOR = '#ED3A2B';
+/** WinChoice's own logo (from winchoice.com), served with the web app: apps/web/public/brands/winchoice-logo.png. */
+export const DEMO_WINCHOICE_LOGO_URL = '/brands/winchoice-logo.png';
 /** A fictional, demo-only credential (every WinChoice demo user shares the password). */
 export const DEMO_WINCHOICE_LOGIN = { email: 'owner@winchoice.test', password: 'winchoice-demo' } as const;
 /** The company's own number, and the Front Desk number that answers for it. */
@@ -146,10 +148,10 @@ export async function seedWinChoiceWorld(pools: Pools, ownerUrl: string, now: Da
     const ago = (ms: number) => new Date(now.getTime() - ms);
     const ahead = (ms: number) => new Date(now.getTime() + ms);
 
-    // The company's profile and brand: a Little Rock office, and the red the app wears (the quote page's accent colour).
+    // The company's profile and brand: a Little Rock office, its logo, and the red the app wears (the quote page's accent colour).
     await q(
-      `update companies set legal_name = 'WinChoice (demo) LLC', email = 'office@winchoice.test', address_street = '8300 Rodney Parham Rd', address_city = 'Little Rock', address_state = 'AR', address_zip = '72227' where id = $1`,
-      [companyId],
+      `update companies set legal_name = 'WinChoice (demo) LLC', email = 'office@winchoice.test', address_street = '8300 Rodney Parham Rd', address_city = 'Little Rock', address_state = 'AR', address_zip = '72227', logo_url = $2 where id = $1`,
+      [companyId, DEMO_WINCHOICE_LOGO_URL],
     );
     // Windows first, roofing second; no gutters. The instant quote page is /q/winchoice.
     await q(
