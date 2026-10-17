@@ -325,6 +325,27 @@ describe('customers list', () => {
     expect(within(row).getByText(customers.doNotContact)).toBeInTheDocument();
   });
 
+  it('a customer with no phone has a quiet dash where the number would be, named for a screen reader', async () => {
+    signedIn(ACCOUNT, {
+      [listKey('limit=50&offset=0')]: () => ({
+        body: page([
+          customer({ id: 'c1', displayName: 'Ashley Perez' }),
+          customer({ id: 'c2', displayName: 'Ashley Thomas', phones: [{ number: '(402) 555-0144', label: null, primary: true }] }),
+        ]),
+      }),
+    });
+    renderApp('/customers');
+
+    const table = within(await tableFor());
+    const without = table.getByRole('row', { name: /Ashley Perez/ });
+    expect(within(without).getByText(customers.list.noPhoneDash)).toHaveAttribute('aria-hidden', 'true');
+    expect(within(without).getByText(customers.list.noPhone)).toBeInTheDocument();
+    // A customer with a number shows the number and no dash
+    const withNumber = table.getByRole('row', { name: /Ashley Thomas/ });
+    expect(within(withNumber).queryByText(customers.list.noPhoneDash)).toBeNull();
+    expect(within(withNumber).getByText('(402) 555-0144')).toBeInTheDocument();
+  });
+
   it('shows the Tags column only while some customer in the list has a tag', async () => {
     signedIn(ACCOUNT, {
       [listKey('limit=50&offset=0')]: () => ({ body: page([customer({ id: 'c1', displayName: 'Pat Homeowner' })]) }),

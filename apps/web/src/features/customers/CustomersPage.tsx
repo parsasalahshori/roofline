@@ -29,6 +29,20 @@ const primaryPhone = (row: CustomerListItem): string => {
   return phone === undefined ? '' : formatPhone(phone.number);
 };
 
+/** A phone's cell: the number, or a quiet dash (with the words for a screen reader) where a customer has none, as the jobs list does for a value. */
+function PhoneCell({ row }: { row: CustomerListItem }) {
+  const number = primaryPhone(row);
+  if (number !== '') return <>{number}</>;
+  return (
+    <>
+      <span aria-hidden="true" className={styles.noPhone}>
+        {customers.list.noPhoneDash}
+      </span>
+      <span className="visually-hidden">{customers.list.noPhone}</span>
+    </>
+  );
+}
+
 /** Name link, the archived and do-not-contact tags; shared by the table and the phone list. */
 function NameCell({ row }: { row: CustomerListItem }) {
   return (
@@ -70,7 +84,8 @@ function CustomerRows({ rows, phone }: { rows: CustomerListItem[]; phone: boolea
           <li key={row.id} className={styles.card} data-archived={row.archivedAt !== null ? true : undefined}>
             <NameCell row={row} />
             <span className={styles.cardMeta}>
-              <span className={styles.phone}>{primaryPhone(row)}</span>
+              {/* No phone, no slot for one: the consent chip then starts where the name's avatar does */}
+              {primaryPhone(row) !== '' ? <span className={styles.phone}>{primaryPhone(row)}</span> : null}
               <ConsentChip status={row.smsConsent.status} />
             </span>
             <TagList tags={row.tags} />
@@ -100,7 +115,9 @@ function CustomerRows({ rows, phone }: { rows: CustomerListItem[]; phone: boolea
               <Td>
                 <NameCell row={row} />
               </Td>
-              <Td className={styles.phone}>{primaryPhone(row)}</Td>
+              <Td className={styles.phone}>
+                <PhoneCell row={row} />
+              </Td>
               <Td>
                 <ConsentChip status={row.smsConsent.status} />
               </Td>

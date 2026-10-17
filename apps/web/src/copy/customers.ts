@@ -31,6 +31,9 @@ export const customers = {
     tableLabel: 'Customers',
     columnName: 'Name',
     columnPhone: 'Phone',
+    /** Where a customer's phone would be in the table, until there is one; the words are for a screen reader. */
+    noPhoneDash: '–',
+    noPhone: 'No phone',
     columnTexting: 'Texting',
     columnTags: 'Tags',
     archivedChip: 'Archived',
