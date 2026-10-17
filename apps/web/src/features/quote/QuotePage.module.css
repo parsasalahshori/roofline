@@ -5,6 +5,9 @@
  * cards are 14px round, the main button is 52px, and a title is Archivo at 110% width.
  */
 .page {
+  /* A ticked box is ink here, like every other selection: the company's colour is for the main button */
+  --checkbox-fill: var(--ink);
+  --checkbox-tick: var(--ink-inv);
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
@@ -100,6 +103,7 @@
   font-size: 0.9375rem;
   line-height: 1.45;
   overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 
 .subtitle {
@@ -146,12 +150,6 @@
   min-height: 44px;
   color: var(--ink-2);
   font-weight: 600;
-}
-
-/* Ink, not the company's colour, marks a ticked box */
-.checks input[type="checkbox"],
-.consent input[type="checkbox"] {
-  accent-color: var(--ink);
 }
 
 /* The bottom of a screen: the main action sits where a thumb is, on a tall phone */
@@ -355,7 +353,7 @@
 
 .rowBox[data-off] {
   background: transparent;
-  box-shadow: inset 0 0 0 1.5px var(--line-2);
+  box-shadow: inset 0 0 0 1.5px var(--line-ctl);
 }
 
 .rowName {
@@ -410,20 +408,20 @@
   overflow: hidden;
   border-radius: var(--r-2);
   background: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--line-2);
+  box-shadow: inset 0 0 0 1px var(--line-ctl);
 }
 
 .stepper .stepButton {
-  min-width: 40px;
-  min-height: 38px;
+  min-width: 44px;
+  min-height: 44px;
   border-radius: 0;
 }
 
 .count {
-  min-width: 40px;
+  min-width: 44px;
   border-right: 1px solid var(--line);
   border-left: 1px solid var(--line);
-  font: 600 1.0625rem/38px var(--f-mono);
+  font: 600 1.0625rem/44px var(--f-mono);
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
@@ -548,7 +546,7 @@
   padding: 8px 10px;
   border-radius: var(--r-2);
   background: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--line-2);
+  box-shadow: inset 0 0 0 1px var(--line-ctl);
   box-sizing: border-box;
   font-size: 0.875rem;
   text-align: center;

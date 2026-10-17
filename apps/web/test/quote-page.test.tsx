@@ -528,4 +528,16 @@ describe('quote helpers', () => {
   it('money is whole dollars', () => {
     expect(quoteMoney(1_250_000)).toBe('$12,500');
   });
+
+  it('the free in-home visit is never broken at its hyphen, wherever the page says it', () => {
+    for (const text of [quote.finalNote, quote.slotsTitle, quote.doneBody, quote.doneBooked('Tue, Oct 20 at 11:30 AM')]) {
+      expect(text).toContain('in-\u2060home');
+      expect(text).not.toMatch(/in-home/);
+    }
+  });
+
+  it('the estimate\'s button names the next step, not a price the visit has yet to settle', () => {
+    expect(quote.continueButton).toBe('Next: your details');
+    expect(quote.continueButton).not.toMatch(/price/i);
+  });
 });

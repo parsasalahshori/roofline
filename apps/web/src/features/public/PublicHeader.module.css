@@ -7,7 +7,7 @@
   width: 100%;
   max-width: 600px;
   margin: 0 auto;
-  padding: 14px 16px 12px;
+  padding: 10px 16px 8px;
   box-sizing: border-box;
 }
 
@@ -43,8 +43,8 @@
   flex: none;
   align-items: center;
   gap: 6px;
-  height: 36px;
-  padding: 0 14px;
+  height: 44px;
+  padding: 0 16px;
   border-radius: var(--r-pill);
   background: var(--surface);
   box-shadow: inset 0 0 0 1px var(--line-2);

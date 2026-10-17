@@ -5,6 +5,9 @@
  * Money and measurements are figures (tabular, or mono where the mockups use it). No countdown, no "offer ends".
  */
 .page {
+  /* A ticked box is ink here, like every other selection: the company's colour is for the main button */
+  --checkbox-fill: var(--ink);
+  --checkbox-tick: var(--ink-inv);
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
@@ -153,7 +156,7 @@
   padding: 10px;
   border-radius: var(--r-3);
   background: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--line-2);
+  box-shadow: inset 0 0 0 1px var(--line-ctl);
   cursor: pointer;
 }
 

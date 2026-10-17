@@ -9,7 +9,7 @@ import { createAppRouter } from '../src/app/router.tsx';
 import { homeowner, money } from '../src/copy/homeowner.ts';
 import { publicCopy } from '../src/copy/public.ts';
 import { quote } from '../src/copy/quote.ts';
-import { SIGNED_PDF_POLL_MS, signedPdfUrl } from '../src/features/homeowner/api.ts';
+import { SIGNED_PDF_POLL_LIMIT, SIGNED_PDF_POLL_MS, signedPdfUrl } from '../src/features/homeowner/api.ts';
 import { type Reply, stubApi } from './helpers.tsx';
 
 /*
@@ -150,6 +150,18 @@ describe('the company on the proposal page', () => {
     expect(brandStyle()).toBeNull();
   });
 
+  it("the brand colour is set on the document root, so the sign sheet (portaled to the body, outside the page) wears it too", async () => {
+    proposalApi(() => ({ body: withExtras({ accentColor: '#ed3a2b' }) }));
+    const { user } = renderPage();
+    await user.click(await screen.findByRole('button', { name: choose() }));
+    const sheet = await screen.findByRole('dialog', { name: homeowner.signTitle });
+    await waitFor(() => expect(brandStyle()).not.toBeNull());
+    // The style element holds the variables for the whole document, and the sheet is inside the document
+    expect(brandStyle()!.textContent).toMatch(/:root|html/);
+    expect(document.body.contains(sheet)).toBe(true);
+    expect(sheet.closest('[class*="page"]')).toBeNull();
+  });
+
   it('the company name is the wordmark, a logo image replaces it, and the Call pill dials the company', async () => {
     proposalApi(() => ({ body: fixture() }));
     renderPage();
@@ -219,8 +231,11 @@ describe('the company on the proposal page', () => {
     }));
     renderPage();
     expect(await screen.findByRole('heading', { name: homeowner.signedTitle })).toBeInTheDocument();
-    expect(screen.getByText(/^Signed by Maria Lopez on Oct 12, 2026 for Better$/)).toBeInTheDocument();
-    // The record: the tier, the day, the address and the total
+    expect(screen.getByText(homeowner.signedBy('Maria Lopez', 'Better'))).toBeInTheDocument();
+    // The record: the roof and its tier, the day (said here once, not in the sentence above), the address and the total
+    expect(screen.getByText(homeowner.optionKicker('Better'))).toBeInTheDocument();
+    expect(screen.getAllByText(/Oct 12, 2026/)).toHaveLength(1);
+    expect(screen.getByText(homeowner.signedOn('Oct 12, 2026'))).toBeInTheDocument();
     expect(screen.getByText('12 Oak Lane, Springfield')).toBeInTheDocument();
     expect(screen.getByText(money(1425000))).toBeInTheDocument();
     // The timeline has the two steps it knows, and invents no dates or crews
@@ -373,9 +388,15 @@ describe('the homeowner page', () => {
     const steps = within(sheet).getByRole('list', { name: homeowner.stepsLabel });
     expect(within(steps).getAllByRole('listitem').map((item) => item.textContent)).toEqual([homeowner.stepChoose, `2${homeowner.stepSign}`, `3${homeowner.stepDone}`]);
     expect(within(steps).getByText(homeowner.stepSign).closest('li')).toHaveAttribute('aria-current', 'step');
-    // The summary and the two ways to pay: only what the option carries
+    // The summary names the roof and the tier once, then what the option is (here its first promise: its name is just its tier)
+    expect(within(sheet).getByText(homeowner.optionKicker('Better'))).toBeInTheDocument();
+    expect(within(sheet).getByText('Upgraded underlayment')).toBeInTheDocument();
+    expect(within(sheet).getAllByText(/\bBetter\b/)).toHaveLength(1);
+    // What is paid is a read-only list of facts, not two cards to choose between: nothing in it can be picked
     expect(within(sheet).getAllByText(money(1425000)).length).toBeGreaterThanOrEqual(1);
     expect(within(sheet).getByText(homeowner.howYouPay)).toBeInTheDocument();
+    expect(within(sheet).queryAllByRole('radio')).toHaveLength(0);
+    expect(within(sheet).getByText(homeowner.payTotal).closest('dl')).not.toBeNull();
     expect(within(sheet).getByText(homeowner.payMonthlyAmount('$215'))).toBeInTheDocument();
     expect(within(sheet).getByText(homeowner.payMonthlyTerms('8.99', 120))).toBeInTheDocument();
     expect(within(sheet).getByText(homeowner.financingSeparate)).toBeInTheDocument();
@@ -518,6 +539,7 @@ describe('the homeowner page', () => {
       renderPage();
 
       expect(await screen.findByText(homeowner.pdfPreparing)).toBeInTheDocument();
+      expect(screen.queryByText(homeowner.pdfPreparingLate)).toBeNull();
       expect(screen.queryByRole('link', { name: homeowner.downloadPdf })).toBeNull();
       await vi.advanceTimersByTimeAsync(SIGNED_PDF_POLL_MS);
       await waitFor(() => expect(api.count(GET_KEY)).toBe(2));
@@ -528,6 +550,24 @@ describe('the homeowner page', () => {
       // Ready: the page stops asking.
       await vi.advanceTimersByTimeAsync(SIGNED_PDF_POLL_MS * 3);
       expect(api.count(GET_KEY)).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a signed copy that is still not ready when the page stops asking says to check back, not that the page updates on its own', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      proposalApi(() => ({
+        body: fixture({ status: 'signed', signed: { optionId: MIDDLE_ID, name: 'Maria Lopez', at: '2026-10-12T15:00:00.000Z', pdfReady: false } }),
+      }));
+      renderPage();
+
+      expect(await screen.findByText(homeowner.pdfPreparing)).toBeInTheDocument();
+      await vi.advanceTimersByTimeAsync(SIGNED_PDF_POLL_MS * (SIGNED_PDF_POLL_LIMIT + 2));
+      expect(await screen.findByText(homeowner.pdfPreparingLate)).toBeInTheDocument();
+      expect(screen.queryByText(homeowner.pdfPreparing)).toBeNull();
+      expect(api.count(GET_KEY)).toBe(SIGNED_PDF_POLL_LIMIT);
     } finally {
       vi.useRealTimers();
     }
@@ -562,6 +602,22 @@ describe('the homeowner page', () => {
 
     expect(await screen.findByText(homeowner.expiredTitle)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Choose / })).toBeNull();
+    // The company can send a fresh one, and the call to it is the page's one real action: a button-sized link that dials
+    expect(screen.getByText(homeowner.expiredBody('Acme Roofing'))).toBeInTheDocument();
+    const call = screen.getByRole('link', { name: homeowner.callUs('Acme Roofing') });
+    expect(call).toHaveAttribute('href', 'tel:+15555550100');
+    expect(call).toHaveAttribute('data-size', 'lg');
+  });
+
+  it('a declined proposal says the company was told and keeps the call as a quiet, button-sized link', async () => {
+    proposalApi(() => ({ body: fixture({ status: 'declined' }) }));
+    renderPage();
+
+    expect(await screen.findByText(homeowner.declinedTitle)).toBeInTheDocument();
+    const call = screen.getByRole('link', { name: homeowner.callUs('Acme Roofing') });
+    expect(call).toHaveAttribute('href', 'tel:+15555550100');
+    expect(call).toHaveAttribute('data-variant', 'ghost');
+    expect(call).toHaveAttribute('data-size', 'lg');
   });
 
   it('a gone link shows the plain message', async () => {
@@ -589,6 +645,14 @@ describe('the homeowner page', () => {
 
     await waitFor(() => expect(api.count(DECLINE_KEY)).toBe(1));
     expect(api.sent(DECLINE_KEY)).toEqual([{ reason: 'Too expensive' }]);
+  });
+
+  it('the button that sends a decline is the kit ink button, never the company colour (it would turn that colour under a thumb that just opened the sheet)', async () => {
+    proposalApi(() => ({ body: fixture() }));
+    const { user } = renderPage();
+    await user.click(await screen.findByRole('button', { name: homeowner.declineLink }));
+
+    expect(screen.getByRole('button', { name: homeowner.declineSend })).toHaveAttribute('data-variant', 'ink');
   });
 
   it('decline with no reason posts an empty body', async () => {
