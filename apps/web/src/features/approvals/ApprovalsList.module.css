@@ -42,17 +42,20 @@
   font: 600 var(--font-size-min)/1 var(--f-mono);
 }
 
+/* The cards of a row are as tall as the tallest of them and keep their buttons on the bottom edge, so the gaps between rows are one gap */
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr));
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .item {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
 }
 

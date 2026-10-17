@@ -1,5 +1,7 @@
 /* The card is the kit's. These are its states in the queue: the one the focus is in, and the one under the pointer. */
 .card {
+  /* In the queue's grid the card takes its row's height (the li is a flex column); anywhere else this has no parent to act on */
+  flex: 1 1 auto;
   transition: box-shadow var(--t-fast) var(--ease);
 }
 

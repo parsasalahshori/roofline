@@ -129,7 +129,7 @@ describe('the facts on a card', () => {
   it('adds up who the plan reaches, each in its own words, and locks it', () => {
     const facts = cardFacts(makeTask({ id: 't1', steps: [texts, emails] }));
     expect(facts).toContainEqual({ label: approvals.factRecipients, value: '31 texts · 12 emails', mono: true, locked: true });
-    expect(facts).toContainEqual({ label: approvals.factSends, value: 'today at 10:00 AM' });
+    expect(facts).toContainEqual({ label: approvals.factSends, value: 'today at 10:00 AM', mono: true });
   });
 
   it('calls the people of any other step customers', () => {

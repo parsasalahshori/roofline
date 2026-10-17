@@ -1,7 +1,9 @@
 import type { ApprovalFact } from '@roofline/ui';
+import { createElement } from 'react';
 import type { StepView, TaskView } from '../../api/types.ts';
 import { approvals } from '../../copy/approvals.ts';
 import { review } from '../../copy/review.ts';
+import { MoveWhen } from './MoveWhen.tsx';
 import { isOpen } from './toReviewStep.ts';
 import { kitFor } from './steps/index.ts';
 
@@ -49,6 +51,15 @@ export function cardFacts(task: TaskView): ApprovalFact[] {
     facts.push({ label: approvals.factSteps, value: approvals.stepsValue(open.length), mono: true });
   }
 
+  // An install that moves: when it goes (one), or how many (several). A plan made before its preview carried the time says nothing.
+  const moves = open.flatMap((step) => (step.type === 'move_appointment' && step.preview.moves !== undefined ? [step.preview.moves] : []));
+  const [onlyMove] = moves;
+  if (moves.length === 1 && onlyMove !== undefined) {
+    facts.push({ label: approvals.factMoves, value: createElement(MoveWhen, { start: onlyMove.start, end: onlyMove.end }), mono: true });
+  } else if (moves.length > 1) {
+    facts.push({ label: approvals.factMovesMany, value: approvals.installsValue(moves.length), mono: true });
+  }
+
   const reached = open.flatMap((step) =>
     step.preview.recipientCount === undefined ? [] : [recipientsWords(step, step.preview.recipientCount)],
   );
@@ -57,7 +68,7 @@ export function cardFacts(task: TaskView): ApprovalFact[] {
   }
 
   const sends = open.find((step) => step.preview.sendTime)?.preview.sendTime;
-  if (sends) facts.push({ label: approvals.factSends, value: sends });
+  if (sends) facts.push({ label: approvals.factSends, value: sends, mono: true });
 
   const spending = open.filter((step) => step.approvalClass === 'spend' && step.preview.maxSpendCents !== undefined);
   const cents = spending.reduce((sum, step) => sum + (step.preview.maxSpendCents ?? 0), 0);

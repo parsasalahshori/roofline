@@ -203,6 +203,96 @@ test.describe('queue on a phone', () => {
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   });
+
+  test('a card header is one line: the tag the page already says is left to screen readers', async ({
+    page,
+    loginAs,
+    markTodaySeen,
+    scenario,
+    db,
+    pools,
+  }) => {
+    await seedWeatherMovePlan(pools, db, scenario.a.companyId);
+    await loginAs(page, 'owner');
+    await markTodaySeen('owner@a.test');
+    await page.goto('/approvals');
+
+    const cards = page.getByRole('list', { name: 'Plans waiting for your OK' }).getByRole('article');
+    await expect(cards.first()).toBeVisible({ timeout: 15_000 });
+    for (const card of await cards.all()) {
+      // The agent's line, the glyph and (not on a phone) the tag: one line of 22px glyph, not a header of two lines of words
+      const header = await card.locator('header').boundingBox();
+      expect(header?.height ?? 0).toBeLessThanOrEqual(30);
+      // The tag is still there for a screen reader, clipped to a point
+      const tag = card.getByText('Needs your OK');
+      await expect(tag).toHaveCount(1);
+      const box = await tag.boundingBox();
+      expect(box?.width ?? 0).toBeLessThanOrEqual(2);
+    }
+  });
+
+  test('the review: the decision bar is under the Measure tile, and each step switch has a 44px target', async ({
+    page,
+    loginAs,
+    markTodaySeen,
+    scenario,
+  }) => {
+    await loginAs(page, 'owner');
+    await markTodaySeen('owner@a.test');
+    await page.goto('/approvals/' + scenario.taskId);
+    await expect(page.getByRole('button', { name: /^Approve 3 steps/ })).toBeVisible({ timeout: 15_000 });
+
+    // The tile stands up out of the tab bar over the bar's foot: the point just inside its top edge belongs to the tile, not to the bar
+    const hit = await page.evaluate(() => {
+      const tile = document.querySelector('nav [data-tab="measure"]');
+      if (!tile) return null;
+      const glyph = tile.firstElementChild?.getBoundingClientRect();
+      if (!glyph) return null;
+      const found = document.elementFromPoint(glyph.left + glyph.width / 2, glyph.top + 3);
+      return { insideTile: found !== null && tile.contains(found), tag: found?.tagName ?? null };
+    });
+    expect(hit).not.toBeNull();
+    expect(hit?.insideTile).toBe(true);
+
+    // The visible switch is 44 by 24; the button around it is the target
+    for (const toggle of await page.getByRole('switch').all()) {
+      const box = await toggle.boundingBox();
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+      expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
+    }
+  });
+});
+
+test.describe('the queue on a desktop', () => {
+  test('the cards of a row are as tall as each other and keep their buttons on one line', async ({
+    page,
+    loginAs,
+    markTodaySeen,
+    scenario,
+    db,
+    pools,
+  }) => {
+    await seedWeatherMovePlan(pools, db, scenario.a.companyId);
+    await loginAs(page, 'owner');
+    await markTodaySeen('owner@a.test');
+    await page.goto('/approvals');
+
+    const cards = page.getByRole('list', { name: 'Plans waiting for your OK' }).getByRole('article');
+    await expect(cards.first()).toBeVisible({ timeout: 15_000 });
+    expect(await cards.count()).toBeGreaterThanOrEqual(2);
+    const boxes = await Promise.all((await cards.all()).map((card) => card.boundingBox()));
+    const buttons = await Promise.all((await cards.all()).map((card) => card.locator('[data-role="approve"]').boundingBox()));
+    // Cards that share a row (the same top) are the same height and their Approve buttons sit on the same line
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i]!;
+        const b = boxes[j]!;
+        if (Math.abs(a.y - b.y) > 1) continue;
+        expect(Math.abs(a.height - b.height)).toBeLessThanOrEqual(1);
+        expect(Math.abs((buttons[i]?.y ?? 0) - (buttons[j]?.y ?? 0))).toBeLessThanOrEqual(1);
+      }
+    }
+  });
 });
 
 test.describe('a card in a narrow column', () => {

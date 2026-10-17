@@ -586,7 +586,8 @@ describe('the review screen', () => {
     const page = await screen.findByRole('main', { name: plan.title });
     expect(within(page).getByRole('heading', { level: 1, name: plan.title })).toBeInTheDocument();
     expect(within(page).getByText(plan.summary!)).toBeInTheDocument();
-    expect(within(page).getByText('Waiting for your OK')).toBeInTheDocument();
+    // The same words the plan's card on the queue carries: one state, one phrase
+    expect(within(page).getByText(approvals.tagNeedsOk)).toBeInTheDocument();
     // The trail: Need your OK, then the plan. The first is the way back on a phone
     const trail = within(page).getByRole('navigation', { name: shell.crumbsLabel });
     expect(within(trail).getByRole('link', { name: WINDOW_COPY.approvals.title })).toHaveAttribute('href', '/approvals');

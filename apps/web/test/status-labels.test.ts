@@ -1,5 +1,6 @@
 import { AGENTS, STEP_STATUSES, TASK_STATUSES } from '@roofline/shared';
 import { describe, expect, it } from 'vitest';
+import { approvals } from '../src/copy/approvals.ts';
 import { AGENT_LABEL, STEP_STATUS_LABEL, TASK_STATUS_LABEL, stepStatusLabel, taskStatusLabel } from '../src/copy/status.ts';
 
 describe('status labels', () => {
@@ -11,7 +12,7 @@ describe('status labels', () => {
 
   it('says the same words the spec does', () => {
     expect(TASK_STATUS_LABEL).toEqual({
-      draft: 'Waiting for your OK',
+      draft: 'Needs your OK',
       awaiting_owner: 'Waiting for owner',
       approved: 'Approved',
       declined: 'Not now',
@@ -46,8 +47,13 @@ describe('status labels', () => {
     expect(stepStatusLabel('pending')).toBe('Ready');
   });
 
+  it('says a plan waiting for a yes in the words of its card on the queue', () => {
+    expect(taskStatusLabel({ status: 'draft', steps: [] })).toBe(approvals.tagNeedsOk);
+    expect(taskStatusLabel({ status: 'awaiting_owner', steps: [] })).toBe(approvals.tagWaitingOwner);
+  });
+
   it('labels a task from its status', () => {
-    expect(taskStatusLabel({ status: 'draft', steps: [] })).toBe('Waiting for your OK');
+    expect(taskStatusLabel({ status: 'draft', steps: [] })).toBe('Needs your OK');
     expect(taskStatusLabel({ status: 'needs_attention', steps: [] })).toBe('Needs attention');
   });
 
