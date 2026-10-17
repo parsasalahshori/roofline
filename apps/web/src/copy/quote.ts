@@ -81,7 +81,7 @@ export const quote = {
   appDownload: (app: string): string => `Download the ${app} app to measure your windows`,
   appLine: 'The app measures each window and gives you the exact price.',
   browserMeasure: 'Open the camera to measure your windows',
-  nextMeasureTitle: 'Next: measure your windows for the exact price',
+  nextMeasureTitle: 'Get a quick estimate on your windows',
   browserLine: 'Use your phone\'s camera to measure each window and get the exact price.',
   qrCaption: 'Scan with your phone: iPhone opens the app, Android measures in the browser',
   browserSoonTitle: 'Measuring in your browser is coming soon',
