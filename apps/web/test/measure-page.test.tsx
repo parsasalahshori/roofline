@@ -1,4 +1,4 @@
-import { Page, PageSlotsContext } from '@roofline/ui';
+import { Page } from '@roofline/ui';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider, useLocation } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -49,34 +49,12 @@ describe('MeasurePage: the head every Measure screen shares', () => {
     expect(screen.getByRole('heading', { level: 1, name: '305 Ridgeway Dr' }).className).toContain('visually-hidden');
   });
 
-  it('the switch shows the section as chosen and goes to each place; Gutters shows only with a link', () => {
-    const router = renderPage(<MeasurePage section="roof" address="12 Elm St, Omaha" links={LINKS}>{'body'}</MeasurePage>);
-    const group = within(screen.getByRole('radiogroup', { name: measureWindows.switchLabel }));
-    expect(group.getByRole('radio', { name: measureWindows.switchRoof })).toBeChecked();
-    fireEvent.click(group.getByRole('radio', { name: measureWindows.switchWindows }));
-    expect(router.state.location.pathname + router.state.location.search).toBe(LINKS.windows);
-    cleanup();
-    const second = renderPage(<MeasurePage section="windows" address="12 Elm St, Omaha" links={{ ...LINKS, gutters: null }}>{'body'}</MeasurePage>);
-    const again = within(screen.getByRole('radiogroup', { name: measureWindows.switchLabel }));
-    expect(again.queryByRole('radio', { name: measureGutters.switchGutters })).toBeNull();
-    fireEvent.click(again.getByRole('radio', { name: measureWindows.switchRoof }));
-    expect(second.state.location.pathname).toBe('/estimator');
+  it('has no Roof | Windows | Gutters switch: staff measure roofs only', () => {
+    renderPage(<MeasurePage section="roof" address="12 Elm St, Omaha" links={LINKS}>{'body'}</MeasurePage>);
+    expect(screen.queryByRole('radiogroup', { name: measureWindows.switchLabel })).toBeNull();
+    expect(screen.queryByRole('radio', { name: measureGutters.switchGutters })).toBeNull();
   });
 
-  it('on a phone the switch has just the three words, so it fits beside the way back; on a desktop each has its icon', () => {
-    const phoneSlots = { crumbs: null, actions: null, phone: true, trailing: null };
-    renderPage(
-      <PageSlotsContext.Provider value={phoneSlots}>
-        <MeasurePage section="roof" address="12 Elm St, Omaha" links={LINKS}>{'body'}</MeasurePage>
-      </PageSlotsContext.Provider>,
-    );
-    const onPhone = screen.getByRole('radiogroup', { name: measureWindows.switchLabel });
-    expect(within(onPhone).getAllByRole('radio').map((radio) => radio.textContent)).toEqual([measureWindows.switchRoof, measureWindows.switchWindows, measureGutters.switchGutters]);
-    expect(onPhone.querySelector('svg')).toBeNull();
-    cleanup();
-    renderPage(<MeasurePage section="roof" address="12 Elm St, Omaha" links={LINKS}>{'body'}</MeasurePage>);
-    expect(screen.getByRole('radiogroup', { name: measureWindows.switchLabel }).querySelectorAll('svg')).toHaveLength(3);
-  });
 
   it('the page and its host render the steps as a tab list that picks one column', () => {
     let picked = 'requests';

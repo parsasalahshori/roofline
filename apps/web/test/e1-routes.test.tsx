@@ -1,5 +1,5 @@
 import { instantEstimate, DEFAULT_WINDOW_ORDER_SETTINGS } from '@roofline/shared';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 // RouterProvider from 'react-router', not 'react-router/dom': under Vitest the two load as separate copies of the router
 import { RouterProvider } from 'react-router';
@@ -117,7 +117,7 @@ describe('E1 windows', () => {
     expect(await screen.findByText(measure.numbersTitle)).toBeInTheDocument();
   });
 
-  it('/estimator/windows/w1 opens Measure windows in the same window, with the Roof | Windows switch', async () => {
+  it('/estimator/windows/w1 opens Measure windows in the same window, with no Roof | Windows switch', async () => {
     const windowsView = {
       id: 'w1', propertyId: 'pr1', address: '1 Main St, Austin, TX', center: [-97.7, 30.3], createdAt: '2026-10-12T12:00:00.000Z',
       photos: [], windows: [], estimated: { covers: 'all-sides', bySizeClass: { small: 1, standard: 4, large: 0, picture: 0 }, basis: 'b' },
@@ -132,10 +132,8 @@ describe('E1 windows', () => {
     });
     renderApp('/estimator/windows/w1');
     expect(await screen.findByRole('button', { name: measureWindows.scanButton })).toBeInTheDocument();
-    // The switch in the top bar: Windows is the page, Roof is the other choice (Gutters needs a measured roof)
-    const switcher = screen.getByRole('radiogroup', { name: measureWindows.switchLabel });
-    expect(within(switcher).getByRole('radio', { name: measureWindows.switchWindows })).toBeChecked();
-    expect(within(switcher).getByRole('radio', { name: measureWindows.switchRoof })).not.toBeChecked();
+    // Staff measure roofs only (windows come from the homeowner app): no Roof | Windows switch in the top bar
+    expect(screen.queryByRole('radiogroup', { name: measureWindows.switchLabel })).toBeNull();
   });
 
   it('/estimator/windows opens the address step', async () => {
@@ -146,7 +144,7 @@ describe('E1 windows', () => {
     expect(screen.getByText(measureWindows.startSteps[0]!)).toBeInTheDocument();
   });
 
-  it('the roof screen\u2019s Windows switch measures the same property\u2019s windows', async () => {
+  it('the roof screen has no Windows or Gutters switch (staff measure roofs only)', async () => {
     signedInApi(ACCOUNT, {
       ...proposalListRoutes(),
       'GET /api/measurements/m1': () => ({ body: MEASUREMENT }),
@@ -155,11 +153,9 @@ describe('E1 windows', () => {
       }),
     });
     renderApp('/estimator/measure/m1');
-    const switcher = await screen.findByRole('radiogroup', { name: measureWindows.switchLabel });
-    expect(within(switcher).getByRole('radio', { name: measureWindows.switchRoof })).toBeChecked();
-    expect(within(switcher).getByRole('radio', { name: measureWindows.switchWindows })).not.toBeChecked();
-    // Where each choice goes is the page's own links (see measure-page.test.tsx); the roof here has no outline, so no Gutters
-    expect(within(switcher).queryByRole('radio', { name: measureGutters.switchGutters })).toBeNull();
+    expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument();
+    expect(screen.queryByRole('radiogroup', { name: measureWindows.switchLabel })).toBeNull();
+    expect(screen.queryByRole('radio', { name: measureGutters.switchGutters })).toBeNull();
   });
 
   it('/estimator/proposals/p1 shows the proposal', async () => {

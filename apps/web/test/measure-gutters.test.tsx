@@ -178,8 +178,8 @@ describe('Measure gutters', () => {
     // Good, Better and Best
     const panel = screen.getByRole('complementary', { name: liftProposal.label });
     expect(within(panel).getAllByRole('radio')).toHaveLength(3);
-    // The switch in the top bar shows Gutters as the page
-    expect(screen.getByRole('radio', { name: copy.switchGutters })).toBeChecked();
+    // Gutters is not offered: the top bar's switch has no Gutters tab (the page opens only by its address)
+    expect(screen.queryByRole('radio', { name: copy.switchGutters })).toBeNull();
   });
 
   it('a gable draws its rakes greyed and no gutter on them', async () => {

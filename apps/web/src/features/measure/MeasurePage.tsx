@@ -16,6 +16,12 @@ export type MeasureSection = 'roof' | 'windows' | 'gutters';
 export type MeasureLinks = { roof: string; windows: string; gutters?: string | null };
 
 const SECTION_LABEL: Record<MeasureSection, string> = { roof: measureWindows.switchRoof, windows: measureWindows.switchWindows, gutters: measureGutters.switchGutters };
+/**
+ * The tabs the staff switch offers (owner, Oct 17 2026): Roof only. Windows are measured by the homeowner in the app (or
+ * at the free visit) and gutters are not offered, so with one tab there is no switch. Their pages stay reachable by
+ * address (Factory orders opens the windows pages).
+ */
+const OFFERED: readonly MeasureSection[] = ['roof'];
 const SECTION_ICON = { roof: 'roof', windows: 'win', gutters: 'gutter' } as const;
 
 type Props = {
@@ -66,7 +72,7 @@ export function MeasurePage({ section, address = null, title, subtitle, actions,
   if (crumbs.length === 1 && section !== 'order') crumbs[0] = { label: measure.title };
 
   const switcher =
-    section !== 'order' && links !== undefined ? (
+    section !== 'order' && links !== undefined && OFFERED.length > 1 ? (
       <Segmented
         label={measureWindows.switchLabel}
         value={section}
@@ -74,8 +80,8 @@ export function MeasurePage({ section, address = null, title, subtitle, actions,
           const href = links[next];
           if (next !== section && href) void navigate(href);
         }}
-        // On a phone the three words fit beside the way back only without their icons (p-measure.png has none)
-        options={(['roof', 'windows', ...(links.gutters ? ['gutters' as const] : [])] as MeasureSection[]).map((value) => ({
+        // On a phone the words fit beside the way back only without their icons (p-measure.png has none)
+        options={OFFERED.map((value) => ({
           value,
           label: SECTION_LABEL[value],
           ...(phone ? {} : { icon: <Icon name={SECTION_ICON[value]} size={16} /> }),

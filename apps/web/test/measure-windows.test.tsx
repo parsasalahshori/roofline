@@ -17,7 +17,6 @@ import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { liftProposal } from '../src/copy/liftMeasure.ts';
-import { measureGutters } from '../src/copy/measureGutters.ts';
 import { measureWindows as copy, windowPhotos as windowPhotosCopy } from '../src/copy/measureWindows.ts';
 import { wholeDollars } from '../src/features/measure/lift/proposalLines.ts';
 import { forgetRevealed } from '../src/features/measure/lift/scan.ts';
@@ -310,13 +309,9 @@ describe('Measure windows: the scan', () => {
     expect(sent('POST /api/window-measurements')).toEqual([{ propertyId: 'p1' }]);
   });
 
-  it('the Roof | Windows switch carries the address to the roof screen', async () => {
-    const router = await open();
-    const group = screen.getByRole('radiogroup', { name: copy.switchLabel });
-    expect(within(group).getByRole('radio', { name: copy.switchWindows }).getAttribute('aria-checked')).toBe('true');
-    fireEvent.click(within(group).getByRole('radio', { name: copy.switchRoof }));
-    await waitFor(() => expect(router.state.location.pathname).toBe('/estimator'));
-    expect(router.state.location.search).toBe(`?measure=${encodeURIComponent('214 Brookside Dr, Springdale, AR')}`);
+  it('has no Roof | Windows switch (staff measure roofs only)', async () => {
+    await open();
+    expect(screen.queryByRole('radiogroup', { name: copy.switchLabel })).toBeNull();
   });
 
   it('the head is the street, with the rest of the address, the floors, the wall and how long it took under it', async () => {
@@ -974,29 +969,16 @@ describe('Measure windows: the switch and the start page', () => {
     replacedById: null,
     canEdit: true,
   };
-  const switchOf = () => within(screen.getByRole('radiogroup', { name: copy.switchLabel }));
 
-  it('has the Gutters tab, as the roof screen does, when this house has a measured roof on the list', async () => {
+
+
+
+  it('has no switch at all, with or without a measured roof on the list', async () => {
     requestRows = [ROOF_ROW];
-    current = view();
-    const router = render_('/estimator/windows/w1');
-    await screen.findByRole('button', { name: copy.scanButton });
-    const gutters = await switchOf().findByRole('radio', { name: measureGutters.switchGutters });
-    fireEvent.click(gutters);
-    await waitFor(() => expect(router.state.location.pathname).toBe('/estimator/measure/m9/gutters'));
-  });
-
-  it('leaves Gutters out when there is no roof to measure them on', async () => {
     current = view();
     render_('/estimator/windows/w1');
     await screen.findByRole('button', { name: copy.scanButton });
-    expect(switchOf().getAllByRole('radio').map((radio) => radio.textContent)).toEqual([copy.switchRoof, copy.switchWindows]);
-  });
-
-  it('opens the start page on the first roof request\'s gutters too, with no house open', async () => {
-    requestRows = [ROOF_ROW];
-    render_('/estimator/windows');
-    expect(await switchOf().findByRole('radio', { name: measureGutters.switchGutters })).toBeInTheDocument();
+    expect(screen.queryByRole('radiogroup', { name: copy.switchLabel })).toBeNull();
   });
 
   it('gives the example address in the company\'s own town, and says it once (no intro repeating the first step)', async () => {
