@@ -32,12 +32,17 @@ struct MeasureHost: View {
 /// Camera permission, asked before the AR session or the camera picker starts, so a refusal can say what to do.
 @MainActor
 enum CameraAccess {
-    enum State { case allowed, denied }
+    /// `denied`: the person said no (Settings can turn it back on). `restricted`: this iPhone does not allow camera use at all
+    /// (Screen Time, a managed device): Settings cannot fix it, so the wording is different.
+    enum State { case allowed, denied, restricted }
+
+    static let restrictedText = "Camera use is restricted on this iPhone, e.g. by Screen Time."
 
     static func request() async -> State {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized: return .allowed
         case .notDetermined: return await AVCaptureDevice.requestAccess(for: .video) ? .allowed : .denied
+        case .restricted: return .restricted
         default: return .denied
         }
     }
@@ -50,6 +55,8 @@ struct UnsupportedMeasureView: View {
         case noCamera
         case noDepth
         case cameraOff
+        /// Camera use is blocked on the phone itself (Screen Time): no Settings switch to point to.
+        case cameraRestricted
     }
 
     let reason: Reason
@@ -61,6 +68,7 @@ struct UnsupportedMeasureView: View {
         case .noCamera: return "This needs an iPhone"
         case .noDepth: return "This needs a Pro iPhone"
         case .cameraOff: return "Camera access is off"
+        case .cameraRestricted: return "Camera is restricted"
         }
     }
 
@@ -69,6 +77,7 @@ struct UnsupportedMeasureView: View {
         case .noCamera: return "This device can't measure with a camera. Your request is saved. Open WinChoice on your iPhone to measure your windows."
         case .noDepth: return "Scanning a room needs the depth sensor in a Pro iPhone. Tap the 4 corners of each window instead, or take a photo with a bank card."
         case .cameraOff: return "WinChoice uses the camera only to measure your windows. Turn it on in Settings, then come back."
+        case .cameraRestricted: return CameraAccess.restrictedText + " Ask whoever manages this iPhone to allow it, or measure from another iPhone."
         }
     }
 
@@ -83,7 +92,7 @@ struct UnsupportedMeasureView: View {
                 Spacer()
             }
             Spacer()
-            IconTile(icon: reason == .cameraOff ? .camera : .alert, size: 72, iconSize: 34, tint: reason == .cameraOff ? Theme.blueTint : Theme.warnTint, foreground: reason == .cameraOff ? Theme.blue : Theme.warn)
+            IconTile(icon: (reason == .cameraOff || reason == .cameraRestricted) ? .camera : .alert, size: 72, iconSize: 34, tint: reason == .cameraOff ? Theme.blueTint : Theme.warnTint, foreground: reason == .cameraOff ? Theme.blue : Theme.warn)
             Text(title).wcHeading(26, .heavy, relativeTo: .title).foregroundStyle(Theme.ink).multilineTextAlignment(.center).accessibilityAddTraits(.isHeader)
             Text(detail).wc(16, relativeTo: .body).foregroundStyle(Theme.ink2).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
             Spacer()

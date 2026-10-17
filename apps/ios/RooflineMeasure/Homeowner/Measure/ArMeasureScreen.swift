@@ -30,6 +30,8 @@ struct ArMeasureScreen: View {
             UnsupportedMeasureView(reason: .noCamera, method: .corners) { store.measureSession = nil }
         } else if access == .denied {
             UnsupportedMeasureView(reason: .cameraOff, method: .corners) { store.measureSession = nil }
+        } else if access == .restricted {
+            UnsupportedMeasureView(reason: .cameraRestricted, method: .corners) { store.measureSession = nil }
         } else if let controller = controller {
             ZStack {
                 ArSceneContainer(view: controller.sceneView).ignoresSafeArea()

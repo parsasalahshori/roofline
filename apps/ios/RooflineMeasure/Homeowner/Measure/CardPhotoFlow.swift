@@ -18,6 +18,7 @@ struct CardPhotoFlow: View {
     @State private var windowPoints: [CGPoint] = []
     @State private var showCamera = false
     @State private var cameraDenied = false
+    @State private var cameraRestricted = false
     @State private var cameraNote: String?
 
     var body: some View {
@@ -58,6 +59,9 @@ struct CardPhotoFlow: View {
                     if cameraDenied {
                         InfoPanel(icon: .camera, text: "Camera access is off. Turn it on in Settings, then come back.", tint: Theme.warnTint, iconColor: Theme.warn)
                     }
+                    if cameraRestricted {
+                        InfoPanel(icon: .camera, text: CameraAccess.restrictedText, tint: Theme.warnTint, iconColor: Theme.warn)
+                    }
                     if let note = cameraNote { InfoPanel(icon: .info, text: note) }
                     WCScrollFooter()
                 }
@@ -81,6 +85,7 @@ struct CardPhotoFlow: View {
         switch await CameraAccess.request() {
         case .allowed: showCamera = true
         case .denied: cameraDenied = true
+        case .restricted: cameraRestricted = true
         }
     }
 
@@ -323,6 +328,8 @@ struct CameraPicker: UIViewControllerRepresentable {
         picker.sourceType = .camera
         picker.cameraCaptureMode = .photo
         picker.allowsEditing = false
+        // A flash on the glass makes a glare spot over the card and the frame
+        picker.cameraFlashMode = .off
         picker.delegate = context.coordinator
         return picker
     }

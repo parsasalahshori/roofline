@@ -30,15 +30,14 @@ struct RoomScanScreen: View {
             UnsupportedMeasureView(reason: DeviceCaps.arSupported ? .noDepth : .noCamera, method: .roomScan) { store.measureSession = nil }
         } else if access == .denied {
             UnsupportedMeasureView(reason: .cameraOff, method: .roomScan) { store.measureSession = nil }
+        } else if access == .restricted {
+            UnsupportedMeasureView(reason: .cameraRestricted, method: .roomScan) { store.measureSession = nil }
         } else if let scanner = scanner {
             Group {
                 switch scanner.phase {
-                case .scanning: scanning(scanner)
-                case .processing:
-                    VStack(spacing: 16) {
-                        ProgressView().tint(.white).scaleEffect(1.3)
-                        Text("Building your room…").wc(17, .semibold, relativeTo: .headline).foregroundStyle(.white)
-                    }
+                // The capture view stays in the hierarchy while RoomPlan processes: it is the view that runs the processing
+                // and calls back with the finished room, so taking it out would leave the scan hanging on "Building".
+                case .scanning, .processing: scanning(scanner)
                 case .review: review(scanner)
                 case .failed(let message): failed(message)
                 }
@@ -60,6 +59,14 @@ struct RoomScanScreen: View {
     private func scanning(_ scanner: RoomScanner) -> some View {
         ZStack {
             RoomCaptureContainer(view: scanner.captureView).ignoresSafeArea()
+            if scanner.phase == .processing {
+                VStack(spacing: 16) {
+                    ProgressView().tint(.white).scaleEffect(1.3)
+                    Text("Building your room…").wc(17, .semibold, relativeTo: .headline).foregroundStyle(.white)
+                }
+                .padding(28)
+                .background(RoundedRectangle(cornerRadius: 20).fill(Color(white: 0.12, opacity: 0.85)))
+            } else {
             VStack {
                 HStack(spacing: 10) {
                     Button { store.measureSession = nil } label: {
@@ -82,6 +89,7 @@ struct RoomScanScreen: View {
             }
             // Over the camera the controls stop at the largest ordinary text size, so the room stays in view
             .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+            }
         }
     }
 
