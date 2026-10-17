@@ -9,7 +9,8 @@ export const appointments = {
   groupWhen: 'Date and time',
   kindLabel: 'Kind',
   kind: { inspection: 'Inspection', install: 'Install', adjuster: 'Adjuster visit', other: 'Other' },
-  customerLabel: 'Customer or job',
+  /** Optional: a crew meeting or an adjuster visit has no customer, and Save asks only for the day and the time. */
+  customerLabel: 'Customer or job (optional)',
   customerPlaceholder: 'Search by name or address',
   customerResults: 'Matches',
   customerClear: 'Change',
@@ -30,7 +31,7 @@ export const appointments = {
     return rest === 0 ? hoursWord : `${hoursWord} ${rest} minutes`;
   },
   endsAt: (time: string) => `Ends at ${time}`,
-  notesLabel: 'Notes',
+  notesLabel: 'Notes (optional)',
   save: 'Save',
   saving: 'Saving',
   /** Beside Save while it is waiting: what is missing. */
