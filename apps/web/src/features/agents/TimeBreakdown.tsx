@@ -1,6 +1,6 @@
 import { hoursLabel, type BaselineBreakdownRow } from '@roofline/shared';
 import { Panel, Table, Td, Th, Tr } from '@roofline/ui';
-import { agentPage, agentsCommon } from '../../copy/agents.ts';
+import { agentPage } from '../../copy/agents.ts';
 import styles from './AgentLists.module.css';
 
 /** Where the saved time came from, one row per kind of work. */
@@ -10,7 +10,7 @@ export function TimeBreakdown({ rows }: { rows: BaselineBreakdownRow[] }) {
       {rows.length === 0 ? (
         <p className={styles.empty}>{agentPage.breakdownEmpty}</p>
       ) : (
-        <Table>
+        <Table className={styles.breakdown}>
           <caption className="visually-hidden">{agentPage.breakdownCaption}</caption>
           <thead>
             <tr>
@@ -24,7 +24,7 @@ export function TimeBreakdown({ rows }: { rows: BaselineBreakdownRow[] }) {
               <Tr key={row.baseline}>
                 <Td>{agentPage.baselineLabels[row.baseline]}</Td>
                 <Td numeric>{row.units.toLocaleString('en-US')}</Td>
-                <Td numeric>{`${hoursLabel(row.minutes)} ${agentsCommon.estimate}`}</Td>
+                <Td numeric>{hoursLabel(row.minutes)}</Td>
               </Tr>
             ))}
           </tbody>

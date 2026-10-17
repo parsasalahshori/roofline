@@ -1,4 +1,4 @@
-import { G1_AGENTS_SHIPPED, hoursLabel, isScreenAgent, LAUNCH_AGENTS, moneyLabel, type AgentDetail, type ScreenAgent, type TimePeriod } from '@roofline/shared';
+import { G1_AGENTS_SHIPPED, isScreenAgent, LAUNCH_AGENTS, moneyLabel, type AgentDetail, type ScreenAgent, type TimePeriod } from '@roofline/shared';
 import { Banner, EmptyState, KpiTile, Page, Panel, Skeleton, Tag, UiLink } from '@roofline/ui';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
@@ -10,6 +10,7 @@ import { shell } from '../../copy/shell.ts';
 import { AGENT_LABEL } from '../../copy/status.ts';
 import { NotFoundWindow } from '../../shell/NotFoundWindow.tsx';
 import { InlineError } from '../approvals/InlineError.tsx';
+import { HoursFigure, NoFigure } from './About.tsx';
 import { agentStatus } from './agentStatus.ts';
 import styles from './AgentPage.module.css';
 import { useAgentDetail } from './api.ts';
@@ -66,7 +67,7 @@ function PageStats({ d, owner, busy }: { d: AgentDetail; owner: boolean; busy: b
     <div className={styles.stats} aria-busy={busy}>
       <KpiTile
         label={`${agentPage.timeSaved} ${agentsCommon.estimate}`}
-        value={hoursLabel(d.minutesInPeriod)}
+        value={<HoursFigure minutes={d.minutesInPeriod} />}
         meta={
           rate === null ? undefined : (
             <>
@@ -86,7 +87,7 @@ function PageStats({ d, owner, busy }: { d: AgentDetail; owner: boolean; busy: b
       <KpiTile label={agentsWindow.finishedToday} value={d.card.finishedToday} />
       <KpiTile
         label={agentsWindow.successRate}
-        value={d.card.successRate === null ? '-' : `${Math.round(d.card.successRate * 100)}%`}
+        value={d.card.successRate === null ? <NoFigure /> : `${Math.round(d.card.successRate * 100)}%`}
         meta={d.card.successRate === null ? agentsWindow.successRateNone : undefined}
       />
     </div>
@@ -133,7 +134,7 @@ function ScreenAgentPage({ agent }: { agent: ScreenAgent }) {
             </div>
             <div className={styles.main}>
               <TimeBreakdown rows={d.breakdown} />
-              <RecentTasks tasks={d.recentTasks} />
+              <RecentTasks agent={agent} tasks={d.recentTasks} />
             </div>
           </div>
         </div>

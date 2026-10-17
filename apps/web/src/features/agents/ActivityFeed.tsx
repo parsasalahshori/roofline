@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import type { ScreenAgent } from '@roofline/shared';
+import { isScreenAgent, type ScreenAgent } from '@roofline/shared';
 import { Banner, Button, Chip, EmptyState, Panel, Skeleton } from '@roofline/ui';
+import { useSearchParams } from 'react-router';
 import { agents, agentsCommon } from '../../copy/agents.ts';
 import { AGENT_LABEL } from '../../copy/status.ts';
 import { InlineError } from '../approvals/InlineError.tsx';
@@ -12,9 +12,15 @@ import { useAgentFeed } from './api.ts';
 import { agentTimeLabel } from './time.ts';
 import styles from './ActivityFeed.module.css';
 
-/** What the agents did, newest first: one chip per agent, in the order of the Overview's cards, filters it; 'Show more' loads older rows. */
+/**
+ * What the agents did, newest first: one chip per agent, in the order of the Overview's cards, filters it; 'Show more'
+ * loads older rows. The filter lives in the address (?agent=storm_scout), so an agent's page can link to its own rows.
+ */
 export function ActivityFeed() {
-  const [filter, setFilter] = useState<ScreenAgent | undefined>(undefined);
+  const [params, setParams] = useSearchParams();
+  const asked = params.get('agent');
+  const filter: ScreenAgent | undefined = asked !== null && isScreenAgent(asked) ? asked : undefined;
+  const setFilter = (agent: ScreenAgent | undefined) => setParams(agent === undefined ? {} : { agent }, { replace: true });
   const feed = useAgentFeed(filter);
   const zone = useCompany().data?.timezone;
   const items = feed.data?.pages.flatMap((page) => page.items) ?? [];

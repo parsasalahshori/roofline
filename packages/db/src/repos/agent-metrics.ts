@@ -195,6 +195,8 @@ export async function breakdownByBaseline(
 export type RecentTaskRow = {
   id: string;
   kind: string;
+  /** What the task is about, in words: "Booked an inspection at 1105 Main St". */
+  title: string;
   status: string;
   mode: 'needs_approval' | 'live';
   createdAt: Date;
@@ -210,6 +212,7 @@ export async function recentTasks(tx: Tx, ctx: TenantContext, agent: Agent, limi
     .select({
       id: agentTasks.id,
       kind: agentTasks.kind,
+      title: agentTasks.title,
       status: agentTasks.status,
       mode: agentTasks.mode,
       createdAt: agentTasks.createdAt,
@@ -224,6 +227,7 @@ export async function recentTasks(tx: Tx, ctx: TenantContext, agent: Agent, limi
   return rows.map((r) => ({
     id: r.id,
     kind: r.kind,
+    title: r.title,
     status: r.status,
     mode: r.mode,
     createdAt: r.createdAt,

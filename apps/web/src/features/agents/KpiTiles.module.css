@@ -30,14 +30,6 @@
   margin: 6px 0 0;
 }
 
-/* "about" before an estimated figure: the figure is what reads first */
-.about {
-  color: var(--ink-3);
-  font: 500 14px/1 var(--f-ui);
-  font-stretch: 100%;
-  letter-spacing: 0;
-}
-
 @container (max-width: 63.99rem) {
   .tiles {
     grid-template-columns: repeat(2, minmax(0, 1fr));

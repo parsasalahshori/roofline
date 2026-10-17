@@ -1,0 +1,18 @@
+/* "about" before an estimated figure: the figure is what reads first */
+.about {
+  color: var(--ink-3);
+  font: 500 14px/1 var(--f-ui);
+  font-stretch: 100%;
+  letter-spacing: 0;
+}
+
+/* No figure yet: the dash is the second ink, so it does not stand in for a number at display size */
+.none {
+  color: var(--ink-3);
+}
+
+/* The unit after a big number: a normal-size word, as the kit's tile sets its unit */
+.unit {
+  font-size: 1rem;
+  font-weight: 600;
+}

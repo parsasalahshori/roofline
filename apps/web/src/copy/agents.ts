@@ -7,6 +7,8 @@ import type { BaselineKey, ScreenAgent, TimePeriod } from '@roofline/shared';
 /** Words every Agents component shares (one source for the estimate mark and the placeholder). */
 export const agentsCommon = {
   estimate: '(estimate)',
+  /** Where a tile has no figure yet: a dash for the eye, these words for a screen reader. */
+  noFigure: 'No figure yet',
   comingSoon: 'Coming soon',
   // The money line: "≈ $870 of staff time at $28/hour (estimate)" then a link for the owner
   staffTime: 'of staff time at',
@@ -87,6 +89,7 @@ export const agentPage = {
   rulesTitle: 'What it does',
   rulesEmpty: 'No rules to show yet.',
   recentTitle: 'Recent work',
+  recentSeeAll: 'See all in Feed',
   recentEmpty: 'Nothing here yet.',
   /** The page's switch: on means the agent is running, as on its card. */
   runningLabel: 'Running',

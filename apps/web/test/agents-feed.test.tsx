@@ -57,6 +57,34 @@ describe('ActivityFeed', () => {
     expect(within(group).getByRole('button', { name: AGENT_LABEL.claims })).toBeTruthy();
   });
 
+  it('takes its filter from the address, and writes the filter back to it', async () => {
+    api = stubApi({
+      'GET /api/company': () => COMPANY(),
+      'GET /api/agents/feed': () => ({ body: { items: [item('a')], nextCursor: null } }),
+      'GET /api/agents/feed?agent=estimator': () => ({ body: { items: [item('e', { agent: 'estimator', text: 'Estimate sent' })], nextCursor: null } }),
+    });
+    const { router, user } = renderAt(<ActivityFeed />, '/agents/feed?agent=estimator');
+    expect(await screen.findByText('Estimate sent')).toBeTruthy();
+    const group = screen.getByRole('group', { name: agents.feedFiltersLabel });
+    expect(within(group).getByRole('button', { name: AGENT_LABEL.estimator }).getAttribute('aria-pressed')).toBe('true');
+    await user.click(within(group).getByRole('button', { name: agents.feedFilterAll }));
+    expect(await screen.findByText('Did thing a')).toBeTruthy();
+    expect(router.state.location.search).toBe('');
+    await user.click(within(group).getByRole('button', { name: AGENT_LABEL.estimator }));
+    expect(router.state.location.search).toBe('?agent=estimator');
+  });
+
+  it('ignores an agent in the address that it does not know', async () => {
+    api = stubApi({
+      'GET /api/company': () => COMPANY(),
+      'GET /api/agents/feed': () => ({ body: { items: [item('a')], nextCursor: null } }),
+    });
+    renderAt(<ActivityFeed />, '/agents/feed?agent=system');
+    expect(await screen.findByText('Did thing a')).toBeTruthy();
+    const group = screen.getByRole('group', { name: agents.feedFiltersLabel });
+    expect(within(group).getByRole('button', { name: agents.feedFilterAll }).getAttribute('aria-pressed')).toBe('true');
+  });
+
   it('keeps a house number with its street where a line breaks', async () => {
     show({ 'GET /api/agents/feed': () => ({ body: { items: [item('a', { text: 'Booked an inspection at 305 Ridgeway Dr' })], nextCursor: null } }) });
     const sentence = await screen.findByText('Booked an inspection at 305 Ridgeway Dr');

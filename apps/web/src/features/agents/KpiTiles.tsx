@@ -1,6 +1,7 @@
 import { KpiTile } from '@roofline/ui';
 import type { AgentCard } from '@roofline/shared';
 import { agentsDash } from '../../copy/agents.ts';
+import { About, NoFigure } from './About.tsx';
 import { groupDigits, staffDollars, wholeHours } from './agentTheme.ts';
 import type { AgentsDashboardData } from './api.ts';
 import { rateLabel } from './money.ts';
@@ -14,12 +15,6 @@ export type KpiTilesProps = {
   cards: AgentCard[];
   dashboard: AgentsDashboardData | undefined;
 };
-
-/** The estimate mark before a figure that is a guess ("about 35 hrs"), small so the figure still reads first. */
-function About() {
-  // The space is part of the text, so the figure reads "about 35" as words, in a copy and to a screen reader
-  return <span className={styles.about}>{`${agentsDash.about} `}</span>;
-}
 
 /** The header tiles. Every number is read from the overview (cards) or the dashboard numbers; money and hours are marked as estimates. */
 export function KpiTiles({ cards, dashboard }: KpiTilesProps) {
@@ -36,7 +31,7 @@ export function KpiTiles({ cards, dashboard }: KpiTilesProps) {
         label={agentsDash.hoursWeek}
         value={
           hours === null ? (
-            '-'
+            <NoFigure />
           ) : (
             <>
               <About />
@@ -52,7 +47,7 @@ export function KpiTiles({ cards, dashboard }: KpiTilesProps) {
         label={agentsDash.fullTimeLead}
         value={
           minutes === null ? (
-            '-'
+            <NoFigure />
           ) : (
             <>
               <About />

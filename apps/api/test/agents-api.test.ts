@@ -345,6 +345,7 @@ describe('GET /api/agents/:agent (detail)', () => {
       {
         id,
         kind: 'storm_plan',
+        title: 'Storm plan',
         status: 'done',
         mode: 'needs_approval',
         createdAt: '2026-10-12T15:00:00.000Z',
