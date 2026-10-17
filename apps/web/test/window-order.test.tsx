@@ -454,6 +454,9 @@ describe('OrderStatusChip', () => {
     chipAt();
     const link = await screen.findByRole('link', { name: copy.createOrder });
     expect(link.getAttribute('href')).toBe('/estimator/windows/m1/order');
+    // One control beside "Add on-site photos": a secondary button with its icon
+    expect(link).toHaveAttribute('data-variant', 'default');
+    expect(link.querySelector('svg')).not.toBeNull();
   });
 
   it('shows the order’s status and links to it', async () => {
@@ -461,6 +464,8 @@ describe('OrderStatusChip', () => {
     chipAt();
     const link = await screen.findByRole('link', { name: copy.chip(copy.status.ready) });
     expect(link.getAttribute('href')).toBe('/estimator/windows/m1/order');
+    expect(link).toHaveAttribute('data-variant', 'default');
+    expect(link.querySelector('svg')).not.toBeNull();
   });
 
   it('without photo windows shows nothing and does not ask for an order', async () => {

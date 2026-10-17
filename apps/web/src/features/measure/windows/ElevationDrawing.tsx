@@ -163,14 +163,15 @@ function House({ frame, wallFt, eave, floors, windows, progress, selectedKey, on
   const roofPath = `M${wx - 10} ${top} L${wx + inset} ${top - roofH} H${wx + ww - inset} L${wx + ww + 10} ${top} Z`;
   return (
     <>
+      {/* Nothing is drawn before the scan begins: a ground line alone would poke out from under the card that asks for it */}
       {drawn > 0 ? (
         <>
           <path d={roofPath} className={styles.roof} pathLength={1} style={{ strokeDasharray: 1, strokeDashoffset: 1 - Math.min(1, drawn * 2) }} />
           <rect x={wx} y={top} width={ww} height={wh} className={styles.wall} pathLength={1} style={{ strokeDasharray: 1, strokeDashoffset: 1 - drawn }} />
+          <path d={`M${Math.max(8, wx - 70)} ${ground}H${Math.min(W - 8, wx + ww + 70)}`} className={styles.ground} />
         </>
       ) : null}
       {done ? <path d={laps.map((y) => `M${wx} ${y}H${wx + ww}`).join('')} className={styles.laps} /> : null}
-      <path d={`M${Math.max(8, wx - 70)} ${ground}H${Math.min(W - 8, wx + ww + 70)}`} className={styles.ground} />
       <Windows boxes={boxes} selectedKey={selectedKey} progress={progress} onSelect={onSelect} ground={ground} />
       {done ? (
         <>

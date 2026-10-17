@@ -105,7 +105,11 @@ export const measureWindows = {
     'Quote Good, Better and Best, or order from the factory.',
   ],
   addressLabel: 'Address',
-  addressPlaceholder: '12 Elm St, Omaha, NE',
+  /** An address as an example, in the company's own town when it has one: "12 Elm St, Little Rock, AR". */
+  addressPlaceholder: (city: string | null, state: string | null): string => {
+    const place = [city, state].filter((part): part is string => part !== null && part.trim() !== '').map((part) => part.trim());
+    return place.length === 0 ? '12 Elm St' : `12 Elm St, ${place.join(', ')}`;
+  },
   measure: 'Measure this address',
   measuring: 'Finding the house',
   measureFailed: 'We could not measure the windows at that address.',
