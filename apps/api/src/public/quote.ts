@@ -20,7 +20,7 @@ import {
 import type { AppDeps } from '../app.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { bookedTimes, bookVisit, HOUR_MS, offeredSlots, officeAlert, startFollowUp } from '../quote/booking.ts';
-import { estimateForAddress, windowsForCount } from '../quote/estimate.ts';
+import { estimateForAddress, type StoredSatellite, windowsForCount } from '../quote/estimate.ts';
 import { checkFormToken, issueFormToken, quoteIpHash, turnstileOn, verifyTurnstile } from '../quote/guards.ts';
 import { publicRateLimit } from '../rate-limit.ts';
 import { emailField, noNul, parse, UUID } from '../validate.ts';
@@ -301,13 +301,21 @@ export function publicQuoteRoutes(deps: AppDeps): Router {
   return router;
 }
 
+/** For staff: why the roof was not priced from satellite images (the homeowner is only told the one sentence). */
+function satelliteNote(r: { satellite?: StoredSatellite }, products: readonly QuoteProduct[]): string {
+  const sat = r.satellite;
+  if (sat === undefined || !products.includes('roof')) return '';
+  const imagery = [sat.quality, sat.date].filter((x): x is string => x !== null).join(' ');
+  return ` Roof not priced, satellite images unusable: ${sat.problems.join(', ')}${imagery === '' ? '' : ` (imagery ${imagery})`}. Measure the roof at the visit.`;
+}
+
 const dollars = (cents: number) => `$${Math.round(cents / 100).toLocaleString('en-US')}`;
 
 /**
  * What the homeowner was shown, in one plain line for the job's timeline (ranges only, as on the page). `own`: the
  * window count the homeowner set on the page, with its range, in place of the estimated one.
  */
-export function shownSummary(r: Partial<PublicQuoteEstimate>, products: readonly QuoteProduct[], own: PublicQuoteWindows | null = null): string {
+export function shownSummary(r: Partial<PublicQuoteEstimate> & { satellite?: StoredSatellite }, products: readonly QuoteProduct[], own: PublicQuoteWindows | null = null): string {
   const parts: string[] = [];
   if (products.includes('roof') && r.roof) parts.push(`Roof about ${r.roof.squares} squares, ${dollars(r.roof.range.lowCents)} to ${dollars(r.roof.range.highCents)}`);
   if (products.includes('windows') && r.windows) {
@@ -316,6 +324,6 @@ export function shownSummary(r: Partial<PublicQuoteEstimate>, products: readonly
     parts.push(`about ${w.count} windows${whose}, ${dollars(w.range.lowCents)} to ${dollars(w.range.highCents)}`);
   }
   const asked = `Asked about ${products.join(', ')}.`;
-  const visit = products.includes('gutters') ? ' Gutters are priced at the visit.' : '';
+  const visit = (products.includes('gutters') ? ' Gutters are priced at the visit.' : '') + satelliteNote(r, products);
   return parts.length > 0 ? `${asked} Shown: ${parts.join('; ')}.${visit}` : `${asked} No estimate was shown; call them.${visit}`;
 }

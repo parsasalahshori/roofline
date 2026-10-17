@@ -126,6 +126,13 @@ export type PublicQuoteConfig = {
   homeownerApp: { url: string; name: string } | null;
 };
 
+/**
+ * What the homeowner is told when the satellite pictures of their home cannot be trusted to measure the roof (too old,
+ * not sharp enough, no building found, or the roof outline is in doubt). The specific cause is kept for staff only.
+ */
+export const SATELLITE_UNUSABLE_MESSAGE =
+  "We can't measure your roof from satellite images — the pictures of your home aren't clear or recent enough. We'll measure it at your free visit.";
+
 /** How the estimate came out: measured, or the company's daily limit reached / the home not measurable (we call instead). */
 export type PublicQuoteStatus = 'ready' | 'fallback';
 
@@ -142,6 +149,8 @@ export type PublicQuoteEstimate = {
   gutters: { feet: number; range: PriceRange } | null;
   /** The main roof's outline for the picture, and the point the picture is centred on. */
   outline: { center: LngLat; ring: LngLat[] } | null;
+  /** 'satellite-unusable': the roof is not priced because the satellite pictures cannot be trusted (see SATELLITE_UNUSABLE_MESSAGE). */
+  notice?: 'satellite-unusable' | null;
 };
 
 /** GET /api/public/quote/:slug/slots: open in-home visit times. `id` is the start as an ISO string. */

@@ -387,6 +387,42 @@ describe('the first step: what are you looking for', () => {
   });
 });
 
+describe('the satellite pictures cannot be trusted for the roof', () => {
+  const SENTENCE =
+    "We can't measure your roof from satellite images — the pictures of your home aren't clear or recent enough. We'll measure it at your free visit.";
+
+  it('says the owner\'s sentence, shows no roof price, and goes to the form', async () => {
+    const user = userEvent.setup();
+    setup({ [`POST ${BASE}/estimate`]: () => ({ body: { ...READY, status: 'fallback', roof: null, windows: null, outline: null, notice: 'satellite-unusable' } }) });
+    await getEstimate(user, ['roof']);
+    expect(await screen.findByRole('heading', { name: quote.satelliteTitle })).toBeInTheDocument();
+    expect(quote.satelliteBody).toBe(SENTENCE);
+    expect(screen.getByText(SENTENCE)).toBeInTheDocument();
+    expect(screen.queryByText(quote.fallbackBody)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: quote.formTitle })).toBeInTheDocument();
+  });
+
+  it('with windows too: the windows result carries on, the roof line is the sentence, and the visit can still be booked', async () => {
+    const user = userEvent.setup();
+    setup({ [`POST ${BASE}/estimate`]: () => ({ body: { ...READY, roof: null, notice: 'satellite-unusable' } }) });
+    await getEstimate(user, ['windows', 'roof']);
+    expect(await screen.findByRole('heading', { name: quote.resultsTitle })).toBeInTheDocument();
+    expect(screen.getByText(quote.windowsLine(18))).toBeInTheDocument();
+    expect(screen.getByText(SENTENCE)).toBeInTheDocument();
+    expect(screen.queryByText(quote.roofLine(24.5))).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: quote.continueButton })).toBeInTheDocument();
+  });
+
+  it('a windows-only visitor is never told about the roof', async () => {
+    const user = userEvent.setup();
+    setup({ [`POST ${BASE}/estimate`]: () => ({ body: { ...READY, roof: null, notice: 'satellite-unusable' } }) });
+    await getEstimate(user, ['windows']);
+    expect(await screen.findByRole('heading', { name: quote.resultsTitle })).toBeInTheDocument();
+    expect(screen.queryByText(SENTENCE)).not.toBeInTheDocument();
+  });
+});
+
 describe('Measure with the app', () => {
   it('offers the app next to the free visit for windows: a store button, a QR code, and "Have us measure"', async () => {
     const user = userEvent.setup();

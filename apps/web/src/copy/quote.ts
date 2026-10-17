@@ -1,4 +1,4 @@
-import type { QuoteProduct } from '@roofline/shared';
+import { SATELLITE_UNUSABLE_MESSAGE, type QuoteProduct } from '@roofline/shared';
 
 const dollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
@@ -86,6 +86,10 @@ export const quote = {
   // Fallback (daily limit reached, or a home we would rather price after a look: a flat, a big building, a roof hard to see)
   fallbackTitle: "We'll call you with your estimate",
   fallbackBody: 'Some homes need a person to look before we can give a fair price, and this is one of them. Leave your details and we will call you with your estimate, usually within one business day.',
+
+  // The satellite pictures cannot be trusted for the roof (too old or not sharp enough): no roof price, a free visit instead
+  satelliteTitle: "We'll measure your roof at a free visit",
+  satelliteBody: SATELLITE_UNUSABLE_MESSAGE,
 
   // Lead form
   formTitle: 'How can we reach you?',

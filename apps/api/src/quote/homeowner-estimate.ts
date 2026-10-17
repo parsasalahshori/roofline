@@ -34,12 +34,26 @@ export function coarseReason(reason: QuoteCallbackReason | 'visit-only'): Homeow
     case 'street-changed':
       return 'address';
     case 'roof-review':
+    case 'outline-off-house':
+      return 'satellite-unusable';
     case 'too-big':
     case 'flat-unmeasured':
       return 'home';
     case 'visit-only':
       return 'home';
   }
+}
+
+/**
+ * The reason given: 'satellite-unusable' only says "your roof" when the roof was asked about. A home that could not be
+ * measured from above, asked about for windows only, is a plain 'home'; and a roof asked about but not priced because of
+ * the pictures is 'satellite-unusable' wherever the call back would otherwise say 'home'.
+ */
+function roofReason(services: readonly QuoteProduct[], stored: StoredEstimateResult, reason: HomeownerCallbackReason): HomeownerCallbackReason {
+  const roof = services.includes('roof');
+  if (reason === 'satellite-unusable' && !roof) return 'home';
+  if (reason === 'home' && roof && stored.satellite !== undefined) return 'satellite-unusable';
+  return reason;
 }
 
 export async function estimateForHomeowner(
@@ -77,12 +91,12 @@ export async function estimateForHomeowner(
   if (row.status === 'fallback') {
     // The page's checks decided it (stored with their reason), or nothing could be measured right now (the daily limit,
     // the address lookup down): 'busy', unless a measurement was made and still could not be priced.
-    const reason: HomeownerCallbackReason = stored.callback !== undefined ? coarseReason(stored.callback) : row.measured ? 'home' : 'busy';
+    const reason = roofReason(input.services, stored, stored.callback !== undefined ? coarseReason(stored.callback) : row.measured ? 'home' : 'busy');
     return { status: 'callback', callbackReason: reason, estimate: row, propertyId: row.propertyId, address: row.address };
   }
   // Ready, but if nothing asked for has an estimate, a person has to look.
   const nothing =
     (!input.services.includes('roof') || shown.roof === null) && (!input.services.includes('windows') || shown.windows === null);
-  if (nothing) return { status: 'callback', callbackReason: 'home', estimate: row, propertyId: row.propertyId, address: row.address };
+  if (nothing) return { status: 'callback', callbackReason: roofReason(input.services, stored, 'home'), estimate: row, propertyId: row.propertyId, address: row.address };
   return { status: 'ready', callbackReason: null, estimate: row, propertyId: row.propertyId, address: row.address };
 }

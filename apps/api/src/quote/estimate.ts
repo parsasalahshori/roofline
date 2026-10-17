@@ -2,6 +2,7 @@ import {
   companyDayStart,
   countMeasuredSince,
   findCachedEstimate,
+  latestSolarSnapshot,
   insertQuoteEstimate,
   noteEstimateReused,
   type PropertyRow,
@@ -13,6 +14,7 @@ import {
 } from '@roofline/db';
 import {
   type InstantQuoteSettings,
+  metresToBuilding,
   type LngLat,
   type MeasurementView,
   normalizeAddressKey,
@@ -34,11 +36,21 @@ import { AppError } from '../errors.ts';
 import { priceOptions } from '../estimator/build.ts';
 import { lookUpHome, measureProperty } from '../estimator/measure.ts';
 import { heightLayersFor } from '../estimator/roof-3d.ts';
-import { solarForHome } from '../estimator/solar.ts';
+import { SOLAR_BUILDING_SNAP_M, solarForHome } from '../estimator/solar.ts';
 import { estimateAllSides } from '../estimator/windows-estimate.ts';
 import { eaveHeightAboveGround } from '../estimator/windows-heights.ts';
 import { wallsFor } from '../estimator/windows-view.ts';
-import { type LookupFacts, lookupGate, measurementGate, type QuoteCallbackReason, rangePctFor, typedUnit } from './gates.ts';
+import {
+  type LookupFacts,
+  lookupGate,
+  measurementGate,
+  metresOutsideRing,
+  type QuoteCallbackReason,
+  rangePctFor,
+  type SatelliteProblem,
+  satelliteGate,
+  typedUnit,
+} from './gates.ts';
 
 /*
  * POST /api/public/quote/:slug/estimate: one typed address in, RANGES out. The roof is measured the way the
@@ -77,16 +89,21 @@ const inflight = new Map<string, number>();
  */
 export type StoredEstimateResult = {
   callback?: StoredCallback;
+  /** Why the satellite pictures were not trusted for this home (staff only), with the imagery's facts; see satelliteGate. */
+  satellite?: StoredSatellite;
   windowMix?: Partial<Record<WindowSizeClass, number>>;
   windowPct?: number;
   floors?: number | null;
   windowCountRange?: { low: number; high: number } | null;
 };
 
+export type StoredSatellite = { problems: SatelliteProblem[]; quality: string | null; date: string | null; roofAsked: boolean };
+
 /** The public answer a stored row carries (its result plus its id). */
 export function estimateView(row: QuoteEstimateRow): PublicQuoteEstimate {
-  const r = row.result as Omit<PublicQuoteEstimate, 'quoteId'>;
-  return { quoteId: row.id, status: row.status, address: row.address, roof: r.roof ?? null, windows: r.windows ?? null, gutters: r.gutters ?? null, outline: r.outline ?? null };
+  const r = row.result as Omit<PublicQuoteEstimate, 'quoteId'> & { satellite?: StoredSatellite };
+  const notice = r.satellite?.roofAsked === true ? ('satellite-unusable' as const) : null;
+  return { quoteId: row.id, status: row.status, address: row.address, roof: r.roof ?? null, windows: r.windows ?? null, gutters: r.gutters ?? null, outline: r.outline ?? null, ...(notice !== null && { notice }) };
 }
 
 function lineOf(p: Pick<PropertyRow, 'addressLine' | 'city' | 'state' | 'zip'>): string {
@@ -221,7 +238,7 @@ export async function locate(deps: AppDeps, ctx: TenantContext, address: string)
 }
 
 /** The call backs a measurement decided: the same home's answer whoever asks, however it was typed. */
-const MEASURED_CALLBACKS: ReadonlySet<string> = new Set<QuoteCallbackReason>(['roof-review', 'too-big', 'flat-unmeasured']);
+const MEASURED_CALLBACKS: ReadonlySet<string> = new Set<QuoteCallbackReason>(['roof-review', 'outline-off-house', 'too-big', 'flat-unmeasured']);
 
 /** Why a stored call back was decided (gates.ts), plus 'visit-only': the page offers nothing priced online. */
 export type StoredCallback = QuoteCallbackReason | 'visit-only';
@@ -253,7 +270,7 @@ export async function estimateForAddress(
   const lookup = place.lookup === null ? null : { accuracy: place.lookup.accuracy, accuracyType: place.lookup.accuracyType, unit: place.lookup.unit };
 
   /** A call back. `callback`: why, when the page's checks decided it (stored, and reused like a price). */
-  const fallback = async (o: { callback?: StoredCallback; measurementId?: string } = {}): Promise<PublicQuoteEstimate> => {
+  const fallback = async (o: { callback?: StoredCallback; measurementId?: string; satellite?: StoredSatellite } = {}): Promise<PublicQuoteEstimate> => {
     const row = await withTenant(deps.pools, ctx, (tx) =>
       insertQuoteEstimate(
         tx,
@@ -266,7 +283,7 @@ export async function estimateForAddress(
           measured: o.measurementId !== undefined,
           propertyId: place.property?.id ?? null,
           measurementId: o.measurementId ?? null,
-          result: { roof: null, windows: null, gutters: null, outline: null, ...(o.callback !== undefined && { callback: o.callback }), lookup },
+          result: { roof: null, windows: null, gutters: null, outline: null, ...(o.callback !== undefined && { callback: o.callback }), ...(o.satellite !== undefined && { satellite: o.satellite }), lookup },
           ipHash: input.ipHash,
           expiresAt,
         },
@@ -313,13 +330,32 @@ export async function estimateForAddress(
   inflight.set(ctx.companyId, running + 1);
   try {
     const view = await measureProperty(deps, ctx, { propertyId: property.id });
-    // The measurement's own doubts: a roof to check, a building too big for a home, a flat roof read without 3D.
-    const gate = measurementGate(view);
-    if (gate.callback !== null) return await fallback({ callback: gate.callback, measurementId: view.id });
-    const pct = rangePctFor(settings.rangePct, gate, QUOTE_LIMITS.rangePctMax);
     const ring = mainRing(view);
     const point: LngLat = property.geom ?? view.center;
-    const roof = wantsRoof ? await roofRange(deps, ctx, view, pct) : null;
+    // Can the satellite pictures be trusted? Solar's answer kept on the measurement (no new paid call), the 3D roof's
+    // own facts and the outline against the geocoded house. The cause is kept for staff; the homeowner hears one sentence.
+    const kept = await withTenant(deps.pools, ctx, (tx) => latestSolarSnapshot(tx, ctx, property.id));
+    const building = kept === null ? undefined : kept.building !== null && metresToBuilding(kept.building, point) <= SOLAR_BUILDING_SNAP_M ? kept.building : null;
+    const sat = satelliteGate({
+      now,
+      solarBuilding: building,
+      roof3d: view.roof3d ?? null,
+      reasons: view.needsReview?.reasons ?? [],
+      yearBuilt: property.yearBuilt ?? null,
+      outlineGapM: ring === null ? null : metresOutsideRing(point, ring),
+    });
+    const satellite: StoredSatellite | undefined =
+      sat.problems.length === 0 ? undefined : { problems: sat.problems, quality: sat.imagery.quality, date: sat.imagery.date, roofAsked: wantsRoof };
+    // The outline itself is in doubt (not the house, or joined buildings): windows are counted on it, so no estimate at all.
+    if (satellite !== undefined && sat.blocksWindows) {
+      return await fallback({ callback: sat.problems.includes('outline-off-house') ? 'outline-off-house' : 'roof-review', measurementId: view.id, satellite });
+    }
+    // The measurement's own doubts: a building too big for a home, a flat roof read without 3D.
+    const gate = measurementGate(view);
+    if (gate.callback !== null) return await fallback({ callback: gate.callback, measurementId: view.id, ...(satellite !== undefined && { satellite }) });
+    const pct = rangePctFor(settings.rangePct, gate, QUOTE_LIMITS.rangePctMax);
+    // No roof price when the satellite pictures cannot be trusted; the windows and gutters carry on.
+    const roof = wantsRoof && satellite === undefined ? await roofRange(deps, ctx, view, pct) : null;
     const eaveM = wantsWindows && ring !== null ? await eaveOf(deps, ctx, property, point, ring) : null;
     const counted = wantsWindows && ring !== null ? windowsRange(ring, eaveM, pct) : null;
     const windows = counted === null ? null : { count: counted.count, range: counted.range };
@@ -343,6 +379,7 @@ export async function estimateForAddress(
             gutters: null,
             outline,
             lookup,
+            ...(satellite !== undefined && { satellite }),
             ...(gate.widen && { widened: true }),
             ...(counted !== null && { windowMix: counted.mix, windowPct: pct, floors: counted.floors, windowCountRange: counted.countRange }),
           },

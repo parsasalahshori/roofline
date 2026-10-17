@@ -5,7 +5,7 @@ import pg from 'pg';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, inject, test, vi } from 'vitest';
 import { insertFootprints } from '@roofline/db/system';
-import { QUOTE_CONSENT_VERSION, quadkeyOf, quoteConsentText, quoteTextConsentText, type PublicQuoteEstimate, type Ring } from '@roofline/shared';
+import { QUOTE_CONSENT_VERSION, quadkeyOf, quoteConsentText, quoteTextConsentText, type LngLat, type PublicQuoteEstimate, type Ring, SATELLITE_UNUSABLE_MESSAGE, type SolarBuilding } from '@roofline/shared';
 import { MESSAGES } from '../src/errors.ts';
 import { QUOTE_RATE_LIMITS, QUOTE_TOO_MANY } from '../src/public/quote.ts';
 import { seedFootprintFixture } from '../src/scripts/footprint-fixture.ts';
@@ -50,9 +50,9 @@ async function enable(companyId: string, slug: string, extra: Record<string, unk
  * A house about 20 m by 18 m (about 3,900 sq ft) round the point the fake geocoder gives `address`; `scale` 2 makes it
  * a 40 m by 36 m building (about 15,500 sq ft: a commercial one, for the size check).
  */
-async function houseAt(address: string, scale = 1): Promise<void> {
+async function houseAt(address: string, scale = 1, offsetLng = 0): Promise<void> {
   const found = await t.deps.geocoder.geocode(address);
-  const [lng, lat] = [found!.lng, found!.lat];
+  const [lng, lat] = [found!.lng + offsetLng, found!.lat];
   const [dx, dy] = [0.00012 * scale, 0.00008 * scale];
   const ring: Ring = [
     [lng - dx, lat - dy],
@@ -67,6 +67,26 @@ async function houseAt(address: string, scale = 1): Promise<void> {
   const [ready] = await q(`select 1 from building_footprint_tiles where quadkey = $1`, [tile]);
   if (ready) await insertFootprints(t.deps.pools.system, { tile, state: 'NE' }, [{ sourceRef: `house-${address}`, ring }]);
   else await seedFootprintFixture(t.deps.pools, [{ sourceRef: `house-${address}`, ring }]);
+  await solarAt(address);
+}
+
+/**
+ * Google Solar's answer for the house `houseAt` drew at `address`: HIGH imagery from June 2025 (well inside the quote
+ * page's age limit at NOW) unless `over` says otherwise. Without a building the instant quote would call the roof
+ * unmeasurable from satellite (quote/gates.ts satelliteGate).
+ */
+async function solarAt(address: string, over: Partial<SolarBuilding> = {}): Promise<void> {
+  const found = await t.deps.geocoder.geocode(address);
+  const at: LngLat = [found!.lng, found!.lat];
+  const building: SolarBuilding = {
+    center: at,
+    box: { sw: [at[0] - 0.00012, at[1] - 0.00008], ne: [at[0] + 0.00012, at[1] + 0.00008] },
+    imageryQuality: 'HIGH',
+    imageryDate: '2025-06-01',
+    segments: [{ pitchDeg: 26.6, azimuthDeg: 180, areaM2: 200, groundAreaM2: 180, center: at, box: null }],
+    ...over,
+  };
+  t.solar.set(at, building);
 }
 
 beforeEach(async () => {
@@ -500,6 +520,78 @@ describe("the page's checks: a call back instead of a doubtful price", () => {
     const right = await estimated(ACME, RIGHT);
     expect(right.quoteId).not.toBe(wrong.quoteId);
     expect(right.status).toBe('ready');
+  });
+
+  describe('the satellite pictures cannot be trusted for the roof', () => {
+    /** The address's Solar answer replaced by one with `over`, and the home measured and answered. */
+    async function withImagery(over: Partial<SolarBuilding>, address = ADDRESS) {
+      t.solar.clear();
+      await solarAt(address, over);
+      return estimated(ACME, address);
+    }
+    const staff = async (id: string) => (await q(`select result from quote_estimates where id = $1`, [id]))[0]!.result;
+
+    test('low-quality imagery: no roof price, but the windows are priced and the page is told why; staff keep the cause', async () => {
+      const e = await withImagery({ imageryQuality: 'LOW' });
+      expect(e).toMatchObject({ status: 'ready', roof: null, notice: 'satellite-unusable' });
+      expect(e.windows).not.toBeNull();
+      expect(await staff(e.quoteId)).toMatchObject({ satellite: { problems: ['imagery-quality'], quality: 'LOW', date: '2025-06-01', roofAsked: true } });
+      expect(JSON.stringify(e)).not.toMatch(/imagery|LOW|satellite"/);
+    });
+
+    test('MEDIUM imagery and imagery from 2014 are not trusted either', async () => {
+      expect(await withImagery({ imageryQuality: 'MEDIUM' })).toMatchObject({ roof: null, notice: 'satellite-unusable' });
+      await houseAt('21 Elm St, Omaha, NE 68102');
+      const old = await withImagery({ imageryDate: '2014-05-01' }, '21 Elm St, Omaha, NE 68102');
+      expect(old).toMatchObject({ roof: null });
+    });
+
+    test('no Solar building at the home: no roof price', async () => {
+      t.solar.clear();
+      const e = await estimated();
+      expect(e).toMatchObject({ roof: null, notice: 'satellite-unusable' });
+      expect((await staff(e.quoteId)).satellite.problems).toEqual(['no-solar-building']);
+    });
+
+    test('with only the roof on the page, nothing is left to price: a call back that still says why', async () => {
+      await q(`update company_settings set quote_products = $2 where company_id = $1`, [t.seed.a.companyId, ['roof']]);
+      const e = await withImagery({ imageryQuality: 'LOW' });
+      expect(e).toMatchObject({ status: 'fallback', roof: null, windows: null, notice: 'satellite-unusable' });
+    });
+
+    test('a page without the roof never mentions it', async () => {
+      await q(`update company_settings set quote_products = $2 where company_id = $1`, [t.seed.a.companyId, ['windows']]);
+      const e = await withImagery({ imageryQuality: 'LOW' });
+      expect(e.status).toBe('ready');
+      expect(e.notice).toBeUndefined();
+    });
+
+    test('a house built after the picture was taken is not in it', async () => {
+      // The home is filed by its first estimate; its year built is set, and the cached estimate dropped.
+      await estimated();
+      await q(`update properties set year_built = 2025 where company_id = $1`, [t.seed.a.companyId]);
+      await q(`delete from quote_estimates where company_id = $1`, [t.seed.a.companyId]);
+      const e = await estimated();
+      expect(e).toMatchObject({ roof: null, notice: 'satellite-unusable' });
+      expect((await staff(e.quoteId)).satellite.problems).toEqual(['built-after-imagery']);
+    });
+
+    test('the roof outline on another building than the geocoded house: no roof and no windows', async () => {
+      // The only building near the geocoded point stands about 14 m off its edge.
+      const NEXT = '4812 Underwood Ave, Omaha, NE 68132';
+      await houseAt(NEXT, 1, 0.0003);
+      t.solar.clear();
+      await solarAt(NEXT);
+      const e = await estimated(ACME, NEXT);
+      expect(e).toMatchObject({ status: 'fallback', roof: null, windows: null, notice: 'satellite-unusable' });
+      expect(await staff(e.quoteId)).toMatchObject({ callback: 'outline-off-house' });
+    });
+
+    test('the message itself is the owner\'s sentence', () => {
+      expect(SATELLITE_UNUSABLE_MESSAGE).toBe(
+        "We can't measure your roof from satellite images — the pictures of your home aren't clear or recent enough. We'll measure it at your free visit.",
+      );
+    });
   });
 
   test("a commercial building is measured, then a call back that does not use up the daily cap; every measurement stays under twice the cap", async () => {

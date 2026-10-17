@@ -15,7 +15,10 @@ import {
   quoteConsentText,
   quoteTextConsentText,
   type Ring,
+  SATELLITE_UNUSABLE_MESSAGE,
   windowSizeClass,
+  type LngLat,
+  type SolarBuilding,
 } from '@roofline/shared';
 import { HOMEOWNER_LIMITS, HOMEOWNER_UNKNOWN_REQUEST } from '../src/public/homeowner-auth.ts';
 import { UPLOAD_GUARD } from '../src/public/homeowner-upload.ts';
@@ -76,6 +79,26 @@ async function houseAt(address: string, scale = 1): Promise<void> {
   const [ready] = await q(`select 1 from building_footprint_tiles where quadkey = $1`, [tile]);
   if (ready) await insertFootprints(t.deps.pools.system, { tile, state: 'NE' }, [{ sourceRef: `house-${address}`, ring }]);
   else await seedFootprintFixture(t.deps.pools, [{ sourceRef: `house-${address}`, ring }]);
+  await solarAt(address);
+}
+
+/**
+ * Google Solar's answer for the house `houseAt` drew at `address`: HIGH imagery from June 2025 (well inside the quote
+ * page's age limit at NOW) unless `over` says otherwise. Without a building the instant quote would call the roof
+ * unmeasurable from satellite (quote/gates.ts satelliteGate).
+ */
+async function solarAt(address: string, over: Partial<SolarBuilding> = {}): Promise<void> {
+  const found = await t.deps.geocoder.geocode(address);
+  const at: LngLat = [found!.lng, found!.lat];
+  const building: SolarBuilding = {
+    center: at,
+    box: { sw: [at[0] - 0.00012, at[1] - 0.00008], ne: [at[0] + 0.00012, at[1] + 0.00008] },
+    imageryQuality: 'HIGH',
+    imageryDate: '2025-06-01',
+    segments: [{ pitchDeg: 26.6, azimuthDeg: 180, areaM2: 200, groundAreaM2: 180, center: at, box: null }],
+    ...over,
+  };
+  t.solar.set(at, building);
 }
 
 beforeEach(async () => {
@@ -269,6 +292,56 @@ describe('POST /requests', () => {
     expect(win.status).toBe(409);
     expect(win.body.code).toBe('callback_only');
     // Booking and contact still work for them (below).
+  });
+
+  describe('the satellite pictures cannot be trusted for the roof', () => {
+    const MESSAGE = SATELLITE_UNUSABLE_MESSAGE;
+    const withLow = async () => {
+      t.solar.clear();
+      await solarAt(ADDRESS, { imageryQuality: 'LOW', imageryDate: '2014-05-01' });
+    };
+
+    test('roof and windows: the windows are estimated, the roof has no price and says why', async () => {
+      await withLow();
+      const { body, id, token } = await start({ services: ['windows', 'roof'] });
+      expect(body).toMatchObject({ status: 'ready', estimate: { roof: null, roofNote: { reason: 'satellite-unusable', message: MESSAGE } } });
+      expect(body.estimate.windows).not.toBeNull();
+      expect(body.callbackReason).toBeUndefined();
+      // The same on a later read, and staff keep the cause.
+      const v = await view({ id, token, body });
+      expect(v.request.estimate).toMatchObject({ roof: null, roofNote: { message: MESSAGE } });
+      const [row] = await q(`select result->'satellite' as satellite from quote_estimates where company_id = $1`, [t.seed.a.companyId]);
+      expect(row!.satellite).toMatchObject({ problems: ['imagery-quality', 'imagery-old'], quality: 'LOW', date: '2014-05-01' });
+      expect(JSON.stringify(body)).not.toMatch(/imagery-|LOW|2014/);
+    });
+
+    test('the roof alone: a call back with the new reason, the sentence, and no price', async () => {
+      await withLow();
+      const { body } = await start({ services: ['roof'] });
+      expect(body).toMatchObject({ status: 'callback', callbackReason: 'satellite-unusable', estimate: { roof: null, windows: null, roofNote: { reason: 'satellite-unusable', message: MESSAGE } } });
+    });
+
+    test('windows only: carries on as normal, no roof note', async () => {
+      await withLow();
+      const { body } = await start({ services: ['windows'] });
+      expect(body).toMatchObject({ status: 'ready' });
+      expect(body.estimate.roofNote).toBeUndefined();
+      expect(body.estimate.windows).not.toBeNull();
+    });
+
+    test('a good house still gets its roof price and no note', async () => {
+      const { body } = await start({ services: ['windows', 'roof'] });
+      expect(body.estimate.roof).not.toBeNull();
+      expect(body.estimate.roofNote).toBeUndefined();
+    });
+
+    test('the same low-quality home is the same answer for the next visitor (stored), booking still works', async () => {
+      await withLow();
+      const first = await start({ services: ['roof'] });
+      const again = await start({ services: ['roof'] });
+      expect(again.body).toMatchObject({ status: 'callback', callbackReason: 'satellite-unusable' });
+      expect(first.id).not.toBe(again.id);
+    });
   });
 
   test('a lookup that did not land on the house, a house too big for a home and the daily limit are call backs with their own reasons', async () => {

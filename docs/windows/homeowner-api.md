@@ -204,7 +204,9 @@ whatever order was sent.
 - `status: "callback"` (with `callbackReason`) means: no online estimate, the company will call. `estimate` then has no
   windows and no roof. Reasons: `unit` (an apartment, suite or unit), `address` (the address could not be pinned to
   one house), `home` (a house a person has to look at: very large, flat or hard to see), `busy` (nothing could be
-  measured right now: the company's daily limit, or the address lookup is down). The token is still returned: the
+  measured right now: the company's daily limit, or the address lookup is down), `satellite-unusable` (the satellite
+  pictures of the home are not clear or recent enough to measure the roof; see "Roof not measurable from satellite"
+  below). The token is still returned: the
   contact and booking calls work. Windows calls are refused (`callback_only`). Example (without the `requestId`, `token`
   and `expiresAt` that every `201` carries):
   `{"status":"callback","callbackReason":"unit","home":{"address":"2200 Riverfront Dr Apt 1203, Omaha, NE 68102","floors":null,"outline":null},"estimate":{"windows":null,"roof":null,"gutters":null},"services":["windows","roof"]}`
@@ -216,8 +218,35 @@ whatever order was sent.
   not asked for or cannot be counted.
 - `estimate.roof`: a price range in dollars (rounded out to hundreds) and the roof's size in squares. `null` when roof
   was not asked for or could not be priced.
+- `estimate.roofNote`: `{ "reason": "satellite-unusable", "message": "<sentence>" }`, present when roof was asked for but
+  the satellite images cannot be trusted for this home (see below). Then `estimate.roof` is `null`: show `message`, no roof price.
 - `estimate.gutters`: `"at-visit"` when gutters were asked for: they are priced at the free visit, never online. A
   gutters-only request is only looked up and checked (the same gates), it never uses a measurement.
+
+### Roof not measurable from satellite
+
+The owner's rule: for a home with inaccurate images, say the roof cannot be examined through satellite. The server
+(`quote/gates.ts` `satelliteGate`) checks the roof's images for every home it measures, and any one of these makes them
+unusable for the roof:
+
+| Check | Limit |
+| --- | --- |
+| Google Solar `imageryQuality` | anything below `HIGH` (MEDIUM, LOW, BASE): the roof checks were benchmarked on HIGH only |
+| Google Solar `imageryDate` | older than 5 years (`QUOTE_GATES.maxImageryAgeYears`) |
+| The home's `yearBuilt` (when the company has it) | the imagery's year or later: the house is not in the picture |
+| Solar building | none within 30 m of the home |
+| The roof in 3D | a serious ("block") review reason except `edges-unverified`: roof hidden, inferred, from lidar, ... |
+| Outline vs the geocoded house | the point is more than 10 m outside the measured outline, or the outline has `outline-off` / `joined-buildings` |
+
+The homeowner hears one thing, whatever the cause: "We can't measure your roof from satellite images — the pictures of
+your home aren't clear or recent enough. We'll measure it at your free visit." (`SATELLITE_UNUSABLE_MESSAGE`). Staff keep
+the cause: the stored estimate's `result.satellite` (`problems`, `quality`, `date`) and a line on the job's timeline.
+
+- Roof asked for with windows: `status: "ready"`, `estimate.windows` as normal, `estimate.roof: null`, `estimate.roofNote` set.
+- Roof asked for and nothing else priceable (roof only, or roof with gutters): `status: "callback"`,
+  `callbackReason: "satellite-unusable"`, `estimate.roofNote` set. Booking and contact work.
+- Windows only: nothing changes (no note). The exception is a problem with the outline itself (wrong house, joined
+  buildings): windows are counted on that outline, so with roof asked for it is the callback above; without it, `home`.
 
 ## GET /requests/:id
 

@@ -1,6 +1,6 @@
 import type { LngLat, SolarBuilding } from '@roofline/shared';
 import type { Config } from '../config.ts';
-import { FakeSolar } from './fakes/solar.ts';
+import { DemoSolar, FakeSolar } from './fakes/solar.ts';
 import { googleSolarFor } from './google-solar.ts';
 
 /**
@@ -30,7 +30,7 @@ export class UnconfiguredSolar implements SolarApi {
  * else the fake; the fake under FAKE_PROVIDERS; otherwise the real one when configured.
  */
 export function createSolarApi(config: Config): SolarApi {
-  if (config.DEMO_MODE) return googleSolarFor(config) ?? new FakeSolar();
+  if (config.DEMO_MODE) return googleSolarFor(config) ?? new DemoSolar();
   if (config.FAKE_PROVIDERS) return new FakeSolar();
   return googleSolarFor(config) ?? new UnconfiguredSolar();
 }

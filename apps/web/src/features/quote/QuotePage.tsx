@@ -368,13 +368,15 @@ function Results({
   onStartOver: () => void;
 }) {
   const headingId = useId();
+  // The roof was asked about but the satellite pictures cannot be trusted: no roof price, the free visit measures it.
+  const satellite = services.includes('roof') && answer.notice === 'satellite-unusable';
   if (!hasRanges(answer, services)) {
     return (
       <section className={styles.card} aria-labelledby={headingId}>
         <h1 id={headingId} className={styles.title}>
-          {quote.fallbackTitle}
+          {satellite ? quote.satelliteTitle : quote.fallbackTitle}
         </h1>
-        <p className={styles.text}>{answer.status === 'fallback' ? quote.fallbackBody : quote.nothingShown}</p>
+        <p className={styles.text}>{satellite ? quote.satelliteBody : answer.status === 'fallback' ? quote.fallbackBody : quote.nothingShown}</p>
         {answer.address !== '' ? <p className={styles.small}>{quote.forAddress(answer.address)}</p> : null}
       </section>
     );
@@ -399,6 +401,11 @@ function Results({
           <li>
             <span className={styles.rangeLabel}>{quote.roofLine(answer.roof.squares)}</span>
             <span className={styles.rangeValue}>{quote.range(answer.roof.range.lowCents, answer.roof.range.highCents)}</span>
+          </li>
+        ) : null}
+        {satellite && answer.roof === null ? (
+          <li>
+            <span className={styles.rangeLabel}>{quote.satelliteBody}</span>
           </li>
         ) : null}
         {services.includes('gutters') && config.products.includes('gutters') ? (

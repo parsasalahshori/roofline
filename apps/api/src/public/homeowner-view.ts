@@ -16,6 +16,7 @@ import {
   type PhotoWindow,
   type PhotoWindowInput,
   type QuoteProduct,
+  SATELLITE_UNUSABLE_MESSAGE,
   sizeFromArPoints,
   windowSizeLabel,
   windowUncertaintyLabel,
@@ -40,10 +41,14 @@ export function homeOf(request: HomeownerRequestRow, estimate: QuoteEstimateRow 
   return { address: request.address, floors: stored.floors ?? null, outline: view.outline };
 }
 
+/** What the app shows in place of the roof price when the satellite pictures cannot be trusted. */
+const ROOF_NOTE = { reason: 'satellite-unusable', message: SATELLITE_UNUSABLE_MESSAGE } as const;
+
 /** The estimates for the services asked about: null where not asked, not estimated, or the request is a call back. */
 export function estimateOf(request: HomeownerRequestRow, estimate: QuoteEstimateRow | null): HomeownerEstimate {
   const gutters = request.services.includes('gutters') ? ('at-visit' as const) : null;
-  if (estimate === null || request.status === 'callback') return { windows: null, roof: null, gutters };
+  const unusable = request.services.includes('roof') && request.callbackReason === 'satellite-unusable';
+  if (estimate === null || request.status === 'callback') return { windows: null, roof: null, gutters, ...(unusable && { roofNote: ROOF_NOTE }) };
   const view = estimateView(estimate);
   const stored = estimate.result as StoredEstimateResult;
   const range = stored.windowCountRange ?? null;
@@ -52,7 +57,8 @@ export function estimateOf(request: HomeownerRequestRow, estimate: QuoteEstimate
       ? { low: Math.min(range?.low ?? view.windows.count, view.windows.count), high: Math.max(range?.high ?? view.windows.count, view.windows.count), likely: view.windows.count }
       : null;
   const roof = request.services.includes('roof') && view.roof !== null ? { low: hundreds(view.roof.range.lowCents), high: hundreds(view.roof.range.highCents), squares: view.roof.squares } : null;
-  return { windows, roof, gutters };
+  const withheld = request.services.includes('roof') && roof === null && stored.satellite !== undefined;
+  return { windows, roof, gutters, ...(withheld && { roofNote: ROOF_NOTE }) };
 }
 
 /** The homeowner's windows on the request's measurement, sized from what is stored (quote-grade, source homeowner-app). */
