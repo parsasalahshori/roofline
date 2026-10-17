@@ -37,6 +37,7 @@
   margin: 0 0 16px;
   color: var(--ink-3);
   font-size: var(--font-size-body);
+  text-wrap: pretty;
 }
 
 .note svg {
@@ -48,6 +49,7 @@
   margin: 0;
   color: var(--ink-3);
   font-size: var(--font-size-body);
+  text-wrap: pretty;
 }
 
 /* A small heading inside a panel, for a group of fields */

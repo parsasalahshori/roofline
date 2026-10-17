@@ -1,9 +1,8 @@
-/* The wizard: the steps, then the step in progress, one under another */
+/* The wizard: the steps, then the step in progress, one under another. It is as wide as the Settings column it opens in. */
 .wizard {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-width: 880px;
   min-width: 0;
 }
 

@@ -4,6 +4,7 @@ import { Navigate, useParams } from 'react-router';
 import { useMe } from '../../api/hooks.ts';
 import { WINDOW_COPY } from '../../copy/rail.ts';
 import { settings } from '../../copy/settings.ts';
+import { setupItems } from '../../copy/setup.ts';
 import { AppPage } from '../../shell/AppPage.tsx';
 import { BillingTab } from '../billing/BillingTab.tsx';
 import { FrontDeskTab } from '../front-desk/settings/FrontDeskTab.tsx';
@@ -23,6 +24,12 @@ import { TeamTab } from './TeamTab.tsx';
 /** The screens that open under the Setup tab, by the name the router gives them. */
 export type SettingsSubpage = 'import' | 'texting';
 
+/** The line under a subpage's title: what the Setup checklist says the step is for. */
+const SUBPAGE_LINES: Record<SettingsSubpage, string> = {
+  import: setupItems.import_customers.description,
+  texting: setupItems.texting_registration.description,
+};
+
 type SettingsProps = {
   /** A screen under Setup (the import wizard, texting registration): it takes the Setup tab's place in the page. */
   subpage?: ReactNode;
@@ -32,8 +39,8 @@ type SettingsProps = {
 
 /**
  * The Settings page: its title and the row of tabs, and the one tab the address names. An unknown tab goes to
- * Company, and so do Prices, Storm, Front Desk and Agents for a field rep. A `subpage` opens with its own way back:
- * "Settings / Setup / Import customers" on a desktop, "Setup" above the title on a phone.
+ * Company, and so do Prices, Storm, Front Desk and Agents for a field rep. A `subpage` opens with its own way back,
+ * "Settings / Setup / Import customers" on a desktop, "Setup" above the title on a phone, and its own name as the title.
  */
 export function Settings({ subpage, subpageKey }: SettingsProps = {}) {
   const { tab: routeTab } = useParams();
@@ -54,8 +61,11 @@ export function Settings({ subpage, subpageKey }: SettingsProps = {}) {
         ]
       : undefined;
 
+  // A subpage names itself in its title, so the page's title and the trail above it say the same thing
+  const head = subpage && subpageKey ? { heading: settings.subpages[subpageKey], subtitle: SUBPAGE_LINES[subpageKey] } : {};
+
   return (
-    <AppPage app="settings" tabs={<SettingsTabs current={tab} role={role} />} crumbs={crumbs}>
+    <AppPage app="settings" {...head} tabs={<SettingsTabs current={tab} role={role} />} crumbs={crumbs}>
       {/* The key resets a tab's own state (what was typed, what was saved) when another tab opens */}
       <div key={tab} className={styles.panel}>
         {renderPanel(tab, subpage, role !== undefined)}

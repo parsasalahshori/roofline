@@ -8,6 +8,9 @@ import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { createAppRouter } from '../src/app/router.tsx';
 import type { CompanyBody } from '../src/api/types.ts';
 import { importCopy } from '../src/copy/import.ts';
+import { WINDOW_COPY } from '../src/copy/rail.ts';
+import { settings } from '../src/copy/settings.ts';
+import { shell } from '../src/copy/shell.ts';
 import { ACCOUNT, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
 
 // The real map loads maplibre-gl, which these tests never need.
@@ -123,6 +126,19 @@ async function reachConsent(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole('button', { name: importCopy.next }));
   await screen.findByRole('button', { name: importCopy.startImport });
 }
+
+it('the page is titled for the import, and its drop box reads before the button that does the same', async () => {
+  setup(importView({ status: 'uploaded' }));
+  renderApp('/settings/setup/import');
+
+  // The page's title and the trail above it say the same thing; the main landmark keeps the name of Settings
+  expect(await screen.findByRole('heading', { level: 1, name: settings.subpages.import })).toBeInTheDocument();
+  expect(screen.getByRole('main', { name: WINDOW_COPY.settings.title })).toBeInTheDocument();
+  expect(screen.getByRole('navigation', { name: shell.crumbsLabel })).toHaveTextContent(settings.subpages.import);
+  // Nothing starts with "or": the drop box comes first, and the button after it is the other way in
+  expect(importCopy.uploadDrop).not.toMatch(/^or\b/i);
+  expect(screen.getByText(importCopy.uploadDrop)).toBeInTheDocument();
+});
 
 it('uploads, maps, previews and imports', async () => {
   setup(importView({ status: 'uploaded' }));

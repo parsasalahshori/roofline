@@ -9,7 +9,8 @@ export const importCopy = {
   uploadTitle: 'Upload your customers',
   uploadLabel: 'Customer spreadsheet',
   uploadButton: 'Choose a file',
-  uploadDrop: 'or drop it here',
+  /** In the drop box, above the button that does the same thing the other way. */
+  uploadDrop: 'Drop your file here',
   uploadHelp: 'CSV or Excel, up to 20,000 rows.',
   mappingTitle: 'Match your columns',
   mappingHelp: 'Pick the column in your file for each detail. Leave a detail on "Don\'t import" to skip it.',

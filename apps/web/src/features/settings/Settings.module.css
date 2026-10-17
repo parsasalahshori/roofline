@@ -7,10 +7,12 @@
   max-width: 960px;
 }
 
-/* A panel's title wraps rather than being cut with an ellipsis: some are long ("Facebook and Instagram (Meta)") */
+/* A panel's title wraps rather than being cut with an ellipsis: some are long ("Facebook and Instagram (Meta)").
+   Balanced, so the second line is never a word of its own. */
 .panel h2,
 .panel h3 {
   overflow: visible;
   text-overflow: clip;
+  text-wrap: balance;
   white-space: normal;
 }
