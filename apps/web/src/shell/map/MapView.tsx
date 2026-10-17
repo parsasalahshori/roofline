@@ -25,6 +25,7 @@ import type { Bbox } from '../../api/types.ts';
 import type { Geometry } from 'geojson';
 import type { MapEnv, MapMode, PickedPin, PinTarget } from './types.ts';
 import { useColorScheme } from '../useColorScheme.ts';
+import chrome from './MapChrome.module.css';
 import styles from './MapView.module.css';
 
 export type MapViewProps = {
@@ -386,7 +387,7 @@ export function MapView({ onOpen, onEstimate, pins: pinsAtStart = true }: MapVie
 
   return (
     <div className={styles.root} data-mode={mode} data-card={picked !== null || (roof !== null && canEstimate) ? 'open' : undefined}>
-      <div ref={containerRef} className={styles.map} role="region" aria-label={mapCopy.label} />
+      <div ref={containerRef} className={`${styles.map} ${chrome.chrome}`} role="region" aria-label={mapCopy.label} />
       <p className="visually-hidden" aria-live="polite">
         {summarize(shownPins)}
       </p>

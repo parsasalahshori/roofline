@@ -2,6 +2,7 @@ import { Map as MapLibreMap, Marker } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef } from 'react';
 import { doors } from '../../../copy/doors.ts';
+import chrome from '../../../shell/map/MapChrome.module.css';
 import { mapStyle } from '../../../shell/map/mapStyle.ts';
 import { useColorScheme } from '../../../shell/useColorScheme.ts';
 import type { DoorStop } from './types.ts';
@@ -132,5 +133,5 @@ export function RouteMap({ stops, currentStopId, position }: RouteMapProps) {
     [],
   );
 
-  return <div ref={containerRef} className={styles.map} role="region" aria-label={doors.routeMapLabel} />;
+  return <div ref={containerRef} className={`${styles.map} ${chrome.chrome}`} role="region" aria-label={doors.routeMapLabel} />;
 }

@@ -158,16 +158,16 @@ describe('emptyFeatureCollection', () => {
 
 describe('needsClientClustering', () => {
   it('is set above the threshold and not at it', () => {
-    expect(CLIENT_CLUSTER_ABOVE).toBe(200);
-    expect(needsClientClustering(customers(200))).toBe(false);
-    expect(needsClientClustering(customers(201))).toBe(true);
+    expect(CLIENT_CLUSTER_ABOVE).toBe(40);
+    expect(needsClientClustering(customers(40))).toBe(false);
+    expect(needsClientClustering(customers(41))).toBe(true);
   });
 
   it('counts customers and jobs together', () => {
     const mixed: PinsResult = {
       mode: 'points',
-      customers: customerRows(150),
-      jobs: Array.from({ length: 51 }, (_, index) => ({
+      customers: customerRows(25),
+      jobs: Array.from({ length: 16 }, (_, index) => ({
         jobId: `j${index}`,
         customerId: 'c',
         propertyId: 'p',

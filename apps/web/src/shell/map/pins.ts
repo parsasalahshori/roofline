@@ -1,8 +1,12 @@
 import type { Feature, FeatureCollection, Point } from 'geojson';
 import type { Bbox, PinsResult } from '../../api/types.ts';
 
-/** Above this many points on screen, the customers and jobs sources cluster in the browser. */
-export const CLIENT_CLUSTER_ABOVE = 200;
+/**
+ * Above this many points on screen, the customers and jobs sources cluster in the browser: pins that sit within 40px of
+ * each other become one ink disc with their count, which is how the design draws a busy map (two pins half on top of each
+ * other read as a drawing fault, and a rep cannot tell them apart).
+ */
+export const CLIENT_CLUSTER_ABOVE = 40;
 
 /** What MapLibre's `getBounds()` answers with, as far as we use it. */
 export type BoundsLike = { getWest(): number; getSouth(): number; getEast(): number; getNorth(): number };

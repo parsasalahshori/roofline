@@ -4,6 +4,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef } from 'react';
 import { storm } from '../../copy/storm.ts';
 import { HAIL_FILL_OPACITY } from '../../shell/map/layers.ts';
+import chrome from '../../shell/map/MapChrome.module.css';
 import { MapLegend } from '../../shell/map/MapLegend.tsx';
 import { mapStyle } from '../../shell/map/mapStyle.ts';
 import { hailFillExpression } from '../../shell/map/stormLayer.ts';
@@ -87,7 +88,7 @@ export function StormSwathMap({ swath }: StormSwathMapProps) {
 
   return (
     <div className={styles.root}>
-      <div ref={containerRef} className={styles.map} role="region" aria-label={storm.mapLabel} />
+      <div ref={containerRef} className={`${styles.map} ${chrome.chrome}`} role="region" aria-label={storm.mapLabel} />
       <MapLegend hail pins={false} />
     </div>
   );
