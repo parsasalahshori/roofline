@@ -23,38 +23,40 @@ const STATE_OPTIONS: readonly ListboxOption[] = [
 /** Street, city, state and ZIP for one home. Each control reports the whole address on every change. */
 export function AddressFields({ value, onChange, errors = {} }: AddressFieldsProps) {
   return (
-    <div className={styles.addressGrid}>
-      <Field
-        label={create.address.street}
-        className={styles.wide}
-        autoComplete="street-address"
-        value={value.addressLine}
-        onChange={(event) => onChange({ ...value, addressLine: event.currentTarget.value })}
-        error={errors.addressLine}
-      />
-      <Field
-        label={create.address.city}
-        autoComplete="address-level2"
-        value={value.city}
-        onChange={(event) => onChange({ ...value, city: event.currentTarget.value })}
-        error={errors.city}
-      />
-      <Listbox
-        label={create.address.state}
-        value={value.state}
-        options={STATE_OPTIONS}
-        onChange={(state) => onChange({ ...value, state })}
-        error={errors.state}
-      />
-      <Field
-        label={create.address.zip}
-        inputMode="numeric"
-        autoComplete="postal-code"
-        maxLength={10}
-        value={value.zip}
-        onChange={(event) => onChange({ ...value, zip: event.currentTarget.value })}
-        error={errors.zip}
-      />
+    <div className={styles.address}>
+      <div className={styles.addressGrid}>
+        <Field
+          label={create.address.street}
+          className={styles.wide}
+          autoComplete="street-address"
+          value={value.addressLine}
+          onChange={(event) => onChange({ ...value, addressLine: event.currentTarget.value })}
+          error={errors.addressLine}
+        />
+        <Field
+          label={create.address.city}
+          autoComplete="address-level2"
+          value={value.city}
+          onChange={(event) => onChange({ ...value, city: event.currentTarget.value })}
+          error={errors.city}
+        />
+        <Listbox
+          label={create.address.state}
+          value={value.state}
+          options={STATE_OPTIONS}
+          onChange={(state) => onChange({ ...value, state })}
+          error={errors.state}
+        />
+        <Field
+          label={create.address.zip}
+          inputMode="numeric"
+          autoComplete="postal-code"
+          maxLength={10}
+          value={value.zip}
+          onChange={(event) => onChange({ ...value, zip: event.currentTarget.value })}
+          error={errors.zip}
+        />
+      </div>
     </div>
   );
 }

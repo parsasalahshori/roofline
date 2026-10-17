@@ -1,4 +1,10 @@
-/* The address block: the street spans the row, city and state share the next, ZIP follows */
+/* The address block sizes its columns by its own width, so a wide form and a narrow sheet each get the layout that fits */
+.address {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+/* The street spans the row; city and state share the next, ZIP follows; a wide block puts city, state and ZIP on one row */
 .addressGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -8,6 +14,12 @@
 
 .wide {
   grid-column: 1 / -1;
+}
+
+@container (min-width: 560px) {
+  .addressGrid {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.2fr) minmax(0, 0.8fr);
+  }
 }
 
 /* The customer search: the field, its notes and the list of matches */

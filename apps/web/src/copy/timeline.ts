@@ -32,7 +32,7 @@ export const timeline = {
   notePlaceholder: 'Write a note',
   noteAdd: 'Add note',
   noteMax: 2000,
-  noteCounter: (used: number, max: number) => `${used} of ${max}`,
+  noteCounter: (used: number, max: number) => `${used.toLocaleString('en-US')} of ${max.toLocaleString('en-US')}`,
   noteTooLong: 'Write a note, up to 2,000 characters.',
   noteFailed: "We couldn't save that note. Try again.",
   justNow: 'just now',

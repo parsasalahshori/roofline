@@ -11,6 +11,7 @@ import { JobsTabs } from '../jobs/JobsTabs.tsx';
 import { SearchBox } from '../jobs/SearchBox.tsx';
 import { EmptyPanel, LoadError, RowsSkeleton } from '../jobs/states.tsx';
 import { ConsentChip } from './ConsentChip.tsx';
+import { CustomerTag } from './CustomerTag.tsx';
 import { type CustomerListItem, PAGE_SIZE, useCustomers } from './api.ts';
 import styles from './CustomersPage.module.css';
 
@@ -51,7 +52,7 @@ function TagList({ tags }: { tags: string[] }) {
   return (
     <span className={styles.tags}>
       {tags.map((tag) => (
-        <Tag key={tag}>{tag}</Tag>
+        <CustomerTag key={tag}>{tag}</CustomerTag>
       ))}
     </span>
   );
@@ -79,6 +80,9 @@ function CustomerRows({ rows, phone }: { rows: CustomerListItem[]; phone: boolea
     );
   }
 
+  // A Tags column over blank cells reads as a broken one: it shows only while some customer in the list has a tag
+  const anyTags = rows.some((row) => row.tags.length > 0);
+
   return (
     <div className={styles.panel}>
       <Table aria-label={customers.list.tableLabel}>
@@ -87,7 +91,7 @@ function CustomerRows({ rows, phone }: { rows: CustomerListItem[]; phone: boolea
             <Th>{customers.list.columnName}</Th>
             <Th>{customers.list.columnPhone}</Th>
             <Th>{customers.list.columnTexting}</Th>
-            <Th>{customers.list.columnTags}</Th>
+            {anyTags ? <Th>{customers.list.columnTags}</Th> : null}
           </tr>
         </thead>
         <tbody>
@@ -100,9 +104,11 @@ function CustomerRows({ rows, phone }: { rows: CustomerListItem[]; phone: boolea
               <Td>
                 <ConsentChip status={row.smsConsent.status} />
               </Td>
-              <Td>
-                <TagList tags={row.tags} />
-              </Td>
+              {anyTags ? (
+                <Td>
+                  <TagList tags={row.tags} />
+                </Td>
+              ) : null}
             </Tr>
           ))}
         </tbody>

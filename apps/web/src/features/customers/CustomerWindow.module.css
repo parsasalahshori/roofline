@@ -84,14 +84,15 @@
 .facts {
   display: grid;
   grid-template-columns: 84px minmax(0, 1fr);
+  align-items: baseline;
   gap: 10px 12px;
   margin: 0;
   font-size: 13px;
 }
 
+/* A label and its first line of value share a baseline, whatever face the value is set in */
 .facts dt {
   color: var(--ink-3);
-  padding-top: 2px;
 }
 
 .facts dd {
@@ -116,6 +117,12 @@
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+}
+
+/* A tag item may be narrower than its words, so a long tag wraps in the panel */
+.tagItem {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .phoneRow {

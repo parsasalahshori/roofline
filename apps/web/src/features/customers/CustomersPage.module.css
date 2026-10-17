@@ -76,10 +76,13 @@
   white-space: nowrap;
 }
 
+/* The tags wrap inside their cell or card: a long one grows taller instead of running out of it */
 .tags {
-  display: inline-flex;
+  display: flex;
   flex-wrap: wrap;
   gap: 4px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* Phone: one card per customer */

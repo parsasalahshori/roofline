@@ -2,6 +2,7 @@ import type { CustomerView } from '@roofline/shared';
 import { Panel, Tag, UiLink } from '@roofline/ui';
 import { customers } from '../../copy/customers.ts';
 import { formatPhone } from '../jobs/format.ts';
+import { CustomerTag } from './CustomerTag.tsx';
 import styles from './CustomerWindow.module.css';
 
 export type CustomerContactProps = { view: CustomerView };
@@ -55,8 +56,8 @@ export function CustomerContact({ view }: CustomerContactProps) {
             <dd>
               <ul className={styles.tagList}>
                 {customer.tags.map((tag) => (
-                  <li key={tag}>
-                    <Tag>{tag}</Tag>
+                  <li key={tag} className={styles.tagItem}>
+                    <CustomerTag>{tag}</CustomerTag>
                   </li>
                 ))}
               </ul>
