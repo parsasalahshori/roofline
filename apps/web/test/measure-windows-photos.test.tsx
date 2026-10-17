@@ -248,7 +248,13 @@ async function open(v: WindowMeasurementView = view()) {
       <RouterProvider router={router} />
     </Providers>,
   );
-  fireEvent.click(await screen.findByRole('button', { name: measureWindows.scanButton }));
+  // A house with windows photographed on site shows its work at once; one with only Estimator's own reading waits for Measure windows
+  const start = await waitFor(() => {
+    const button = screen.queryByRole('button', { name: measureWindows.scanButton });
+    expect(button ?? screen.queryByRole('region', { name: measureWindows.statsLabel })).toBeTruthy();
+    return button;
+  });
+  if (start !== null) fireEvent.click(start);
   await waitFor(() => expect(card().dataset.phase).toBe('done'));
 }
 const card = () => screen.getByRole('region', { name: measureWindows.statsLabel });

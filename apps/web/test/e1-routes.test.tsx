@@ -125,6 +125,8 @@ describe('E1 windows', () => {
       adjustments: { excludedWindowIds: [], manualCounts: {} }, tookMs: 0,
     };
     signedInApi(ACCOUNT, {
+      // The switch's Gutters place comes from the request list, as on the roof screen
+      ...proposalListRoutes(),
       'GET /api/window-measurements/w1': () => ({ body: windowsView }),
       'GET /api/window-measurements/w1/preview': () => ({ body: { quotes: [] } }),
     });
@@ -137,7 +139,7 @@ describe('E1 windows', () => {
   });
 
   it('/estimator/windows opens the address step', async () => {
-    signedInApi(ACCOUNT);
+    signedInApi(ACCOUNT, proposalListRoutes());
     renderApp('/estimator/windows');
     expect(await screen.findByRole('heading', { name: measureWindows.startTitle })).toBeInTheDocument();
     expect(screen.getByLabelText(measureWindows.addressLabel)).toBeInTheDocument();
