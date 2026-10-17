@@ -1,6 +1,6 @@
 /*
  * The calendar's controls, in two rows that wrap as far as the width needs. The range is Archivo, like the page's title.
- * On a phone the switch takes the full width, the arrows get a thumb each, and the chips slide sideways in one row.
+ * On a phone the switch takes the full width, the arrows get a thumb each, and the chips wrap onto lines of their own.
  */
 .toolbar {
   display: flex;
@@ -83,7 +83,7 @@
     min-height: 44px;
   }
 
-  /* The chips take the full width and slide; the switch for canceled visits has the line under them */
+  /* The chips take the full width and wrap; the switch for canceled visits has the line under them */
   .row:nth-child(2) {
     flex-direction: column;
     align-items: stretch;

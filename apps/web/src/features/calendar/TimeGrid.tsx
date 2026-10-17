@@ -1,9 +1,21 @@
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
-import type { AppointmentView } from '@roofline/shared';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import type { AppointmentStatus, AppointmentView } from '@roofline/shared';
+import { Icon, type IconName } from '@roofline/ui';
 import { calendar } from '../../copy/calendar.ts';
 import { colorOfAppointment } from './colors.ts';
-import { formatDayLabel, formatDayNumber, formatTime, formatWeekday, startOfZonedDay, zonedDateKey, zonedParts } from './time.ts';
+import {
+  formatCompactRange,
+  formatCompactTime,
+  formatDayLabel,
+  formatDayNumber,
+  formatTime,
+  formatWeekday,
+  startOfZonedDay,
+  zonedDateKey,
+  zonedParts,
+} from './time.ts';
 import type { GridViewProps } from './types.ts';
+import { visitKind } from './visit.ts';
 import styles from './TimeGrid.module.css';
 
 /** The visible window in minutes since midnight: 06:00 to 21:00. */
@@ -18,6 +30,15 @@ const SCROLL_TO_ROW = 2;
 const DAY_MINUTES = 1440;
 const GUTTER_PX = 72;
 const COLUMN_MIN_PX = 120;
+/** A character of the mono type a block's hours are set in: 0.6em of the 12px minimum. */
+const CHAR_PX = 7.2;
+/** What a block spends before its words: the 3px edge, 8px of padding on each side, and the 2px its width gives up. */
+const BLOCK_CHROME_PX = 21;
+/** A column with room for 19 characters writes every range whole ("10:00 AM - 11:00 AM"); with room for 12 it writes them shorter ("10 - 11 AM"). */
+const WHOLE_CHARS = 19;
+const SHORT_CHARS = 12;
+/** The room a block needs beside the kind of visit to show the word of a mark ("Done", "No-show"), not only its glyph. */
+const WORD_ROOM_PX = 150;
 
 /** Wall-clock minutes since midnight of `instant` in `zone`. */
 function wallMinutes(instant: Date, zone: string): number {
@@ -105,11 +126,24 @@ function layoutLanes(items: { row: number; span: number }[]): { lane: number; la
   return result;
 }
 
-/** The row the grid opens on: a few rows above the clock when today is shown, else 07:00. */
-function openingRow(todayShown: boolean, nowMinute: number): number {
-  if (!todayShown || nowMinute < WINDOW_START || nowMinute > WINDOW_END) return SCROLL_TO_ROW;
-  return Math.max(0, Math.floor((nowMinute - WINDOW_START) / ROW_MINUTES) - 3);
+/**
+ * The row the grid opens on: a few rows above the clock when today is shown, else 07:00, and never below the first visit of the
+ * days shown (with a row of air above it), so a tall visit that began before the clock still has its name in view.
+ */
+function openingRow(todayShown: boolean, nowMinute: number, firstVisitRow: number | null): number {
+  const base =
+    !todayShown || nowMinute < WINDOW_START || nowMinute > WINDOW_END
+      ? SCROLL_TO_ROW
+      : Math.max(0, Math.floor((nowMinute - WINDOW_START) / ROW_MINUTES) - 3);
+  return firstVisitRow === null ? base : Math.max(0, Math.min(base, firstVisitRow - 1));
 }
+
+/** How a visit that is not simply scheduled is marked on its block: a glyph, a word and a tone, never the tone alone. */
+const STATUS_MARK: Partial<Record<AppointmentStatus, { icon: IconName; tone: 'ok' | 'warn' | 'neutral' }>> = {
+  completed: { icon: 'check', tone: 'ok' },
+  no_show: { icon: 'alert', tone: 'warn' },
+  canceled: { icon: 'x', tone: 'neutral' },
+};
 
 const pad = (value: number): string => String(value).padStart(2, '0');
 
@@ -128,11 +162,54 @@ export function TimeGrid({ zone, days, appointments, busy, people, showCanceled,
   const nowMinute = wallMinutes(now, zone);
   const shownAppointments = showCanceled ? appointments : appointments.filter((appt) => appt.status !== 'canceled');
 
-  const [startRow] = useState(() => openingRow(dayKeys.includes(nowKey), nowMinute));
+  const [startRow] = useState(() => {
+    const rows = dayKeys.flatMap((dayKey) =>
+      shownAppointments
+        .filter((appt) => !appt.allDay && onDay(appt.startsAt, appt.endsAt, false, dayKey, zone))
+        .map((appt) => placeInDay(appt.startsAt, appt.endsAt, dayKey, zone).row),
+    );
+    return openingRow(dayKeys.includes(nowKey), nowMinute, rows.length > 0 ? Math.min(...rows) : null);
+  });
   useEffect(() => {
     const element = scrollRef.current;
     if (element) element.scrollTop = startRow * ROW_PX;
   }, [startRow]);
+
+  // How wide a day's column is, so each block can write its hours at the length that fits it (null until it is measured)
+  const [columnPx, setColumnPx] = useState<number | null>(null);
+  const dayCount = days.length;
+  useLayoutEffect(() => {
+    const element = scrollRef.current;
+    if (element === null) return;
+    const read = () => setColumnPx(element.clientWidth > 0 ? Math.max(COLUMN_MIN_PX, (element.clientWidth - GUTTER_PX) / Math.max(1, dayCount)) : null);
+    read();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(read);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [dayCount]);
+
+  /**
+   * How a time is written in a block `lanes` side by side in a column (candidates, whole first): every block of a column takes the same
+   * way, the longest the column has room for, so the grid does not mix "9:00 AM - 10:00 AM" with "10 - 11 AM"; a block whose own text
+   * is still too long takes the next shorter one, and a block with no room even for the shortest leaves its time out (the pointer
+   * finds it), so a number is never cut in the middle. Before the column is measured, the number of lanes decides: whole alone,
+   * shorter in two, the start in more.
+   */
+  const fitHours = (candidates: readonly string[], lanes: number): string => {
+    const last = candidates.length - 1;
+    if (columnPx === null) return candidates[Math.min(Math.max(lanes, 1), candidates.length) - 1] ?? candidates[last] ?? '';
+    const chars = Math.floor((columnPx / lanes - BLOCK_CHROME_PX) / CHAR_PX);
+    const tier = chars >= WHOLE_CHARS ? 0 : chars >= SHORT_CHARS ? 1 : 2;
+    for (let way = Math.min(tier, last); way <= last; way += 1) {
+      const text = candidates[way] ?? '';
+      if (text.length <= chars) return text;
+    }
+    return '';
+  };
+
+  /** Whether a block `lanes` side by side has room for the word of its status mark (before the column is measured, only a block alone has). */
+  const hasWordRoom = (lanes: number): boolean => (columnPx === null ? lanes === 1 : columnPx / lanes - BLOCK_CHROME_PX >= WORD_ROOM_PX);
 
   /** Arrow keys walk the appointments in DOM order; Enter opens the focused one. */
   const onItemKeyDown = (event: KeyboardEvent<HTMLElement>, appointmentId: string) => {
@@ -158,11 +235,28 @@ export function TimeGrid({ zone, days, appointments, busy, people, showCanceled,
 
   /** What the pointer finds on a block: everything it shows, and the parts that may have been cut short. */
   const tipOf = (appt: AppointmentView, range: string | null): string =>
-    calendar.eventTitle([appt.title, ...(appt.customerName ? [appt.customerName] : []), ...(range !== null ? [range] : []), ...(appt.assigned ? [appt.assigned.name] : [])]);
+    calendar.eventTitle([
+      visitKind(appt.title, appt.customerName),
+      ...(appt.customerName ? [appt.customerName] : []),
+      ...(range !== null ? [range] : []),
+      ...(appt.assigned ? [appt.assigned.name] : []),
+      ...(STATUS_MARK[appt.status] !== undefined ? [calendar.status[appt.status]] : []),
+    ]);
 
-  /** A canceled, done or no-show visit is struck or marked in the block, and said aloud: never colour alone. */
-  const statusNote = (appt: AppointmentView): ReactNode =>
-    appt.status !== 'scheduled' ? <span className="visually-hidden">{calendar.status[appt.status]}</span> : null;
+  /**
+   * A canceled, done or no-show visit says so on its block: a glyph and the word, in the status's tone. Where the block is narrow
+   * the word is dropped from the sight, not from the page, and what the pointer finds says it. Never colour alone.
+   */
+  const statusMark = (appt: AppointmentView, lanes: number): ReactNode => {
+    const mark = STATUS_MARK[appt.status];
+    if (mark === undefined) return null;
+    return (
+      <span className={styles.status} data-tone={mark.tone} data-word={hasWordRoom(lanes) ? 'true' : 'false'}>
+        <Icon name={mark.icon} size={16} />
+        <span className={styles.statusWord}>{calendar.status[appt.status]}</span>
+      </span>
+    );
+  };
 
   const labels =
     dayStarts.length > 0
@@ -193,9 +287,9 @@ export function TimeGrid({ zone, days, appointments, busy, people, showCanceled,
           onClick={() => onOpen(appt.id)}
           onKeyDown={(event) => onItemKeyDown(event, appt.id)}
         >
-          <span className={styles.itemTitle}>{appt.title}</span>
+          <span className={styles.itemTitle}>{visitKind(appt.title, appt.customerName)}</span>
           {appt.customerName ? <span className={styles.itemSub}>{appt.customerName}</span> : null}
-          {statusNote(appt)}
+          {statusMark(appt, 1)}
         </div>,
       );
     }
@@ -206,8 +300,15 @@ export function TimeGrid({ zone, days, appointments, busy, people, showCanceled,
     const lanes = layoutLanes(timedAppointments);
     timedAppointments.forEach(({ appt, row, span }, index) => {
       const { lane, lanes: laneCount } = lanes[index];
-      const start = formatTime(new Date(appt.startsAt), zone);
-      const range = calendar.timeRange(start, formatTime(new Date(appt.endsAt), zone));
+      const startAt = new Date(appt.startsAt);
+      const endAt = new Date(appt.endsAt);
+      const start = formatTime(startAt, zone);
+      const range = calendar.timeRange(start, formatTime(endAt, zone));
+      // A block is narrow, and narrower side by side: its hours are written whole, then shorter ("8 - 11 AM"), then as the start ("8 AM")
+      const compactStart = formatCompactTime(startAt, zone);
+      const hours = fitHours([range, formatCompactRange(startAt, endAt, zone), compactStart], laneCount);
+      const startText = fitHours([start, compactStart], laneCount);
+      const kind = visitKind(appt.title, appt.customerName);
       timed.push(
         <div
           key={appt.id}
@@ -235,17 +336,20 @@ export function TimeGrid({ zone, days, appointments, busy, people, showCanceled,
         >
           {span === 1 ? (
             <>
-              <span className={styles.itemTime}>{start}</span>
-              <span className={styles.itemTitle}>{appt.title}</span>
+              {startText !== '' ? <span className={styles.itemTime}>{startText}</span> : null}
+              <span className={styles.itemTitle}>{kind}</span>
+              {statusMark(appt, laneCount)}
             </>
           ) : (
             <>
-              <span className={styles.itemTitle}>{appt.title}</span>
+              <span className={styles.itemHead}>
+                <span className={styles.itemTitle}>{kind}</span>
+                {statusMark(appt, laneCount)}
+              </span>
               {appt.customerName ? <span className={styles.itemSub}>{appt.customerName}</span> : null}
-              <span className={styles.itemTime}>{range}</span>
+              {hours !== '' ? <span className={styles.itemTime}>{hours}</span> : null}
             </>
           )}
-          {statusNote(appt)}
         </div>,
       );
     });

@@ -103,6 +103,25 @@ export function formatTime(date: Date, zone: string): string {
   return formatter.format(date).replace(/[\u00a0\u202f]/g, ' ');
 }
 
+/** "8:30 AM" as its clock and its half of the day, with a whole hour's ":00" left off: "8" and "AM". */
+function compactParts(date: Date, zone: string): { clock: string; half: string } {
+  const [clock = '', half = ''] = formatTime(date, zone).split(' ');
+  return { clock: clock.endsWith(':00') ? clock.slice(0, -3) : clock, half };
+}
+
+/** The hour a visit starts, in as few characters as read clearly: "8 AM", "8:30 AM". */
+export function formatCompactTime(date: Date, zone: string): string {
+  const { clock, half } = compactParts(date, zone);
+  return `${clock} ${half}`;
+}
+
+/** The hours of a visit in as few characters as read clearly: "8 - 11 AM", "8:30 - 9:30 AM", "11 AM - 1 PM". */
+export function formatCompactRange(start: Date, end: Date, zone: string): string {
+  const from = compactParts(start, zone);
+  const to = compactParts(end, zone);
+  return from.half === to.half ? `${from.clock} - ${to.clock} ${to.half}` : `${from.clock} ${from.half} - ${to.clock} ${to.half}`;
+}
+
 const pad2 = (value: number): string => String(value).padStart(2, '0');
 
 /** "YYYY-MM-DD" of the zone day containing `date`. */

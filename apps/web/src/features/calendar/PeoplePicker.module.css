@@ -34,7 +34,7 @@
   box-shadow: 0 0 0 1.5px var(--ink-inv);
 }
 
-/* A phone: one row that slides sideways, so the filters never push the grid down */
+/* A phone: the chips wrap onto as many lines as the names need, so every person is on the screen and nothing slides sideways */
 @media (max-width: 767.98px) {
   .picker {
     flex: 1 1 auto;
@@ -45,13 +45,6 @@
   }
 
   .chips {
-    flex-wrap: nowrap;
-    overflow-x: auto;
     padding: 2px;
-    scrollbar-width: none;
-  }
-
-  .chips::-webkit-scrollbar {
-    display: none;
   }
 }

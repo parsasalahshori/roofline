@@ -11,10 +11,13 @@ import { AgendaView } from '../src/features/calendar/AgendaView.tsx';
 import { CalendarWindow } from '../src/features/calendar/CalendarWindow.tsx';
 import { colorFor, colorOfAppointment, kindColor, PERSON_COLORS } from '../src/features/calendar/colors.ts';
 import type { AppointmentsBody, BusyBlock } from '../src/features/calendar/types.ts';
+import { visitKind } from '../src/features/calendar/visit.ts';
 import { calendar } from '../src/copy/calendar.ts';
 import {
   addZonedDays,
   dateKeyToInstant,
+  formatCompactRange,
+  formatCompactTime,
   formatDayLabel,
   formatDayNumber,
   formatRangeLabel,
@@ -105,6 +108,29 @@ describe('time', () => {
 
   it('zoneName gives the long name of the zone', () => {
     expect(zoneName(CHICAGO)).toBe('Central Time');
+  });
+
+  it('formatCompactRange and formatCompactTime write the hours in as few characters as read clearly', () => {
+    // 14:00Z is 8:00 AM in Chicago in November
+    expect(formatCompactRange(new Date('2026-11-02T14:00:00Z'), new Date('2026-11-02T17:00:00Z'), CHICAGO)).toBe('8 - 11 AM');
+    expect(formatCompactRange(new Date('2026-11-02T14:30:00Z'), new Date('2026-11-02T15:30:00Z'), CHICAGO)).toBe('8:30 - 9:30 AM');
+    expect(formatCompactRange(new Date('2026-11-02T17:00:00Z'), new Date('2026-11-02T19:30:00Z'), CHICAGO)).toBe('11 AM - 1:30 PM');
+    expect(formatCompactTime(new Date('2026-11-02T15:00:00Z'), CHICAGO)).toBe('9 AM');
+    expect(formatCompactTime(new Date('2026-11-02T15:30:00Z'), CHICAGO)).toBe('9:30 AM');
+  });
+});
+
+describe('visit names', () => {
+  it('keeps the kind of visit, and leaves the customer to a line of its own', () => {
+    expect(visitKind('Roof inspection: Kevin Hall', 'Kevin Hall')).toBe('Roof inspection');
+    expect(visitKind('Window install: Beverly Stroud', 'Beverly Stroud')).toBe('Window install');
+  });
+
+  it('leaves a title whole when it does not end with its customer', () => {
+    expect(visitKind('Roof inspection for the clubhouse', 'Maple Ridge HOA')).toBe('Roof inspection for the clubhouse');
+    expect(visitKind('Roof inspection: Kevin Hall', 'Someone Else')).toBe('Roof inspection: Kevin Hall');
+    expect(visitKind('Roof inspection', null)).toBe('Roof inspection');
+    expect(visitKind(': Kevin Hall', 'Kevin Hall')).toBe(': Kevin Hall');
   });
 });
 
@@ -745,5 +771,197 @@ describe('Agenda view range overlap', () => {
     view([makeAppointment({ id: 'early', startsAt: '2026-11-02T15:00:00.000Z', endsAt: '2026-11-03T15:00:00.000Z' })]);
     expect(screen.getByTestId('agenda-day-2026-11-03')).toBeInTheDocument();
     expect(screen.getAllByTestId('agenda-item-early')).toHaveLength(1);
+  });
+});
+
+
+describe('calendar blocks', () => {
+  it('a done visit says so on its block with a glyph and the word, a no-show too', async () => {
+    renderCalendar('/calendar?view=week&date=2026-11-02', {
+      appointments: [
+        makeAppointment({ id: 'done', status: 'completed', startsAt: '2026-11-02T15:00:00.000Z', endsAt: '2026-11-02T16:00:00.000Z' }),
+        makeAppointment({ id: 'missed', status: 'no_show', startsAt: '2026-11-03T15:00:00.000Z', endsAt: '2026-11-03T16:00:00.000Z' }),
+        makeAppointment({ id: 'plain', startsAt: '2026-11-04T15:00:00.000Z', endsAt: '2026-11-04T16:00:00.000Z' }),
+      ],
+    });
+    const done = await screen.findByTestId('appt-done');
+    expect(within(done).getByText(calendar.status.completed)).toBeInTheDocument();
+    expect(done.querySelector('svg')).not.toBeNull();
+    const missed = screen.getByTestId('appt-missed');
+    expect(within(missed).getByText(calendar.status.no_show)).toBeInTheDocument();
+    expect(missed.querySelector('svg')).not.toBeNull();
+    // A visit that is simply scheduled wears no mark
+    const plain = screen.getByTestId('appt-plain');
+    expect(plain.querySelector('svg')).toBeNull();
+    expect(within(plain).queryByText(calendar.status.scheduled)).toBeNull();
+  });
+
+  it('keeps the word of the mark where the block has room and only the glyph where it has not, and the pointer always finds it', async () => {
+    renderCalendar('/calendar?view=week&date=2026-11-02', {
+      appointments: [
+        makeAppointment({ id: 'alone', status: 'completed', startsAt: '2026-11-03T15:00:00.000Z', endsAt: '2026-11-03T16:00:00.000Z' }),
+        makeAppointment({ id: 'p1', status: 'completed', startsAt: '2026-11-02T15:00:00.000Z', endsAt: '2026-11-02T16:00:00.000Z' }),
+        makeAppointment({ id: 'p2', startsAt: '2026-11-02T15:30:00.000Z', endsAt: '2026-11-02T16:30:00.000Z' }),
+      ],
+    });
+    const alone = await screen.findByTestId('appt-alone');
+    expect(within(alone).getByText(calendar.status.completed).closest('[data-word]')).toHaveAttribute('data-word', 'true');
+    const side = screen.getByTestId('appt-p1');
+    expect(within(side).getByText(calendar.status.completed).closest('[data-word]')).toHaveAttribute('data-word', 'false');
+    // Dropped from the sight, not from the page: the word is still there to read aloud, and what the pointer finds says it
+    expect(within(side).getByText(calendar.status.completed)).toBeInTheDocument();
+    expect(side.getAttribute('title')).toMatch(/ · Done$/);
+    // A visit that is simply scheduled has nothing to add to what the pointer finds
+    expect(screen.getByTestId('appt-p2').getAttribute('title')).not.toMatch(/Done|Canceled|No-show/);
+  });
+
+  it('a short done visit and an all-day one carry the mark too', async () => {
+    renderCalendar('/calendar?view=week&date=2026-11-02', {
+      appointments: [
+        makeAppointment({ id: 'quick', status: 'completed', startsAt: '2026-11-02T15:00:00.000Z', endsAt: '2026-11-02T15:30:00.000Z' }),
+        makeAppointment({ id: 'days', kind: 'install', status: 'completed', allDay: true, startsAt: '2026-11-03T06:00:00.000Z', endsAt: '2026-11-04T06:00:00.000Z' }),
+      ],
+    });
+    expect(within(await screen.findByTestId('appt-quick')).getByText(calendar.status.completed)).toBeInTheDocument();
+    expect(within(screen.getByTestId('allday-days')).getByText(calendar.status.completed)).toBeInTheDocument();
+  });
+
+  it('the first line is the kind of visit and the customer has the next, so the name is not cut in the middle', async () => {
+    renderCalendar('/calendar?view=week&date=2026-11-02', {
+      appointments: [makeAppointment({ id: 'k1', title: 'Roof inspection: Kevin Hall', customerName: 'Kevin Hall' })],
+    });
+    const block = await screen.findByTestId('appt-k1');
+    expect(within(block).getByText('Roof inspection')).toBeInTheDocument();
+    expect(within(block).getByText('Kevin Hall')).toBeInTheDocument();
+    expect(within(block).queryByText('Roof inspection: Kevin Hall')).toBeNull();
+    // What the pointer finds does not say the name twice
+    expect(block).toHaveAttribute('title', 'Roof inspection · Kevin Hall · 9:00 AM - 10:00 AM · Sam Roofer');
+  });
+
+  it('side by side the hours are written shorter, then only the start, and alone they are whole', async () => {
+    renderCalendar('/calendar?view=week&date=2026-11-02', {
+      appointments: [
+        makeAppointment({ id: 'alone', startsAt: '2026-11-03T15:00:00.000Z', endsAt: '2026-11-03T16:00:00.000Z' }),
+        makeAppointment({ id: 'p1', startsAt: '2026-11-02T15:00:00.000Z', endsAt: '2026-11-02T16:00:00.000Z' }),
+        makeAppointment({ id: 'p2', startsAt: '2026-11-02T15:30:00.000Z', endsAt: '2026-11-02T16:30:00.000Z' }),
+        makeAppointment({ id: 't1', startsAt: '2026-11-04T15:00:00.000Z', endsAt: '2026-11-04T17:00:00.000Z' }),
+        makeAppointment({ id: 't2', startsAt: '2026-11-04T15:30:00.000Z', endsAt: '2026-11-04T17:00:00.000Z' }),
+        makeAppointment({ id: 't3', startsAt: '2026-11-04T16:00:00.000Z', endsAt: '2026-11-04T17:00:00.000Z' }),
+      ],
+    });
+    expect(within(await screen.findByTestId('appt-alone')).getByText('9:00 AM - 10:00 AM')).toBeInTheDocument();
+    expect(within(screen.getByTestId('appt-p1')).getByText('9 - 10 AM')).toBeInTheDocument();
+    expect(within(screen.getByTestId('appt-p2')).getByText('9:30 - 10:30 AM')).toBeInTheDocument();
+    expect(screen.getByTestId('appt-t1')).toHaveAttribute('data-lanes', '3');
+    expect(within(screen.getByTestId('appt-t1')).getByText('9 AM')).toBeInTheDocument();
+    expect(within(screen.getByTestId('appt-t2')).getByText('9:30 AM')).toBeInTheDocument();
+    // The pointer still finds the whole range
+    expect(screen.getByTestId('appt-p1').getAttribute('title')).toContain('9:00 AM - 10:00 AM');
+  });
+});
+
+describe('hours that fit the block', () => {
+  /** The grid is `px` wide: jsdom does no layout, so the width the grid measures is set here. */
+  function gridWidth(px: number) {
+    return vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.getAttribute('data-testid') === 'time-grid' ? px : 0;
+    });
+  }
+
+  const pair = [
+    makeAppointment({ id: 'one', startsAt: '2026-11-03T15:00:00.000Z', endsAt: '2026-11-03T16:00:00.000Z' }),
+    makeAppointment({ id: 'p1', startsAt: '2026-11-02T15:00:00.000Z', endsAt: '2026-11-02T16:00:00.000Z' }),
+    makeAppointment({ id: 'p2', startsAt: '2026-11-02T15:30:00.000Z', endsAt: '2026-11-02T16:30:00.000Z' }),
+  ];
+
+  it('a narrow week writes a lone block shorter, and a block side by side with only its start, or with no time when even that does not fit', async () => {
+    const width = gridWidth(1000);
+    try {
+      renderCalendar('/calendar?view=week&date=2026-11-02', { appointments: pair });
+      // 1000px is a 132px column: 15 characters of mono fit, so "9:00 AM - 10:00 AM" (18) does not, "9 - 10 AM" does
+      expect(within(await screen.findByTestId('appt-one')).getByText('9 - 10 AM')).toBeInTheDocument();
+      // Two lanes of 66px fit 6 characters: "9 AM" does
+      expect(within(screen.getByTestId('appt-p1')).getByText('9 AM')).toBeInTheDocument();
+      // "9:30 AM" (7) does not: the time is left out rather than cut in the middle, and the pointer still finds it
+      const p2 = screen.getByTestId('appt-p2');
+      expect(within(p2).queryByText(/9:30/)).toBeNull();
+      expect(p2.getAttribute('title')).toContain('9:30 AM - 10:30 AM');
+    } finally {
+      width.mockRestore();
+    }
+  });
+
+  it('a wide week writes every block whole, even side by side', async () => {
+    const width = gridWidth(2400);
+    try {
+      renderCalendar('/calendar?view=week&date=2026-11-02', { appointments: pair });
+      expect(within(await screen.findByTestId('appt-one')).getByText('9:00 AM - 10:00 AM')).toBeInTheDocument();
+      expect(within(screen.getByTestId('appt-p1')).getByText('9:00 AM - 10:00 AM')).toBeInTheDocument();
+      expect(within(screen.getByTestId('appt-p2')).getByText('9:30 AM - 10:30 AM')).toBeInTheDocument();
+    } finally {
+      width.mockRestore();
+    }
+  });
+});
+
+describe('where the grid opens', () => {
+  /** Records the scrollTop the grid is given: jsdom does not scroll, so the value set is the answer. */
+  function recordScroll(): { latest: () => number | undefined; restore: () => void } {
+    let value: number | undefined;
+    const original = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop');
+    Object.defineProperty(Element.prototype, 'scrollTop', {
+      configurable: true,
+      get: () => value ?? 0,
+      set: (next: number) => {
+        value = next;
+      },
+    });
+    return {
+      latest: () => value,
+      restore: () => {
+        if (original) Object.defineProperty(Element.prototype, 'scrollTop', original);
+        else delete (Element.prototype as { scrollTop?: number }).scrollTop;
+      },
+    };
+  }
+
+  it('opens at the first visit of the week when the clock is already past it, so a tall visit shows its name', async () => {
+    const scroll = recordScroll();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    // Wednesday 8:00 PM in Chicago; Tuesday has a 9:00 AM visit, which is row 6: the grid opens one row above it
+    vi.setSystemTime(new Date('2026-11-05T02:00:00.000Z'));
+    try {
+      renderCalendar('/calendar?view=week&date=2026-11-02', {
+        appointments: [makeAppointment({ id: 'early', startsAt: '2026-11-03T15:00:00.000Z', endsAt: '2026-11-03T21:00:00.000Z' })],
+      });
+      await screen.findByTestId('appt-early');
+      await waitFor(() => expect(scroll.latest()).toBe(5 * 32));
+    } finally {
+      vi.useRealTimers();
+      scroll.restore();
+    }
+  });
+
+  it('opens a few rows above the clock when no visit is earlier, and keeps the clock in view when the first visit is later', async () => {
+    const scroll = recordScroll();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    // Wednesday 8:00 PM, nothing on the grid: three rows above the clock's row (28)
+    vi.setSystemTime(new Date('2026-11-05T02:00:00.000Z'));
+    try {
+      renderCalendar('/calendar?view=week&date=2026-11-02');
+      await screen.findByTestId('time-grid');
+      await waitFor(() => expect(scroll.latest()).toBe(25 * 32));
+      cleanup();
+      // Wednesday 9:00 AM with the first visit at 2:00 PM: the clock leads, so it stays in view
+      vi.setSystemTime(new Date('2026-11-04T15:00:00.000Z'));
+      renderCalendar('/calendar?view=week&date=2026-11-02', {
+        appointments: [makeAppointment({ id: 'later', startsAt: '2026-11-04T20:00:00.000Z', endsAt: '2026-11-04T21:00:00.000Z' })],
+      });
+      await screen.findByTestId('appt-later');
+      await waitFor(() => expect(scroll.latest()).toBe(3 * 32));
+    } finally {
+      vi.useRealTimers();
+      scroll.restore();
+    }
   });
 });

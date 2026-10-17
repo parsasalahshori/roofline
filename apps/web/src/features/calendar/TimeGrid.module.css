@@ -197,9 +197,9 @@
 }
 
 /* A visit: a tint of its person's colour, a 3px edge in the full colour, text in ink, the time in mono */
+/* No z-index of its own: the line for the time now passes over the tint but under the words (see .now) */
 .appt {
   position: absolute;
-  z-index: 1;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -220,6 +220,12 @@
   background: color-mix(in srgb, var(--person) 24%, var(--surface));
 }
 
+/* The words of a visit sit above the line for the time now, which runs under them instead of through them */
+.appt > span {
+  position: relative;
+  z-index: 2;
+}
+
 /* A 30 minute visit is one line: its time, then its name */
 .appt[data-size="short"] {
   flex-direction: row;
@@ -233,9 +239,52 @@
   opacity: 0.7;
 }
 
-.appt[data-status="canceled"] > span,
-.allDayItem[data-status="canceled"] > span {
+/* Struck through: the words, not the mark that says why */
+.appt[data-status="canceled"] :is(.itemTitle, .itemSub, .itemTime),
+.allDayItem[data-status="canceled"] :is(.itemTitle, .itemSub, .itemTime) {
   text-decoration: line-through;
+}
+
+/* The first line of a taller block: the kind of visit, and a mark when it is not simply scheduled */
+.itemHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.itemHead > .itemTitle {
+  flex: 1 1 auto;
+}
+
+/* Done, no-show or canceled: a glyph and the word, in the status's tone (4.5:1 on the block's tint) */
+.status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  color: var(--ok-text);
+  font-size: var(--font-size-min);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.status[data-tone="warn"] {
+  color: var(--warn-text);
+}
+
+.status[data-tone="neutral"] {
+  color: var(--ink-2);
+}
+
+/* A narrow block keeps the glyph; the word is kept for a screen reader (and for the pointer, in what it finds on the block) */
+.status[data-word="false"] .statusWord {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .itemTitle {
@@ -287,12 +336,12 @@
   pointer-events: none;
 }
 
-/* The time now: a line and a dot in the company's colour (never red, which is for holds and errors) */
+/* The time now: a line and a dot in the company's colour (never red, which is for holds and errors). Over a visit's tint, under its words. */
 .now {
   position: absolute;
   left: 0;
   right: 0;
-  z-index: 2;
+  z-index: 1;
   height: 2px;
   margin-top: -1px;
   background: var(--brand);
