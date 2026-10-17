@@ -40,14 +40,15 @@
   color: var(--ink);
 }
 
+/* "Storm Scout drafted · 22 min ago" shares the row with the tag: one line when there is room, two when the card is narrow
+   (a phone, or a column beside other things), and never cut short, so the age is always there to read */
 .drafted {
   flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
   color: var(--ink-3);
   font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .title {
@@ -133,11 +134,5 @@
   .meta {
     flex: 1 1 100%;
     margin-left: 0;
-  }
-
-  /* "Storm Scout drafted · 22 min ago" shares the row with the tag: it takes two lines before it is cut short */
-  .drafted {
-    white-space: normal;
-    line-height: 1.25;
   }
 }
