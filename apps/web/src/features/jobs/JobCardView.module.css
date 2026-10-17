@@ -51,10 +51,14 @@
   outline-offset: -2px;
 }
 
+/* The name first and the tag at the far edge; a name too long to leave the tag room sends it to a line of its own, not
+   to an ellipsis: who the job is for is the one thing a card must say whole */
 .top {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 4px 6px;
   min-width: 0;
 }
 
@@ -69,7 +73,6 @@
 .tag {
   flex: none;
   height: 20px;
-  margin-left: auto;
   padding: 0 6px;
 }
 
