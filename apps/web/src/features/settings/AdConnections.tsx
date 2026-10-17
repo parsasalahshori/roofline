@@ -26,6 +26,12 @@ import styles from './AdConnections.module.css';
 const GOOGLE_ID = /^\d{10}$/;
 const stripSeparators = (value: string) => value.replace(/[-\s]/g, '');
 
+/** A linked Google Ads customer ID the way Google writes it, 795-262-0506; anything that is not ten digits stays as it came. */
+const formatGoogleId = (id: string) => (GOOGLE_ID.test(id) ? `${id.slice(0, 3)}-${id.slice(3, 6)}-${id.slice(6)}` : id);
+
+/** A linked Meta ad account ID without the act_ the platform's API puts in front of it. */
+const formatMetaId = (id: string) => id.replace(/^act_/i, '');
+
 /** The account on this platform that is still linked. A removed one is not, and the form comes back. */
 const linkedAccount = (accounts: AdAccount[], platform: AdPlatform) =>
   accounts.find((account) => account.platform === platform && account.status !== 'revoked');
@@ -40,6 +46,9 @@ function stateOf(account: AdAccount | undefined): ConnectionState {
 type AdAccountCardProps = {
   heading: string;
   steps: string[];
+  /** What the platform calls an account's ID, and the ID as a person reads it. */
+  idLabel: string;
+  formatId: (id: string) => string;
   account: AdAccount | undefined;
   owner: boolean;
   /** The form that links a new account; shown to the owner only, while there is no account. */
@@ -47,7 +56,7 @@ type AdAccountCardProps = {
 };
 
 /** One platform's card: its state beside the title, the steps while there is something left to do, then the account and its controls. */
-function AdAccountCard({ heading, steps, account, owner, connectForm }: AdAccountCardProps) {
+function AdAccountCard({ heading, steps, idLabel, formatId, account, owner, connectForm }: AdAccountCardProps) {
   const toast = useToast();
   const check = useCheckAdAccount();
   const remove = useRemoveAdAccount();
@@ -74,8 +83,8 @@ function AdAccountCard({ heading, steps, account, owner, connectForm }: AdAccoun
           <>
             <dl className={form.facts}>
               <div className={form.fact}>
-                <dt className={form.factLabel}>{connections.accountIdLabel}</dt>
-                <dd className={`${form.factValue} ${form.mono}`}>{account.externalAccountId}</dd>
+                <dt className={form.factLabel}>{idLabel}</dt>
+                <dd className={`${form.factValue} ${form.mono}`}>{formatId(account.externalAccountId)}</dd>
               </div>
             </dl>
             {needsCheck && account.lastErrorPlain ? (
@@ -251,10 +260,13 @@ export function AdConnections() {
         heading={connections.googleAds}
         steps={[
           connections.googleStepId,
-          managerId !== null ? connections.googleStepManager(managerId) : connections.googleStepManagerSoon,
+          // An ID that is not set up yet comes as an empty string as well as null: either one is "not yet"
+          managerId ? connections.googleStepManager(managerId) : connections.googleStepManagerSoon,
           connections.googleStepAccept,
           connections.googleStepCheck,
         ]}
+        idLabel={connections.googleAccountIdLabel}
+        formatId={formatGoogleId}
         account={linkedAccount(list, 'google')}
         owner={owner}
         connectForm={<GoogleConnectForm />}
@@ -262,11 +274,13 @@ export function AdConnections() {
       <AdAccountCard
         heading={connections.meta}
         steps={[
-          businessId !== null ? connections.metaStepBusiness(businessId) : connections.metaStepBusinessSoon,
+          businessId ? connections.metaStepBusiness(businessId) : connections.metaStepBusinessSoon,
           connections.metaStepShare,
           connections.metaStepId,
           connections.metaStepConnect,
         ]}
+        idLabel={connections.metaAccountIdLabel}
+        formatId={formatMetaId}
         account={linkedAccount(list, 'meta')}
         owner={owner}
         connectForm={<MetaConnectForm />}

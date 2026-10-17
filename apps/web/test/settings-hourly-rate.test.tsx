@@ -48,7 +48,7 @@ describe('hourly rate', () => {
   it('owner sees the rate in dollars', async () => {
     ownerApi();
     renderAt(<CompanyTab />);
-    expect(await screen.findByLabelText(rate.label)).toHaveValue('28');
+    expect(await screen.findByLabelText(rate.label)).toHaveValue('$28');
   });
 
   it('owner saves cents', async () => {
@@ -60,7 +60,7 @@ describe('hourly rate', () => {
     await user.click(save());
     await screen.findByText(rate.saved);
     expect(api.sent('PATCH /api/company/settings')).toEqual([{ hourlyRateCents: 3150 }]);
-    expect(screen.getByLabelText(rate.label)).toHaveValue('31.50');
+    expect(screen.getByLabelText(rate.label)).toHaveValue('$31.50');
   });
 
   it('whole dollars', async () => {
@@ -72,6 +72,32 @@ describe('hourly rate', () => {
     await user.click(save());
     await screen.findByText(rate.saved);
     expect(api.sent('PATCH /api/company/settings')).toEqual([{ hourlyRateCents: 3000 }]);
+  });
+
+  it('has no Save button until the rate changes, and Discard puts the saved rate back', async () => {
+    ownerApi();
+    const { user } = renderAt(<CompanyTab />);
+    const field = await screen.findByLabelText(rate.label);
+    expect(screen.queryByRole('button', { name: rate.save })).toBeNull();
+    expect(screen.queryByRole('group', { name: settings.saveBar.label })).toBeNull();
+
+    await user.clear(field);
+    await user.type(field, '35');
+    expect(save()).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: settings.saveBar.discard }));
+
+    expect(screen.getByLabelText(rate.label)).toHaveValue('$28');
+    expect(screen.queryByRole('button', { name: rate.save })).toBeNull();
+    expect(api.sent('PATCH /api/company/settings')).toHaveLength(0);
+  });
+
+  it('the same rate typed with its dollar sign is no change', async () => {
+    ownerApi();
+    const { user } = renderAt(<CompanyTab />);
+    const field = await screen.findByLabelText(rate.label);
+    await user.clear(field);
+    await user.type(field, '$28.00');
+    expect(screen.queryByRole('button', { name: rate.save })).toBeNull();
   });
 
   it('validation', async () => {

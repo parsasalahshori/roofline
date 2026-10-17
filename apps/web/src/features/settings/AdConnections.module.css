@@ -15,6 +15,7 @@
   padding-left: 24px;
   font-size: var(--font-size-body);
   overflow-wrap: anywhere;
+  text-wrap: pretty;
 }
 
 .steps li::marker {
@@ -27,12 +28,16 @@
   margin-top: 6px;
 }
 
-/* The ID and the Connect button, one under the other, no wider than an ID needs */
+/* The ID and the Connect button, one under the other, in the first column of the same two-column grid as every Settings form */
 .form {
   display: grid;
-  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 20px;
   justify-items: start;
-  max-width: 420px;
+}
+
+.form > * {
+  grid-column: 1;
 }
 
 .form > :first-child {
@@ -48,7 +53,7 @@
 
 @media (max-width: 767.98px) {
   .form {
+    grid-template-columns: minmax(0, 1fr);
     justify-items: stretch;
-    max-width: none;
   }
 }

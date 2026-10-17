@@ -157,6 +157,28 @@ it('Pick this plan goes to checkout', async () => {
   expect(api.sent('POST /api/billing/checkout')).toEqual([{ planKey: 'starter' }]);
 });
 
+it('with several plans and none chosen no Pick this plan button is primary; the plan already chosen is', async () => {
+  signedIn({ view: billingView({ hasPaymentMethod: false, planKey: null, plans: [STARTER, GROWTH] }) });
+  renderApp('/settings/billing');
+
+  const buttons = await screen.findAllByRole('button', { name: billing.pickPlan });
+  expect(buttons).toHaveLength(2);
+  for (const button of buttons) expect(button).toHaveAttribute('data-variant', 'default');
+  cleanup();
+
+  signedIn({ view: billingView({ hasPaymentMethod: false, planKey: 'growth', plans: [STARTER, GROWTH] }) });
+  renderApp('/settings/billing');
+  const chosen = await screen.findAllByRole('button', { name: billing.pickPlan });
+  expect(chosen.map((button) => button.getAttribute('data-variant'))).toEqual(['default', 'primary']);
+});
+
+it('a single plan on offer is the one primary button', async () => {
+  signedIn({ view: billingView({ hasPaymentMethod: false, plans: [STARTER] }) });
+  renderApp('/settings/billing');
+
+  expect(await screen.findByRole('button', { name: billing.pickPlan })).toHaveAttribute('data-variant', 'primary');
+});
+
 it('subscribed owners switch plans in place', async () => {
   signedIn({
     view: billingView({

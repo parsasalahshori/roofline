@@ -13,6 +13,15 @@
   min-width: 0;
 }
 
+/* The name, and the "You" tag after it on the same line while it fits */
+.nameLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  min-width: 0;
+}
+
 .name {
   font-weight: 600;
   overflow-wrap: anywhere;

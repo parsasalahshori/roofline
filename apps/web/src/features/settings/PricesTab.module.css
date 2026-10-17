@@ -58,6 +58,11 @@
   white-space: nowrap;
 }
 
+/* Its words end where the cell's content ends, as the first column's begin there: out by the button's 10px of padding and 1px edge */
+.edit {
+  margin-right: -11px;
+}
+
 /* The default material is words, so its cell is left to the list or the word, at the right edge */
 .material {
   font-family: var(--f-ui);

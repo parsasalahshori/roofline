@@ -248,7 +248,7 @@ function PriceRow({ label, unit, unitUnderName, value, saved, kind, open, canEdi
       </Td>
       <Td className={styles.action}>
         {canEdit ? (
-          <Button variant="ghost" size="sm" aria-expanded={open} aria-label={open ? prices.doneFor(label) : prices.editFor(label)} onClick={onToggle}>
+          <Button variant="ghost" size="sm" className={styles.edit} aria-expanded={open} aria-label={open ? prices.doneFor(label) : prices.editFor(label)} onClick={onToggle}>
             {open ? prices.done : prices.edit}
           </Button>
         ) : null}

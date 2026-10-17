@@ -127,6 +127,7 @@ export function WorkHoursEditor({ value, onChange, disabled = false, errors }: W
                   <Button
                     variant="ghost"
                     size="sm"
+                    className={styles.add}
                     disabled={disabled}
                     onClick={() => setDay(day, [...ranges, nextRange(ranges)])}
                   >
