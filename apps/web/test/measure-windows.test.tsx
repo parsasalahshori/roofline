@@ -12,6 +12,7 @@ import {
   type WindowMeasurementView,
 } from '@roofline/shared';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { PageSlotsContext } from '@roofline/ui';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient, Providers } from '../src/app/providers.tsx';
@@ -130,7 +131,7 @@ function serverPatch(before: WindowMeasurementView, body: Record<string, unknown
   return { ...before, adjustments, windows, estimated, ruler };
 }
 
-function render_(path: string) {
+function render_(path: string, phone = false) {
   const queryClient = createQueryClient();
   queryClient.setDefaultOptions({ queries: { retry: false } });
   const router = createMemoryRouter(
@@ -143,17 +144,19 @@ function render_(path: string) {
     { initialEntries: [path] },
   );
   render(
-    <Providers client={queryClient}>
-      <RouterProvider router={router} />
-    </Providers>,
+    <PageSlotsContext value={{ crumbs: null, actions: null, phone, trailing: null }}>
+      <Providers client={queryClient}>
+        <RouterProvider router={router} />
+      </Providers>
+    </PageSlotsContext>,
   );
   return router;
 }
 
 /** Opens a measurement and plays its scan to the end (the scan takes 0 ms here unless a test says otherwise). */
-async function open(over: Partial<WindowMeasurementView> = {}) {
+async function open(over: Partial<WindowMeasurementView> = {}, phone = false) {
   current = view(over);
-  const router = render_('/estimator/windows/w1');
+  const router = render_('/estimator/windows/w1', phone);
   fireEvent.click(await screen.findByRole('button', { name: copy.scanButton }));
   await waitFor(() => expect(card().dataset.phase).toBe('done'));
   return router;
@@ -386,6 +389,26 @@ describe('Measure windows: the table and what it was worked out from', () => {
     expect(within(c).getByText(copy.reviewReason['estimated-from-size'])).toBeTruthy();
     expect(within(c).getByText('Jun 2025')).toBeTruthy();
     expect(within(c).getByText(copy.foundBy.none)).toBeTruthy();
+  });
+
+  it('names the first grade just Estimate on a phone, where its tile is too narrow for the long name, and keeps the long name elsewhere', async () => {
+    await open({}, true);
+    const first = () => within(card()).getByRole('list', { name: copy.ladder.label }).querySelectorAll('li')[0]!;
+    expect(first().textContent).toContain(copy.ladder.estimatePhone);
+    expect(first().textContent).not.toContain(copy.ladder.estimate);
+    cleanup();
+
+    // The scan is remembered as played for this measurement: forget it, to play it again
+    forgetRevealed();
+    await open();
+    expect(first().textContent).toContain(copy.ladder.estimate);
+  });
+
+  it('the scan-again button keeps its words for a screen reader and a tooltip when its card is too narrow to show them', async () => {
+    await open();
+    const again = within(card()).getByRole('button', { name: copy.replayScan });
+    expect(again).toHaveAttribute('title', copy.replayScan);
+    expect(again.className).toMatch(/replay/);
   });
 
   it('the drawing is the front wall to scale with its length and height, and every window numbered as the table numbers it', async () => {

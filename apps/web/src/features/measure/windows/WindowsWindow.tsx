@@ -751,7 +751,7 @@ function Loaded({ v }: { v: WindowMeasurementView }) {
                       </Button>
                     ) : null}
                     {done ? (
-                      <Button variant="quiet" size="sm" onClick={scan.restart}>
+                      <Button variant="quiet" size="sm" className={styles.replay} title={copy.replayScan} onClick={scan.restart}>
                         <Icon name="refresh" size={16} />
                         <span className={styles.replayText}>{copy.replayScan}</span>
                       </Button>
@@ -789,7 +789,7 @@ function Loaded({ v }: { v: WindowMeasurementView }) {
                       total={total}
                       ofLabel={copy.ladder.of}
                       rungs={[
-                        { key: 'estimate', label: copy.ladder.estimate, note: copy.ladder.estimateNote, count: grades.estimate },
+                        { key: 'estimate', label: phone ? copy.ladder.estimatePhone : copy.ladder.estimate, note: copy.ladder.estimateNote, count: grades.estimate },
                         { key: 'quote', label: copy.ladder.quote, note: copy.ladder.quoteNote, count: grades.quote },
                         { key: 'order', label: copy.ladder.order, note: copy.ladder.orderNote, count: grades.order },
                       ]}

@@ -49,6 +49,8 @@ export const measureWindows = {
   ladder: {
     label: 'How precisely the windows are measured',
     estimate: 'Estimate from walls',
+    /** The same rung on a phone, where the tile is too narrow for the long name (the phone mockup says Estimate) */
+    estimatePhone: 'Estimate',
     quote: 'Quote-grade',
     order: 'Order-grade',
     estimateNote: 'Count \u00b12 \u00b7 quote only',
