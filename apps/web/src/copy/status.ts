@@ -7,7 +7,7 @@ import type { Agent, StepResult, StepStatus, TaskStatus } from '@roofline/shared
 
 /** `partly_done` is not here: its words depend on a count, so `taskStatusLabel` makes them. */
 export const TASK_STATUS_LABEL: Record<Exclude<TaskStatus, 'partly_done'>, string> = {
-  draft: 'Waiting for your OK',
+  draft: 'Needs your OK',
   awaiting_owner: 'Waiting for owner',
   approved: 'Approved',
   declined: 'Not now',
