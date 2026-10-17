@@ -31,7 +31,7 @@ test('storm plan in 2 clicks', async ({ page, loginAs, markTodaySeen, scenario, 
 
   await page.goto('/storm');
   // The newest plan is the one the card offers; the showcase demo plan is older.
-  await click(page.getByRole('link', { name: 'Approve storm plan' }));
+  await click(page.getByRole('link', { name: /^Review \d+ steps$/ }));
   await expect(page).toHaveURL(new RegExp('/storm/plans/' + taskId + '$'));
   await click(page.getByRole('button', { name: /^Approve \d+ steps/ }));
 
@@ -101,9 +101,9 @@ test('the Storm page: the plan waiting for a yes, the storms in a table, and a w
   const main = page.getByRole('main', { name: 'Storm', exact: true });
   await expect(main.getByRole('heading', { level: 1, name: 'Storm' })).toBeVisible();
   await expect(main.getByRole('link', { name: 'My routes' })).toHaveAttribute('href', '/storm/routes');
-  // The plan Storm Scout drafted is a card with the one button that opens its review
+  // The plan Storm Scout drafted is the Need your OK card, with the one link that opens its review
   const card = main.getByRole('article');
-  await expect(card.getByRole('link', { name: 'Approve storm plan' })).toBeVisible({ timeout: 20_000 });
+  await expect(card.getByRole('link', { name: /^Review \d+ steps$/ })).toBeVisible({ timeout: 20_000 });
 
   // The storm is a row: where, how big, how many it hit, and where the plan stands
   const table = main.getByRole('region', { name: 'Storms in your area' }).getByRole('table');

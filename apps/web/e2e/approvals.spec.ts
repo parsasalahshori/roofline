@@ -30,7 +30,7 @@ test('from the Storm window: 2 clicks', async ({ page, loginAs, markTodaySeen, s
   await loginAs(page, 'owner');
   await markTodaySeen('owner@a.test');
   await page.goto('/storm');
-  await click(page.getByRole('link', { name: 'Approve storm plan' }));
+  await click(page.getByRole('link', { name: 'Review 3 steps' }));
   await expect(page).toHaveURL(new RegExp('/storm/plans/' + scenario.taskId + '$'));
   await click(page.getByRole('button', { name: 'Approve 3 steps · up to $270' }));
   await expect(page.getByRole('main').getByRole('list').getByText('Done', { exact: true })).toHaveCount(3, {
