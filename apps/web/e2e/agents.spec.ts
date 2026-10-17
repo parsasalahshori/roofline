@@ -46,9 +46,9 @@ test('agents window: cards show the numbers from the seeded tasks', async ({ pag
   await expect(storm.getByText('Waiting', { exact: true })).toBeVisible();
   await expect(storm.getByText(/^Waiting on you: [2-9]\d*$/)).toBeVisible();
   await expect(estimator.getByText('Waiting on you: 1', { exact: true })).toBeVisible();
-  // Storm minutes this week include today's 90-minute task: at least 1 whole hour, marked as an estimate.
+  // Storm minutes this week include today's 90-minute task: at least an hour, marked as an estimate ("about 1.5 hours").
   expect(AGENTS_SEED_MINUTES.stormToday).toBe(90);
-  await expect(storm.getByText(/^about [1-9]\d* hrs$/)).toBeVisible();
+  await expect(storm.getByText(/^about [1-9]\d*(\.5)? hours?$/)).toBeVisible();
 
   // Picking a card opens its panel, which links to the agent's own page.
   await page.getByRole('button', { name: 'Show details for Storm Scout' }).click();
