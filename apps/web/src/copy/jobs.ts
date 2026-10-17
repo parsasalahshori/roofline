@@ -98,6 +98,7 @@ export const jobs = {
     import: 'Import',
     manual: 'Added by hand',
     front_desk: 'Front Desk',
+    app: 'Homeowner app',
   },
   filterSearch: 'Search jobs',
   /** Shown in the empty search box. */

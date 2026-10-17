@@ -513,8 +513,10 @@ export type OrderSourceWindow = {
   id: string;
   /** Absent for a room-scan window with no photo. */
   uploadId?: string;
-  /** How it was measured; 'roomplan' is quote-grade (MeasuredSize.quoteOnly). Absent: order-grade. */
+  /** How it was measured; 'roomplan' and 'card' are quote-grade (MeasuredSize.quoteOnly). Absent: order-grade. */
   scale?: { kind: string };
+  /** 'homeowner-app': the homeowner measured it themselves in the phone app: quote-grade whatever the method. */
+  source?: string;
   label?: string;
   windowKey?: string;
   widthIn: number;
@@ -543,7 +545,7 @@ export function linesFromPhotoWindows(windows: readonly OrderSourceWindow[], exc
       heightIn: p.heightIn,
       uncertaintyIn: p.uncertaintyIn ?? null,
       quality: p.quality,
-      ...(p.scale?.kind === 'roomplan' && { quoteOnly: true }),
+      ...((p.scale?.kind === 'roomplan' || p.scale?.kind === 'card' || p.source === 'homeowner-app') && { quoteOnly: true }),
     }));
     const label = photos.find((p) => (p.label ?? '').trim() !== '')?.label?.trim() ?? '';
     const uploadId = photos.find((p) => p.uploadId !== undefined)?.uploadId ?? null;

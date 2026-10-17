@@ -3,6 +3,7 @@ import { cleanGutterAdjustments, gutterAdjustmentsChanged, type GutterAdjustment
 import { measurements, windowMeasurements } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { getMeasurement } from './measurements.ts';
+import { notHomeownerMeasurement } from './window-measurements.ts';
 
 /**
  * What Measure gutters works from, for a measurement the member may see (null otherwise): the measurement (its roof),
@@ -48,11 +49,11 @@ export async function gutterInputs(tx: Tx, ctx: TenantContext, id: string, now: 
     .from(measurements)
     .where(and(eq(measurements.id, id), eq(measurements.companyId, ctx.companyId)))
     .limit(1);
-  // The newest windows run at this home that knows the eave height or the floors.
+  // The newest windows run at this home that knows the eave height or the floors (a homeowner's own app measurement knows neither).
   const windows = await tx
     .select({ geometry: windowMeasurements.geometry, stories: windowMeasurements.stories })
     .from(windowMeasurements)
-    .where(and(eq(windowMeasurements.propertyId, view.propertyId), eq(windowMeasurements.companyId, ctx.companyId)))
+    .where(and(eq(windowMeasurements.propertyId, view.propertyId), eq(windowMeasurements.companyId, ctx.companyId), notHomeownerMeasurement(tx)))
     .orderBy(desc(windowMeasurements.createdAt))
     .limit(5);
   const withEave = windows.find((w) => typeof w.geometry?.eaveHeightM === 'number');

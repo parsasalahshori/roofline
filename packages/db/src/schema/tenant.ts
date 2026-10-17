@@ -55,6 +55,7 @@ import {
   type WindowPhotoUpload,
   type GutterAdjustments,
   WINDOW_ORDER_STATUSES,
+  HOMEOWNER_CALLBACK_REASONS,
   type WindowOrderLine,
   type WindowOrderSettings,
   type WindowOrderSettingsPatch,
@@ -176,6 +177,7 @@ export const TENANT_TABLES = [
   'quote_estimates',
   'quote_requests',
   'window_orders',
+  'homeowner_requests',
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];
@@ -2335,5 +2337,76 @@ export const windowOrders = pgTable(
       foreignColumns: [windowMeasurements.companyId, windowMeasurements.id],
     }),
     enumCheck('window_orders', 'status', t.status, WINDOW_ORDER_STATUSES),
+  ],
+);
+
+/**
+ * A homeowner's request from the phone app (the public homeowner API, /api/public/homeowner/:slug). One row per
+ * homeowner start: found by its id, proved by a bearer token of which only the SHA-256 hash is kept (token_hash; the
+ * token itself is never stored or logged) and good until expires_at. It points at what was worked out for the address
+ * (quote_estimates: the 30-day cache the instant quote page shares) and at the window measurement that holds the
+ * windows the homeowner measured (window_measurements.adjustments.photoWindows, each with source 'homeowner-app'). The
+ * contact form files the request with the company as a quote_requests row (the consent evidence, customer and Lead job
+ * of source 'app'); before that the request holds no personal detail except the home's address.
+ */
+export const homeownerRequests = pgTable(
+  'homeowner_requests',
+  {
+    id: pk(),
+    companyId: companyId(),
+    /** SHA-256 of the bearer token, hex. */
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: tstz('expires_at').notNull(),
+    /** What the homeowner asked about. */
+    services: text('services').array().notNull(),
+    /** The address as found (street, city, state and ZIP), or as typed when the lookup was down. */
+    address: text('address').notNull(),
+    /** 'callback': no online estimate (an apartment, a house a person must see, the daily limit): the company calls. */
+    status: text('status', { enum: ['ready', 'callback'] }).notNull(),
+    callbackReason: text('callback_reason', { enum: HOMEOWNER_CALLBACK_REASONS }),
+    quoteEstimateId: uuid('quote_estimate_id'),
+    propertyId: uuid('property_id'),
+    /** Made when the first photo or window arrives. */
+    windowMeasurementId: uuid('window_measurement_id'),
+    /** The number of windows the homeowner says the house has; replaces the address estimate's count. */
+    windowCountOverride: integer('window_count_override'),
+    /** Set when the contact form filed the request: the consent evidence, customer, Lead job and visit are on it. */
+    quoteRequestId: uuid('quote_request_id'),
+    /** The homeowner asked to be called to set up the visit instead of picking a time. */
+    callMe: boolean('call_me').notNull().default(false),
+    /** A keyed hash of the requester's IP (never the address). */
+    ipHash: text('ip_hash'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('homeowner_requests_company_id_id_uniq').on(t.companyId, t.id),
+    unique('homeowner_requests_token_hash_uniq').on(t.tokenHash),
+    foreignKey({
+      name: 'homeowner_requests_company_estimate_fk',
+      columns: [t.companyId, t.quoteEstimateId],
+      foreignColumns: [quoteEstimates.companyId, quoteEstimates.id],
+    }),
+    foreignKey({
+      name: 'homeowner_requests_company_property_fk',
+      columns: [t.companyId, t.propertyId],
+      foreignColumns: [properties.companyId, properties.id],
+    }),
+    foreignKey({
+      name: 'homeowner_requests_company_measurement_fk',
+      columns: [t.companyId, t.windowMeasurementId],
+      foreignColumns: [windowMeasurements.companyId, windowMeasurements.id],
+    }),
+    foreignKey({
+      name: 'homeowner_requests_company_quote_request_fk',
+      columns: [t.companyId, t.quoteRequestId],
+      foreignColumns: [quoteRequests.companyId, quoteRequests.id],
+    }),
+    index('homeowner_requests_company_created_idx').on(t.companyId, t.createdAt),
+    index('homeowner_requests_property_idx').on(t.companyId, t.propertyId),
+    enumCheck('homeowner_requests', 'status', t.status, ['ready', 'callback']),
+    enumCheck('homeowner_requests', 'callback_reason', t.callbackReason, HOMEOWNER_CALLBACK_REASONS),
+    check('homeowner_requests_callback_pair_check', sql`(${t.status} = 'callback') = (${t.callbackReason} is not null)`),
+    check('homeowner_requests_services_check', sql`cardinality(${t.services}) between 1 and 3 and ${t.services} <@ array['windows','roof','gutters']::text[]`),
+    check('homeowner_requests_window_count_check', sql`${t.windowCountOverride} is null or ${t.windowCountOverride} between 1 and 80`),
   ],
 );

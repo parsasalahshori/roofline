@@ -52,5 +52,8 @@ export * from './instant-quote.ts';
 export * from './window-order.ts';
 export * from './window-photo-sheet.ts';
 export * from './window-photo-cv.ts';
+export * from './window-photo-card.ts';
+// The homeowner API's contract (WinChoice phone app)
+export * from './homeowner.ts';
 // Google content retention (docs/compliance/google-data-retention.md)
 export * from './google-retention.ts';

@@ -20,7 +20,8 @@ export const JOB_STAGE_LABELS: Record<JobStage, string> = {
   lost: 'Lost',
 };
 
-export const JOB_SOURCES = ['storm', 'call', 'text', 'web', 'referral', 'import', 'manual', 'front_desk'] as const;
+/** 'app': a request from the homeowner's own phone app (the public homeowner API). */
+export const JOB_SOURCES = ['storm', 'call', 'text', 'web', 'referral', 'import', 'manual', 'front_desk', 'app'] as const;
 export type JobSource = (typeof JOB_SOURCES)[number];
 
 export const CUSTOMER_SOURCES = ['import', 'manual', 'call', 'text', 'web', 'storm'] as const;

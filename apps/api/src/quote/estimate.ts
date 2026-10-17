@@ -23,6 +23,7 @@ import {
   QUOTE_LIMITS,
   QUOTE_WINDOW_COUNT,
   type PublicQuoteWindows,
+  scaleWindowMix,
   windowCounts,
   type WindowCounts,
   type WindowSizeClass,
@@ -67,6 +68,20 @@ const CEILING_TIMES_CAP = 2;
 
 /** Fresh measurements running now, per company: counted against the cap so a burst cannot overshoot it. */
 const inflight = new Map<string, number>();
+
+/**
+ * What a stored estimate's `result` carries beyond the public answer (all optional: older rows lack the newer ones).
+ * `callback`: why the page's checks sent the address to a call back; `lookup`: what the address lookup said (never sent
+ * to a page); `windowMix`: the estimated windows per size class; `floors` and `windowCountRange`: for the homeowner
+ * app's home facts and its "did we miss any" check.
+ */
+export type StoredEstimateResult = {
+  callback?: StoredCallback;
+  windowMix?: Partial<Record<WindowSizeClass, number>>;
+  windowPct?: number;
+  floors?: number | null;
+  windowCountRange?: { low: number; high: number } | null;
+};
 
 /** The public answer a stored row carries (its result plus its id). */
 export function estimateView(row: QuoteEstimateRow): PublicQuoteEstimate {
@@ -144,8 +159,15 @@ function rangeOfMix(mix: WindowMix, pct: number): PriceRange | null {
   return priceRange(priceWindows(counts).map((q) => q.totalCents), pct);
 }
 
-/** The walls estimate (every side, no photos), its range and its mix of sizes, or null without an outline. */
-function windowsRange(ring: LngLat[], eaveHeightM: number | null, pct: number): { count: number; range: PriceRange; mix: WindowMix } | null {
+/**
+ * The walls estimate (every side, no photos), its price range, its mix of sizes, the floors (null when the height is
+ * not known and one floor is only assumed) and the plausible window-count range, or null without an outline.
+ */
+function windowsRange(
+  ring: LngLat[],
+  eaveHeightM: number | null,
+  pct: number,
+): { count: number; range: PriceRange; mix: WindowMix; floors: number | null; countRange: { low: number; high: number } | null } | null {
   const walls = wallsFor({ ring, camera: null, eaveHeightM, outlineSource: 'footprint' }, []);
   if (walls === null) return null;
   const estimated = estimateAllSides(walls);
@@ -154,24 +176,11 @@ function windowsRange(ring: LngLat[], eaveHeightM: number | null, pct: number): 
   const count = WINDOW_SIZE_CLASSES.reduce((n, c) => n + mix[c], 0);
   if (count === 0) return null;
   const range = rangeOfMix(mix, pct);
-  return range === null ? null : { count, range, mix };
+  return range === null ? null : { count, range, mix, floors: walls.heightSource === 'assumed' ? null : walls.floors, countRange: estimated.range ?? null };
 }
 
 /** `mix` scaled to `count` windows in all, keeping its shares (largest remainders); all 'standard' with no mix. */
-export function scaleMix(mix: Partial<WindowMix> | null, count: number): WindowMix {
-  const base = Object.fromEntries(WINDOW_SIZE_CLASSES.map((c) => [c, Math.max(0, Math.round(mix?.[c] ?? 0))])) as WindowMix;
-  const total = WINDOW_SIZE_CLASSES.reduce((n, c) => n + base[c], 0);
-  if (total === 0) return { small: 0, standard: count, large: 0, picture: 0 };
-  const exact = WINDOW_SIZE_CLASSES.map((c) => ({ c, v: (base[c] * count) / total }));
-  const out = Object.fromEntries(exact.map(({ c, v }) => [c, Math.floor(v)])) as WindowMix;
-  let left = count - WINDOW_SIZE_CLASSES.reduce((n, c) => n + out[c], 0);
-  for (const { c } of [...exact].sort((a, b) => b.v - Math.floor(b.v) - (a.v - Math.floor(a.v)))) {
-    if (left <= 0) break;
-    out[c] += 1;
-    left -= 1;
-  }
-  return out;
-}
+export const scaleMix: (mix: Partial<WindowMix> | null, count: number) => WindowMix = scaleWindowMix;
 
 /**
  * The windows range for the homeowner's own count (QUOTE_WINDOW_COUNT, 1 to 80), from a stored 'ready' estimate with
@@ -186,13 +195,13 @@ export function windowsForCount(row: QuoteEstimateRow, count: number, fallbackPc
   return range === null ? null : { count: n, range };
 }
 
-type Place = { property: PropertyRow | null; addressKey: string | null; address: string; lookup: LookupFacts | null };
+export type Place = { property: PropertyRow | null; addressKey: string | null; address: string; lookup: LookupFacts | null };
 
 /**
  * The typed address looked up and saved as one of the company's addresses (Geocodio, no Google). A unit the lookup
  * read (or one typed that it dropped) stays on the saved street line, so the request is filed under the flat.
  */
-async function locate(deps: AppDeps, ctx: TenantContext, address: string): Promise<Place> {
+export async function locate(deps: AppDeps, ctx: TenantContext, address: string): Promise<Place> {
   try {
     const { property, found } = await lookUpHome(deps, ctx, address, deps.clock.now(), { keepUnit: (f) => f.unit ?? typedUnit(address) });
     const lookup: LookupFacts = {
@@ -335,7 +344,7 @@ export async function estimateForAddress(
             outline,
             lookup,
             ...(gate.widen && { widened: true }),
-            ...(counted !== null && { windowMix: counted.mix, windowPct: pct }),
+            ...(counted !== null && { windowMix: counted.mix, windowPct: pct, floors: counted.floors, windowCountRange: counted.countRange }),
           },
           ipHash: input.ipHash,
           expiresAt,

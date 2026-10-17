@@ -45,8 +45,12 @@ export const MESSAGES = {
   changedWhileLooking: "This changed while you were looking. Here's the latest.",
 } as const;
 
-/** `latest` is only on the 409 of an approval that changed under the caller: the current version of what they tried to change. */
-export type ErrorBody = { error: string; field?: string; latest?: unknown };
+/**
+ * `latest` is only on the 409 of an approval that changed under the caller: the current version of what they tried to
+ * change. `code` is only on the public homeowner API's errors (a short machine name the phone app switches on, such as
+ * `token_expired`); the staff API's errors have none.
+ */
+export type ErrorBody = { error: string; field?: string; latest?: unknown; code?: string };
 
 /**
  * An error the caller should see: it carries the HTTP status, a plain-English message, and
@@ -59,6 +63,8 @@ export class AppError extends Error {
   readonly status: number;
   readonly field?: string;
   readonly latest?: unknown;
+  /** A short machine-readable name for this error, for the one caller that wants it (the homeowner phone app). */
+  code?: string;
 
   constructor(status: number, message: string, field?: string, latest?: unknown) {
     super(message);
@@ -66,6 +72,12 @@ export class AppError extends Error {
     this.status = status;
     if (field !== undefined) this.field = field;
     if (latest !== undefined) this.latest = latest;
+  }
+
+  /** Names this error for callers that switch on it (`throw new AppError(401, MESSAGES.signIn).coded('token_expired')`). */
+  coded(code: string): this {
+    this.code = code;
+    return this;
   }
 }
 
@@ -165,6 +177,7 @@ export function errorHandler(logError: (err: unknown, path: string) => void): Er
       const body: ErrorBody = { error: known.message };
       if (known.field !== undefined) body.field = known.field;
       if (known.latest !== undefined) body.latest = known.latest;
+      if (known.code !== undefined) body.code = known.code;
       res.status(known.status).json(body);
       return;
     }

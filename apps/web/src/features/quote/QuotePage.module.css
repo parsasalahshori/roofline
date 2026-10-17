@@ -127,6 +127,17 @@
   font-size: 0.875rem;
 }
 
+/* The second choice next to "Measure with the app": an outlined button, so it reads as a button and not as a link */
+.page .secondary[data-size] {
+  width: 100%;
+  min-height: 52px;
+  border-radius: var(--r-3);
+  box-shadow: inset 0 0 0 1px var(--line-ctl);
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
 .honeypot {
   position: absolute;
   left: -10000px;
@@ -668,4 +679,95 @@
 .foot {
   margin-top: auto;
   padding-top: 16px;
+}
+
+/* The service picker: one row per thing the company offers; the checkbox row is the hit area. A pick is ink, like every selection. */
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 8px 0 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.option {
+  padding: 10px 14px;
+  border-radius: var(--r-3);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line-ctl);
+}
+
+.option[data-checked] {
+  box-shadow: inset 0 0 0 2px var(--ink);
+}
+
+/* "Looking for: Windows, Roof" with its Change button, above the address form */
+.looking {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+/* "Measure with the app": the store button, and on a computer a QR code beside it */
+.appOffer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: var(--r-4);
+  background: var(--surface);
+  box-shadow: var(--e-1);
+}
+
+.appOffer .lede {
+  text-align: left;
+}
+
+.appRow {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.qr {
+  display: none;
+}
+
+.qrImage {
+  display: block;
+  width: 132px;
+  height: 132px;
+  border-radius: var(--r-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+@media (min-width: 720px) {
+  .appRow {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .appRow .primary {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .qr {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    max-width: 160px;
+    text-align: center;
+  }
 }

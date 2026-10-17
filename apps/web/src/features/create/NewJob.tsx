@@ -54,7 +54,7 @@ function presetStage(value: string | null): JobStage {
   return CREATE_STAGES.find((stage) => stage === value) ?? 'lead';
 }
 // Front Desk jobs are made by the assistant, never picked by a person (C1 Ruling CG); the board filter keeps the source.
-const sourceOptions: ListboxOption<JobSource>[] = JOB_SOURCES.filter((source) => source !== 'front_desk').map((source) => ({
+const sourceOptions: ListboxOption<JobSource>[] = JOB_SOURCES.filter((source) => source !== 'front_desk' && source !== 'app').map((source) => ({
   value: source,
   label: create.sourceNames[source],
 }));

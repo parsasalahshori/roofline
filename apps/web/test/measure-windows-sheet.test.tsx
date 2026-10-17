@@ -11,6 +11,7 @@ import {
   type WindowMeasurementView,
   type WindowPhotoCv,
   type WindowPhotoMeasurement,
+  type WindowPhotoScale,
   type WindowPhotoUpload,
 } from '@roofline/shared';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -448,6 +449,30 @@ describe('Several photos of one window, in the card', () => {
     const counts = windowCounts({ windows: [], estimated: null, adjustments: { excludedWindowIds: [], manualCounts: {} }, photoWindows: live });
     expect(Object.values(counts).reduce((n, c) => n + c.measured, 0)).toBe(1);
     expect(counts[windowSizeClass(35.87, 59.74)].measured).toBe(1);
+  });
+});
+
+describe('Windows from the homeowner\'s phone app, in the card', () => {
+  const scale: WindowPhotoScale = { kind: 'ar', pointsM: [[0, 1.5, -2], [0.9, 1.5, -2], [0.9, 0.3, -2], [0, 0.3, -2]], trackingLostCount: 0, device: 'arkit-lidar' };
+  const own = (id: string, extra: Partial<PhotoWindowInput>): PhotoWindowInput => ({ id, uploadId: 'up1', corners: SNAPPED, scale, source: 'homeowner-app', ...extra });
+
+  it('are named by their room (with the homeowner\'s own words in brackets) and tagged; a rep\'s own window is not', () => {
+    const inputs: PhotoWindowInput[] = [
+      own('h1', { room: 'Kitchen', label: 'Over the sink' }),
+      own('h2', { room: 'Bedroom' }),
+      { id: 'r1', uploadId: 'up1', label: 'Front', corners: SNAPPED, scale },
+      { id: 'r2', uploadId: 'up1', corners: SNAPPED, scale },
+    ];
+    render(withEngine(<PhotoWindowsList windows={[]} inputs={inputs} excluded={new Set()} coverAll={false} srcFor={(id) => `/${id}.jpg`} onOpen={vi.fn()} onToggle={vi.fn()} onDelete={vi.fn()} onCoverAll={vi.fn()} />));
+    const row = (id: string) => document.querySelector(`[data-photo-window="${id}"]`)!;
+    expect(row('h1').textContent).toContain(copy.roomAndLabel('Kitchen', 'Over the sink'));
+    expect(row('h1').textContent).toContain(copy.chipHomeowner);
+    expect(row('h2').textContent).toContain('Bedroom');
+    expect(row('h2').textContent).toContain(copy.chipHomeowner);
+    expect(row('r1').textContent).toContain('Front');
+    expect(row('r1').textContent).toContain(copy.chip);
+    expect(row('r1').textContent).not.toContain(copy.chipHomeowner);
+    expect(row('r2').textContent).toContain(copy.untitled(4));
   });
 });
 

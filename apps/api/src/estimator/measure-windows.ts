@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  adoptHomeownerWindows,
   createWindowMeasurement,
   footprintsNear,
   getProperty,
@@ -337,8 +338,8 @@ export async function measureWindows(deps: AppDeps, ctx: TenantContext, i: { pro
   const deleteBy = photos.length > 0 ? new Date(now.getTime() + PHOTO_KEEP_DAYS * DAY_MS) : null;
   let row: WindowMeasurementRow;
   try {
-    row = await withTenant(deps.pools, ctx, (tx) =>
-      createWindowMeasurement(
+    row = await withTenant(deps.pools, ctx, async (tx) => {
+      const made = await createWindowMeasurement(
         tx,
         ctx,
         {
@@ -358,8 +359,10 @@ export async function measureWindows(deps: AppDeps, ctx: TenantContext, i: { pro
           photosDeleteBy: deleteBy,
         },
         now,
-      ),
-    );
+      );
+      // The windows the homeowner measured in the app at this address (once they sent their request in) come along.
+      return adoptHomeownerWindows(tx, ctx, made, now);
+    });
   } catch (err) {
     if (err instanceof WindowMeasurementPropertyNotFoundError) throw new AppError(404, MESSAGES.notFound);
     throw err;

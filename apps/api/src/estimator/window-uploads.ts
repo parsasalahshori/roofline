@@ -1,5 +1,6 @@
 import exifr from 'exifr';
 import {
+  cardProblem,
   DEFAULT_FOCAL_35MM,
   SHEET_FOCAL_UNKNOWN_SIGMA,
   focalPxFrom35mm,
@@ -15,6 +16,7 @@ import {
   SHEET_MIN_POINTS,
   STEEP_CHECK_DEG,
   sizeFromArPoints,
+  sizeFromCard,
   sizeFromKnownSide,
   sizeFromReference,
   WINDOW_PHOTO_REFERENCES,
@@ -89,13 +91,19 @@ function exifDate(v: unknown): string | null {
 
 /** The largest photo side accepted, pixels (a 200 MP phone photo is about 16,000 px). */
 const MAX_SIDE_PX = 20_000;
+/**
+ * The most pixels in a photo accepted. A file this small can claim a huge picture (a PNG of a few hundred bytes can say
+ * 20,000 x 20,000), and whatever opens it later (a browser, a phone) would try to make room for all of it. Real phone
+ * photos are far under this (a 48 MP one is 8,000 x 6,000), and the upload limit of 12 MB keeps a real one smaller still.
+ */
+const MAX_PIXELS = 120_000_000;
 
 /** Size (displayed), orientation and the EXIF the sizing uses; 'heic' for a HEIC; null for anything unreadable. */
 export async function readImageInfo(bytes: Uint8Array): Promise<ImageInfo | 'heic' | null> {
   const kind = sniff(bytes);
   if (kind === 'heic' || kind === null) return kind;
   const size = kind === 'jpeg' ? jpegSize(bytes) : pngSize(bytes);
-  if (size === null || size.w > MAX_SIDE_PX || size.h > MAX_SIDE_PX) return null;
+  if (size === null || size.w > MAX_SIDE_PX || size.h > MAX_SIDE_PX || size.w * size.h > MAX_PIXELS) return null;
   let tags: Record<string, unknown> = {};
   try {
     tags = ((await exifr.parse(bytes, { pick: ['Orientation', 'FocalLengthIn35mmFormat', 'DateTimeOriginal'], translateValues: false, reviveValues: false })) ?? {}) as Record<string, unknown>;
@@ -187,7 +195,7 @@ export function sizePhotoWindow(input: PhotoWindowInput, photo: { widthPx: numbe
   const focalPx = focalPxFrom35mm(photo.focal35mm ?? DEFAULT_FOCAL_35MM, photo.widthPx, photo.heightPx);
   const angle = viewingAngleDeg(corners, photo.widthPx, photo.heightPx, focalPx);
   let good = quadIsGood(corners) && angle !== null && angle <= STEEP_VIEW_DEG;
-  let extra: Pick<PhotoWindow, 'uncertaintyIn' | 'distanceIn' | 'viewAngleDeg'> = {};
+  let extra: Pick<PhotoWindow, 'uncertaintyIn' | 'distanceIn' | 'viewAngleDeg' | 'reasons'> = {};
   // The sheet method is exact to a few hundredths of an inch: kept to 0.01 in (the others to 0.1 in).
   let step = 10;
   if (s.kind === 'reference') {
@@ -214,6 +222,23 @@ export function sizePhotoWindow(input: PhotoWindowInput, photo: { widthPx: numbe
     const r2 = (v: number) => Math.round(v * 100) / 100;
     extra = { uncertaintyIn: { width: r2(m.uncertaintyIn.width), height: r2(m.uncertaintyIn.height) }, distanceIn: null, viewAngleDeg: null };
     step = 100;
+  } else if (s.kind === 'card') {
+    // A credit card on the glass: the card's four corners give the plane, the window's corners are read on it. Quote-grade
+    // only: the ± grows with the window next to the card, and a window above CARD_CHECK_UNCERTAINTY_IN is 'check'.
+    if (cardProblem({ widthPx: photo.widthPx, heightPx: photo.heightPx, cardCorners: s.cardCorners, windowCorners: corners, card: s.card }) !== null) return null;
+    // No focal length in the photo: 26 mm is assumed, so the ± is widened for it.
+    const focalSigmaFrac = photo.focal35mm === null ? SHEET_FOCAL_UNKNOWN_SIGMA : undefined;
+    const m = sizeFromCard({ widthPx: photo.widthPx, heightPx: photo.heightPx, focalPx, ...(focalSigmaFrac !== undefined && { focalSigmaFrac }), cardCorners: s.cardCorners, windowCorners: corners });
+    if (m === null) return null;
+    size = { widthIn: m.widthIn, heightIn: m.heightIn };
+    good = m.quality === 'good';
+    const r2 = (v: number) => Math.round(v * 100) / 100;
+    extra = {
+      uncertaintyIn: { width: r2(m.uncertaintyIn.width), height: r2(m.uncertaintyIn.height) },
+      distanceIn: Math.round(m.distanceIn),
+      viewAngleDeg: Math.round(m.viewAngleDeg * 10) / 10,
+      ...(m.reasons.length > 0 && { reasons: m.reasons }),
+    };
   } else {
     size = sizeFromKnownSide(corners, photo.widthPx, photo.heightPx, s.side, s.inches, focalPx);
   }

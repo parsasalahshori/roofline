@@ -1,6 +1,6 @@
 import { EMPTY_GUTTER_ADJUSTMENTS, type GutterMeasurementView } from '@roofline/shared';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { measurements, windowMeasurements } from '@roofline/db';
+import { homeownerRequests, measurements, windowMeasurements } from '@roofline/db';
 import { addressFor, Actors, inCompany, mustCreate, NO_UUID, NOT_FOUND } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 
@@ -65,7 +65,7 @@ async function seed(
       }),
     );
   }
-  return { agent: await who.as(as), id: row!.id, path: `/api/measurements/${row!.id}/gutters` };
+  return { agent: await who.as(as), id: row!.id, path: `/api/measurements/${row!.id}/gutters`, propertyId: property.id };
 }
 
 describe('GET /api/measurements/:id/gutters', () => {
@@ -99,6 +99,29 @@ describe('GET /api/measurements/:id/gutters', () => {
     const v = (await agent.get(path)).body as GutterMeasurementView;
     expect(v.eave).toEqual({ heightFt: 19, floors: 2, source: 'google' });
     expect(v.totals.downspoutFt).toBe(4 * 19);
+  });
+
+  test("homeowners' own app measurements at the home do not crowd out the windows run that knows the eave height", async () => {
+    const { agent, path, propertyId } = await seed('owner', { eaveHeightM: 5.8, stories: 2 });
+    const companyId = t.seed.a.companyId;
+    // Six newer window measurements, each one a homeowner's own (the app's windows and photos: no walls, no eave height)
+    for (let i = 0; i < 6; i++) {
+      await inCompany(t, companyId, async (tx) => {
+        const [made] = await tx.insert(windowMeasurements).values({ companyId, propertyId, address: '100 Oak St', center: HIP[0]!, tookMs: 0 }).returning({ id: windowMeasurements.id });
+        await tx.insert(homeownerRequests).values({
+          companyId,
+          tokenHash: String(i).repeat(64),
+          expiresAt: new Date('2027-01-01T00:00:00Z'),
+          services: ['windows'],
+          address: '100 Oak St',
+          status: 'ready',
+          propertyId,
+          windowMeasurementId: made!.id,
+        });
+      });
+    }
+    const v = (await agent.get(path)).body as GutterMeasurementView;
+    expect(v.eave).toEqual({ heightFt: 19, floors: 2, source: 'google' });
   });
 
   test('falls back to floors x 10 ft when only the floors are known', async () => {
