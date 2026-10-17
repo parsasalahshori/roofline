@@ -4,6 +4,7 @@ import { StormWindow } from '../src/features/storm/StormWindow.tsx';
 import { doors } from '../src/copy/doors.ts';
 import { storm } from '../src/copy/storm.ts';
 import { ACCOUNT, makeTask, renderAt, stubApi, SHELL_ROUTES, where } from './helpers.tsx';
+import { approvals } from '../src/copy/approvals.ts';
 
 /** The approvals list holds these tasks and nothing else. */
 function stubPlans(tasks: ReturnType<typeof makeTask>[], role: 'owner' | 'office' | 'rep' = 'owner') {
@@ -32,7 +33,7 @@ describe('StormWindow', () => {
     expect(region).toContainElement(card);
     // The newest is the one on offer; the older one is a line under it
     expect(screen.queryByRole('article', { name: 'Storm plan for Maple Ridge' })).toBeNull();
-    expect(within(card).getByRole('link', { name: storm.approve })).toHaveAttribute('href', '/storm/plans/t2');
+    expect(within(card).getByRole('link', { name: approvals.reviewPlan })).toHaveAttribute('href', '/storm/plans/t2');
     expect(within(region).getByText('1 more plan needs your OK')).toBeInTheDocument();
     expect(api.unexpected).toEqual([]);
   });

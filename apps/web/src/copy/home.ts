@@ -2,9 +2,6 @@
 
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
 
-/** Whole dollars with cents, as a cost reads on an approval card: $18.00. */
-const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
-
 export const home = {
   /** "Good morning, Dana." */
   greeting: (part: 'morning' | 'afternoon' | 'evening', firstName: string) =>
@@ -63,22 +60,7 @@ export const home = {
   openStormReport: 'Open storm report',
   stormDismiss: 'Dismiss the storm note',
 
-  // The approval card
-  approvalDrafted: (agent: string, when: string) => `${agent} drafted · ${when}`,
-  approvalTag: 'Needs your OK',
-  approvalLocked: 'The plan fixes this',
-  factSteps: 'Steps',
-  factCost: 'Cost',
-  factSends: 'Sends',
-  /** "Up to $270.00": the most the plan may spend. */
-  costUpTo: (cents: number) => `Up to ${money.format(cents / 100)}`,
-  approve: 'Approve',
-  /** The toast after a one-tap approval. */
-  approved: (agent: string) => `Approved. ${agent} is on it.`,
-  review: 'Review',
-  edit: 'Edit',
-  notNow: 'Not now',
-  expires: (day: string) => `Expires ${day}`,
+  // The line under the approval card (the card itself is the Need your OK page's, with its words in copy/approvals.ts)
   moreWaiting: (count: number) => `${count} more ${plural(count, 'plan needs', 'plans need')} your OK`,
   seeAll: 'See all',
 

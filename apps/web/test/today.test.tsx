@@ -10,6 +10,7 @@ import { createQueryClient, Providers } from '../src/app/providers.tsx';
 import { home } from '../src/copy/home.ts';
 import { today } from '../src/copy/today.ts';
 import { ACCOUNT, makeTask, SHELL_ROUTES, signedTodayRoute, stubApi, where } from './helpers.tsx';
+import { approvals } from '../src/copy/approvals.ts';
 
 // The real map loads maplibre-gl, which these tests never need
 vi.mock('../src/shell/map/MapView.tsx', async () => {
@@ -112,7 +113,7 @@ describe('the Today window', () => {
     // One decision on top, then the day: the newest plan, with a way into its review
     const card = await within(section).findByRole('article', { name: 'Plan 5' });
     expect(within(section).getAllByRole('article')).toHaveLength(1);
-    expect(within(card).getByRole('link', { name: home.review })).toHaveAttribute('href', '/approvals/t5');
+    expect(within(card).getByRole('link', { name: approvals.reviewPlan })).toHaveAttribute('href', '/approvals/t5');
     // The other four wait behind it, one tap from the whole queue
     expect(within(section).getByText(home.moreWaiting(4))).toBeInTheDocument();
     expect(within(section).getByRole('link', { name: home.seeAll })).toHaveAttribute('href', '/approvals');

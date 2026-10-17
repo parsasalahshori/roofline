@@ -1,9 +1,7 @@
 import type { BoardView } from '@roofline/shared';
-import type { ApprovalFact } from '@roofline/ui';
-import type { StepView, TaskView } from '../../api/types.ts';
+import type { TaskView } from '../../api/types.ts';
 import { home } from '../../copy/home.ts';
 import { liftFeed } from '../../copy/liftFeed.ts';
-import { isOpen } from '../approvals/toReviewStep.ts';
 import type { StormSummary } from '../storm/types.ts';
 
 /*
@@ -56,36 +54,4 @@ export function pipelineCounts(board: BoardView | undefined): { openJobs: number
     if (column.stage === 'proposal') atProposal = column.count;
   }
   return { openJobs, atProposal };
-}
-
-/** The steps still waiting for a yes: switched on and not yet decided. */
-function waitingSteps(task: TaskView): StepView[] {
-  return task.steps.filter((step) => step.enabled && (step.status === 'pending' || step.status === 'awaiting_owner'));
-}
-
-/**
- * The few facts an approval card shows from a plan's own steps: how many steps wait, the most the plan may spend (the
- * sum of its steps' ceilings) and when the first message goes out. A fact the plan does not have is left out.
- */
-export function approvalFacts(task: TaskView): ApprovalFact[] {
-  const steps = waitingSteps(task);
-  if (steps.length === 0) return [];
-  const facts: ApprovalFact[] = [{ label: home.factSteps, value: String(steps.length), mono: true }];
-  const spend = steps.reduce((sum, step) => sum + (step.preview.maxSpendCents ?? 0), 0);
-  if (spend > 0) facts.push({ label: home.factCost, value: home.costUpTo(spend), mono: true });
-  const sendTime = steps.find((step) => step.preview.sendTime !== undefined)?.preview.sendTime;
-  if (sendTime !== undefined) facts.push({ label: home.factSends, value: sendTime });
-  return facts;
-}
-
-/**
- * Can the card approve in one tap? Only a plan with exactly one decision to make, that the person may make, and nothing
- * they need to read first: its title and facts say what it does. A step that sends words to a customer is read before it
- * goes, so it (like a longer plan) sends them to the review screen, where the exact text is.
- */
-export function canQuickApprove(task: TaskView): boolean {
-  if (task.expired) return false;
-  const open = task.steps.filter((step) => isOpen(step, task));
-  const [only] = open;
-  return open.length === 1 && only !== undefined && only.canApprove && only.approvalClass !== 'message';
 }

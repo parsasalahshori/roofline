@@ -268,8 +268,7 @@ describe('Home: the plan waiting for a yes', () => {
 
     const card = await screen.findByRole('article', { name: ONE_STEP.title });
     expect(within(card).getByText('Scheduler drafted · 30 min ago')).toBeInTheDocument();
-    expect(within(card).getByText(home.approvalTag)).toBeInTheDocument();
-    expect(within(card).getByText(home.factSteps)).toBeInTheDocument();
+    expect(within(card).getByText(approvals.tagNeedsOk)).toBeInTheDocument();
     expect(within(card).getByText('Expires Mon')).toBeInTheDocument();
     // One more is waiting behind it
     expect(screen.getByText(home.moreWaiting(1))).toBeInTheDocument();
@@ -283,23 +282,21 @@ describe('Home: the plan waiting for a yes', () => {
     });
 
     const card = await screen.findByRole('article', { name: ONE_STEP.title });
-    expect(within(card).getByRole('link', { name: home.edit })).toHaveAttribute('href', '/approvals/t1');
-    await user.click(within(card).getByRole('button', { name: home.approve }));
+    expect(within(card).getByRole('button', { name: approvals.edit })).toBeInTheDocument();
+    await user.click(within(card).getByRole('button', { name: approvals.approve }));
 
     await waitFor(() => expect(api.sent('POST /api/approvals/t1/approve')).toEqual([{ steps: [{ id: 's1', version: 3 }] }]));
-    expect(await screen.findByText(home.approved('Scheduler'))).toBeInTheDocument();
+    expect(await screen.findByText(approvals.approved(ONE_STEP.title))).toBeInTheDocument();
   });
 
   it('opens the review for a plan with several steps, with the cost it may spend and when it sends', async () => {
     mountHome({ 'GET /api/approvals': () => ({ body: { count: 1, tasks: [MANY_STEPS] } }) });
 
     const card = await screen.findByRole('article', { name: MANY_STEPS.title });
-    expect(within(card).queryByRole('button', { name: home.approve })).toBeNull();
-    expect(within(card).getByRole('link', { name: home.review })).toHaveAttribute('href', '/approvals/t2');
-    // Review is the one way in: there is no second button for the same place
-    expect(within(card).queryByRole('link', { name: home.edit })).toBeNull();
+    expect(within(card).queryByRole('button', { name: approvals.approve })).toBeNull();
+    expect(within(card).getByRole('link', { name: approvals.reviewSteps(3) })).toHaveAttribute('href', '/approvals/t2');
     // The most it may spend is the sum of its steps' ceilings
-    expect(within(card).getByText('Up to $270.00')).toBeInTheDocument();
+    expect(within(card).getByText('Up to $270')).toBeInTheDocument();
     expect(within(card).getByText('today at 10:00 AM')).toBeInTheDocument();
     expect(within(card).getByText('3')).toBeInTheDocument();
   });
@@ -311,9 +308,9 @@ describe('Home: the plan waiting for a yes', () => {
     });
 
     const card = await screen.findByRole('article', { name: ONE_STEP.title });
-    await user.click(within(card).getByRole('button', { name: home.notNow }));
+    await user.click(within(card).getByRole('button', { name: approvals.later }));
     const sheet = await screen.findByRole('dialog');
-    await user.click(within(sheet).getByRole('button', { name: home.notNow }));
+    await user.click(within(sheet).getByRole('button', { name: approvals.later }));
 
     await waitFor(() => expect(api.sent('POST /api/approvals/t1/decline')).toEqual([{}]));
     expect(await screen.findByText(approvals.declined)).toBeInTheDocument();

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StormWindow } from '../src/features/storm/StormWindow.tsx';
 import { storm } from '../src/copy/storm.ts';
 import { ACCOUNT, makeTask, renderAt, stubApi, SHELL_ROUTES, STORM_LAYER_KEY } from './helpers.tsx';
+import { approvals } from '../src/copy/approvals.ts';
 
 const OLDER = {
   id: 's-old',
@@ -168,7 +169,7 @@ describe('Storm list', () => {
     });
     renderAt(<StormWindow />);
     await screen.findByText('Oak Park');
-    const approve = await screen.findByRole('link', { name: storm.approve });
+    const approve = await screen.findByRole('link', { name: approvals.reviewPlan });
     expect(approve).toHaveAttribute('href', '/storm/plans/t9');
   });
 });

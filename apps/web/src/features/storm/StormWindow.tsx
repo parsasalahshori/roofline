@@ -169,7 +169,6 @@ export function StormWindow() {
                 task={newest}
                 more={plans.length - 1}
                 href={'/storm/plans/' + encodeURIComponent(newest.id)}
-                reviewLabel={storm.approve}
               />
             </section>
           ) : (

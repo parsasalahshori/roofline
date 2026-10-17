@@ -13,7 +13,6 @@ import { common } from '../src/copy/common.ts';
 import { rail, WINDOW_COPY } from '../src/copy/rail.ts';
 import { search } from '../src/copy/search.ts';
 import { shell } from '../src/copy/shell.ts';
-import { storm } from '../src/copy/storm.ts';
 import { ACCOUNT, makeTask, type Routes, SHELL_ROUTES, stubApi, where } from './helpers.tsx';
 
 // The real map loads maplibre-gl, which these tests never need. The stand-in has two pins that open a job and a customer.
@@ -206,7 +205,7 @@ it('Storm window offers the storm plan', async () => {
   signedInApi({ 'GET /api/approvals': () => ({ body: { count: 1, tasks: [plan] } }) });
   renderApp('/storm');
 
-  expect(await screen.findByRole('link', { name: storm.approve })).toHaveAttribute('href', '/storm/plans/t1');
+  expect(await screen.findByRole('link', { name: approvals.reviewPlan })).toHaveAttribute('href', '/storm/plans/t1');
   // The plan is a card named by its title
   expect(screen.getByRole('article', { name: plan.title })).toBeInTheDocument();
 });
@@ -225,7 +224,7 @@ it('Storm window offers the newest of several storm plans', async () => {
   });
   renderApp('/storm');
 
-  expect(await screen.findByRole('link', { name: storm.approve })).toHaveAttribute('href', '/storm/plans/t2');
+  expect(await screen.findByRole('link', { name: approvals.reviewPlan })).toHaveAttribute('href', '/storm/plans/t2');
 });
 
 it('Storm window offers no plan when there is none', async () => {
@@ -235,7 +234,7 @@ it('Storm window offers no plan when there is none', async () => {
 
   await waitFor(() => expect(api.count('GET /api/approvals')).toBeGreaterThan(0));
   await waitFor(() => expect(queryClient.getQueryState(keys.approvals)?.status).toBe('success'));
-  expect(screen.queryByRole('link', { name: storm.approve })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: approvals.reviewPlan })).not.toBeInTheDocument();
 });
 
 it('marks the open app in the rail', async () => {
