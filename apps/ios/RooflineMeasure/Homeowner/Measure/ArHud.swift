@@ -104,7 +104,6 @@ struct ArHud: View {
                 HStack(alignment: .top) {
                     Magnifier(image: model.loupe)
                     Spacer()
-                    HowButton(action: onHow)
                 }
                 .padding(.horizontal, 16).padding(.top, 14)
                 Spacer()
@@ -198,8 +197,8 @@ struct ArHud: View {
                 Spacer()
                 if model.phase == .complete { usePill } else { mainButton }
                 Spacer()
-                // Balances the undo button, so the red button stays in the middle
-                Color.clear.frame(width: 56, height: 56).accessibilityHidden(true)
+                // Opposite the undo button, off the picture so it never covers a corner
+                HowButton(action: onHow).frame(minWidth: 56, minHeight: 56)
             }
             .padding(.horizontal, 28)
             if model.phase != .complete {
