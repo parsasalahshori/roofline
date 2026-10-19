@@ -52,7 +52,7 @@ enum AppEnvironment {
 
     private static func makeLive(url: URL, brand: Brand, features: HomeownerFeatures, switchable: Bool = false) -> HomeownerStore {
         let live = LiveHomeownerAPI(baseURL: url, slug: slug(brand: brand), features: features)
-        let api: HomeownerAPI = switchable ? SwitchableAPI(live) : live
+        let api: HomeownerAPI = switchable ? ServerSwitchAPI(live) : live
         return HomeownerStore(api: api, vault: KeychainSessionVault(), progressStore: DefaultsProgressStore(), outboxDirectory: outboxDirectory(),
                               brand: brand, capabilities: DeviceCaps.measureCapabilities)
     }

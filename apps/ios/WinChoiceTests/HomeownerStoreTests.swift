@@ -450,8 +450,122 @@ final class HomeownerStoreTests: XCTestCase {
         XCTAssertEqual(h.store.addRoom("  Guest   bedroom "), "Guest bedroom")
         XCTAssertEqual(h.store.addRoom("guest bedroom"), "Guest bedroom", "the same room is not added twice")
         XCTAssertNil(h.store.addRoom("   "))
-        XCTAssertEqual(h.store.roomLine("Kitchen"), "1 window measured")
+        XCTAssertEqual(h.store.roomLine("Kitchen"), "1 window measured · tap to add another")
         XCTAssertEqual(h.store.roomLine("Guest bedroom"), "Not started")
         XCTAssertNotEqual(h.store.suggestedRoom, "Kitchen", "the main button offers a room that has no window yet")
+    }
+
+    // MARK: Saving (the owner's priority: measured means saved)
+
+    private func pendingSession(_ h: StoreHarness, room: String = "Kitchen", replacing: String? = nil) -> MeasureSession {
+        MeasureSession(method: .corners, room: room, number: h.store.nextWindowNumber, replacing: replacing)
+    }
+
+    private func capturePending(_ h: StoreHarness, room: String = "Kitchen", replacing: String? = nil) {
+        let scene = SampleScene.small
+        let photo = PhotoPreparation.prepare(scene.image(withCard: false))
+        let w = SampleScene.widthIn / inchesPerMetre, hh = SampleScene.heightIn / inchesPerMetre
+        let scale = WindowPhotoScale.ar(ArScale(pointsM: [Vec3(0, hh, -1.5), Vec3(w, hh, -1.5), Vec3(w, 0, -1.5), Vec3(0, 0, -1.5)], trackingLostCount: 0, device: .arkitLidar, cornerSpreadM: [0.001, 0.001, 0.001, 0.001]))
+        h.store.capture(scale: scale, corners: scene.frameCorners.map { Vec2(Double($0.x), Double($0.y)) }, jpeg: photo?.jpeg, widthPx: photo?.widthPx ?? 0, heightPx: photo?.heightPx ?? 0,
+                        in: pendingSession(h, room: room, replacing: replacing))
+    }
+
+    func testMeasureAgainKeepsTheOldWindowUntilTheNewOneIsSaved() async throws {
+        let h = StoreHarness()
+        try await h.open(windows: [FakeWindowSpec.mockupSeven[1]])
+        let old = try XCTUnwrap(h.store.windowRows.first)
+        // No method used yet on this phone: the method screen comes, and still remembers which window it is for
+        await h.store.measureAgain(old)
+        XCTAssertEqual(h.store.replaceTarget, old.id)
+        h.store.startMeasuring(room: old.room)
+        XCTAssertEqual(h.store.measureSession?.replacing, old.id)
+        h.store.measureSession = nil
+        await h.store.measureAgain(old)
+        XCTAssertEqual(h.store.windowRows.map { $0.id }, [old.id], "nothing is deleted when the camera opens")
+        let calls = await h.fake.calls()
+        XCTAssertFalse(calls.contains { $0.hasPrefix("DELETE") }, "and nothing is asked of the server")
+        XCTAssertEqual(h.store.measureSession?.replacing, old.id, "the session carries the window it replaces")
+        // The homeowner closes the camera: the old size is still there
+        h.store.measureSession = nil
+        XCTAssertEqual(h.store.windowRows.map { $0.id }, [old.id])
+        // Measuring again and saving: now the old one goes
+        capturePending(h, room: old.room, replacing: old.id)
+        XCTAssertEqual(h.store.windowRows.count, 1, "a pending window is not a row yet")
+        await h.store.savePending(room: old.room, name: "")
+        await h.settle()
+        await h.store.refresh()
+        XCTAssertFalse(h.store.windowRows.contains { $0.id == old.id }, "the old window is removed once the new one is saved")
+        XCTAssertEqual(h.store.windowRows.count, 1)
+    }
+
+    func testAPendingWindowSurvivesClosingTheApp() async throws {
+        let fake = FakeHomeownerAPI()
+        let progress = MemoryProgressStore()
+        let first = StoreHarness(fake: fake, progress: progress)
+        try await first.open()
+        capturePending(first)
+        let id = try XCTUnwrap(first.store.pending?.id)
+        // The app is closed here; a new store opens the same request and the same folder on the next launch
+        let second = HomeownerStore(api: first.api, vault: first.vault, progressStore: progress, outboxDirectory: first.directory, capabilities: .depthSensorPhone("iPhone 15 Pro"))
+        await second.bootstrap()
+        let back = try XCTUnwrap(second.pending, "the measured window comes back")
+        XCTAssertEqual(back.id, id)
+        XCTAssertEqual(back.room, "Kitchen")
+        XCTAssertNotNil(back.jpeg)
+        XCTAssertEqual(back.corners?.count, 4)
+        XCTAssertEqual(back.preview.map { SizeWording.text($0.widthIn) }, "35 5/8", "with the same size")
+        XCTAssertTrue(second.pendingRestored)
+        XCTAssertNotNil(second.measureSession, "the label sheet opens for it")
+        // Saving it clears the copy on disk
+        await second.savePending(room: "Kitchen", name: "")
+        XCTAssertEqual(second.windowRows.count, 1)
+        let third = HomeownerStore(api: first.api, vault: first.vault, progressStore: progress, outboxDirectory: first.directory, capabilities: .depthSensorPhone("iPhone 15 Pro"))
+        await third.bootstrap()
+        XCTAssertNil(third.pending, "a saved window is not offered again")
+    }
+
+    func testDiscardingDropsThePendingWindowAndKeepsTheOldOne() async throws {
+        let h = StoreHarness()
+        try await h.open(windows: [FakeWindowSpec.mockupSeven[1]])
+        let old = try XCTUnwrap(h.store.windowRows.first)
+        capturePending(h, room: old.room, replacing: old.id)
+        h.store.discardPending()
+        XCTAssertNil(h.store.pending)
+        XCTAssertNil(h.store.measureSession)
+        XCTAssertEqual(h.store.windowRows.map { $0.id }, [old.id])
+        let again = HomeownerStore(api: h.api, vault: h.vault, progressStore: h.progress, outboxDirectory: h.directory, capabilities: .depthSensorPhone("iPhone 15 Pro"))
+        await again.bootstrap()
+        XCTAssertNil(again.pending, "a discarded window does not come back")
+    }
+
+    func testSavingGoesToTheListWithTheNewRowMarkedAndANotice() async throws {
+        let h = StoreHarness()
+        try await h.open()
+        let captured = await h.capture(room: "Kitchen")
+        let id = try XCTUnwrap(captured)
+        XCTAssertEqual(h.store.justSavedId, id)
+        XCTAssertEqual(h.store.notice?.text, "Saved: Kitchen, 35 5/8 × 59 5/8 in")
+        XCTAssertEqual(h.store.heldCount, 1, "waiting for its style")
+        XCTAssertEqual(h.store.progress.step, .list)
+    }
+
+    func testTheMethodScreenComesForTheFirstWindowOnlyThenTheLastMethodIsUsed() async throws {
+        let h = StoreHarness()
+        try await h.open()
+        h.store.measure(room: "Kitchen")
+        XCTAssertEqual(h.store.path.last, .method(room: "Kitchen"), "the first window asks how")
+        XCTAssertNil(h.store.measureSession)
+        h.store.method = .card
+        h.store.startMeasuring(room: "Kitchen")
+        XCTAssertEqual(h.store.lastMethod, .card)
+        h.store.measureSession = nil
+        let before = h.store.path
+        h.store.measure(room: "Hall")
+        XCTAssertEqual(h.store.measureSession?.method, .card, "then it goes straight to the last method")
+        XCTAssertEqual(h.store.path, before)
+        h.store.measureSession = nil
+        h.store.changeMethod(room: "Hall")
+        XCTAssertNil(h.store.lastMethod)
+        XCTAssertEqual(h.store.path.last, .method(room: "Hall"), "\"Change how I measure\" brings the method screen back")
     }
 }

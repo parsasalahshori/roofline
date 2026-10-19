@@ -3,7 +3,7 @@ import RooflineCore
 
 /// The live API with a swappable server and company: a tester changes them in the hidden server sheet and the app uses the
 /// new ones at once (no force-quit). Everything else talks to this, never to the live client directly.
-final class SwitchableAPI: HomeownerAPI, @unchecked Sendable {
+final class ServerSwitchAPI: HomeownerAPI, @unchecked Sendable {
     private let lock = NSLock()
     private var inner: LiveHomeownerAPI
 

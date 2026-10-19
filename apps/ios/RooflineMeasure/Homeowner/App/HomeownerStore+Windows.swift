@@ -23,10 +23,26 @@ extension HomeownerStore {
     func roomHasWindows(_ room: String) -> Bool { RoomSummary.hasWindows(room, in: windowRows) }
     var roomSuggestions: [String] { RoomNames.suggestions(excluding: rooms) }
 
-    /// The room's method screen.
+    /// Measure a window in this room: the method screen for the first window, then straight to the way the last one was measured.
     func measure(room: String) {
+        replaceTarget = nil
+        if let last = lastMethod, isAvailable(last) {
+            method = last
+            noteStep(.rooms)
+            startMeasuring(room: room)
+            return
+        }
         path.append(.method(room: room))
         noteStep(.rooms)
+    }
+
+    var lastMethod: MeasureMethod? { progress.lastMethod.flatMap(MeasureMethod.init(rawValue:)) }
+
+    /// "Change how I measure": forgets the last method, so the method screen comes again.
+    func changeMethod(room: String) {
+        progress.lastMethod = nil
+        saveProgress()
+        measure(room: room)
     }
 
     // MARK: Methods (06)
@@ -57,9 +73,26 @@ extension HomeownerStore {
         }
     }
 
+    /// The tag on a method card: why to pick it (the depth-sensor corners are the recommended way).
+    func methodTag(_ m: MeasureMethod) -> (text: String, best: Bool) {
+        switch m {
+        case .corners:
+            return capabilities.depthSensor ? ("Most exact (recommended)", true) : methodAccuracy(m)
+        case .roomScan: return ("Fastest · whole room", false)
+        case .card: return ("Works on any iPhone", false)
+        }
+    }
+
     func startMeasuring(room: String, replacing: String? = nil) {
         guard isAvailable(method) else { return }
-        measureSession = MeasureSession(method: method, room: room, number: nextWindowNumber, replacing: replacing)
+        let target = replacing ?? replaceTarget
+        replaceTarget = nil
+        progress.lastMethod = method.rawValue
+        saveProgress()
+        pendingRestored = false
+        // A window being measured again keeps its own number
+        let number = target.flatMap { id in windowRows.first { $0.id == id }?.number } ?? nextWindowNumber
+        measureSession = MeasureSession(method: method, room: room, number: number, replacing: target)
     }
 
     // MARK: A measured window (08)
@@ -68,8 +101,38 @@ extension HomeownerStore {
     func capture(scale: WindowPhotoScale, corners: [Vec2]?, jpeg: Data?, widthPx: Int, heightPx: Int, focal35mm: Double? = nil, in session: MeasureSession) {
         let window = PhotoWindowInput(id: WindowIds.new(), uploadId: nil, label: nil, windowKey: nil, corners: corners, scale: scale, room: session.room, style: nil)
         let preview = LocalWindowPreview.of(window, imageWidthPx: widthPx, imageHeightPx: heightPx, focal35mm: focal35mm)
-        pending = PendingWindow(id: window.id, scale: scale, corners: corners, jpeg: jpeg, imageWidthPx: widthPx, imageHeightPx: heightPx, preview: preview,
-                                room: session.room, name: "", number: session.number, replacing: session.replacing)
+        let made = PendingWindow(id: window.id, scale: scale, corners: corners, jpeg: jpeg, imageWidthPx: widthPx, imageHeightPx: heightPx, preview: preview,
+                                 room: session.room, name: "", number: session.number, replacing: session.replacing, focal35mm: focal35mm, method: session.method)
+        pending = made
+        pendingRestored = false
+        // On disk at once: nothing measured is lost by closing the app before "Save"
+        if let id = requestId { pendingDisk.save(made, requestId: id) }
+    }
+
+    /// The pending window of a closed app comes back: the label sheet opens for it, with no camera behind.
+    func restorePending() {
+        guard pending == nil, measureSession == nil, let id = requestId, let p = pendingDisk.load(requestId: id) else { return }
+        // Already saved (the record outlived a save): nothing to restore
+        if windowRows.contains(where: { $0.id == p.id }) {
+            pendingDisk.clear(requestId: id)
+            return
+        }
+        pending = p
+        pendingRestored = true
+        measureSession = MeasureSession(method: p.method, room: p.room, number: p.number, replacing: p.replacing)
+    }
+
+    /// The label sheet's "Discard": the measured window is dropped (a window it was to replace stays).
+    func discardPending() {
+        clearPending()
+        measureSession = nil
+    }
+
+    /// "Measure it again" on the label sheet: the camera starts over for this one.
+    func clearPending() {
+        if let id = requestId { pendingDisk.clear(requestId: id) }
+        pending = nil
+        pendingRestored = false
     }
 
     /// "Save window 4": the window and its photo go on disk, the photo uploads at once, the window waits for its style.
@@ -77,17 +140,30 @@ extension HomeownerStore {
         guard let p = pending, let s = session else { return }
         let cleanRoom = RoomNames.clean(room) ?? p.room
         let cleanName = Self.cleanLabel(name, max: company.limits.maxLabelLength)
-        let window = PhotoWindowInput(id: p.id, uploadId: nil, label: cleanName, windowKey: nil, corners: p.corners, scale: p.scale, room: cleanRoom, style: nil, frosted: frosted ? true : nil)
+        // A window measured again keeps the style (and colour) its old one had, so it does not ask for them twice
+        let oldRow = p.replacing.flatMap { id in windowRows.first { $0.id == id } }
+        let window = PhotoWindowInput(id: p.id, uploadId: nil, label: cleanName, windowKey: nil, corners: p.corners, scale: p.scale, room: cleanRoom, style: oldRow?.style, frosted: frosted ? true : nil)
         do {
-            _ = try await outbox.enqueue(window: window, measurementId: s.requestId, address: s.address, jpeg: p.jpeg, imageWidthPx: p.imageWidthPx, imageHeightPx: p.imageHeightPx, held: true)
+            _ = try await outbox.enqueue(window: window, measurementId: s.requestId, address: s.address, jpeg: p.jpeg, imageWidthPx: p.imageWidthPx, imageHeightPx: p.imageHeightPx, held: oldRow?.style == nil)
+            if let old = oldRow, let color = progress.colors[old.id] { progress.colors[p.id] = color }
         } catch {
             notice = Notice(text: "This phone couldn't save the window (\(error.localizedDescription)). Please try again.")
             return
         }
         _ = addRoom(cleanRoom)
+        pendingDisk.clear(requestId: s.requestId)
+        // "Measure again": the old window goes only now that the new one is safely on the phone
         if let old = p.replacing { await deleteEverywhere(old) }
         Haptics.success()
         showList()
+        justSavedId = p.id
+        let size = p.preview.flatMap { $0.isShowable ? SizeWording.sizeText(widthIn: $0.widthIn, heightIn: $0.heightIn) : nil }
+        notice = Notice(text: "Saved: " + ([cleanRoom] + (size.map { [$0] } ?? [])).joined(separator: ", "), kind: .info)
+        let savedId = p.id
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            if self?.justSavedId == savedId { self?.justSavedId = nil }
+        }
         Task { await outbox.syncAll() }
     }
 
@@ -138,11 +214,17 @@ extension HomeownerStore {
         }
     }
 
+    /// "Measure again": the current size is kept until the new one is saved (a closed camera loses nothing).
     func measureAgain(_ row: WindowRow) async {
-        await deleteEverywhere(row.id)
         let room = row.room.isEmpty ? (suggestedRoom ?? "Living room") : row.room
-        path = stack(to: .rooms) + [.method(room: room)]
+        if let last = lastMethod, isAvailable(last) {
+            method = last
+            startMeasuring(room: room, replacing: row.id)
+            return
+        }
+        replaceTarget = row.id
         method = defaultMethod
+        path.append(.method(room: room))
     }
 
     // MARK: Styles (09)

@@ -20,6 +20,7 @@ struct CardPhotoFlow: View {
     @State private var cameraDenied = false
     @State private var cameraRestricted = false
     @State private var cameraNote: String?
+    @State private var showHowTo = false
 
     var body: some View {
         Group {
@@ -53,9 +54,9 @@ struct CardPhotoFlow: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     WCHeadline(text: "Photo with a bank card", subtitle: "One photo of the whole window, with a card on the glass.")
-                    CardTip(icon: .card, title: "Put a card flat on the glass", detail: "In the middle of the window, the whole card in view, no glare. A credit, debit or driver licence card works.")
-                    CardTip(icon: .back, title: "Stand 3 to 5 feet back", detail: "Straight in front of the window, with all of it in the photo and some room around it. Hold still.")
-                    CardTip(icon: .light, title: "Tap the tip of each corner", detail: "The magnifier helps you hit the very tip of the card's rounded corners, then the 4 inside corners of the frame.")
+                    CardTip(icon: .card, title: "1. Tape or hold a bank card flat on the glass", detail: "In the middle of the window, the whole card in view, no glare. A credit card, debit card or driver's license works.")
+                    CardTip(icon: .back, title: "2. Stand about 4 feet back and take one photo", detail: "Straight in front of the window, with all of it in the photo and some room around it. Hold still.")
+                    CardTip(icon: .light, title: "3. Tap the card's 4 corners, then the window's 4 corners", detail: "The magnifier helps you hit the very tip of the card's rounded corners, then the 4 inside corners of the frame.")
                     if cameraDenied {
                         InfoPanel(icon: .camera, text: "Camera access is off. Turn it on in Settings, then come back.", tint: Theme.warnTint, iconColor: Theme.warn)
                     }
@@ -98,6 +99,8 @@ struct CardPhotoFlow: View {
         cardPoints = []
         windowPoints = []
         step = .card
+        // The first card photo ever: the steps again, before the tapping
+        if !HowToSeen.isSeen("card") { showHowTo = true }
     }
 
     // MARK: Tapping
@@ -118,6 +121,9 @@ struct CardPhotoFlow: View {
         }
         .padding(.horizontal, 12)
         .background(Color.black.ignoresSafeArea())
+        .overlay {
+            if showHowTo { CardHowTo { HowToSeen.markSeen("card"); showHowTo = false } }
+        }
         .environment(\.colorScheme, .dark)
         // The photo needs the room: the controls around it stop at the largest ordinary text size
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
@@ -159,6 +165,7 @@ struct CardPhotoFlow: View {
             if onCard { BankCardGlyph(width: 44) } else { IconView(icon: .win, size: 30).foregroundStyle(Theme.tape).frame(width: 44) }
             Text(instructionText(onCard: onCard)).wc(16, relativeTo: .subheadline).foregroundStyle(Color.white.opacity(0.92)).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
+            HowButton { showHowTo = true }
         }
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(white: 0.16, opacity: 0.88)))
@@ -174,7 +181,7 @@ struct CardPhotoFlow: View {
 
     private func statusPanel(onCard: Bool, count: Int) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(onCard ? "Card: \(count) of 4 corners" : "Window: \(count) of 4 corners").wcMono(20, .bold, relativeTo: .title3).foregroundStyle(.white)
+            Text(Self.counter(onCard: onCard, count: count)).wcMono(20, .bold, relativeTo: .title3).foregroundStyle(.white)
             if onCard {
                 Text(count < 4 ? "Next, tap the 4 corners of the window frame. Then we show the size." : "Good. Next, tap the 4 corners of the window frame.")
                     .wc(15, relativeTo: .subheadline).foregroundStyle(Color.white.opacity(0.8)).fixedSize(horizontal: false, vertical: true)
@@ -188,6 +195,12 @@ struct CardPhotoFlow: View {
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(white: 0.16, opacity: 0.88)))
         .accessibilityElement(children: .combine)
+    }
+
+    /// "Card corner 2 of 4": the corner to tap next (the count of the ones set, plus one), then "4 corners set".
+    static func counter(onCard: Bool, count: Int) -> String {
+        let what = onCard ? "Card" : "Window"
+        return count >= 4 ? "\(what): 4 corners set" : "\(what) corner \(count + 1) of 4"
     }
 
     /// The live size from the card, in the app's own words; a number the phone is wildly unsure of is not printed.
@@ -349,5 +362,15 @@ struct CameraPicker: UIViewControllerRepresentable {
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
             onFinish(nil, nil)
         }
+    }
+}
+
+/// The card photo's how-to (first time, and from "How?").
+struct CardHowTo: View {
+    static let steps = ["Tape or hold a bank card flat on the glass.", "Stand about 4 feet back and take one photo.", "Tap the card's 4 corners, then the window's 4 corners."]
+    let onDone: () -> Void
+
+    var body: some View {
+        HowToOverlay(title: "Photo with a bank card", steps: Self.steps, art: .corners, onDone: onDone)
     }
 }

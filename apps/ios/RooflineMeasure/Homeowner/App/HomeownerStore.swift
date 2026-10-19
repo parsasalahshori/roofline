@@ -57,6 +57,9 @@ struct PendingWindow: Identifiable {
     var name = ""
     var number: Int
     var replacing: String?
+    /// The photo's 35 mm-equivalent focal length (a card photo is sized with it), kept so a restored window shows the same size.
+    var focal35mm: Double? = nil
+    var method: MeasureMethod = .corners
 }
 
 /// Everything the homeowner screens read and do. One instance for the app; the screens never talk to the network.
@@ -70,6 +73,7 @@ final class HomeownerStore {
     @ObservationIgnored let vault: SessionVault
     @ObservationIgnored let progressStore: ProgressStore
     @ObservationIgnored let outbox: Outbox
+    @ObservationIgnored let pendingDisk: PendingDisk
     @ObservationIgnored let holder = SessionHolder()
     @ObservationIgnored private let monitor = NWPathMonitor()
     @ObservationIgnored private var retryTask: Task<Void, Never>?
@@ -119,6 +123,12 @@ final class HomeownerStore {
     var method: MeasureMethod = .corners
     var measureSession: MeasureSession?
     var pending: PendingWindow?
+    /// The pending window came back from disk after the app was closed: the camera screen is not started behind its sheet.
+    var pendingRestored = false
+    /// The window saved a moment ago: its row is shown highlighted on the list.
+    var justSavedId: String?
+    /// "Measure again" on this window: the old one stays until the new one is saved.
+    var replaceTarget: String?
     /// The style pass (screen 09): which window it is on.
     var styleIndex = 0
 
@@ -150,6 +160,7 @@ final class HomeownerStore {
             onView: { sink.deliver($0) }
         )
         self.outbox = Outbox(directory: outboxDirectory, transport: transport)
+        self.pendingDisk = PendingDisk(outboxDirectory: outboxDirectory)
         sink.store = self
     }
 
@@ -197,6 +208,8 @@ final class HomeownerStore {
     /// Windows actually on their way: not done, not refused, and not held back for a style the homeowner has yet to pick (those
     /// wait on the person, not on the network).
     var sendingCount: Int { outboxItems.filter { $0.measurementId == requestId && $0.state != .done && $0.state != .failed && !$0.isHeld }.count }
+    /// Windows kept on the phone until a style is picked (they wait on the person, not the network).
+    var heldCount: Int { outboxItems.filter { $0.measurementId == requestId && $0.state != .done && $0.isHeld }.count }
     var failedItems: [OutboxItem] { outboxItems.filter { $0.measurementId == requestId && $0.state == .failed } }
     /// The server's own sentence when it told the phone to wait before sending again (429 with Retry-After), else nil.
     var heldBackNote: String? {
@@ -282,9 +295,11 @@ final class HomeownerStore {
                 setSession(saved)
                 services(from: saved)
                 progress = progressStore.load(requestId: saved.requestId)
+                if let last = progress.lastMethod.flatMap(MeasureMethod.init(rawValue:)), isAvailable(last) { method = last }
                 addressText = saved.address
                 await refresh()
                 if session != nil { await resume() }
+                restorePending()
             }
         }
         _ = await loadedCompany
@@ -424,6 +439,7 @@ final class HomeownerStore {
 
     func pop() {
         guard !path.isEmpty else { return }
+        replaceTarget = nil
         path.removeLast()
         if case .step(let s)? = path.last { noteStep(s) } else if path.isEmpty { noteStep(.welcome) }
     }
@@ -447,6 +463,7 @@ final class HomeownerStore {
         let id = session?.requestId
         vault.clear()
         if let id = id {
+            pendingDisk.clear(requestId: id)
             progressStore.clear(requestId: id)
             Task { try? await outbox.removeAll(measurementId: id) }
         }
@@ -460,6 +477,9 @@ final class HomeownerStore {
         status = nil
         slots = nil
         pending = nil
+        pendingRestored = false
+        replaceTarget = nil
+        justSavedId = nil
         measureSession = nil
         contactDraft = HomeownerContact()
         contactErrors = [:]

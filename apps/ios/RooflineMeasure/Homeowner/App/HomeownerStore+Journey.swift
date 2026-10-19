@@ -31,7 +31,7 @@ extension HomeownerStore {
 
     /// The tester saved a new server or company: the live client switches at once. A request made for another company is dropped.
     func applyServerSettings() async {
-        guard let live = api as? SwitchableAPI else { return }
+        guard let live = api as? ServerSwitchAPI else { return }
         let brand = self.brand
         guard let url = AppEnvironment.serverURL(brand: brand) else { return }
         let slug = AppEnvironment.slug(brand: brand)

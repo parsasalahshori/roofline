@@ -51,6 +51,20 @@ struct WindowRow: Identifiable, Equatable {
         }
     }
 
+    /// Why a window needs a look, in plain words (the server's and the phone's own sentences are used when they are already plain;
+    /// the AR maths' lower-case technical ones become one sentence).
+    var lookReason: String {
+        if let first = reasons.first?.trimmingCharacters(in: .whitespaces), let c = first.first {
+            if c.isUppercase { return first.hasSuffix(".") ? String(first.dropLast()) : first }
+            return "The four corners didn't line up"
+        }
+        switch scale {
+        case .roomplan: return "The room scan wasn't sure of this window"
+        case .card: return "The card photo wasn't clear enough"
+        default: return "The corners were hard to place"
+        }
+    }
+
     /// "35 5/8 × 59 5/8" (no unit: the list says "in" once at the top).
     var sizeText: String {
         guard let w = widthIn, let h = heightIn else { return "Size after upload" }
@@ -103,6 +117,36 @@ enum WindowRows {
     }
 }
 
+/// The windows of one room, for the list ("Kitchen · 2 windows").
+struct RoomGroup: Equatable, Identifiable {
+    var room: String
+    var rows: [WindowRow]
+    var id: String { room.lowercased() }
+    var header: String { "\(room) · \(rows.count) window\(rows.count == 1 ? "" : "s")" }
+}
+
+enum WindowGroups {
+    /// Windows grouped by room: the rooms in the order the homeowner listed them, then any other room in the order its first window
+    /// was measured. A window with no room goes under "Other".
+    static func group(_ rows: [WindowRow], roomOrder: [String]) -> [RoomGroup] {
+        func key(_ r: String) -> String { r.trimmingCharacters(in: .whitespaces).lowercased() }
+        var order: [String] = []
+        var names: [String: String] = [:]
+        for r in roomOrder where rows.contains(where: { key($0.room) == key(r) }) && !order.contains(key(r)) {
+            order.append(key(r))
+            names[key(r)] = r
+        }
+        for row in rows {
+            let k = key(row.room)
+            if !order.contains(k) {
+                order.append(k)
+                names[k] = k.isEmpty ? "Other" : row.room
+            }
+        }
+        return order.map { k in RoomGroup(room: names[k] ?? "Other", rows: rows.filter { key($0.room) == k }) }
+    }
+}
+
 /// What a room row says: "Not started", "1 window measured", "2 windows · 1 to check".
 enum RoomSummary {
     static func line(for room: String, in rows: [WindowRow]) -> String {
@@ -110,8 +154,8 @@ enum RoomSummary {
         guard !mine.isEmpty else { return "Not started" }
         let checks = mine.filter { $0.flagged }.count
         let count = "\(mine.count) window\(mine.count == 1 ? "" : "s")"
-        if checks == 0 { return "\(count) measured" }
-        return "\(count) · \(checks) to check"
+        if checks == 0 { return "\(count) measured · tap to add another" }
+        return "\(count) · \(checks) to check · tap to add another"
     }
 
     static func hasWindows(_ room: String, in rows: [WindowRow]) -> Bool {

@@ -13,15 +13,20 @@ struct MeasureHost: View {
         @Bindable var store = store
         ZStack {
             Color.black.ignoresSafeArea()
-            switch session.method {
-            case .corners: ArMeasureScreen(session: session).id(attempt)
-            case .roomScan: RoomScanScreen(session: session).id(attempt)
-            case .card: CardPhotoFlow(session: session).id(attempt)
+            // A window restored after the app was closed has no camera behind its sheet
+            if !store.pendingRestored {
+                switch session.method {
+                case .corners: ArMeasureScreen(session: session).id(attempt)
+                case .roomScan: RoomScanScreen(session: session).id(attempt)
+                case .card: CardPhotoFlow(session: session).id(attempt)
+                }
             }
+            // The camera picture is dimmed behind the label sheet: the sheet is the thing to read
+            if store.pending != nil { Color.black.opacity(0.6).ignoresSafeArea().allowsHitTesting(false) }
         }
         .sheet(item: $store.pending) { p in
             LabelSheet(pending: p) {
-                store.pending = nil
+                store.clearPending()
                 attempt += 1
             }
             .environment(store)

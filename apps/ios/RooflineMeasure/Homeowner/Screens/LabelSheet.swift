@@ -15,6 +15,7 @@ struct LabelSheet: View {
     @State private var frosted: Bool
     @State private var frostedTouched = false
     @State private var saving = false
+    @State private var confirmDiscard = false
     @State private var detent: PresentationDetent = .fraction(0.74)
     @FocusState private var nameFocused: Bool
 
@@ -34,6 +35,8 @@ struct LabelSheet: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
+                    Text("Check the size, then save").wcHeading(22, .heavy, relativeTo: .title2).foregroundStyle(Theme.ink)
+                        .fixedSize(horizontal: false, vertical: true).padding(.bottom, 12).accessibilityAddTraits(.isHeader)
                     sizeCard
                     Text("Which room is it in?").wcHeading(22, .heavy, relativeTo: .title2).foregroundStyle(Theme.ink).padding(.top, 22).accessibilityAddTraits(.isHeader)
                     FlowLayout(spacing: 8, lineSpacing: 10) {
@@ -109,7 +112,28 @@ struct LabelSheet: View {
                     saving = false
                 }
             }
-            WCSecondaryButton(title: "Measure it again") { onAgain() }
+            if confirmDiscard {
+                VStack(spacing: 8) {
+                    Text("Discard this window? The size is lost.").wc(15, .medium, relativeTo: .subheadline).foregroundStyle(Theme.ink2).multilineTextAlignment(.center)
+                    AdaptiveStack(spacing: 10) {
+                        WCSecondaryButton(title: "Keep it") { confirmDiscard = false }
+                        Button {
+                            Haptics.tap()
+                            store.discardPending()
+                        } label: {
+                            Text("Yes, discard").wc(17, .semibold, relativeTo: .headline).foregroundStyle(Theme.bad)
+                                .frame(maxWidth: .infinity, minHeight: Theme.secondaryButtonHeight)
+                                .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.bad.opacity(0.5), lineWidth: 1))
+                        }
+                    }
+                }
+            } else {
+                WCSecondaryButton(title: "Measure it again") { onAgain() }
+                Button("Discard") { confirmDiscard = true }
+                    .wc(16, .medium, relativeTo: .body).foregroundStyle(Theme.ink3)
+                    .frame(maxWidth: .infinity, minHeight: Theme.minTap)
+                    .accessibilityHint("Throws this measured window away")
+            }
         }
     }
 
@@ -122,7 +146,7 @@ struct LabelSheet: View {
             .frame(width: 34, height: 34)
             VStack(alignment: .leading, spacing: 3) {
                 if let p = showable {
-                    SizeText(widthIn: p.widthIn, heightIn: p.heightIn, size: 24, weight: .semibold, unit: true)
+                    SizeText(widthIn: p.widthIn, heightIn: p.heightIn, size: 34, weight: .semibold, unit: true)
                     Text(subtitle(p)).wc(14, relativeTo: .footnote).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
                 } else {
                     Text("Window \(pending.number) measured").wc(18, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)

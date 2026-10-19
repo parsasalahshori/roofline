@@ -21,7 +21,6 @@ struct MethodScreen: View {
                     MethodCard(method: .corners, selected: store.method == .corners) { store.method = .corners }
                     MethodCard(method: .roomScan, selected: store.method == .roomScan) { store.method = .roomScan }
                     MethodCard(method: .card, selected: store.method == .card) { store.method = .card }
-                    SmallNote(text: "Whichever you pick, a rep re-measures before anything is built.").padding(.top, 6).padding(.horizontal, 2)
                     if store.capabilities.methodCount == 0 {
                         InfoPanel(icon: .alert, text: "Measuring needs an iPhone with a camera. Your request is saved. Open WinChoice on your iPhone to measure.", tint: Theme.warnTint, iconColor: Theme.warn)
                     }
@@ -95,8 +94,12 @@ private struct MethodCard: View {
                     Text(title).wc(19, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
                     Text(detail).wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
                     if available {
-                        WCTag(text: accuracy.text, kind: accuracy.best ? .ok : .blue, radius: 5)
+                        let tag = store.methodTag(method)
+                        WCTag(text: tag.text, kind: tag.best ? .ok : .blue, radius: 5)
                             .padding(.top, 4)
+                        if tag.text != accuracy.text {
+                            Text("Accuracy: \(accuracy.text)").wc(13, relativeTo: .footnote).foregroundStyle(Theme.ink3)
+                        }
                     } else {
                         Text(unavailable).wc(13, .medium, relativeTo: .footnote).foregroundStyle(Theme.warn).padding(.top, 4)
                     }
@@ -111,7 +114,7 @@ private struct MethodCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title). \(detail) \(available ? accuracy.text : unavailable)")
+        .accessibilityLabel("\(title). \(detail) \(available ? store.methodTag(method).text + ". Accuracy: " + accuracy.text : unavailable)")
         .accessibilityValue(selected && available ? "Selected" : "")
         .accessibilityAddTraits(.isButton)
     }

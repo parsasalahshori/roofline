@@ -74,7 +74,7 @@ struct QuoteScreen: View {
         }
         .wcFooter {
             WCPrimaryButton(title: "Book my confirmation visit", isEnabled: quote?.tiers.isEmpty == false) { store.bookFromQuote() }
-            FinePrint(text: store.brand.quoteFootnote)
+            FinePrint(text: store.brand.quoteFootnote + " A rep re-measures every window before anything is built.")
         }
         .wcScreenChrome()
         .task {

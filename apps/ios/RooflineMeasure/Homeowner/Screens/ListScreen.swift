@@ -22,15 +22,25 @@ struct ListScreen: View {
                     WCHeadline(text: rows.isEmpty ? "No windows yet" : "\(rows.count) window\(rows.count == 1 ? "" : "s") measured", subtitle: "Sizes are the inside of each frame, in inches.")
                     if !rows.isEmpty {
                         SummaryCard(rows: rows).padding(.top, 14)
-                        GroupCard {
-                            ForEach(Array(rows.enumerated()), id: \.element.id) { i, row in
-                                WindowListRow(row: row) { actionRow = row }
-                                if i < rows.count - 1 { RowDivider(inset: 56) }
+                        // One group per room, each with its own "add a window" row
+                        ForEach(WindowGroups.group(rows, roomOrder: store.rooms)) { group in
+                            GroupHeader(text: group.header).padding(.top, 20)
+                            GroupCard {
+                                ForEach(group.rows) { row in
+                                    WindowListRow(row: row, highlighted: row.id == store.justSavedId, action: { actionRow = row },
+                                                  onAgain: { Task { await store.measureAgain(row) } })
+                                    RowDivider(inset: 56)
+                                }
+                                AddRow(title: "+ Add a window in \(group.room)") { store.measure(room: group.room) }
                             }
                         }
-                        .padding(.top, 12)
+                        GroupCard {
+                            AddRow(title: "+ Add another room") { store.path = store.stack(to: .rooms); store.noteStep(.rooms) }
+                        }
+                        .padding(.top, 14)
                     }
                     if store.sendingCount > 0 || !store.failedItems.isEmpty { sendingNote.padding(.top, 12) }
+                    if store.heldCount > 0 { heldNote.padding(.top, 12) }
                     // With large text the panel would fill the pinned area: it scrolls with the list instead
                     if typeSize.isAccessibilitySize { missPanel.padding(.top, 12) }
                     WCScrollFooter()
@@ -51,7 +61,7 @@ struct ListScreen: View {
             Button("Remove this window", role: .destructive) { Task { await store.removeWindow(row.id) } }
             Button("Cancel", role: .cancel) {}
         } message: { row in
-            Text(row.needsCheck ? (row.reasons.first ?? "This size needs a check.") : "Measure it again, or take it off your list.")
+            Text((row.flagged ? row.lookReason + ". " : "") + "Your current size is kept until you save the new one.")
         }
         .sheet(isPresented: $askTotal) { TotalSheet(initial: total) { n in Task { await store.setTotalWindows(n) } } }
         .onAppear {
@@ -86,6 +96,17 @@ struct ListScreen: View {
         .wcPanel()
     }
 
+    /// Windows wait on the phone for their style: said plainly, only while there are any.
+    private var heldNote: some View {
+        HStack(alignment: .top, spacing: 10) {
+            IconView(icon: .lock, size: 18).foregroundStyle(Theme.ink3)
+            Text("Saved on this phone. They're sent to WinChoice when you pick styles.").wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
     private var sendingNote: some View {
         let failed = store.failedItems
         return VStack(alignment: .leading, spacing: 8) {
@@ -115,7 +136,7 @@ struct ListScreen: View {
     }
 }
 
-/// "6 sure, 1 to check" with a bar of one segment per window.
+/// "6 ready · 1 needs a look" with a bar of one segment per window. "Ready for a quote" only when none needs a look.
 private struct SummaryCard: View {
     let rows: [WindowRow]
 
@@ -123,10 +144,10 @@ private struct SummaryCard: View {
         let checks = rows.filter { $0.flagged }.count
         VStack(spacing: 8) {
             AdaptiveStack(spacing: 4) {
-                Text(checks == 0 ? "\(rows.count) sure" : "\(rows.count - checks) sure, \(checks) to check")
+                Text(Self.line(count: rows.count, checks: checks))
                     .wc(16, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Text("Ready for a quote").wc(16, .semibold, relativeTo: .headline).foregroundStyle(Theme.ok)
+                if checks == 0 { Text("Ready for a quote").wc(16, .semibold, relativeTo: .headline).foregroundStyle(Theme.ok) }
             }
             HStack(spacing: 4) {
                 ForEach(rows) { r in
@@ -137,18 +158,61 @@ private struct SummaryCard: View {
         .padding(12)
         .wcCard(radius: 16)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(checks == 0 ? "\(rows.count) windows, all sure. Ready for a quote." : "\(rows.count - checks) windows sure, \(checks) to check. Ready for a quote.")
+        .accessibilityLabel(checks == 0 ? "\(rows.count) windows ready. Ready for a quote." : "\(rows.count - checks) windows ready, \(checks) need a look.")
+    }
+
+    static func line(count: Int, checks: Int) -> String {
+        checks == 0 ? "\(count) ready" : "\(count - checks) ready · \(checks) need\(checks == 1 ? "s" : "") a look"
+    }
+}
+
+/// "+ Add a window in Kitchen": a blue row at the end of a group.
+private struct AddRow: View {
+    let title: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: { Haptics.tap(); action() }) {
+            Text(title).wc(17, .semibold, relativeTo: .body).foregroundStyle(Theme.blue)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14)
+                .frame(minHeight: 50)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title.replacingOccurrences(of: "+ ", with: ""))
     }
 }
 
 struct WindowListRow: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     let row: WindowRow
+    var highlighted = false
     let action: () -> Void
+    var onAgain: () -> Void = {}
 
     private var large: Bool { typeSize.isAccessibilitySize }
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            rowButton
+            // A window to look at again says why, and has its button right there
+            if row.flagged, case .failed = row.send {} else if row.flagged {
+                Button(action: onAgain) {
+                    Text("Measure again").wc(16, .semibold, relativeTo: .body).foregroundStyle(Theme.blue)
+                        .padding(.horizontal, 14).frame(minHeight: Theme.minTap)
+                        .background(Theme.blueTint, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 56).padding(.bottom, 8)
+                .accessibilityLabel("Measure window \(row.number) again")
+            }
+        }
+        .background(highlighted ? Theme.okTint : Color.clear)
+        .animation(.easeOut(duration: 0.4), value: highlighted)
+    }
+
+    private var rowButton: some View {
         Button(action: action) {
             HStack(alignment: large ? .top : .center, spacing: 12) {
                 Text("\(row.number)")
@@ -173,7 +237,7 @@ struct WindowListRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Window \(row.number), \(row.title). \(row.spokenSize). \(row.flagged ? "Needs a check. " : "")\(statusWords)")
+        .accessibilityLabel("Window \(row.number), \(row.title). \(row.spokenSize). \(row.flagged ? "Needs a look. \(row.lookReason). " : "")\(statusWords)")
         .accessibilityHint("Opens options for this window")
         .accessibilityAddTraits(.isButton)
     }
@@ -210,10 +274,8 @@ struct WindowListRow: View {
             .accessibilityHint(m)
         default:
             if row.flagged {
-                HStack(spacing: 6) {
-                    WCTag(text: "Check", kind: .warn, icon: .alert)
-                    Text("measure again").wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink3)
-                }
+                Text("Needs a look · \(row.lookReason)").wc(14, .medium, relativeTo: .subheadline).foregroundStyle(Theme.warn)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text(row.methodLine).wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink3).lineLimit(large ? nil : 2)
             }

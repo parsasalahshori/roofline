@@ -51,6 +51,12 @@ struct RoomsScreen: View {
                             .onSubmit { addTyped() }
                             .accessibilityLabel("Type a room name")
                     }
+                    if store.lastMethod != nil, let room = target ?? store.rooms.first {
+                        Button("Change how I measure") { store.changeMethod(room: room) }
+                            .wc(16, .medium, relativeTo: .body).foregroundStyle(Theme.blue)
+                            .frame(maxWidth: .infinity, minHeight: Theme.minTap)
+                            .padding(.top, 12)
+                    }
                     WCScrollFooter()
                 }
                 .padding(.horizontal, Theme.gutter)
@@ -64,6 +70,10 @@ struct RoomsScreen: View {
                     // A room typed but not added yet is added first
                     if let name = store.addRoom(typed) { typed = ""; store.measure(room: name) } else { store.measure(room: target) }
                 }
+            }
+            // After the first window the way on to the list is one plain button
+            if store.windowCount > 0 {
+                WCSecondaryButton(title: "I'm done measuring") { store.showList() }
             }
         }
         .wcScreenChrome()

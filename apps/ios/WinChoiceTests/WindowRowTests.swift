@@ -52,10 +52,33 @@ final class WindowRowTests: XCTestCase {
 
     func testARoomLineCountsTheWindowsAndTheOnesToCheck() {
         var rows = [row(scale: arScale, uncertainty: 0.1, needsCheck: false)]
-        XCTAssertEqual(RoomSummary.line(for: "Kitchen", in: rows), "1 window measured")
+        XCTAssertEqual(RoomSummary.line(for: "Kitchen", in: rows), "1 window measured · tap to add another")
         rows.append(row(scale: arScale, uncertainty: 0.5, needsCheck: true))
-        XCTAssertEqual(RoomSummary.line(for: "kitchen", in: rows), "2 windows · 1 to check")
+        XCTAssertEqual(RoomSummary.line(for: "kitchen", in: rows), "2 windows · 1 to check · tap to add another")
         XCTAssertEqual(RoomSummary.line(for: "Hall", in: rows), "Not started")
+    }
+
+    func testWindowsAreGroupedByRoomInTheOrderOfTheRoomsList() {
+        func r(_ id: String, _ room: String) -> WindowRow {
+            WindowRow(id: id, number: 1, room: room, name: nil, style: nil, widthIn: 30, heightIn: 40, uncertaintyIn: 0.1, needsCheck: false, reasons: [], scale: arScale, send: .sent)
+        }
+        let rows = [r("a", "Kitchen"), r("b", "Hall"), r("c", "kitchen"), r("d", "Garage")]
+        let groups = WindowGroups.group(rows, roomOrder: ["Living room", "Kitchen", "Hall"])
+        XCTAssertEqual(groups.map { $0.room }, ["Kitchen", "Hall", "Garage"], "listed rooms first in their order, then any other")
+        XCTAssertEqual(groups[0].rows.map { $0.id }, ["a", "c"], "the room name is matched without regard to case")
+        XCTAssertEqual(groups[0].header, "Kitchen · 2 windows")
+        XCTAssertEqual(groups[1].header, "Hall · 1 window")
+        XCTAssertEqual(WindowGroups.group([r("x", "")], roomOrder: []).first?.room, "Other")
+    }
+
+    func testAWindowToLookAtSaysWhyInPlainWords() {
+        var w = row(scale: arScale, uncertainty: 0.2, needsCheck: true)
+        w.reasons = ["a corner is 3.2° off square"]
+        XCTAssertEqual(w.lookReason, "The four corners didn't line up")
+        w.reasons = ["The corners were hard to see."]
+        XCTAssertEqual(w.lookReason, "The corners were hard to see")
+        w.reasons = []
+        XCTAssertEqual(row(scale: cardScale, uncertainty: 3, needsCheck: true).lookReason, "The card photo wasn't clear enough")
     }
 
     // MARK: Words

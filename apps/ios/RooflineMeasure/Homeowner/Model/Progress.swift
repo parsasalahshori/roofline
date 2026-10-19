@@ -28,11 +28,13 @@ struct HomeownerProgress: Codable, Equatable {
     var estimateRoofNote: HomeownerRoofNote?
     var floors: Double?
     var perimeterFt: Int?
+    /// How the homeowner measured the last window: the method screen is shown for the first window only, then this one is used.
+    var lastMethod: String?
 
     init() {}
 
     private enum Keys: String, CodingKey {
-        case step, rooms, tierKey, tierTotal, tierWindowCount, colors, bestTime, requestStatus, hasContact, hasBooking, windowCount, callbackReason, estimateWindows, estimateRoof, estimateRoofNote, floors, perimeterFt
+        case step, rooms, tierKey, tierTotal, tierWindowCount, colors, bestTime, requestStatus, hasContact, hasBooking, windowCount, callbackReason, estimateWindows, estimateRoof, estimateRoofNote, floors, perimeterFt, lastMethod
     }
 
     // Lenient: a progress record written by an older build still reads
@@ -55,6 +57,7 @@ struct HomeownerProgress: Codable, Equatable {
         estimateRoofNote = try? c.decodeIfPresent(HomeownerRoofNote.self, forKey: .estimateRoofNote)
         floors = try? c.decodeIfPresent(Double.self, forKey: .floors)
         perimeterFt = try? c.decodeIfPresent(Int.self, forKey: .perimeterFt)
+        lastMethod = try? c.decodeIfPresent(String.self, forKey: .lastMethod)
     }
 }
 
