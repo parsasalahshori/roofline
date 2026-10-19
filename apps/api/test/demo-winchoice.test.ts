@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, inject, test } from 'vitest';
 import { DEMO_COMPANY_SLUG, DEMO_LOGIN, seedDemoWorld } from '../src/scripts/demo-world.ts';
 import {
   DEMO_WINCHOICE_BRAND_COLOR,
+  DEMO_WINCHOICE_LOGO_URL,
   DEMO_WINCHOICE_LOGIN,
   DEMO_WINCHOICE_NAME,
   DEMO_WINCHOICE_QUOTE_SLUG,
@@ -50,7 +51,7 @@ describe('the WinChoice demo company', () => {
       timezone: 'America/Chicago',
       address_city: 'Little Rock',
       address_state: 'AR',
-      logo_url: null,
+      logo_url: DEMO_WINCHOICE_LOGO_URL,
       quote_enabled: true,
       quote_slug: DEMO_WINCHOICE_QUOTE_SLUG,
       quote_products: ['windows', 'roof'],
@@ -91,7 +92,7 @@ describe('the WinChoice demo company', () => {
     // The instant quote page is on, windows first.
     const page = await request(t.app).get(`/api/public/quote/${DEMO_WINCHOICE_QUOTE_SLUG}`);
     expect(page.status).toBe(200);
-    expect(page.body).toMatchObject({ companyName: DEMO_WINCHOICE_NAME, accentColor: DEMO_WINCHOICE_BRAND_COLOR, logoUrl: null });
+    expect(page.body).toMatchObject({ companyName: DEMO_WINCHOICE_NAME, accentColor: DEMO_WINCHOICE_BRAND_COLOR, logoUrl: DEMO_WINCHOICE_LOGO_URL });
     expect(page.body.products).toEqual(['windows', 'roof']);
 
     // Measure windows: 305 Ridgeway Dr has seven windows (four measured on site, three counted from the walls) and a draft order.
