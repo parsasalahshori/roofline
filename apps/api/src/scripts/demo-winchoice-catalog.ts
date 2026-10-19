@@ -39,7 +39,7 @@ export const WINCHOICE_CATALOG: WindowCatalog = {
     rating: { value: 4.9, count: 2400, plus: true, source: 'homeowners' },
     sinceYear: 2012,
     license: null,
-    badges: ['A+ BBB', 'Made in USA', 'Lifetime warranty'],
+    badges: ['A+ BBB', 'Made in USA', 'Lifetime warranty available'],
   },
   offer: { title: 'October special on windows and roofing. Ask about it at your visit.', termsUrl: 'https://winchoice.com/promotional-terms-conditions/' },
   financing: { text: 'Financing available through our partner Skeps. Optional, with no obligation.', url: 'https://winchoice.com/financing/' },

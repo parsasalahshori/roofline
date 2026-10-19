@@ -42,7 +42,7 @@ describe('GET and PUT /api/window-catalog', () => {
     expect(put.body.catalog).toEqual(copy());
     const get = await owner.get('/api/window-catalog');
     expect(get.body.catalog.tiers.map((x: { label: string }) => x.label)).toEqual(['Replenish', 'Refine', 'Renew']);
-    expect(get.body.catalog.trust.badges).toEqual(['A+ BBB', 'Made in USA', 'Lifetime warranty']);
+    expect(get.body.catalog.trust.badges).toEqual(['A+ BBB', 'Made in USA', 'Lifetime warranty available']);
     const audits = await db.query(`select 1 from audit_log where company_id = $1 and action = 'window_catalog.updated'`, [t.seed.a.companyId]);
     expect(audits.rowCount).toBe(1);
   });

@@ -28,7 +28,7 @@ export const WINDOW_CATALOG_LIMITS = {
   included: 8,
   includedItem: 60,
   badges: 3,
-  badgeItem: 24,
+  badgeItem: 32,
   offerTitle: 80,
   financingText: 120,
   url: 300,

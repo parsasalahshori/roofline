@@ -994,7 +994,7 @@ describe("the company's own catalog", () => {
   test('/company carries the tier names and notes, what every window includes, the trust facts, offer and financing', async () => {
     await useWinChoice();
     const res = await get('/company');
-    expect(res.body.trust).toEqual({ rating: { value: 4.9, count: 2400, plus: true, source: 'homeowners' }, sinceYear: 2012, license: null, badges: ['A+ BBB', 'Made in USA', 'Lifetime warranty'] });
+    expect(res.body.trust).toEqual({ rating: { value: 4.9, count: 2400, plus: true, source: 'homeowners' }, sinceYear: 2012, license: null, badges: ['A+ BBB', 'Made in USA', 'Lifetime warranty available'] });
     expect(res.body.catalog.tiers).toEqual([
       { key: 'good', label: 'Replenish', note: '1-year warranty' },
       { key: 'better', label: 'Refine', note: 'Lifetime warranty' },
