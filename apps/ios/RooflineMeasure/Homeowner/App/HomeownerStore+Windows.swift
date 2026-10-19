@@ -57,7 +57,9 @@ extension HomeownerStore {
 
     /// The method to start on: the most accurate one this phone has.
     var defaultMethod: MeasureMethod {
-        if capabilities.corners { return .corners }
+        // With a depth sensor, the corners are the most exact. Without one, AR is only about 3/8 inch (1% scale error, no depth check
+        // on the wall), the bank card is a real ruler in the photo (about 1/4 to 1/2 inch, checked like the server): recommend that.
+        if capabilities.corners && capabilities.depthSensor { return .corners }
         if capabilities.camera { return .card }
         return .corners
     }
@@ -77,9 +79,9 @@ extension HomeownerStore {
     func methodTag(_ m: MeasureMethod) -> (text: String, best: Bool) {
         switch m {
         case .corners:
-            return capabilities.depthSensor ? ("Most exact (recommended)", true) : methodAccuracy(m)
+            return capabilities.depthSensor ? ("Most exact (recommended)", true) : ("\(methodAccuracy(m).text) · good for a quote", false)
         case .roomScan: return ("Fastest · whole room", false)
-        case .card: return ("Works on any iPhone", false)
+        case .card: return capabilities.depthSensor ? ("Works on any iPhone", false) : ("Recommended for your iPhone", true)
         }
     }
 
@@ -249,11 +251,20 @@ extension HomeownerStore {
         if outboxItems.contains(where: { $0.id == windowId && $0.state != .done }) {
             let changed = try? await outbox.updateWindow(id: windowId, release: true) { $0.style = key }
             if changed == true {
+                progress.pendingStyles[windowId] = nil
                 Task { await outbox.syncAll() }
                 return
             }
+            // Its send is under way and the answer has not come: the choice is kept here and applied on a later sync
+            progress.pendingStyles[windowId] = key
+            saveProgress()
+            return
         }
-        guard let existing = view?.windows.first(where: { $0.id == windowId }), existing.input.style != key else { return }
+        guard let existing = view?.windows.first(where: { $0.id == windowId }), existing.input.style != key else {
+            progress.pendingStyles[windowId] = nil
+            return
+        }
+        progress.pendingStyles[windowId] = nil
         var copy = existing.input
         copy.id = WindowIds.new()
         copy.style = key
@@ -267,6 +278,12 @@ extension HomeownerStore {
         } catch {
             notice = Notice(text: "This phone couldn't change that window's style. Please try again.")
         }
+    }
+
+    /// Style choices kept while a window's send was uncertain: tried again now (after a sync).
+    func applyPendingStyles() async {
+        for (id, key) in progress.pendingStyles { await setStyle(key, for: id) }
+        saveProgress()
     }
 
     /// "Use this style for all 7".

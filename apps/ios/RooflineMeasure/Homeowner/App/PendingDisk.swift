@@ -44,6 +44,21 @@ struct PendingDisk {
                              focal35mm: r.focal35mm, method: MeasureMethod(rawValue: r.method) ?? .corners)
     }
 
+    /// Pending windows of requests that no longer exist join this one (the saved request went stale and a new one was made).
+    func adopt(into requestId: String) {
+        guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else { return }
+        for url in files where url.pathExtension == "json" {
+            let old = url.deletingPathExtension().lastPathComponent
+            guard old != requestId, let data = try? Data(contentsOf: url), var r = try? JSONDecoder().decode(Record.self, from: data) else { continue }
+            // One pending window per request: do not overwrite one already waiting here
+            guard !FileManager.default.fileExists(atPath: recordURL(requestId).path) else { continue }
+            r.requestId = requestId
+            if let out = try? JSONEncoder().encode(r) { try? out.write(to: recordURL(requestId), options: .atomic) }
+            if FileManager.default.fileExists(atPath: photoURL(old).path) { try? FileManager.default.moveItem(at: photoURL(old), to: photoURL(requestId)) }
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
     func clear(requestId: String) {
         try? FileManager.default.removeItem(at: recordURL(requestId))
         try? FileManager.default.removeItem(at: photoURL(requestId))

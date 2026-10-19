@@ -198,7 +198,13 @@ final class HomeownerStore {
     }
 
     var windowRows: [WindowRow] {
-        WindowRows.merge(server: view?.windows ?? [], outbox: outboxItems.filter { $0.measurementId == requestId })
+        WindowRows.merge(server: view?.windows ?? [], outbox: outboxItems.filter { $0.measurementId == requestId }).map { row in
+            // A style chosen while the window's send was uncertain shows at once
+            guard let key = progress.pendingStyles[row.id] else { return row }
+            var r = row
+            r.style = key
+            return r
+        }
     }
 
     var windowCount: Int { windowRows.count }
@@ -290,7 +296,7 @@ final class HomeownerStore {
         async let loadedCompany: Void = loadCompany()
         if let saved = vault.load() {
             if saved.isExpired(now: now()) {
-                forgetRequest(message: "Your saved request ran out after 60 days. Start a new one when you're ready.")
+                forgetRequest(message: "Your saved request ran out after 60 days. Start a new one when you're ready.", keepWindows: true)
             } else {
                 setSession(saved)
                 services(from: saved)
@@ -335,7 +341,7 @@ final class HomeownerStore {
             accept(v)
         } catch let e as HomeownerAPIError {
             if e.isUnauthorized || e.isGone {
-                forgetRequest(message: e.isTokenExpired ? "Your saved request ran out after 60 days. Start a new one when you're ready." : "We couldn't find your saved request. Start a new one when you're ready.")
+                forgetRequest(message: e.isTokenExpired ? "Your saved request ran out after 60 days. Start a new one when you're ready." : "We couldn't find your saved request. Start a new one when you're ready.", keepWindows: true)
             } else if e.isNetwork {
                 offline = true
             } else {
@@ -458,14 +464,18 @@ final class HomeownerStore {
         path = []
     }
 
-    /// Drops the saved request (the Keychain item, the progress, the windows still on this phone).
-    func forgetRequest(message: String?) {
+    /// Drops the saved request (the Keychain item, the progress). The homeowner starting over drops the windows on this phone
+    /// too; a request the server no longer knows (`keepWindows`) never takes measured windows with it: they stay, and move to the
+    /// new request when the address is confirmed again.
+    func forgetRequest(message: String?, keepWindows: Bool = false) {
         let id = session?.requestId
+        let oldAddress = session?.address
+        let kept = keepWindows && id.map { id in outboxItems.contains { $0.measurementId == id } || pendingDisk.load(requestId: id) != nil } == true
         vault.clear()
         if let id = id {
-            pendingDisk.clear(requestId: id)
+            if !kept { pendingDisk.clear(requestId: id) }
             progressStore.clear(requestId: id)
-            Task { try? await outbox.removeAll(measurementId: id) }
+            if !kept { Task { try? await outbox.removeAll(measurementId: id) } }
         }
         setSession(nil)
         view = nil
@@ -486,11 +496,15 @@ final class HomeownerStore {
         pickedSlot = nil
         styleIndex = 0
         selectedTier = "better"
-        addressText = ""
+        addressText = kept ? (oldAddress ?? "") : ""
         addressPlace = nil
         path = []
         root = .welcome
-        if let m = message { notice = Notice(text: m, kind: .info) }
+        if kept {
+            notice = Notice(text: "Your measured windows are still on this phone. Confirm your address again and they go with your new request.", kind: .info)
+        } else if let m = message {
+            notice = Notice(text: m, kind: .info)
+        }
     }
 
     // MARK: Outbox
@@ -511,6 +525,7 @@ final class HomeownerStore {
     func syncWindows() async {
         await outbox.syncAll()
         if unsentCount == 0 || session != nil { await refresh() }
+        if !progress.pendingStyles.isEmpty { await applyPendingStyles() }
         scheduleRetryIfNeeded()
     }
 

@@ -264,6 +264,33 @@ public actor Outbox {
         try persist()
     }
 
+    /// The request these windows were made for is gone (the server no longer knows it): they move to a new request, to be sent
+    /// again from the photo up. A finished item whose photo is no longer on the phone cannot be sent again and stays where it is.
+    /// Returns how many moved.
+    @discardableResult
+    public func reassign(from old: String, to new: String, address: String?) throws -> Int {
+        var moved = 0
+        for k in items.indices where items[k].measurementId == old {
+            var i = items[k]
+            let hasPhoto = jpegURL(for: i).map { FileManager.default.fileExists(atPath: $0.path) } ?? false
+            if i.jpegFileName != nil && !hasPhoto { continue }
+            i.measurementId = new
+            i.address = address ?? i.address
+            i.uploadId = nil
+            i.window.uploadId = nil
+            i.state = .waiting
+            i.attempts = 0
+            i.lastError = nil
+            i.lastErrorStage = nil
+            i.windowSendUncertain = false
+            i.retryNotBefore = nil
+            items[k] = i
+            moved += 1
+        }
+        if moved > 0 { try persist() }
+        return moved
+    }
+
     /// Drops every item of one request, with its photo (the homeowner started over, or the saved request expired).
     public func removeAll(measurementId: String) throws {
         for i in items where i.measurementId == measurementId { if let u = jpegURL(for: i) { try? FileManager.default.removeItem(at: u) } }

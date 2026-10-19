@@ -568,4 +568,69 @@ final class HomeownerStoreTests: XCTestCase {
         XCTAssertNil(h.store.lastMethod)
         XCTAssertEqual(h.store.path.last, .method(room: "Hall"), "\"Change how I measure\" brings the method screen back")
     }
+
+    // MARK: Nothing measured is ever lost
+
+    func testAStaleRequestKeepsTheMeasuredWindowsAndTheNewRequestTakesThem() async throws {
+        let h = StoreHarness()
+        try await h.open()
+        await h.capture(room: "Kitchen")
+        let window = try XCTUnwrap(h.store.windowRows.first)
+        let oldId = try XCTUnwrap(h.store.requestId)
+        let address = h.store.address
+        // The server stops knowing the request
+        var bad = try XCTUnwrap(h.store.session)
+        bad.token = "a-token-the-server-never-gave"
+        h.store.setSession(bad)
+        await h.store.refresh()
+        XCTAssertNil(h.store.session)
+        let kept = await h.store.outbox.items
+        XCTAssertEqual(kept.map { $0.id }, [window.id], "the measured window stays on the phone")
+        XCTAssertEqual(h.store.addressText, address, "the address is ready to confirm again")
+        XCTAssertTrue(h.store.notice?.text.contains("still on this phone") == true)
+        // Confirming the address makes a new request and the window moves to it
+        h.store.addressText = address
+        await h.store.confirmAddress()
+        let newId = try XCTUnwrap(h.store.requestId)
+        XCTAssertNotEqual(newId, oldId)
+        await h.settle()
+        XCTAssertEqual(h.store.windowRows.map { $0.id }, [window.id])
+        XCTAssertEqual(h.store.windowRows.first?.send, .needsStyle, "held for its style, photo sent again to the new request")
+        await h.store.setStyle("double-hung", for: window.id)
+        await h.settle()
+        await h.store.refresh()
+        XCTAssertEqual(h.store.view?.windows.map { $0.id }, [window.id], "and the new request has it")
+    }
+
+    func testAStyleChosenWhileTheSendIsUncertainIsKeptAndAppliedLater() async throws {
+        let h = StoreHarness()
+        try await h.open()
+        await h.capture(room: "Kitchen")
+        let id = try XCTUnwrap(h.store.windowRows.first?.id)
+        h.api.offline = true
+        await h.store.setStyle("double-hung", for: id)   // released, goes out, the answer never comes
+        await h.settle()
+        var items = await h.store.outbox.items
+        XCTAssertEqual(items.first?.windowSendUncertain, true)
+        await h.store.setStyle("slider-2", for: id)       // cannot be changed now: kept
+        XCTAssertEqual(h.store.progress.pendingStyles[id], "slider-2")
+        XCTAssertEqual(h.store.windowRows.first?.style, "slider-2", "the choice shows at once")
+        h.api.offline = false
+        for _ in 0..<3 {
+            await h.store.syncWindows()
+            await h.settle()
+        }
+        items = await h.store.outbox.items
+        XCTAssertTrue(h.store.progress.pendingStyles.isEmpty, "applied on a later sync")
+        XCTAssertEqual(h.store.windowRows.first?.style, "slider-2")
+        XCTAssertEqual(h.store.view?.windows.count, 1)
+        XCTAssertEqual(h.store.view?.windows.first?.input.style, "slider-2")
+    }
+
+    func testAPhoneWithoutADepthSensorIsOfferedTheBankCardFirst() async throws {
+        let h = StoreHarness(capabilities: MeasureCapabilities(deviceName: "iPhone 13", corners: true, depthSensor: false, roomScan: false, camera: true))
+        XCTAssertEqual(h.store.defaultMethod, .card)
+        XCTAssertEqual(h.store.methodTag(.card).text, "Recommended for your iPhone")
+        XCTAssertEqual(h.store.methodTag(.corners).text, "About 3/8 inch · good for a quote")
+    }
 }

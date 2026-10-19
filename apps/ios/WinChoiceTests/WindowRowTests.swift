@@ -137,7 +137,7 @@ final class WindowRowTests: XCTestCase {
 
     func testTheMeasureMethodTheHomeownerStartsOnMatchesThePhone() {
         XCTAssertEqual(StoreHarness(capabilities: .depthSensorPhone("iPhone 15 Pro")).store.defaultMethod, .corners)
-        XCTAssertEqual(StoreHarness(capabilities: MeasureCapabilities(deviceName: "iPhone 11", corners: true, depthSensor: false, roomScan: false, camera: true)).store.defaultMethod, .corners)
+        XCTAssertEqual(StoreHarness(capabilities: MeasureCapabilities(deviceName: "iPhone 11", corners: true, depthSensor: false, roomScan: false, camera: true)).store.defaultMethod, .card, "without a depth sensor the bank card is recommended")
         XCTAssertEqual(StoreHarness(capabilities: MeasureCapabilities(deviceName: "iPhone SE", corners: false, depthSensor: false, roomScan: false, camera: true)).store.defaultMethod, .card)
         let basic = StoreHarness(capabilities: MeasureCapabilities(deviceName: "iPhone 11", corners: true, depthSensor: false, roomScan: false, camera: true)).store
         XCTAssertFalse(basic.isAvailable(.roomScan), "room scan needs the depth sensor")

@@ -41,6 +41,19 @@ extension HomeownerStore {
         await loadCompany()
     }
 
+    /// Windows kept on the phone from a request the server forgot join the new one (sent again from the photo up).
+    func adoptKeptWindows(into s: HomeownerSession) async {
+        let items = await outbox.items
+        let olds = Set(items.map { $0.measurementId }).subtracting([s.requestId])
+        var moved = 0
+        for old in olds { moved += (try? await outbox.reassign(from: old, to: s.requestId, address: s.address)) ?? 0 }
+        pendingDisk.adopt(into: s.requestId)
+        guard moved > 0 || pendingDisk.load(requestId: s.requestId) != nil else { return }
+        for item in await outbox.items where item.measurementId == s.requestId { _ = addRoom(item.window.room ?? "") }
+        outboxItems = await outbox.items
+        Task { await outbox.syncAll() }
+    }
+
     // MARK: Address (02)
 
     /// A request with windows or details cannot change address (they belong to it).
@@ -86,6 +99,7 @@ extension HomeownerStore {
             callbackReason = created.callbackReason
             requestStatus = created.status
             progress = HomeownerProgress()
+            await adoptKeptWindows(into: saved)
             status = nil
             slots = nil
             contactDraft = HomeownerContact()
