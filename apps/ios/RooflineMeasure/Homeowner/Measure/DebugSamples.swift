@@ -153,7 +153,8 @@ struct DebugHudSample: View {
                 }
             }
             .ignoresSafeArea()
-            ArHud(model: model(scene), onClose: { }, onPlace: { }, onUndo: { }, onDone: { })
+            ArHud(model: model(scene), onClose: { }, onPlace: { }, onUndo: { }, onDone: { }, onHow: { })
+            if mode == "hud-howto" { ArHowTo { } }
         }
     }
 
@@ -178,18 +179,20 @@ struct DebugHudSample: View {
         var m = ArHudModel()
         m.title = "WINDOW \(session.number) OF 7"
         m.deviceChip = "Depth sensor on"
-        m.readout = LiveReadout(widthIn: SampleScene.widthIn, heightIn: SampleScene.heightIn, placed: done ? 4 : 3)
+        let placed = done ? 4 : 2
+        m.readout = LiveReadout(widthIn: SampleScene.widthIn, heightIn: done ? SampleScene.heightIn : nil, placed: placed)
         m.phase = done ? .complete : .ready
         m.canPlace = !done
         m.canUndo = true
-        m.hint = done ? "Looks right? Tap the check to keep it." : "Blinds up · tap the frame, not the glass"
+        m.hint = done ? ArHowTo.checkHint : ArHudModel.cornerHint(placed: placed)
         if let s = scene {
             let c = s.frameCorners
-            m.dots = done ? c : Array(c.prefix(3))
+            m.dots = done ? c : Array(c.prefix(2))
             m.edges = [
                 ArHudModel.Edge(id: 0, point: CGPoint(x: (c[0].x + c[1].x) / 2, y: c[0].y - 22), inches: SampleScene.widthIn, live: false),
                 ArHudModel.Edge(id: 1, point: CGPoint(x: min(c[1].x + 46, s.size.width - 40), y: (c[1].y + c[2].y) / 2), inches: SampleScene.heightIn, live: false),
             ]
+            if !done { m.edges.removeLast() }
             if done { m.edges.append(ArHudModel.Edge(id: 2, point: CGPoint(x: (c[2].x + c[3].x) / 2, y: c[2].y + 22), inches: SampleScene.widthIn, live: false)) }
         }
         m.loupe = scene.flatMap { loupe(of: $0) }
@@ -245,7 +248,7 @@ extension HomeownerStore {
     func openDebug(_ name: String) {
         let room = path.compactMap { r -> String? in if case .method(let room) = r { return room } else { return nil } }.last ?? "Bedroom 1"
         switch name {
-        case "hud", "hud-done":
+        case "hud", "hud-done", "hud-howto":
             method = .corners
             measureSession = MeasureSession(method: .corners, room: room, number: 4)
         case "label":

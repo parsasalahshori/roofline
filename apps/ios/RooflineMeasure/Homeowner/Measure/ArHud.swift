@@ -20,6 +20,8 @@ struct ArHudModel: Equatable {
         var live: Bool
     }
 
+    /// Every corner of the frame is inside the photo taken at the 4th tap (else "Use this size" waits).
+    var cornersInPhoto = true
     var title = "WINDOW 1"
     /// "Depth sensor on", or nil for a phone without one.
     var deviceChip: String?
@@ -34,9 +36,21 @@ struct ArHudModel: Equatable {
     /// The corner the button will place next (1 to 4).
     var nextCorner: Int { min(readout.placed + 1, 4) }
 
+    /// The hint for the next corner, by name, one at a time (the corners are asked for top-left first, clockwise).
+    static func cornerHint(placed: Int) -> String {
+        switch placed {
+        case 0: return "Aim the ring at the top-left corner of the frame"
+        case 1: return "Now the top-right corner"
+        case 2: return "Now the bottom-right corner"
+        default: return "Last one: the bottom-left corner"
+        }
+    }
+
+    var canUse: Bool { phase == .complete && cornersInPhoto }
+
     var buttonLabel: String {
         switch phase {
-        case .complete: return "All four corners set"
+        case .complete: return "Use this size"
         case .sampling: return "Hold still"
         case .holdStill: return "Hold the phone still"
         case .lost: return "Start again"
@@ -53,14 +67,16 @@ struct ArHud: View {
     let onPlace: () -> Void
     let onUndo: () -> Void
     let onDone: () -> Void
+    var onHow: () -> Void = {}
 
     var body: some View {
         ZStack {
             // Corners and side plates sit on the picture
             GeometryReader { _ in
-                ForEach(Array(model.dots.enumerated()), id: \.offset) { _, p in
+                ForEach(Array(model.dots.enumerated()), id: \.offset) { i, p in
                     Circle().fill(Theme.tape).frame(width: 22, height: 22)
                         .overlay(Circle().strokeBorder(Theme.navy, lineWidth: 2))
+                        .overlay(Text("\(i + 1)").wcMono(12, .bold, relativeTo: .caption2).foregroundStyle(Theme.tapeInk))
                         .position(p)
                 }
                 ForEach(model.edges) { e in
@@ -72,14 +88,25 @@ struct ArHud: View {
                 }
             }
             .ignoresSafeArea()
-            if model.phase != .complete { Reticle(phase: model.phase) }
+            if model.phase != .complete {
+                Reticle(phase: model.phase)
+                // Which corner is next: a ghost numbered dot beside the ring, once the first is down
+                if model.readout.placed >= 1 && model.readout.placed < 4 {
+                    Circle().strokeBorder(Theme.tape, style: StrokeStyle(lineWidth: 2, dash: [3, 3])).frame(width: 26, height: 26)
+                        .overlay(Text("\(model.nextCorner)").wcMono(13, .bold, relativeTo: .caption).foregroundStyle(Theme.tape))
+                        .background(Circle().fill(Color.black.opacity(0.35)))
+                        .offset(x: 38, y: -38)
+                        .accessibilityHidden(true)
+                }
+            }
             VStack(spacing: 0) {
                 topBar
                 HStack(alignment: .top) {
                     Magnifier(image: model.loupe)
                     Spacer()
+                    HowButton(action: onHow)
                 }
-                .padding(.leading, 16).padding(.top, 14)
+                .padding(.horizontal, 16).padding(.top, 14)
                 Spacer()
                 hint
                 controls
@@ -169,40 +196,62 @@ struct ArHud: View {
             HStack {
                 roundButton(icon: .undo, enabled: model.canUndo, label: "Undo the last corner", action: onUndo)
                 Spacer()
-                mainButton
+                if model.phase == .complete { usePill } else { mainButton }
                 Spacer()
-                roundButton(icon: .check, enabled: model.phase == .complete, label: "Use these four corners", highlighted: model.phase == .complete, action: onDone)
+                // Balances the undo button, so the red button stays in the middle
+                Color.clear.frame(width: 56, height: 56).accessibilityHidden(true)
             }
             .padding(.horizontal, 28)
-            Text(model.buttonLabel).wc(17, .semibold, relativeTo: .headline).foregroundStyle(.white).padding(.bottom, 6)
+            if model.phase != .complete {
+                Text(model.buttonLabel).wc(17, .semibold, relativeTo: .headline).foregroundStyle(.white).padding(.bottom, 6)
+            }
         }
         .padding(.top, 14)
         .padding(.bottom, 8)
         .background(LinearGradient(colors: [Color.black.opacity(0), Color.black.opacity(0.78)], startPoint: .top, endPoint: .bottom).ignoresSafeArea(edges: .bottom))
     }
 
+    /// After four corners: the one red button says what it does.
+    private var usePill: some View {
+        Button(action: onDone) {
+            HStack(spacing: 8) {
+                IconView(icon: .check, size: 20, weight: 2.2)
+                Text("Use this size").wc(18, .bold, relativeTo: .headline)
+            }
+            .foregroundStyle(Theme.onRed)
+            .padding(.horizontal, 24)
+            .frame(minHeight: 56)
+            .background(Capsule().fill(Theme.red))
+            .overlay(Capsule().strokeBorder(Color.white, lineWidth: 3))
+            .opacity(model.canUse ? 1 : 0.45)
+        }
+        .disabled(!model.canUse)
+        .accessibilityLabel("Use this size")
+        .accessibilityHint(model.canUse ? "Keeps these four corners and goes on to name the window" : "Step back so the whole window is on screen")
+    }
+
     private var mainButton: some View {
-        Button(action: model.phase == .complete ? onDone : onPlace) {
+        Button(action: onPlace) {
             ZStack {
                 Circle().strokeBorder(Color.white, lineWidth: 5).frame(width: 82, height: 82)
                 if case .sampling(let p) = model.phase {
                     Circle().trim(from: 0, to: max(0.03, p)).stroke(Theme.tape, style: StrokeStyle(lineWidth: 5, lineCap: .round)).rotationEffect(.degrees(-90)).frame(width: 82, height: 82)
                 }
-                Circle().fill(model.canPlace || model.phase == .complete ? Theme.red : Color.gray.opacity(0.5)).frame(width: 64, height: 64)
-                IconView(icon: model.phase == .complete ? .check : .plus, size: 30, weight: 2.2).foregroundStyle(.white)
+                Circle().fill(model.canPlace ? Theme.red : Color.gray.opacity(0.5)).frame(width: 64, height: 64)
+                IconView(icon: .plus, size: 30, weight: 2.2).foregroundStyle(.white)
             }
         }
-        .disabled(!(model.canPlace || model.phase == .complete))
-        .accessibilityLabel(model.phase == .complete ? "Use these four corners" : "Place corner \(model.nextCorner)")
+        .disabled(!model.canPlace)
+        .accessibilityLabel("Place corner \(model.nextCorner)")
         .accessibilityHint("Aim the circle at the corner of the window frame first")
     }
 
-    private func roundButton(icon: WCIcon, enabled: Bool, label: String, highlighted: Bool = false, action: @escaping () -> Void) -> some View {
+    private func roundButton(icon: WCIcon, enabled: Bool, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             IconView(icon: icon, size: 24, weight: 2)
                 .foregroundStyle(enabled ? .white : Color.white.opacity(0.35))
                 .frame(width: 56, height: 56)
-                .background(Circle().fill(highlighted ? Theme.red : Color(white: 0.12, opacity: 0.8)))
+                .background(Circle().fill(Color(white: 0.12, opacity: 0.8)))
         }
         .disabled(!enabled)
         .accessibilityLabel(label)

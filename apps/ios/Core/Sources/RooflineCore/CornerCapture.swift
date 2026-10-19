@@ -68,6 +68,7 @@ public struct CornerCapture: Sendable {
         trackingLostCount += 1
         guard !corners.isEmpty else { return false }
         corners = []
+        wallPlane = nil
         restartsForTracking += 1
         return true
     }
@@ -90,12 +91,25 @@ public struct CornerCapture: Sendable {
         return .placed(index: corners.count - 1)
     }
 
+    /// Takes the last corner back. With none left, the wall is let go too: the next first corner locks the plane under
+    /// the reticle again (the homeowner may be about to measure a different window).
     public mutating func undo() {
         if !corners.isEmpty { corners.removeLast() }
+        if corners.isEmpty { wallPlane = nil }
     }
 
     public mutating func startOver() {
         corners = []
+        wallPlane = nil
+    }
+
+    /// The AR session was reset (an interruption ended, or it failed and was re-run): the world is new, so the corners, the
+    /// wall and the tracking history all go. The losses already counted stay: the server is told.
+    public mutating func resetForNewSession() {
+        corners = []
+        wallPlane = nil
+        tracking = false
+        hadTracking = false
     }
 
     /// The sides drawn so far, inches: between placed corners in order, and from the last one to the aim point.

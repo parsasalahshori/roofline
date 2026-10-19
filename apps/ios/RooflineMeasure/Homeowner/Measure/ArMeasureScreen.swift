@@ -10,6 +10,7 @@ struct ArMeasureScreen: View {
     /// Made when the camera is allowed, not with the view (an AR view is not cheap to build, and the simulator has none).
     @State private var controller: ArMeasureController?
     @State private var access: CameraAccess.State?
+    @State private var showHowTo = !HowToSeen.isSeen("ar")
 
     var body: some View {
         Group {
@@ -35,7 +36,9 @@ struct ArMeasureScreen: View {
         } else if let controller = controller {
             ZStack {
                 ArSceneContainer(view: controller.sceneView).ignoresSafeArea()
-                ArHud(model: model(controller), onClose: { store.measureSession = nil }, onPlace: { controller.placeCorner() }, onUndo: { controller.undo() }, onDone: { finish(controller) })
+                ArHud(model: model(controller), onClose: { store.measureSession = nil }, onPlace: { controller.placeCorner() }, onUndo: { controller.undo() },
+                      onDone: { finish(controller) }, onHow: { showHowTo = true })
+                if showHowTo { ArHowTo { HowToSeen.markSeen("ar"); showHowTo = false } }
             }
             .onChange(of: controller.message) { _, m in
                 // A refused tap or a restart: say it once, in the hint's place
@@ -72,7 +75,7 @@ struct ArMeasureScreen: View {
             m.hint = "Move the phone slowly to find the wall."
         case .aiming:
             m.phase = .ready
-            m.hint = controller.capture.points.isEmpty ? "Blinds up · tap the frame, not the glass" : "Aim at corner \(min(controller.capture.points.count + 1, 4))"
+            m.hint = ArHudModel.cornerHint(placed: controller.capture.points.count)
         case .sampling:
             m.phase = .sampling(controller.sampleProgress)
             m.hint = "Hold still on the corner."
@@ -87,7 +90,8 @@ struct ArMeasureScreen: View {
             m.hint = controller.message ?? "Tracking was lost. Start again from the first corner."
         case .complete:
             m.phase = .complete
-            m.hint = controller.cornersInPhoto ? "Looks right? Tap the check to keep it." : "The frame isn't all in the picture. Step back, or start over."
+            m.cornersInPhoto = controller.cornersInPhoto
+            m.hint = controller.cornersInPhoto ? ArHowTo.checkHint : ArHowTo.stepBackHint
         }
         if let message = controller.message, controller.phase != .lost { m.hint = message }
         return m
@@ -99,5 +103,17 @@ struct ArMeasureScreen: View {
         controller.pause()
         let scale = WindowPhotoScale.ar(ArScale(pointsM: cap.finished.pointsM, trackingLostCount: controller.capture.trackingLostCount, device: controller.device, cornerSpreadM: cap.finished.cornerSpreadM))
         store.capture(scale: scale, corners: cap.shot.corners, jpeg: cap.shot.jpeg, widthPx: cap.shot.widthPx, heightPx: cap.shot.heightPx, in: session)
+    }
+}
+
+/// The AR screen's how-to (shown the first time, and from "How?"): the same three steps as the coaching, in the order of the taps.
+struct ArHowTo: View {
+    static let steps = ["Stand 3 to 5 feet back, blinds up.", "Aim the ring at each corner of the frame, starting top-left.", "Tap the red button on each corner."]
+    static let checkHint = "Check the yellow lines follow the frame, then tap Use this size."
+    static let stepBackHint = "Step back so the whole window is on screen."
+    let onDone: () -> Void
+
+    var body: some View {
+        HowToOverlay(title: "Measure a window", steps: Self.steps, art: .corners, onDone: onDone)
     }
 }

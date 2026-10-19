@@ -13,6 +13,9 @@ struct ArSnapshot {
     var aim: Vec3?
     var finished: FinishedCorners?
     var preview: ArSize?
+    /// The photo taken when the 4th corner was placed (the corners are projected into it), and a counter that goes up with each.
+    var shot: FrameCapture.Shot?
+    var shotSeq = 0
     var cornersInPhoto = false
     var cornerDots: [CGPoint] = []
     var edgeLabels: [ArMeasureController.EdgeLabel] = []
@@ -48,7 +51,13 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
     private var sampling = false
     private var samplingDeadline = Date.distantPast
     private var stillness = StillnessDetector()
+    /// The plane anchor the wall plane follows (refined by ARKit): the one under the reticle until the first corner is tapped,
+    /// that one afterwards.
     private var wallAnchorId: UUID?
+    /// When tracking turned limited (nil while normal): a short limited spell keeps the corners, a long one restarts the window.
+    private var limitedSince: Date?
+    private var sessionReruns = 0
+    private var normalFrames = 0
     private var frameCount = 0
     private var viewport = CGSize.zero
     private var lastViewer = Vec3.zero
@@ -56,6 +65,11 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
 
     /// Seconds a corner may take to sample before it is placed from what it has (or refused with < minSamples samples).
     static let samplingTimeout: TimeInterval = 4
+    /// Seconds of limited tracking (without an interruption) the corners survive.
+    static let limitedGrace: TimeInterval = 8
+    static let pausedMessage = "The camera was paused. Aim at the first corner again."
+    /// Re-runs the session with a reset (set by the controller, which owns the configuration).
+    var rerun: ((ARSession) -> Void)?
 
     init(lidar: Bool, device: ArDevice, deliver: @escaping (ArSnapshot, [UINotificationFeedbackGenerator.FeedbackType]) -> Void) {
         self.lidar = lidar
@@ -88,8 +102,8 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
         queue.async {
             self.cancelSampling()
             self.snap.capture.undo()
-            self.snap.finished = nil
-            self.snap.preview = nil
+            if self.snap.capture.corners.isEmpty { self.wallAnchorId = nil }
+            self.clearFinished()
             self.setMessage(nil)
             self.publish()
         }
@@ -99,8 +113,8 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
         queue.async {
             self.cancelSampling()
             self.snap.capture.startOver()
-            self.snap.finished = nil
-            self.snap.preview = nil
+            self.wallAnchorId = nil
+            self.clearFinished()
             self.setMessage(nil)
             self.publish()
         }
@@ -119,15 +133,60 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
         snap.capture.setWallPlane(plane, viewer: lastViewer)
     }
 
+    func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
+        // The wall's anchor went (ARKit merged or dropped the plane). Before any corner, the next frame picks the plane under the
+        // reticle again. With corners placed the plane stays as it was (the world has not moved) and is just no longer refined.
+        guard let id = wallAnchorId, anchors.contains(where: { $0.identifier == id }) else { return }
+        wallAnchorId = nil
+        if snap.capture.corners.isEmpty && !sampling { snap.capture.setWallPlane(nil, viewer: lastViewer) }
+    }
+
     func sessionWasInterrupted(_ session: ARSession) {
         trackingLost(reason: "The camera was interrupted.")
         publish()
     }
 
+    func sessionInterruptionEnded(_ session: ARSession) {
+        // The world is not the same after an interruption: start tracking afresh, with no corners and no wall
+        restartSession(session)
+    }
+
     func session(_ session: ARSession, didFailWithError error: Error) {
-        setMessage("AR stopped: \(error.localizedDescription)")
-        snap.phase = .lost
+        let code = (error as? ARError)?.code
+        // A refused camera, or a phone that cannot do this, will not get better by trying again
+        if code == .cameraUnauthorized || code == .unsupportedConfiguration || sessionReruns >= 3 {
+            setMessage("AR stopped: \(error.localizedDescription)")
+            snap.phase = .lost
+            publish()
+            return
+        }
+        sessionReruns += 1
+        restartSession(session)
+    }
+
+    private func restartSession(_ session: ARSession) {
+        cancelSampling()
+        snap.capture.resetForNewSession()
+        wallAnchorId = nil
+        limitedSince = nil
+        normalFrames = 0
+        clearFinished()
+        snap.aim = nil
+        snap.canPlace = false
+        snap.phase = .searching
+        snap.overlay = ArOverlayState()
+        setMessage(Self.pausedMessage)
+        haptics.append(.warning)
+        rerun?(session)
         publish()
+    }
+
+    private func clearFinished() {
+        snap.finished = nil
+        snap.preview = nil
+        snap.shot = nil
+        snap.shotSeq += 1
+        snap.cornersInPhoto = false
     }
 
     // MARK: Every frame
@@ -151,11 +210,24 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
         case .limited(let reason):
             switch reason {
             case .initializing, .relocalizing:
-                if snap.capture.hadTracking { lost = true } else { warmingUp = true }
+                // Before tracking was ever normal it is the camera warming up; after, a brief spell the corners survive
+                if snap.capture.hadTracking { limitedReason = "Move the phone slowly side to side." } else { warmingUp = true }
             case .excessiveMotion: limitedReason = "Move the phone more slowly."
-            case .insufficientFeatures: limitedReason = "Aim at the frame's edge or something with more detail."
-            @unknown default: limitedReason = "Tracking is limited."
+            case .insufficientFeatures: limitedReason = "It's too dark or too plain here. Turn on a light."
+            @unknown default: limitedReason = "Move the phone slowly side to side."
             }
+            if !warmingUp {
+                if limitedSince == nil { limitedSince = Date() }
+                // A long limited spell (the world may have shifted): the corners cannot be trusted
+                if let since = limitedSince, Date().timeIntervalSince(since) > Self.limitedGrace, !snap.capture.corners.isEmpty { lost = true }
+            }
+        }
+        if case .normal = cam.trackingState {
+            limitedSince = nil
+            normalFrames += 1
+            if normalFrames > 90 { sessionReruns = 0 }
+        } else {
+            normalFrames = 0
         }
         if lost {
             trackingLost(reason: nil)
@@ -181,8 +253,9 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
         // its inverse takes the view's centre back into the native image.
         let imageCenter = CGPoint(x: 0.5, y: 0.5).applying(frame.displayTransform(for: .portrait, viewportSize: viewport).inverted())
 
-        // The wall: lock the first vertical plane ARKit reports at the reticle, then use it as an infinite plane
-        if snap.capture.wallPlane == nil {
+        // The wall: the vertical plane under the reticle, used as an infinite plane. It follows the reticle until the FIRST corner
+        // is tapped (sampling starts then) and is frozen from that tap on; undo to zero or start over lets it go again.
+        if snap.capture.corners.isEmpty && !sampling {
             let q = frame.raycastQuery(from: imageCenter, allowing: .existingPlaneInfinite, alignment: .vertical)
             if let hit = session.raycast(q).first, let anchor = hit.anchor as? ARPlaneAnchor, anchor.alignment == .vertical,
                let plane = Plane(anchor: anchor) {
@@ -210,7 +283,7 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
                 samplingDepth.append(contentsOf: depth.isEmpty ? (rawHit.map { [$0] } ?? []) : depth)
             }
             snap.sampleProgress = sampler.progress
-            if sampler.isFull || Date() >= samplingDeadline { finishSampling(viewer: viewer) }
+            if sampler.isFull || Date() >= samplingDeadline { finishSampling(viewer: viewer, frame: frame) }
         }
 
         // Phase. No corner can be placed before the wall plane is locked: until then the phase stays "searching".
@@ -218,9 +291,6 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
         let next: ArMeasureController.Phase
         if snap.capture.isComplete {
             next = .complete
-            if frameCount % 3 == 0 {
-                snap.cornersInPhoto = FrameCapture.projectCorners(snap.finished?.pointsM ?? snap.capture.points, camera: cam).allInView
-            }
         } else if sampling {
             next = still && limitedReason == nil ? .sampling : .holdStill
         } else if let r = limitedReason {
@@ -247,8 +317,8 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
         // Once per loss (while lost, every frame lands here): count it, and restart a window in progress
         if snap.capture.tracking, snap.capture.setTracking(normal: false) {
             cancelSampling()
-            snap.finished = nil
-            snap.preview = nil
+            wallAnchorId = nil
+            clearFinished()
             setMessage((reason ?? "Tracking was lost.") + " Start this window again from its first corner.")
             haptics.append(.warning)
         }
@@ -258,7 +328,7 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
         updateOverlay()
     }
 
-    private func finishSampling(viewer: Vec3) {
+    private func finishSampling(viewer: Vec3, frame: ARFrame) {
         sampling = false
         snap.sampleProgress = 0
         defer { samplingDepth = [] }
@@ -270,9 +340,10 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
         switch snap.capture.place(estimate, depthPoints: samplingDepth) {
         case .placed:
             haptics.append(.success)
-            if snap.capture.isComplete { finish(viewer: viewer) }
+            if snap.capture.isComplete { finish(viewer: viewer, frame: frame) }
         case .offWall(let d):
-            setMessage("That point is \(Int((d * 100).rounded())) cm off the wall (through the glass?). Aim at the frame itself.")
+            _ = d
+            setMessage("That spot isn't on the window frame. Aim at the frame's corner.")
             haptics.append(.error)
         case .tooCloseToCorner:
             setMessage("That corner is already placed. Aim at the next one.")
@@ -282,10 +353,16 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
         }
     }
 
-    private func finish(viewer: Vec3) {
+    /// The 4th corner is down: the size, and the photo of this very frame with the four corners in it (not at Done: the photo
+    /// must be the one the corners were placed in, and Done may come after the phone has moved).
+    private func finish(viewer: Vec3, frame: ARFrame) {
         snap.finished = snap.capture.finished(viewer: viewer)
         if let f = snap.finished {
             snap.preview = previewArSize(f.pointsM, device: device, cornerSpreadM: f.cornerSpreadM)
+            let shot = FrameCapture.shot(frame: frame, points: f.pointsM)
+            snap.shot = shot
+            snap.shotSeq += 1
+            snap.cornersInPhoto = shot?.allInView ?? false
         } else {
             setMessage("These four corners do not make a window (in a line, or on a floor). Start over.")
         }

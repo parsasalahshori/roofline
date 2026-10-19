@@ -35,7 +35,7 @@ struct CoachingScreen: View {
     }
 }
 
-private struct Tip: View {
+struct Tip: View {
     enum Art { case standBack, inside, light, corners }
     let art: Art
     let title: String
@@ -59,7 +59,7 @@ private struct Tip: View {
 }
 
 /// The four little pictures, drawn from the mockup's own SVG shapes (86 x 66 units).
-private struct TipArt: View {
+struct TipArt: View {
     let art: Tip.Art
 
     var body: some View {

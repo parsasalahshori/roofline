@@ -96,6 +96,34 @@ let captureChecks: [Check] = [
         c.startOver()
         ctx.equal(c.corners.count, 0)
     },
+    Check("CornerCapture: start over, undo to zero, a tracking restart and a new session all let go of the wall plane") { ctx in
+        let wall = Plane(point: Vec3(0, 0, -2), normal: Vec3(0, 0, -1))
+        let viewer = Vec3(0, 1.4, 0)
+        func fresh() -> CornerCapture {
+            var c = CornerCapture()
+            c.setTracking(normal: true)
+            c.setWallPlane(wall, viewer: viewer)
+            _ = c.place(CornerEstimate(point: Vec3(0, 1, -2), spreadM: 0, used: 15, rejected: 0))
+            return c
+        }
+        var a = fresh()
+        ctx.expect(a.wallPlane != nil, "locked")
+        a.startOver()
+        ctx.expect(a.wallPlane == nil, "start over")
+        var b = fresh()
+        b.undo()
+        ctx.expect(b.wallPlane == nil, "undo to zero")
+        var c = fresh()
+        _ = c.place(CornerEstimate(point: Vec3(1, 1, -2), spreadM: 0, used: 15, rejected: 0))
+        c.undo()
+        ctx.expect(c.wallPlane != nil, "one corner left: the wall stays")
+        var d = fresh()
+        d.setTracking(normal: false)
+        ctx.expect(d.wallPlane == nil, "tracking restart")
+        var e = fresh()
+        e.resetForNewSession()
+        ctx.expect(e.wallPlane == nil && e.corners.isEmpty && !e.hadTracking && !e.tracking, "new session")
+    },
     Check("CornerCapture: a tracking loss between corners restarts the window and is counted") { ctx in
         var c = CornerCapture()
         ctx.equal(c.setTracking(normal: false), false, "not tracking yet: nothing to restart")

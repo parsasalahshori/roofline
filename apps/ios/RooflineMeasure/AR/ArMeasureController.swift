@@ -47,6 +47,9 @@ final class ArMeasureController {
     private(set) var preview: ArSize?
     /// Every corner is inside the photo that Save would keep.
     private(set) var cornersInPhoto = false
+    /// The photo taken when the 4th corner was placed.
+    private(set) var shot: FrameCapture.Shot?
+    @ObservationIgnored private var lastShotSeq = 0
     private(set) var loupe: UIImage?
     /// Has ARKit locked the wall plane the window is on?
     private(set) var wallLocked = false
@@ -96,6 +99,10 @@ final class ArMeasureController {
         }
         // The session keeps a weak reference to its delegate: the controller holds the engine. Its callbacks run on the
         // engine's serial background queue, never on main.
+        let hasLidar = lidar
+        engine.rerun = { session in
+            session.run(ArMeasureController.makeConfiguration(lidar: hasLidar), options: [.resetTracking, .removeExistingAnchors])
+        }
         sceneView.session.delegateQueue = engine.queue
         sceneView.session.delegate = engine
         sceneView.onLayout = { [weak engine] size in engine?.setViewport(size) }
@@ -104,7 +111,7 @@ final class ArMeasureController {
 
     // MARK: Session
 
-    func start() {
+    nonisolated static func makeConfiguration(lidar: Bool) -> ARWorldTrackingConfiguration {
         let config = ARWorldTrackingConfiguration()
         config.worldAlignment = .gravity // world +Y is up: corners are ordered by it
         config.planeDetection = [.vertical]
@@ -113,8 +120,12 @@ final class ArMeasureController {
             config.frameSemantics.insert(.sceneDepth)
             if ARWorldTrackingConfiguration.supportsFrameSemantics(.smoothedSceneDepth) { config.frameSemantics.insert(.smoothedSceneDepth) }
         }
+        return config
+    }
+
+    func start() {
         engine.setViewport(sceneView.bounds.size)
-        sceneView.session.run(config, options: [.resetTracking, .removeExistingAnchors])
+        sceneView.session.run(Self.makeConfiguration(lidar: lidar), options: [.resetTracking, .removeExistingAnchors])
         phase = .searching
     }
 
@@ -147,6 +158,10 @@ final class ArMeasureController {
         if finished != s.finished { finished = s.finished }
         if preview != s.preview { preview = s.preview }
         if cornersInPhoto != s.cornersInPhoto { cornersInPhoto = s.cornersInPhoto }
+        if s.shotSeq != lastShotSeq {
+            lastShotSeq = s.shotSeq
+            shot = s.shot
+        }
         if let l = s.loupe, l !== loupe { loupe = l }
         func moved(_ a: [CGPoint], _ b: [CGPoint]) -> Bool {
             a.count != b.count || zip(a, b).contains { abs($0.x - $1.x) > 0.5 || abs($0.y - $1.y) > 0.5 }
@@ -184,12 +199,12 @@ final class ArMeasureController {
 
     /// The window to save: the current frame's photo, the corners drawn into it. Nil (with a message) when it cannot.
     func makeWindow(context: MeasureContext, label: String) -> (window: PhotoWindowInput, shot: FrameCapture.Shot, pass: TestPass)? {
-        guard let f = finished, let frame = sceneView.session.currentFrame else {
+        guard let f = finished else {
             message = "Place all four corners first."
             return nil
         }
-        guard let shot = FrameCapture.shot(frame: frame, points: f.pointsM) else {
-            message = "The photo could not be made. Try Save again."
+        guard let shot = shot else {
+            message = "The photo could not be made. Start this window again."
             return nil
         }
         let window = PhotoWindowInput(
@@ -225,12 +240,12 @@ final class ArMeasureController {
     }
 
     func makeCapture() -> Capture? {
-        guard let f = finished, let frame = sceneView.session.currentFrame else {
+        guard let f = finished else {
             message = "Place all four corners first."
             return nil
         }
-        guard let shot = FrameCapture.shot(frame: frame, points: f.pointsM) else {
-            message = "The photo could not be made. Try again."
+        guard let shot = shot else {
+            message = "The photo could not be made. Start this window again."
             return nil
         }
         return Capture(finished: f, shot: shot, preview: preview, trackingLostCount: capture.trackingLostCount,
