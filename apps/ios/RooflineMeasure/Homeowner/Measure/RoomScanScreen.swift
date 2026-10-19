@@ -107,9 +107,12 @@ struct RoomScanScreen: View {
     private func failed(_ message: String) -> some View {
         VStack(spacing: 18) {
             Text("The scan didn't finish").wcHeading(24, .heavy, relativeTo: .title).foregroundStyle(.white).multilineTextAlignment(.center)
+                .accessibilityAddTraits(.isHeader)
             Text(message).wc(16, relativeTo: .body).foregroundStyle(Color.white.opacity(0.85)).multilineTextAlignment(.center)
             WCPrimaryButton(title: "Try again") { store.measureSession = MeasureSession(method: .roomScan, room: session.room, number: session.number) }
-            WCSecondaryButton(title: "Close") { store.measureSession = nil }
+            WCSecondaryButton(title: "Measure one window at a time instead") { corners() }
+            Button("Close") { store.measureSession = nil }
+                .wc(17, .semibold, relativeTo: .body).foregroundStyle(Color.white.opacity(0.85)).frame(minHeight: Theme.minTap)
         }
         .padding(Theme.gutter)
     }

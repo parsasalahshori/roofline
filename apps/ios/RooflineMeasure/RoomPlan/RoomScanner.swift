@@ -60,7 +60,13 @@ final class RoomScanner {
 
     @ObservationIgnored let captureView: RoomCaptureView
     @ObservationIgnored private let delegate = RoomCaptureDelegate()
-    @ObservationIgnored private var keyframes: [Keyframe] = []
+    @ObservationIgnored private var store = KeyframeStore<Keyframe>(capacity: RoomScanner.maxKeyframes)
+    private var keyframes: [Keyframe] { store.payloads }
+    /// The phone's pose at the last timer tick, to tell how steadily it is held (the photo's score).
+    @ObservationIgnored private var lastSample: (pose: Mat4, time: TimeInterval)?
+    @ObservationIgnored private var watchdog: Timer?
+    @ObservationIgnored private var untrackedSince: Date?
+    @ObservationIgnored private var observers: [NSObjectProtocol] = []
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var lastKey: Mat4?
     @ObservationIgnored private let encodeQueue = DispatchQueue(label: "roomscan.keyframes", qos: .utility)
@@ -69,6 +75,9 @@ final class RoomScanner {
     let startedAt = Date()
 
     static let maxKeyframes = 60
+    /// "Building your room…" for longer than this is a failed scan.
+    static let processingLimit: TimeInterval = 30
+    static let failedText = "The scan didn't finish. Try again, a little more slowly, with every window in view."
 
     init() {
         captureView = RoomCaptureView(frame: .zero)
@@ -84,6 +93,28 @@ final class RoomScanner {
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.maybeKeyframe() }
         }
+        // The phone going to the background mid-scan ends it: say so, and offer another go
+        observers.append(NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.fail("The scan was interrupted.") }
+        })
+    }
+
+    /// The scan cannot go on (an error, an interruption, or processing that never ends): a failed state the screen can act on.
+    func fail(_ why: String? = nil) {
+        guard phase == .scanning || phase == .processing else { return }
+        timer?.invalidate()
+        timer = nil
+        watchdog?.invalidate()
+        watchdog = nil
+        captureView.captureSession.stop()
+        phase = .failed(why.map { $0 + " Try again, a little more slowly, with every window in view." } ?? Self.failedText)
+    }
+
+    private func clearObservers() {
+        observers.forEach { NotificationCenter.default.removeObserver($0) }
+        observers = []
+        watchdog?.invalidate()
+        watchdog = nil
     }
 
     func stop() {
@@ -92,15 +123,20 @@ final class RoomScanner {
         // At least one photo to go with what was found (a very short scan may have kept none yet)
         if keyframes.isEmpty, let frame = captureView.captureSession.arSession.currentFrame,
            let e = FrameCapture.uprightJPEG(frame.capturedImage, quality: 0.85) {
-            keyframes.append(Keyframe(jpeg: e.0, widthPx: e.1, heightPx: e.2, cameraTransform: Mat4(frame.camera.transform), intrinsics: CameraIntrinsics(frame.camera)))
+            store.add(Keyframe(jpeg: e.0, widthPx: e.1, heightPx: e.2, cameraTransform: Mat4(frame.camera.transform), intrinsics: CameraIntrinsics(frame.camera)), score: 1)
         }
         phase = .processing
         captureView.captureSession.stop()
+        watchdog?.invalidate()
+        watchdog = Timer.scheduledTimer(withTimeInterval: Self.processingLimit, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.fail() }
+        }
     }
 
     func cancel() {
         timer?.invalidate()
         timer = nil
+        clearObservers()
         captureView.captureSession.stop()
     }
 
@@ -108,9 +144,24 @@ final class RoomScanner {
         // Checked (SDK): RoomCaptureSession has `public var arSession: ARSession`, the session the scan runs on.
         // ON DEVICE: that CapturedRoom surface transforms are in this session's world space (Apple's iOS 17 multi-room
         // API relies on it); a wrong frame would show as corners drawn off the window in the saved photo.
-        guard !encoding, keyframes.count < Self.maxKeyframes, let frame = captureView.captureSession.arSession.currentFrame,
-              case .normal = frame.camera.trackingState else { return }
+        guard phase == .scanning, let frame = captureView.captureSession.arSession.currentFrame else { return }
+        // Tracking gone for ten seconds: the scan is not going to work
+        if case .notAvailable = frame.camera.trackingState {
+            if untrackedSince == nil { untrackedSince = Date() }
+            if let since = untrackedSince, Date().timeIntervalSince(since) > 10 { fail("The camera lost track of the room.") }
+        } else {
+            untrackedSince = nil
+        }
         let t = Mat4(frame.camera.transform)
+        // How steadily the phone is held now (between ticks): a steady phone makes a sharper photo, which scores higher
+        var score = 1.0
+        if let prev = lastSample {
+            let dt = max(0.05, frame.timestamp - prev.time)
+            let turned = acos(max(-1, min(1, t.column(2).dot(prev.pose.column(2))))) * 180 / .pi
+            score = KeyframeStore<Keyframe>.score(metresPerSecond: t.translation.distance(to: prev.pose.translation) / dt, degreesPerSecond: turned / dt)
+        }
+        lastSample = (t, frame.timestamp)
+        guard !encoding, case .normal = frame.camera.trackingState else { return }
         if let last = lastKey {
             let moved = t.translation.distance(to: last.translation)
             let turned = acos(max(-1, min(1, t.column(2).dot(last.column(2))))) * 180 / .pi
@@ -128,7 +179,8 @@ final class RoomScanner {
                     guard let self = self else { return }
                     self.encoding = false
                     if let e = encoded {
-                        self.keyframes.append(Keyframe(jpeg: e.0, widthPx: e.1, heightPx: e.2, cameraTransform: t, intrinsics: k))
+                        // Full: the new photo replaces the lowest-scoring one when it is steadier (else it is not kept)
+                        self.store.add(Keyframe(jpeg: e.0, widthPx: e.1, heightPx: e.2, cameraTransform: t, intrinsics: k), score: score)
                     }
                 }
             }
@@ -136,6 +188,10 @@ final class RoomScanner {
     }
 
     fileprivate func presented(_ room: CapturedRoom?, error: Error?) {
+        // Already given up on (the watchdog or an interruption): a late answer does not bring the review back
+        guard phase == .processing else { return }
+        watchdog?.invalidate()
+        watchdog = nil
         guard let room = room, error == nil else {
             phase = .failed("The scan could not be finished: \(error?.localizedDescription ?? "no room was captured"). Try again, more slowly.")
             return
@@ -162,6 +218,7 @@ final class RoomScanner {
         found = list
         plan = Self.plan(of: room)
         scanSeconds = Int(Date().timeIntervalSince(startedAt).rounded())
+        clearObservers()
         phase = .review
     }
 
@@ -257,7 +314,11 @@ final class RoomCaptureDelegate: NSObject, RoomCaptureViewDelegate {
 
     /// Let RoomPlan process what was scanned (it then shows its model and calls didPresent).
     func captureView(shouldPresent roomDataForProcessing: CapturedRoomData, error: Error?) -> Bool {
-        true
+        if error != nil {
+            DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.owner?.fail("The scan stopped.") } }
+            return false
+        }
+        return true
     }
 
     func captureView(didPresent processedResult: CapturedRoom, error: Error?) {
