@@ -3,8 +3,9 @@ import { TIERS } from './proposals.ts';
 import type { Tier } from './proposals.ts';
 import { WINDOW_STYLES } from './window-order.ts';
 import type { WindowStyle } from './window-order.ts';
-import { DEFAULT_WINDOW_TIERS, WINDOW_SIZE_CLASSES } from './windows.ts';
-import type { WindowSizeClass, WindowTier } from './windows.ts';
+import { DEFAULT_WINDOW_TIERS, photoWindowGroups, WINDOW_SIZE_CLASSES } from './windows.ts';
+import type { WindowCounts, WindowMeasurementView, WindowQuote, WindowQuoteLine, WindowSizeClass, WindowTier } from './windows.ts';
+import type { FrameColor, WindowGrid } from './window-order.ts';
 
 /*
  * A company's window catalog: what a homeowner is offered and what it costs, in one record kept in the company's
@@ -231,6 +232,83 @@ export function catalogWindowCents(catalog: WindowCatalog, tile: StyleTile, tier
   if (t === undefined) return null;
   const adjust = catalog.styleAdjustCents[tile.id]?.[tier] ?? 0;
   return Math.max(0, t.priceCents[sizeClass] + adjust + (frosted ? catalog.adders.frostedCents : 0));
+}
+
+/** One measured window as the quote prices it: its size, and the style and glass the homeowner or staff chose. */
+export type PricedWindow = { sizeClass: WindowSizeClass; style?: WindowStyle; frosted?: boolean };
+
+/**
+ * The measured windows of a measurement as the quote counts them (the same ones windowCounts counts), each with its
+ * style and frosted glass: sized windows first, then each photographed window (several photos of one window are one;
+ * the style is the first photo's that has one, and any frosted photo makes it frosted).
+ */
+export function pricedWindowsOf(view: Pick<WindowMeasurementView, 'windows' | 'adjustments'> & Pick<Partial<WindowMeasurementView>, 'photoWindows'>): PricedWindow[] {
+  const excluded = new Set(view.adjustments.excludedWindowIds);
+  const out: PricedWindow[] = view.windows.filter((w) => !excluded.has(w.id)).map((w) => ({ sizeClass: w.sizeClass }));
+  for (const g of photoWindowGroups(view.photoWindows ?? [], excluded)) {
+    const style = g.photos.find((p) => p.style !== undefined)?.style;
+    out.push({ sizeClass: g.sizeClass, ...(style !== undefined && { style }), ...(g.photos.some((p) => p.frosted === true) && { frosted: true }) });
+  }
+  return out;
+}
+
+/**
+ * One quote per enabled tier from the company's catalog: each measured window at its own style's and glass's price
+ * (catalogWindowCents, the function the homeowner's page prices with), and the windows only estimated at the base
+ * style, clear glass. Windows of a style priced at the visit are not in the total; they are counted in `atVisitCount`.
+ * Lines are per size class; a line's unit price is its average when styles differ.
+ */
+export function priceCatalogWindows(catalog: WindowCatalog, measured: readonly PricedWindow[], estimated: Record<WindowSizeClass, number>): WindowQuote[] {
+  const base = baseTile(catalog.styleTiles);
+  const atVisit = measured.filter((w) => w.style !== undefined && tileOfStyle(catalog.styleTiles, w.style).atVisit).length;
+  return catalog.tiers
+    .filter((t) => t.enabled)
+    .map((t) => {
+      const lines: WindowQuoteLine[] = [];
+      for (const c of WINDOW_SIZE_CLASSES) {
+        let count = 0;
+        let amount = 0;
+        for (const w of measured) {
+          if (w.sizeClass !== c) continue;
+          const cents = catalogWindowCents(catalog, w.style === undefined ? base : tileOfStyle(catalog.styleTiles, w.style), t.tier, c, w.frosted === true);
+          if (cents === null) continue;
+          count += 1;
+          amount += cents;
+        }
+        const est = estimated[c] ?? 0;
+        if (est > 0) {
+          count += est;
+          amount += est * (catalogWindowCents(catalog, base, t.tier, c, false) ?? 0);
+        }
+        if (count > 0) lines.push({ sizeClass: c, count, unitCents: Math.round(amount / count), amountCents: amount });
+      }
+      return {
+        tier: t.tier,
+        name: t.name,
+        description: t.description,
+        lines,
+        windows: lines.reduce((n, l) => n + l.count, 0),
+        totalCents: lines.reduce((n, l) => n + l.amountCents, 0),
+        ...(atVisit > 0 && { atVisitCount: atVisit }),
+      };
+    });
+}
+
+/** The estimated windows of counts (only those not measured), per size class. */
+export const estimatedOf = (counts: WindowCounts): Record<WindowSizeClass, number> =>
+  Object.fromEntries(WINDOW_SIZE_CLASSES.map((c) => [c, counts[c].estimated])) as Record<WindowSizeClass, number>;
+
+/**
+ * What a factory-order line's options add per window: a coloured exterior (anything but white), a wood-look interior
+ * (woodgrain), a colonial grid. The Queen Anne adder has no matching grid type in the order (types: none, colonial,
+ * prairie, custom), so nothing applies it.
+ */
+export function lineOptionCents(adders: WindowAdders, line: { frameInterior: FrameColor; frameExterior: FrameColor; grid: WindowGrid }): number {
+  return (
+    (line.frameExterior !== 'white' ? adders.exteriorColorCents : 0) +
+    (line.frameInterior === 'woodgrain' ? adders.woodInteriorCents : 0) +
+    (line.grid.type === 'colonial' ? adders.gridColonialCents : 0)
+  );
 }
 
 /** The tiers as WindowTier list for priceWindows (staff): base prices with the label and note. */
