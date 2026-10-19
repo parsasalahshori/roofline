@@ -4,7 +4,7 @@ import { Router } from 'express';
 import busboy from 'busboy';
 import { z } from 'zod';
 import { appendWindowUpload, getLatestWindowMeasurementForProperty, getWindowCatalog, getWindowMeasurement, type StoredFacadePhoto, type StoredWindowUpload, updateWindowMeasurement, type WindowMeasurementChange, withTenant } from '@roofline/db';
-import { AR_DEVICES, cardProblem, type DoorRuler, HOMEOWNER_APP_SOURCE, type PhotoWindowInput, priceWindows, ROOMPLAN_CONFIDENCES, RULER_KINDS, RULER_MAX_IN, RULER_MIN_IN, SHEET_MAX_OFFSET_IN, SHEET_MAX_POINTS, SHEET_PAPER_IN, WINDOW_PHOTO_REFERENCES, WINDOW_SIZE_CLASSES, WINDOW_STYLES, type WindowAdjustments, type WindowQuote, windowCounts } from '@roofline/shared';
+import { AR_DEVICES, cardProblem, type DoorRuler, HOMEOWNER_APP_SOURCE, type PhotoWindowInput, priceCatalogWindows, pricedWindowsOf, estimatedOf, ROOMPLAN_CONFIDENCES, RULER_KINDS, RULER_MAX_IN, RULER_MIN_IN, SHEET_MAX_OFFSET_IN, SHEET_MAX_POINTS, SHEET_PAPER_IN, WINDOW_PHOTO_REFERENCES, WINDOW_SIZE_CLASSES, WINDOW_STYLES, type WindowAdjustments, type WindowQuote, windowCounts } from '@roofline/shared';
 import { arProblem, readImageInfo, roomPlanProblem, sheetProblem, sizePhotoWindow } from '../estimator/window-uploads.ts';
 import type { AppDeps } from '../app.ts';
 import { measureWindows } from '../estimator/measure-windows.ts';
@@ -541,8 +541,10 @@ export function windowMeasurementRoutes(deps: AppDeps): Router {
     const { ctx } = req;
     const row = await withTenant(pools, ctx, (tx) => getWindowMeasurement(tx, ctx, idParam(req.params.id)));
     if (row === null) throw new AppError(404, MESSAGES.notFound);
-    const tiers = can(ctx, 'view_money_totals') ? (await withTenant(pools, ctx, (tx) => getWindowCatalog(tx, ctx))).tiers : null;
-    const quotes: WindowQuote[] | null = tiers === null ? null : priceWindows(windowCounts(toWindowView(row, clock.now())), tiers);
+    const catalog = can(ctx, 'view_money_totals') ? await withTenant(pools, ctx, (tx) => getWindowCatalog(tx, ctx)) : null;
+    // The same pricing the homeowner's page uses: each window by its style and frosted glass
+    const view = toWindowView(row, clock.now());
+    const quotes: WindowQuote[] | null = catalog === null ? null : priceCatalogWindows(catalog, pricedWindowsOf(view), estimatedOf(windowCounts(view)));
     res.json({ quotes });
   });
 
