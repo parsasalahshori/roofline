@@ -24,6 +24,12 @@ enum AppEnvironment {
         return url
     }
 
+    /// The company slug: a tester's saved setting (Debug or TestFlight only), else the brand's.
+    static func slug(brand: Brand) -> String {
+        if BuildEnvironment.isTesterBuild, let saved = ServerSetting.savedSlug, !saved.isEmpty { return saved }
+        return brand.slug
+    }
+
     static func makeStore() -> HomeownerStore {
         let brand = Brand.current
         #if DEBUG
@@ -41,11 +47,12 @@ enum AppEnvironment {
         #endif
         // A build with no server address cannot work: point at an address that fails plainly ("couldn't reach WinChoice")
         let url = serverURL(brand: brand) ?? URL(string: "https://invalid.winchoice.example")!
-        return makeLive(url: url, brand: brand, features: .contract)
+        return makeLive(url: url, brand: brand, features: .contract, switchable: true)
     }
 
-    private static func makeLive(url: URL, brand: Brand, features: HomeownerFeatures) -> HomeownerStore {
-        let api = LiveHomeownerAPI(baseURL: url, slug: brand.slug, features: features)
+    private static func makeLive(url: URL, brand: Brand, features: HomeownerFeatures, switchable: Bool = false) -> HomeownerStore {
+        let live = LiveHomeownerAPI(baseURL: url, slug: slug(brand: brand), features: features)
+        let api: HomeownerAPI = switchable ? SwitchableAPI(live) : live
         return HomeownerStore(api: api, vault: KeychainSessionVault(), progressStore: DefaultsProgressStore(), outboxDirectory: outboxDirectory(),
                               brand: brand, capabilities: DeviceCaps.measureCapabilities)
     }

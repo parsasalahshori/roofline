@@ -2,7 +2,7 @@
   "name": "WinChoice",
   "appStoreName": "WinChoice",
   "wordmark": "WinChoice",
-  "slug": "summit-ridge",
+  "slug": "winchoice",
   "server": {
     "debug": "http://localhost:4500",
     "release": ""

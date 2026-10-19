@@ -153,10 +153,13 @@ enum StatusBar {
     }
 }
 
-/// The tester's hidden setting: where the server is (a TestFlight or Debug build only; takes effect after a restart).
+/// The tester's hidden setting: where the server is and which company to ask for (a TestFlight, Debug or server-less Release
+/// build only). Saving applies at once: no restart.
 struct ServerSettingSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(HomeownerStore.self) private var store
     @State private var text = UserDefaults.standard.string(forKey: ServerSetting.key) ?? ""
+    @State private var slug = UserDefaults.standard.string(forKey: ServerSetting.slugKey) ?? ""
     @State private var saved = false
 
     var body: some View {
@@ -170,9 +173,18 @@ struct ServerSettingSheet: View {
                 } header: {
                     Text("Server address")
                 } footer: {
-                    Text("For testers. Leave empty to use the built-in address. Close and reopen the app after changing it.")
+                    Text("For testers. Leave empty to use the built-in address.")
                 }
-                if saved { Text("Saved. Close and reopen the app.").foregroundStyle(.secondary) }
+                Section {
+                    TextField(store.brand.slug, text: $slug)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                } header: {
+                    Text("Company")
+                } footer: {
+                    Text("The company's quote name on that server. Leave empty for \(store.brand.slug).")
+                }
+                if saved { Text("Saved. Using it now.").foregroundStyle(.secondary) }
             }
             .navigationTitle("Server")
             .navigationBarTitleDisplayMode(.inline)
@@ -181,7 +193,12 @@ struct ServerSettingSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         ServerSetting.save(text)
+                        ServerSetting.saveSlug(slug)
                         saved = true
+                        Task {
+                            await store.applyServerSettings()
+                            dismiss()
+                        }
                     }
                 }
             }
@@ -192,6 +209,7 @@ struct ServerSettingSheet: View {
 
 enum ServerSetting {
     static let key = "winchoice.serverURL"
+    static let slugKey = "winchoice.companySlug"
 
     static func save(_ typed: String) {
         let trimmed = typed.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -202,5 +220,12 @@ enum ServerSetting {
         }
     }
 
+    static func saveSlug(_ typed: String) {
+        let clean = typed.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            .filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+        if clean.isEmpty { UserDefaults.standard.removeObject(forKey: slugKey) } else { UserDefaults.standard.set(clean, forKey: slugKey) }
+    }
+
     static var saved: String? { UserDefaults.standard.string(forKey: key) }
+    static var savedSlug: String? { UserDefaults.standard.string(forKey: slugKey) }
 }

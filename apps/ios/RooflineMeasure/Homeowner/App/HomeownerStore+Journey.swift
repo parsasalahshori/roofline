@@ -27,6 +27,20 @@ extension HomeownerStore {
         if !companyLoaded { Task { await loadCompany() } }
     }
 
+    // MARK: Tester server
+
+    /// The tester saved a new server or company: the live client switches at once. A request made for another company is dropped.
+    func applyServerSettings() async {
+        guard let live = api as? SwitchableAPI else { return }
+        let brand = self.brand
+        guard let url = AppEnvironment.serverURL(brand: brand) else { return }
+        let slug = AppEnvironment.slug(brand: brand)
+        live.swap(baseURL: url, slug: slug)
+        if let s = session, s.slug != slug { forgetRequest(message: "Switched to another company. Start a new request.") }
+        addressError = nil
+        await loadCompany()
+    }
+
     // MARK: Address (02)
 
     /// A request with windows or details cannot change address (they belong to it).
@@ -50,7 +64,7 @@ extension HomeownerStore {
         do {
             let created = try await api.createRequest(address: text, services: Array(selectedServices))
             let saved = HomeownerSession(
-                requestId: created.requestId, token: created.token, slug: brand.slug,
+                requestId: created.requestId, token: created.token, slug: AppEnvironment.slug(brand: brand),
                 address: created.home.address.isEmpty ? text : created.home.address,
                 services: created.services.isEmpty ? Array(selectedServices).sorted() : created.services, createdAt: now(), expiresAt: created.expiresAt
             )

@@ -100,7 +100,9 @@ enum BuildEnvironment {
         #if DEBUG
         return true
         #else
-        return Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"
+        // TestFlight, or an Xcode-installed Release build of a brand with no server in its file (the tester must be able to set one)
+        if Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" { return true }
+        return (Brand.current.server.release ?? "").isEmpty
         #endif
     }
 }

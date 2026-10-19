@@ -39,6 +39,8 @@
 	<string>WinChoice uses the camera to measure your windows.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>WinChoice uses your location once, to fill in the address of your home.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>WinChoice connects to the test server on your Wi-Fi.</string>
 	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
 	<string>WinChoice adds your free visit to your calendar when you ask it to.</string>
 	<key>NSAppTransportSecurity</key>

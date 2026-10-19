@@ -26,6 +26,19 @@ struct AddressScreen: View {
                     if let error = store.addressError {
                         Text(error).wc(13, .medium, relativeTo: .footnote).foregroundStyle(Theme.bad).padding(.top, 8).padding(.horizontal, 4)
                             .accessibilityLabel("Problem: \(error)")
+                        if error == LiveHomeownerAPI.offlineMessage {
+                            Button("Try again") {
+                                focused = false
+                                Task {
+                                    if !store.companyLoaded { await store.loadCompany() }
+                                    await store.confirmAddress()
+                                }
+                            }
+                            .wc(17, .semibold, relativeTo: .body)
+                            .foregroundStyle(Theme.blue)
+                            .frame(minHeight: Theme.minTap)
+                            .padding(.horizontal, 4)
+                        }
                     }
                     if !suggestions.isEmpty && focused {
                         suggestionList.padding(.top, 8)
