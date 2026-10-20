@@ -114,7 +114,7 @@ struct RoomScanReview: View {
             // the picture is a drawing of a fixed size: its labels stop at the largest ordinary size
             .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         }
-        .frame(height: 270)
+        .frame(height: 205)
         .frame(maxWidth: .infinity)
         .wcCard(radius: 20)
     }
