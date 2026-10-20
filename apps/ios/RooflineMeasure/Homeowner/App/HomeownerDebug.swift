@@ -97,7 +97,10 @@ enum HomeownerDebug {
         case "coaching": session = await api.seed(); step = .coaching
         case "rooms": session = await api.seed(windows: two); step = .rooms
         case "method": session = await api.seed(windows: two); step = .rooms
-        case "list": session = await api.seed(windows: seven); step = .list
+        // Two windows, one to look at: the list grouped by room fits above its pinned footer (seven would scroll under it, which the
+        // accessibility audit reads as clipped text). `list7` is the long one.
+        case "list7": session = await api.seed(windows: seven); step = .list
+        case "list": session = await api.seed(windows: Array(seven.prefix(2))); step = .list
         case "styles": session = await api.seed(windows: seven); step = .styles
         case "quote": session = await api.seed(windows: seven); step = .quote
         case "contact":
