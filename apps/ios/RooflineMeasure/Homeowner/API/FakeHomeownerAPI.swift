@@ -60,7 +60,7 @@ actor FakeHomeownerAPI: HomeownerAPI {
         ),
         // The four plain choices and WinChoice's own words, as the server sends them (the prices are the fake's, not WinChoice's)
         windowStyles: HomeownerStyleOption.plain,
-        trust: HomeownerTrust(since: "2012", rating: HomeownerRating(value: 4.9, count: 2400, plus: true, source: "homeowners"), badges: ["A+ BBB", "Made in USA", "Lifetime warranty"]),
+        trust: HomeownerTrust(since: "2012", rating: HomeownerRating(value: 4.9, count: 2400, plus: true, source: "homeowners"), badges: ["A+ BBB", "Made in USA", "Lifetime warranty available"]),
         catalog: HomeownerCatalog(
             tiers: [
                 HomeownerCatalogTier(key: "good", label: "Replenish", note: "1-year warranty"),

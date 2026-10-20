@@ -9,6 +9,8 @@ import {
   type WindowAdjustments,
   type WindowCounts,
   type WindowMeasurementView,
+  type PricedWindow,
+  pricedWindowsOf,
   type WindowQuote,
   type WindowSizeClass,
   type WindowTier,
@@ -110,6 +112,12 @@ export function liveCounts(
 ): WindowCounts {
   const windows = shown.flatMap((w) => (w.sized === null ? [] : [{ ...w.sized, box: w.box }]));
   return windowCounts({ windows, estimated: view.estimated, adjustments, photoWindows: [...photoWindows] });
+}
+
+/** The sized windows on screen as the quote prices them: each with its style and frosted glass (photographed ones), as liveCounts counts them. */
+export function livePricedWindows(shown: readonly ShownWindow[], adjustments: WindowAdjustments, photoWindows: readonly PhotoWindow[] = []): PricedWindow[] {
+  const windows = shown.flatMap((w) => (w.sized === null ? [] : [{ ...w.sized, box: w.box }]));
+  return pricedWindowsOf({ windows, adjustments, photoWindows: [...photoWindows] });
 }
 
 export const totalOf = (counts: WindowCounts) =>

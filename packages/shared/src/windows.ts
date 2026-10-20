@@ -463,7 +463,16 @@ export function windowCounts(view: Pick<WindowMeasurementView, 'windows' | 'esti
 }
 
 export type WindowQuoteLine = { sizeClass: WindowSizeClass; count: number; unitCents: number; amountCents: number };
-export type WindowQuote = { tier: Tier; name: string; description: string; lines: WindowQuoteLine[]; windows: number; totalCents: number };
+export type WindowQuote = {
+  tier: Tier;
+  name: string;
+  description: string;
+  lines: WindowQuoteLine[];
+  windows: number;
+  totalCents: number;
+  /** Windows left out of the total because their style is priced at the visit (catalog pricing only). */
+  atVisitCount?: number;
+};
 
 /** One quote per enabled tier: every counted window (measured and estimated) at that tier's installed price. */
 export function priceWindows(counts: WindowCounts, tiers: readonly WindowTier[] = DEFAULT_WINDOW_TIERS): WindowQuote[] {

@@ -1,5 +1,7 @@
 import { Banner, Button, EmptyState, Field, Icon, Listbox, PageSlotsContext, Panel, PrecisionLadder, Segmented, type SegmentedOption } from '@roofline/ui';
 import {
+  estimatedOf,
+  priceCatalogWindows,
   priceWindows,
   RULER_KINDS,
   RULER_MAX_IN,
@@ -34,7 +36,7 @@ import { useCompany } from '../../settings/api.ts';
 import { useWindowCatalog } from '../../settings/window-catalog-api.ts';
 import { photoSrc, useCreateWindowMeasurement, usePatchWindowMeasurement, useWindowMeasurement, useWindowPreview } from './api.ts';
 import { ElevationDrawing } from './ElevationDrawing.tsx';
-import { liveCounts, newMarkId, readAdjustments, rulerSizeLabel, shownWindows, tiersFromQuotes, totalOf, type Box, type Corners } from './model.ts';
+import { liveCounts, livePricedWindows, newMarkId, readAdjustments, rulerSizeLabel, shownWindows, tiersFromQuotes, totalOf, type Box, type Corners } from './model.ts';
 import { OrderStatusChip } from './order/OrderChip.tsx';
 import { PhotoStage, wallDrawn, type StageEdit } from './PhotoStage.tsx';
 import { usePhotoEngine } from './photoEngine.tsx';
@@ -339,10 +341,14 @@ function Loaded({ v }: { v: WindowMeasurementView }) {
 
   const version = JSON.stringify([v.adjustments, v.windows.map((w) => `${w.id}:${w.sizeClass}`), v.estimated?.bySizeClass ?? null]);
   const preview = useWindowPreview(v.id, version);
-  const quotes = useMemo(
-    () => (preview.data === undefined ? [] : priceWindows(counts, tiersFromQuotes(preview.data.quotes))),
-    [counts, preview.data],
-  );
+  // Priced by the company's catalog (each window's style and frosted glass) when the person may read it; else by size alone
+  const catalog = useWindowCatalog().data;
+  const quotes = useMemo(() => {
+    // No quotes from the server: this person does not see money
+    if (preview.data === undefined || preview.data.quotes === null) return [];
+    if (catalog === undefined) return priceWindows(counts, tiersFromQuotes(preview.data.quotes));
+    return priceCatalogWindows(catalog, livePricedWindows(shown, adj, photoLive), estimatedOf(counts));
+  }, [counts, preview.data, catalog, shown, adj, photoLive]);
 
   const toggle = (id: string) => {
     const next = excluded.has(id) ? adj.excludedWindowIds.filter((x) => x !== id) : [...adj.excludedWindowIds, id];

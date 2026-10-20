@@ -41,10 +41,10 @@ export function usePatchWindowMeasurement(id: string): UseMutationResult<WindowM
  * GET /api/window-measurements/:id/preview: Good, Better and Best at the company's prices for what is saved.
  * `version` follows the saved adjustments, so a saved change asks for the prices again.
  */
-export function useWindowPreview(id: string, version: string): UseQueryResult<{ quotes: WindowQuote[] }> {
+export function useWindowPreview(id: string, version: string): UseQueryResult<{ quotes: WindowQuote[] | null }> {
   return useQuery({
     queryKey: [...windowsKey(id), 'preview', version] as const,
-    queryFn: ({ signal }) => apiFetch<{ quotes: WindowQuote[] }>(`${windowsPath(id)}/preview`, { signal }),
+    queryFn: ({ signal }) => apiFetch<{ quotes: WindowQuote[] | null }>(`${windowsPath(id)}/preview`, { signal }),
     enabled: id !== '',
     placeholderData: (previous) => previous,
   });
