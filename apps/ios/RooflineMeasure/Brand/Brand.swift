@@ -81,7 +81,7 @@ struct Brand: Decodable, Equatable {
         includes: ["Made to your sizes in Mountain Pine, Arkansas", "FlexScreen on every window that opens"],
         tiers: [
             "good": Tier(summary: "Vinyl double-hung and sliders, standard install", badge: nil),
-            "better": Tier(summary: "LoE366 glass with argon, full-frame install, lifetime warranty", badge: "Most pick"),
+            "better": Tier(summary: "LoE366 glass with argon, full-frame install, lifetime warranty", badge: "Most picked"),
             "best": Tier(summary: "Triple-pane glass, full-frame install", badge: nil),
         ],
         windowColors: [

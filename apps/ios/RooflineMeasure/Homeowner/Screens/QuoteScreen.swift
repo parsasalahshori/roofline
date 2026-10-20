@@ -91,7 +91,11 @@ struct QuoteScreen: View {
         VStack(alignment: .leading, spacing: 6) {
             InfoPanel(icon: .info, text: offer.title)
             if let url = offer.termsUrl.flatMap(URL.init(string:)) {
-                Link("Offer terms", destination: url).wc(14, .medium, relativeTo: .footnote).foregroundStyle(Theme.blue).padding(.horizontal, 4)
+                Link(destination: url) {
+                    Text("Offer terms").wc(14, .medium, relativeTo: .footnote).foregroundStyle(Theme.blue)
+                        .frame(minWidth: 44, minHeight: 44, alignment: .leading).contentShape(Rectangle())
+                }
+                .padding(.horizontal, 4)
             }
         }
         .accessibilityIdentifier("offer-banner")
@@ -126,7 +130,10 @@ struct QuoteScreen: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(f.text).wc(14, relativeTo: .footnote).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
             if let url = f.url.flatMap(URL.init(string:)) {
-                Link("Financing details", destination: url).wc(14, .medium, relativeTo: .footnote).foregroundStyle(Theme.blue)
+                Link(destination: url) {
+                    Text("Financing details").wc(14, .medium, relativeTo: .footnote).foregroundStyle(Theme.blue)
+                        .frame(minWidth: 44, minHeight: 44, alignment: .leading).contentShape(Rectangle())
+                }
             }
         }
         .padding(.horizontal, 4)

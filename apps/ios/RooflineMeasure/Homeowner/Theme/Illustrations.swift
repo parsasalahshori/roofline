@@ -34,6 +34,8 @@ struct StyledMap: View {
                     .font(.system(size: 12 * sx, weight: .medium, design: .monospaced))
                     .foregroundStyle(Theme.ink2)
                     .offset(x: 100 * sx, y: 49 * sy)
+                    // Decoration: the address card under the map says it in words
+                    .accessibilityHidden(true)
                 // The house
                 Rectangle().fill(Theme.surface).frame(width: 58 * sx, height: 42 * sy)
                     .overlay(Rectangle().strokeBorder(Theme.ink, lineWidth: 2))

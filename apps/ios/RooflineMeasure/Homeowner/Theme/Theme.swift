@@ -25,7 +25,7 @@ enum Theme {
     static let ink2 = Color(light: 0x3B4A5E, dark: 0xA9B6C6)
     /// The quiet text. A touch darker than the mockups' #66748A / #7F8C9D so small text clears 4.5:1 on every tint and surface
     /// (Apple's accessibility audit flagged the original as nearly passing).
-    static let ink3 = Color(light: 0x5B687D, dark: 0x8A97A8)
+    static let ink3 = Color(light: 0x4E5A6E, dark: 0x8A97A8)
 
     static let line = Color(light: 0xDCE0DF, dark: 0x203045)
     static let line2 = Color(light: 0xC5CBCB, dark: 0x2C3F57)
