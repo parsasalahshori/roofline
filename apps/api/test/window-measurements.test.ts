@@ -652,8 +652,8 @@ describe('on-site window photos', () => {
       expect(added.status, JSON.stringify(added.body)).toBe(201);
       const w = (added.body as WindowMeasurementView).photoWindows![0]!;
       expect(w).toMatchObject({ id: 'a1', uploadId: id, widthIn: 36, heightIn: 60, quality: 'good' });
-      // LiDAR: 2.5 mm a point (0.098 in) and 1% of 36 in
-      expect(w.uncertaintyIn!.width).toBe(0.37);
+      // LiDAR: 2.5 mm a point (0.098 in) and the device's 0.6% scale term of 36 in (see test/pure/window-uploads.test.ts)
+      expect(w.uncertaintyIn!.width).toBe(0.24);
       expect((await owner.post(url).send(a1)).status).toBe(200);
       const taken = await owner.post(url).send({ ...a1, label: 'Kitchen' });
       expect(taken.status).toBe(409);
