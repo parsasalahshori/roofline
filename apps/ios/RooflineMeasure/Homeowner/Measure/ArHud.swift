@@ -25,7 +25,7 @@ struct ArCaptureModel: Equatable {
     static let searchHint = "Move the phone slowly to find the wall."
     static let maxPhotos = 3
     static func readyHint(photosTaken n: Int) -> String {
-        n == 0 ? "Stand 3 to 5 feet back so the whole window is on screen, then tap Capture."
+        n == 0 ? "Stand 3 to 5 feet back, aim the circle at the window, and tap Capture."
                : "Photo \(n + 1) of \(maxPhotos): the same window again, from a slightly different spot."
     }
     static let holdingHint = "Hold still."

@@ -2,46 +2,54 @@ import CoreGraphics
 import RooflineCore
 import UIKit
 
-// The pieces of the frozen-photo measuring screen that are not drawing: what the corners on the photo come to (one `FrozenResult`, one
-// set of numbers for the plates, the status and what is sent), the corners the phone starts from, and snapping a corner onto the frame's
-// corner in the picture. All of it is plain values and CoreGraphics, so it is tested without a camera.
+// The pieces of the frozen-photo measuring screen that are not drawing: the window as a rectangle on the frame's plane (its corners ARE the
+// dots), what it measures, where the phone starts it from (the depth sensor first, Vision second), and snapping a dragged corner onto the
+// frame's corner in the picture. All of it is plain values and CoreGraphics, so it is tested without a camera.
 
-/// What the four corners on the photo come to, with the photos taken before this one in the same window. Made once per change.
+/// What the rectangle on the photo comes to, with the photos taken before this one in the same window. Made once per change.
 struct FreezeEditing {
     /// Where the editor is in finding the window.
     enum Stage: Equatable {
-        /// Vision is looking.
+        /// Looking in the depth map and the photo.
         case looking
-        /// Vision found nothing believable: the corners start inset and the person drags them.
+        /// Nothing believable was found: the rectangle starts inset and the person drags it.
         case notFound
-        /// The corners are the ones the phone found and the person has not touched them.
-        case proposed
+        /// The rectangle is what the depth sensor found and the person has not touched it.
+        case proposedByDepth
+        /// The rectangle is what Vision found in the photo and the person has not touched it.
+        case proposedByPhoto
         case editing
     }
 
-    /// This photo's own answer.
-    let current: FrozenResult?
-    /// The answer that is shown, drawn and sent: this photo's alone, or the median with the earlier photos.
-    let combined: FrozenMeasure.Combined?
-    /// The shown window on this photo (its pixels).
+    let rect: FrozenRect?
+    /// This photo's rectangle, sized: what is drawn, shown and sent.
+    let sent: FrozenResult?
+    /// How the earlier photos of this window agree with this one (nil with no earlier photo).
+    let agreement: FrozenMeasure.Combined?
+    /// The eight handles on the photo (its pixels): the four corners TL, TR, BR, BL, then the middles of the top, right, bottom, left sides.
+    let handles: [CGPoint]
+    /// The rectangle on the photo (its pixels): exactly through the four corner handles.
     let drawing: FrozenDrawing?
     /// Photos so far, this one included.
     let photos: Int
 
-    init(capture: FrozenCapture, earlier: [FrozenResult], points: [CGPoint]) {
+    init(capture: FrozenCapture, earlier: [FrozenResult], rect: FrozenRect?) {
+        self.rect = rect
         photos = earlier.count + 1
-        let px = points.map { Vec2(Double($0.x), Double($0.y)) }
-        guard px.count == 4, let now = FrozenMeasure.measure(view: capture.view, photoPx: px) else {
-            current = nil
-            combined = nil
+        guard let rect = rect, let now = FrozenMeasure.measure(rect: rect, view: capture.view) else {
+            sent = nil
+            agreement = nil
+            handles = rect?.handlePhotoPoints(view: capture.view)?.map { CGPoint(x: $0.x, y: $0.y) } ?? []
             drawing = nil
             return
         }
-        current = now
-        let c = FrozenMeasure.combine(earlier + [now], viewer: capture.view.viewer, device: capture.view.device)
-            ?? FrozenMeasure.Combined(result: now, photos: 1, disagreeIn: 0, disagrees: false)
-        combined = c
-        drawing = FrozenMeasure.drawing(c.result, view: capture.view)
+        handles = rect.handlePhotoPoints(view: capture.view)?.map { CGPoint(x: $0.x, y: $0.y) } ?? []
+        let agree = earlier.isEmpty ? nil : FrozenMeasure.combine(earlier + [now], viewer: capture.view.viewer, device: capture.view.device)
+        agreement = agree
+        // Photos that disagree are a window to check; the window is still this photo's rectangle, the one drawn
+        let result = agree?.disagrees == true ? FrozenMeasure.withDoubt(now, device: capture.view.device) : now
+        sent = result
+        drawing = FrozenMeasure.drawing(result, view: capture.view)
     }
 
     /// The straightened outline on the photo.
@@ -50,21 +58,21 @@ struct FreezeEditing {
     /// The width plate on the top side and the height plate on the left side, drawn just inside the outline so they never leave the
     /// photo or sit on a corner. Both show the SAME numbers as `widthText` and `heightText`.
     var plates: [PhotoTapView.Plate] {
-        guard let d = drawing, let r = combined?.result else { return [] }
+        guard let d = drawing, let r = sent else { return [] }
         return [
-            PhotoTapView.Plate(id: "width", point: CGPoint(x: d.widthPlate.x, y: d.widthPlate.y), inches: r.widthIn, offset: CGSize(width: 0, height: 26)),
-            PhotoTapView.Plate(id: "height", point: CGPoint(x: d.heightPlate.x, y: d.heightPlate.y), inches: r.heightIn, offset: CGSize(width: 50, height: 0)),
+            PhotoTapView.Plate(id: "width", point: CGPoint(x: d.widthPlate.x, y: d.widthPlate.y), inches: r.widthIn, offset: CGSize(width: 0, height: 30)),
+            PhotoTapView.Plate(id: "height", point: CGPoint(x: d.heightPlate.x, y: d.heightPlate.y), inches: r.heightIn, offset: CGSize(width: 52, height: 0)),
         ]
     }
 
-    var widthText: String? { combined?.result.widthText }
-    var heightText: String? { combined?.result.heightText }
-    var widthIn: Double? { combined?.result.widthIn }
-    var heightIn: Double? { combined?.result.heightIn }
-    /// The corner (index into the dots, 0 to 3) that clearly looks off the frame in this photo.
-    var flaggedHandle: Int? { current?.flaggedHandle }
-    var needsCheck: Bool { combined?.result.needsCheck ?? false }
-    var canUse: Bool { combined != nil }
+    var widthText: String? { sent?.widthText }
+    var heightText: String? { sent?.heightText }
+    var widthIn: Double? { sent?.widthIn }
+    var heightIn: Double? { sent?.heightIn }
+    /// Only photos that do not agree make a check: a rectangle cannot disagree with itself.
+    var needsCheck: Bool { sent?.needsCheck ?? false }
+    var photosDisagree: Bool { agreement?.disagrees ?? false }
+    var canUse: Bool { sent != nil }
 
     /// The one line under the picture.
     func hint(_ stage: Stage) -> String {
@@ -73,29 +81,45 @@ struct FreezeEditing {
         case .notFound: return FrozenCopy.notFound
         default: break
         }
-        guard let c = combined, let now = current else { return FrozenCopy.notMeasurable }
-        if c.disagrees { return FrozenCopy.photosDisagree(inches: c.disagreeIn) }
-        if stage == .proposed, now.hint == FrozenCopy.looksRight { return FrozenCopy.foundWindow }
-        return now.hint
+        guard sent != nil else { return FrozenCopy.notMeasurable }
+        if let a = agreement, a.disagrees { return FrozenCopy.photosDisagree(inches: a.disagreeIn) }
+        switch stage {
+        case .proposedByDepth: return FrozenCopy.foundByDepth
+        case .proposedByPhoto: return FrozenCopy.foundWindow
+        default: return FrozenCopy.editing
+        }
     }
 }
 
 enum FreezeProposal {
-    /// The four corners to start from, TL, TR, BR, BL in the photo's pixels: the window Vision finds in the photo, each corner moved onto
-    /// the frame's corner in the picture when the picture is clear about it. Nil when nothing believable is found (not a window shape,
-    /// or not one on this wall: its sides on the wall must be a window's). Blocking: call it off the main thread.
-    static func corners(in image: CGImage, view: FrozenView) -> [CGPoint]? {
-        guard let found = WindowRectangleDetector.window(in: image), found.count == 4 else { return nil }
-        guard let w = view.worldCorners(photoPx: found), ArAutoCorners.isPlausibleWindow(w.points) else { return nil }
-        return found.map { v in
-            let p = CGPoint(x: v.x, y: v.y)
-            return PhotoSnap.snap(p, in: image) ?? p
-        }
+    enum Source: Equatable {
+        case depth
+        case photo
     }
 
-    /// Where the corners start when nothing was found: the photo inset on every side.
-    static func inset(width: Int, height: Int) -> [CGPoint] {
-        ImageMapping.insetCorners(width: Double(width), height: Double(height)).map { CGPoint(x: $0.x, y: $0.y) }
+    /// The window to start from, in the order of trust: the depth sensor's opening (where the wall isn't, around the middle of the picture,
+    /// each side then set onto the edge in the photo), else Vision's rectangle that holds the middle of the picture, when it is a whole
+    /// window and not a sash (Vision cannot tell a sash from a window; the depth can). Nil when neither finds one. Blocking: call it off
+    /// the main thread.
+    static func rect(in image: CGImage, view: FrozenView) -> (rect: FrozenRect, source: Source)? {
+        let reticle = Vec2(view.photoWidthPx / 2, view.photoHeightPx / 2)
+        if view.depth != nil, let found = OpeningFinder.find(view: view, reticle: reticle, photo: { x, y, w, h in PhotoSnap.gray(image, x: x, y: y, width: w, height: h) }) {
+            return (found.rect, .depth)
+        }
+        guard let quad = WindowRectangleDetector.window(in: image, aimedAt: reticle), quad.count == 4 else { return nil }
+        // Each corner onto the frame's corner in the picture when it is clear, then as a rectangle on the wall
+        let snapped = quad.map { v -> Vec2 in
+            let p = CGPoint(x: v.x, y: v.y)
+            return PhotoSnap.snap(p, in: image).map { Vec2(Double($0.x), Double($0.y)) } ?? v
+        }
+        guard let r = FrozenRect.fromPhoto(corners: snapped, view: view), OpeningFinder.isPlausible(r, fromDepth: false) else { return nil }
+        return (r, .photo)
+    }
+
+    /// Where the rectangle starts when nothing was found: the photo inset on every side.
+    static func inset(view: FrozenView) -> FrozenRect? {
+        let corners = ImageMapping.insetCorners(width: view.photoWidthPx, height: view.photoHeightPx)
+        return FrozenRect.fromPhoto(corners: corners, view: view)
     }
 }
 
@@ -115,13 +139,18 @@ enum PhotoSnap {
         let cx = Int(p.x.rounded()), cy = Int(p.y.rounded())
         let x0 = max(0, cx - half), y0 = max(0, cy - half)
         let x1 = min(image.width, cx + half + 1), y1 = min(image.height, cy + half + 1)
-        let w = x1 - x0, h = y1 - y0
-        guard w >= 24, h >= 24, let crop = image.cropping(to: CGRect(x: x0, y: y0, width: w, height: h)),
+        guard x1 - x0 >= 24, y1 - y0 >= 24, let patch = gray(image, x: x0, y: y0, width: x1 - x0, height: y1 - y0) else { return nil }
+        return (patch, (x0, y0))
+    }
+
+    /// The photo's pixels in a rectangle (already inside it) in grey.
+    static func gray(_ image: CGImage, x: Int, y: Int, width w: Int, height h: Int) -> GrayPatch? {
+        guard x >= 0, y >= 0, w > 0, h > 0, x + w <= image.width, y + h <= image.height,
+              let crop = image.cropping(to: CGRect(x: x, y: y, width: w, height: h)),
               let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w, space: CGColorSpaceCreateDeviceGray(),
                                   bitmapInfo: CGImageAlphaInfo.none.rawValue), let data = ctx.data else { return nil }
         ctx.interpolationQuality = .none
         ctx.draw(crop, in: CGRect(x: 0, y: 0, width: w, height: h))
-        let pixels = [UInt8](UnsafeBufferPointer(start: data.assumingMemoryBound(to: UInt8.self), count: w * h))
-        return (GrayPatch(width: w, height: h, pixels: pixels), (x0, y0))
+        return GrayPatch(width: w, height: h, pixels: [UInt8](UnsafeBufferPointer(start: data.assumingMemoryBound(to: UInt8.self), count: w * h)))
     }
 }

@@ -78,10 +78,14 @@ struct PhotoTapView: View {
     var outline: [CGPoint] = []
     /// Length plates on the picture, each at its photo point (the same numbers the status card shows).
     var plates: [Plate] = []
-    /// The marker (index) that looks off the frame: it gets a red ring.
-    var flagged: Int?
-    /// When a marker is let go: the point it should land on instead (the frame's corner in the picture), or nil to leave it where it is.
-    var snap: ((CGPoint) -> CGPoint?)?
+    /// When marker `i` is let go: the point it should land on instead (the frame's corner in the picture), or nil to leave it where it is.
+    var snap: ((Int, CGPoint) -> CGPoint?)?
+    /// How far a marker moves for each point the finger moves on screen: 1 keeps it under the finger, the card photos use less.
+    var gain: CGFloat = PhotoTapView.dragGain
+    /// Markers from this index on are the middles of the window's sides (small squares, not numbered dots).
+    var sideHandlesFrom: Int = .max
+    /// VoiceOver's description of the picture, when the markers are not the usual corners to place.
+    var voiceOver: String?
 
     struct Plate: Identifiable, Equatable {
         var id: String
@@ -191,7 +195,7 @@ struct PhotoTapView: View {
                     .stroke(Theme.tape, style: StrokeStyle(lineWidth: 2, lineJoin: .round, dash: points.count == 4 ? [] : [8, 5]))
                 }
                 ForEach(Array(points.enumerated()), id: \.offset) { i, p in
-                    Marker(active: touch?.dot == i, small: outline.count == 4, flagged: flagged == i, number: outline.count == 4 ? i + 1 : nil)
+                    Marker(active: touch?.dot == i, small: outline.count == 4, side: i >= sideHandlesFrom, number: outline.count == 4 && i < 4 ? i + 1 : nil)
                         .position(place.toScreen(p))
                 }
                 ForEach(plates) { plate in
@@ -233,8 +237,8 @@ struct PhotoTapView: View {
             }
             .onAppear { start(view) }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(proposed ? "Photo. We found \(points.count) corners. Touch a corner and drag to move it. Pinch to zoom."
-                                         : "Photo. \(points.count) of \(maxPoints) corners placed. Touch the photo to place a corner. Pinch to zoom.")
+            .accessibilityLabel(voiceOver ?? (proposed ? "Photo. We found \(points.count) corners. Touch a corner and drag to move it. Pinch to zoom."
+                                                       : "Photo. \(points.count) of \(maxPoints) corners placed. Touch the photo to place a corner. Pinch to zoom."))
             .accessibilityAddTraits(.allowsDirectInteraction)
         }
     }
@@ -265,8 +269,8 @@ struct PhotoTapView: View {
                 if hypot(v.translation.width, v.translation.height) > 8 { t.moved = true }
                 if let i = t.dot, points.indices.contains(i) {
                     // Slow, relative: a marker never jumps to the finger
-                    let dx = v.translation.width / place.scale * Self.dragGain
-                    let dy = v.translation.height / place.scale * Self.dragGain
+                    let dx = v.translation.width / place.scale * gain
+                    let dy = v.translation.height / place.scale * gain
                     points[i] = clampPoint(CGPoint(x: t.dotStart.x + dx, y: t.dotStart.y + dy))
                 } else if t.moved, zoom > 1.001 {
                     pan = clamp(CGSize(width: t.panStart.width + v.translation.width, height: t.panStart.height + v.translation.height), zoom: zoom, view: view)
@@ -279,7 +283,7 @@ struct PhotoTapView: View {
                 guard let t = touch, !t.pinched else { return }
                 if let i = t.dot {
                     // Let go near a corner of the frame in the picture: onto it, when the picture is clear about where it is
-                    if points.indices.contains(i), let to = snap?(points[i]), to != points[i] {
+                    if points.indices.contains(i), let to = snap?(i, points[i]), to != points[i] {
                         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) { points[i] = clampPoint(to) }
                         Haptics.tap()
                     }
@@ -353,36 +357,31 @@ struct PhotoTapView: View {
 }
 
 /// A corner marker: a small ring with a dot at its centre, so the corner itself stays visible inside it. `small` (the outline is the
-/// straightened rectangle, these are where the corners were left): a smaller ring with its number; `flagged`: a red ring round it.
+/// rectangle itself, and these are its corners): a smaller ring with its number. `side`: the middle of a side, a small square.
 private struct Marker: View {
     var active: Bool
     var small = false
-    var flagged = false
+    var side = false
     var number: Int?
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var pulse = false
 
     var body: some View {
-        let d: CGFloat = small ? 15 : 20
+        let d: CGFloat = small ? 16 : 20
         ZStack {
-            if flagged {
-                Circle().strokeBorder(Color.white, lineWidth: 6).frame(width: 36, height: 36)
-                Circle().strokeBorder(Theme.red, lineWidth: 4).frame(width: 36, height: 36)
-                    .scaleEffect(pulse && !reduceMotion ? 1.18 : 1)
-                    .opacity(pulse && !reduceMotion ? 0.7 : 1)
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulse)
-            }
-            Circle().strokeBorder(Theme.navy.opacity(0.75), lineWidth: 4.5).frame(width: d, height: d)
-            Circle().strokeBorder(Theme.tape, lineWidth: 2.5).frame(width: d, height: d)
-            Circle().fill(Theme.tape).frame(width: 3.5, height: 3.5)
-            if let n = number {
-                Text("\(n)").wcMono(11, .bold, relativeTo: .caption2).foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.8), radius: 1.5)
-                    .offset(x: 14, y: -13)
+            if side {
+                RoundedRectangle(cornerRadius: 3, style: .continuous).fill(Theme.tape).frame(width: 13, height: 13)
+                    .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous).strokeBorder(Theme.navy.opacity(0.85), lineWidth: 2))
+            } else {
+                Circle().strokeBorder(Theme.navy.opacity(0.75), lineWidth: 4.5).frame(width: d, height: d)
+                Circle().strokeBorder(Theme.tape, lineWidth: 2.5).frame(width: d, height: d)
+                Circle().fill(Theme.tape).frame(width: 3.5, height: 3.5)
+                if let n = number {
+                    Text("\(n)").wcMono(11, .bold, relativeTo: .caption2).foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.8), radius: 1.5)
+                        .offset(x: 14, y: -13)
+                }
             }
         }
         .scaleEffect(active ? 1.3 : 1)
-        .onAppear { pulse = true }
         .accessibilityHidden(true)
     }
 }

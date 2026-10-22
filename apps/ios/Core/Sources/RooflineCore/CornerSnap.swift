@@ -109,6 +109,50 @@ public enum CornerSnap {
         return Snapped(point: Vec2(corner.x + dx, corner.y + dy), movedPx: moved, clarity: min(vertical.clarity, level.clarity))
     }
 
+    /// An edge line found by `edgeLine`: how far it is from the point asked about, across the line, and how clear it was.
+    public struct EdgeLine: Equatable, Sendable {
+        /// Pixels across the line from `near` (to the right for an upright line, down for a level one).
+        public var offset: Double
+        /// The line's lean: across-pixels per along-pixel.
+        public var slope: Double
+        public var clarity: Double
+    }
+
+    /// Edge lines searched by `edgeLine` lean at most this far (a slope; 0.12 is about 7 degrees), in steps of `edgeSlopeStep`.
+    public static let edgeMaxSlope = 0.12
+    public static let edgeSlopeStep = 0.01
+
+    /// The strongest upright (or level) edge line within `radius` of `near` (patch pixels) in a patch of grey pixels, when it is clear:
+    /// strong, and far ahead of any look-alike. Used to move one side of a window from where the depth sensor put it onto the edge in the
+    /// picture. Nil when the picture is not clear about one.
+    public static func edgeLine(in patch: GrayPatch, near: Vec2, radius: Double, upright: Bool) -> EdgeLine? {
+        guard patch.isValid, near.x.isFinite, near.y.isFinite, radius > 0 else { return nil }
+        let w = patch.width, h = patch.height
+        var gx = [Double](repeating: 0, count: w * h), gy = gx, mag = gx
+        var maxMag = 0.0
+        for y in 1..<(h - 1) {
+            for x in 1..<(w - 1) {
+                let a = patch[x - 1, y - 1], b = patch[x, y - 1], c = patch[x + 1, y - 1]
+                let d = patch[x - 1, y], f = patch[x + 1, y]
+                let g = patch[x - 1, y + 1], hh = patch[x, y + 1], i = patch[x + 1, y + 1]
+                let sx = (c + 2 * f + i) - (a + 2 * d + g)
+                let sy = (g + 2 * hh + i) - (a + 2 * b + c)
+                let k = y * w + x
+                gx[k] = sx
+                gy[k] = sy
+                mag[k] = (sx * sx + sy * sy).squareRoot()
+                maxMag = max(maxMag, mag[k])
+            }
+        }
+        guard maxMag >= minGradient * 2 else { return nil }
+        let threshold = max(minGradient, relativeGradient * maxMag)
+        let tan = Foundation.tan(angleToleranceDeg * .pi / 180)
+        let slopes = stride(from: -edgeMaxSlope, through: edgeMaxSlope + 1e-9, by: edgeSlopeStep).map { $0 }
+        guard let line = bestLine(w: w, h: h, gx: gx, gy: gy, mag: mag, threshold: threshold, tan: tan, slopes: slopes,
+                                  corner: near, radius: radius, upright: upright) else { return nil }
+        return EdgeLine(offset: line.offset, slope: line.slope, clarity: line.clarity)
+    }
+
     private struct EdgePixel {
         /// Along the line and across it, pixels from the corner.
         var u: Double

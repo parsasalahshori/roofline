@@ -3,8 +3,9 @@ import RooflineCore
 import SwiftUI
 
 /// "Measure a window" on a phone. The camera finds the wall; Capture freezes one frame (its photo, the camera's pose and lens, the wall and
-/// the LiDAR depth); the four corners are then dragged on that still photo (`FreezeFrameEditor`), where nothing moves; and the window goes
-/// on as the level rectangle fitted to them. One to three photos of the same window may be taken: the size is the middle of them.
+/// the LiDAR depth); the window is then a rectangle on that still photo (`FreezeFrameEditor`), found by the depth sensor and dragged by its
+/// corners and sides, where nothing moves; and the window goes on as that rectangle. One to three photos of the same window may be taken:
+/// each is checked against the others.
 struct ArMeasureScreen: View {
     @Environment(HomeownerStore.self) private var store
     let session: MeasureSession
@@ -123,10 +124,9 @@ struct ArMeasureScreen: View {
         editing = nil
     }
 
-    /// The size is the middle of the photos (or this photo's alone). The window goes as the level rectangle fitted to the corners, with the
-    /// doubt of any corner that did not line up; the outline is drawn into this photo for the corners the server sees.
-    private func finish(_ combined: FrozenMeasure.Combined, capture: FrozenCapture, controller: ArMeasureController) {
-        let r = combined.result
+    /// The window goes as the rectangle on the photo, with the doubt of photos that disagreed; the outline is drawn into this photo for the
+    /// corners the server sees.
+    private func finish(_ r: FrozenResult, capture: FrozenCapture, controller: ArMeasureController) {
         guard let drawing = FrozenMeasure.drawing(r, view: capture.view) else { return }
         controller.pause()
         let corners = drawing.outline.map { ImageMapping.clamp($0, width: Double(capture.widthPx), height: Double(capture.heightPx)) }
@@ -137,7 +137,7 @@ struct ArMeasureScreen: View {
 
 /// The AR screen's how-to (shown the first time, and from "How?"): the same steps as the coaching, in the order of the screens.
 struct ArHowTo: View {
-    static let steps = ["Stand 3 to 5 feet back, blinds up, and tap Capture.", "Drag the four dots onto the corners of the frame. They snap on.", "Check the yellow outline follows the frame, then tap Use this size."]
+    static let steps = ["Stand 3 to 5 feet back, aim the circle at the window, and tap Capture.", "Drag a corner, or the square on a side, until the outline sits on the frame.", "Check the yellow outline follows the frame, then tap Use this size."]
     let onDone: () -> Void
 
     var body: some View {

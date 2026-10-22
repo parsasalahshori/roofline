@@ -2,41 +2,44 @@ import RooflineCore
 import SwiftUI
 import UIKit
 
-/// The frozen photo of a window, with four corners to drag onto it. The phone has already stopped moving: the photo is a still, so
-/// nothing flies about and a corner stays where it is put. What is drawn is the level rectangle fitted to the four dots (never a
-/// slanted four-sided shape), its two plates and the status card show the one width and height that are sent, and a dot let go near a
-/// corner of the frame snaps onto it. Dragging is slow and magnified; pinch zooms in.
+/// The frozen photo of a window, with the window on it as a RECTANGLE. The four dots are its corners and the outline goes exactly through
+/// them: dragging a corner moves the two edges that meet there (the dots next to it follow), and the square in the middle of each side
+/// moves that one side. The dot stays under the finger (a magnifier shows it above), and a corner let go near a corner of the frame snaps
+/// onto it. What is drawn is what is measured is what is sent: the two plates and the status card show the width and height of this
+/// rectangle. The phone starts it from the depth sensor's opening (the part of the picture where the wall isn't), then Vision.
 struct FreezeFrameEditor: View {
     let capture: FrozenCapture
-    /// The answers of the earlier photos of this window (same tracking session); the shown size is the median with them.
+    /// The answers of the earlier photos of this window (same tracking session): this photo's size is checked against them.
     let earlier: [FrozenResult]
     let title: String
-    /// A sample or a test starts from these corners and stage, with no looking.
-    var start: (points: [CGPoint], stage: FreezeEditing.Stage)?
+    /// A sample or a test starts from this rectangle and stage, with no looking.
+    var start: (rect: FrozenRect?, stage: FreezeEditing.Stage)?
     let onClose: () -> Void
     let onRetake: () -> Void
     let onAddAnother: (FrozenResult) -> Void
-    let onUse: (FrozenMeasure.Combined) -> Void
+    let onUse: (FrozenResult) -> Void
 
     @State private var photo: PreparedPhoto?
-    @State private var points: [CGPoint] = []
+    @State private var rect: FrozenRect?
     @State private var stage: FreezeEditing.Stage = .looking
 
     private var photoNumber: Int { earlier.count + 1 }
 
     var body: some View {
-        let editing = FreezeEditing(capture: capture, earlier: earlier, points: points)
+        let editing = FreezeEditing(capture: capture, earlier: earlier, rect: rect)
         ZStack {
             Color.black.ignoresSafeArea()
             VStack(spacing: 0) {
                 topBar(editing)
                 ZStack {
                     if let photo = photo {
-                        PhotoTapView(photo: photo, points: $points, maxPoints: 4, proposed: stage == .proposed,
-                                     onEdit: { stage = .editing },
-                                     outline: editing.outline, plates: editing.plates, flagged: editing.flaggedHandle,
-                                     snap: { p in photo.image.cgImage.flatMap { PhotoSnap.snap(p, in: $0) } })
-                            .allowsHitTesting(stage != .looking)
+                        PhotoTapView(photo: photo, points: handles(editing), maxPoints: 0, proposed: false,
+                                     onEdit: { released() },
+                                     outline: editing.outline, plates: editing.plates,
+                                     snap: { i, p in i < 4 ? photo.image.cgImage.flatMap { PhotoSnap.snap(p, in: $0) } : nil },
+                                     gain: 1, sideHandlesFrom: 4,
+                                     voiceOver: "Photo of the window. The outline has a dot on each corner and a square on each side. Touch one and drag to move it. Pinch to zoom.")
+                            .allowsHitTesting(stage != .looking && rect != nil)
                     }
                     if stage == .looking {
                         ProgressView().progressViewStyle(.circular).tint(.white).scaleEffect(1.4)
@@ -59,22 +62,43 @@ struct FreezeFrameEditor: View {
         let prepared = PreparedPhoto(image: image, jpeg: capture.jpeg, widthPx: capture.widthPx, heightPx: capture.heightPx, focal35mm: nil)
         photo = prepared
         if let start = start {
-            points = start.points
+            rect = start.rect
             stage = start.stage
             return
         }
         stage = .looking
-        points = []
+        rect = nil
         let cg = image.cgImage
         let view = capture.view
-        let found = await Task.detached(priority: .userInitiated) { cg.flatMap { FreezeProposal.corners(in: $0, view: view) } }.value
+        let found = await Task.detached(priority: .userInitiated) { cg.flatMap { FreezeProposal.rect(in: $0, view: view) } }.value
         if let found = found {
-            points = found
-            stage = .proposed
+            rect = found.rect
+            stage = found.source == .depth ? .proposedByDepth : .proposedByPhoto
         } else {
-            points = FreezeProposal.inset(width: capture.widthPx, height: capture.heightPx)
+            rect = FreezeProposal.inset(view: view)
             stage = .notFound
         }
+    }
+
+    // MARK: Dragging
+
+    /// The eight handles as the picture's markers. A marker dragged to a new place edits the rectangle; the markers then come back from
+    /// the rectangle, so they are always exactly on it.
+    private func handles(_ editing: FreezeEditing) -> Binding<[CGPoint]> {
+        Binding(get: { editing.handles }, set: { moved($0, from: editing.handles) })
+    }
+
+    private func moved(_ new: [CGPoint], from old: [CGPoint]) {
+        guard let r = rect, new.count == 8, old.count == 8,
+              let i = (0..<8).first(where: { hypot(new[$0].x - old[$0].x, new[$0].y - old[$0].y) > 1e-6 }),
+              let handle = FrozenRect.Handle(rawValue: i) else { return }
+        rect = r.moved(handle, toPhoto: Vec2(Double(new[i].x), Double(new[i].y)), view: capture.view)
+    }
+
+    /// A marker was let go (after any snap): the depth round the corners as they are now says more exactly where the frame's face is.
+    private func released() {
+        stage = .editing
+        rect = rect?.rebased(view: capture.view)
     }
 
     // MARK: Pieces
@@ -103,7 +127,7 @@ struct FreezeFrameEditor: View {
                 if editing.needsCheck {
                     HStack(spacing: 6) {
                         IconView(icon: .alert, size: 14, weight: 2)
-                        Text("Needs a check: the corners are not on the frame yet").wc(14, .semibold, relativeTo: .footnote)
+                        Text("Needs a check: your photos differ").wc(14, .semibold, relativeTo: .footnote)
                     }
                     .foregroundStyle(Theme.tape)
                 }
@@ -120,7 +144,7 @@ struct FreezeFrameEditor: View {
     }
 
     private var photosLine: String {
-        earlier.isEmpty ? "Photo 1" : "Photo \(photoNumber) · combined"
+        "Photo \(photoNumber)"
     }
 
     @ViewBuilder private func number(_ inches: Double?) -> some View {
@@ -170,7 +194,7 @@ struct FreezeFrameEditor: View {
                 .accessibilityLabel("Retake")
                 .accessibilityHint("Goes back to the camera to take this photo again")
                 Button {
-                    if let c = editing.combined { onUse(c) }
+                    if let r = editing.sent { onUse(r) }
                 } label: {
                     HStack(spacing: 8) {
                         IconView(icon: .check, size: 20, weight: 2.2)
@@ -187,12 +211,12 @@ struct FreezeFrameEditor: View {
                 .accessibilityHint("Keeps this window and goes on to name it")
             }
             .padding(.horizontal, 16)
-            if photoNumber < ArCaptureModel.maxPhotos, let now = editing.current {
+            if photoNumber < ArCaptureModel.maxPhotos, let now = editing.sent {
                 Button { onAddAnother(now) } label: {
                     Text("Take another photo to double-check").wc(15, .semibold, relativeTo: .subheadline).foregroundStyle(Theme.tape)
                         .frame(minHeight: 36)
                 }
-                .accessibilityHint("Keeps this photo and takes another of the same window; the size is the middle of them")
+                .accessibilityHint("Keeps this photo and takes another of the same window, to check the size against")
             }
         }
         .padding(.top, 6)

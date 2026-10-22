@@ -126,37 +126,159 @@ struct SampleScene {
 // MARK: - A frozen frame of the sample window
 
 /// The sample window as a frozen camera frame would hold it: photographed square-on from the distance that makes the drawn window 35 5/8 x
-/// 59 5/8 in, with no depth sensor (the simulator has none). The corners of the drawing are therefore known in the world too.
+/// 59 5/8 in, with a synthetic depth map (the simulator has no depth sensor): the glass 10 cm behind the wall, the wall at the wall's depth.
+/// With `clutter`, the owner's real window: blinds hung over the top of the opening, a lamp standing in front of the lower-left corner, a
+/// valance above and a picture on the wall beside it, in the photo and in the depth map.
 enum SampleFrozen {
     static let photoSize = CGSize(width: 1440, height: 1920)
 
-    static func scene() -> SampleScene { SampleScene(size: photoSize, windowShare: 0.6) }
+    static func scene(clutter: Bool = false) -> SampleScene { SampleScene(size: photoSize, windowShare: clutter ? 0.5 : 0.6) }
 
-    static func capture(_ scene: SampleScene) -> FrozenCapture {
-        let lens = CameraIntrinsics(fx: 1400, fy: 1400, cx: 960, cy: 720, width: 1920, height: 1440)
+    /// A rectangle on a plane parallel to the wall, `offset` metres in front of it (+) or behind it (-), in the wall's x and y (metres).
+    private struct Patch {
+        var x0: Double, x1: Double, y0: Double, y1: Double
+        var offset: Double
+        func contains(_ x: Double, _ y: Double) -> Bool { x >= x0 && x <= x1 && y >= y0 && y <= y1 }
+    }
+
+    private static let lens = CameraIntrinsics(fx: 1400, fy: 1400, cx: 960, cy: 720, width: 1920, height: 1440)
+
+    /// The frozen frame, and the opening's four corners (TL, TR, BR, BL) in the world.
+    static func capture(_ scene: SampleScene, clutter: Bool = false) -> (capture: FrozenCapture, opening: [Vec3]) {
         let widthPx = Double(scene.frameCorners[1].x - scene.frameCorners[0].x)
         // The wall's distance that puts a window of this width across that many pixels
         let distance = SampleScene.widthIn / inchesPerMetre * lens.fx / widthPx
         let camera = Mat4.rigid(right: Vec3(0, -1, 0), up: Vec3(1, 0, 0), back: Vec3(0, 0, 1), origin: Vec3(0, 1.5, 0))
         let wall = Plane(point: Vec3(0, 0, -distance), normal: Vec3(0, 0, 1))!
-        let view = FrozenView(cameraTransform: camera, intrinsics: lens, wall: wall, depth: nil,
-                              photoWidthPx: Double(scene.size.width), photoHeightPx: Double(scene.size.height))
-        let jpeg = scene.image(withCard: false).jpegData(compressionQuality: 0.85) ?? Data()
-        return FrozenCapture(view: view, jpeg: jpeg, widthPx: Int(scene.size.width), heightPx: Int(scene.size.height), epoch: 0, trackingLostCount: 0, restartsForTracking: 0)
+        let bare = FrozenView(cameraTransform: camera, intrinsics: lens, wall: wall, depth: nil, photoWidthPx: Double(scene.size.width), photoHeightPx: Double(scene.size.height))
+        let opening = bare.worldCorners(photoPx: scene.frameCorners.map { Vec2(Double($0.x), Double($0.y)) })?.points ?? []
+        let (x0, x1) = (opening.map { $0.x }.min() ?? 0, opening.map { $0.x }.max() ?? 0), (y0, y1) = (opening.map { $0.y }.min() ?? 0, opening.map { $0.y }.max() ?? 0)
+        var patches: [Patch] = []
+        var blinds: Patch?
+        if clutter {
+            blinds = Patch(x0: x0, x1: x1, y0: y1 - 0.30, y1: y1, offset: -0.05)
+            patches = [Patch(x0: x0 - 0.12, x1: x0 + 0.08, y0: y0 - 0.05, y1: y0 + 0.38, offset: 0.35),
+                       Patch(x0: x0 - 0.08, x1: x1 + 0.08, y0: y1 + 0.14, y1: y1 + 0.30, offset: 0.12),
+                       Patch(x0: x1 + 0.10, x1: x1 + 0.33, y0: y0 + 0.45, y1: y0 + 0.95, offset: 0.03)]
+        }
+        let depth = depthMap(camera: camera, wall: wall, distance: distance, opening: Patch(x0: x0, x1: x1, y0: y0, y1: y1, offset: 0), blinds: blinds, front: patches)
+        let view = FrozenView(cameraTransform: camera, intrinsics: lens, wall: wall, depth: depth, photoWidthPx: Double(scene.size.width), photoHeightPx: Double(scene.size.height))
+        var image = scene.image(withCard: false)
+        if clutter { image = draw(clutter: patches, blinds: blinds, over: image, view: view, wallZ: -distance) }
+        let jpeg = image.jpegData(compressionQuality: 0.85) ?? Data()
+        let frozen = FrozenCapture(view: view, jpeg: jpeg, widthPx: Int(scene.size.width), heightPx: Int(scene.size.height), epoch: 0, trackingLostCount: 0, restartsForTracking: 0)
+        return (frozen, opening)
     }
 
-    /// The corners a shaky hand leaves: the top ones on the frame, the bottom-right a little off, the bottom-left far outside it.
-    static func shaky(_ scene: SampleScene) -> [CGPoint] {
-        let f = scene.frameCorners
-        let pxPerIn = (f[1].x - f[0].x) / CGFloat(SampleScene.widthIn)
-        return [f[0], f[1], CGPoint(x: f[2].x + 0.4 * pxPerIn, y: f[2].y + 0.3 * pxPerIn), CGPoint(x: f[3].x - 1.6 * pxPerIn, y: f[3].y + 1.4 * pxPerIn)]
+    /// The depth map the camera would read (256 x 192, metres along its view direction): the wall, the glass behind the opening, blinds
+    /// hung inside it, and what stands in front.
+    private static func depthMap(camera: Mat4, wall: Plane, distance: Double, opening: Patch, blinds: Patch?, front: [Patch]) -> FrozenDepth {
+        let (w, h) = (256, 192)
+        let k = lens.scaled(toWidth: Double(w), height: Double(h))
+        let inverse = camera.inverseRigid
+        let wallZ = -distance
+        var d = [Float](repeating: 0, count: w * h)
+        func hit(_ o: Vec3, _ dir: Vec3, _ offset: Double) -> (x: Double, y: Double, t: Double)? {
+            guard abs(dir.z) > 1e-9 else { return nil }
+            let t = (wallZ + offset - o.z) / dir.z
+            return t > 0 ? (o.x + dir.x * t, o.y + dir.y * t, t) : nil
+        }
+        for y in 0..<h {
+            for x in 0..<w {
+                guard let r = ImageMapping.ray(throughNativePixel: Vec2(Double(x) + 0.5, Double(y) + 0.5), cameraTransform: camera, intrinsics: k) else { continue }
+                var nearest: Double?
+                func take(_ t: Double) { if nearest == nil || t < nearest! { nearest = t } }
+                for p in front { if let q = hit(r.origin, r.direction, p.offset), p.contains(q.x, q.y) { take(q.t) } }
+                if let q = hit(r.origin, r.direction, 0) {
+                    if opening.contains(q.x, q.y) {
+                        if let b = blinds, let bq = hit(r.origin, r.direction, b.offset), b.contains(bq.x, bq.y) {
+                            take(bq.t)
+                        } else if let g = hit(r.origin, r.direction, -0.10) {
+                            take(g.t)
+                        }
+                    } else {
+                        take(q.t)
+                    }
+                }
+                if let t = nearest { d[y * w + x] = Float(-inverse.transform(r.origin + r.direction * t).z) }
+            }
+        }
+        return FrozenDepth(width: w, height: h, depthM: d, confidence: [UInt8](repeating: 2, count: w * h))
+    }
+
+    /// The blinds, lamp, valance and picture drawn over the sample photo where their planes put them.
+    private static func draw(clutter: [Patch], blinds: Patch?, over image: UIImage, view: FrozenView, wallZ: Double) -> UIImage {
+        func photo(_ p: Patch) -> CGRect? {
+            let a = view.photoPixel(ofWorld: Vec3(p.x0, p.y1, wallZ + p.offset)), b = view.photoPixel(ofWorld: Vec3(p.x1, p.y0, wallZ + p.offset))
+            guard let a = a, let b = b else { return nil }
+            return CGRect(x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y)
+        }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: image.size, format: format).image { ctx in
+            image.draw(at: .zero)
+            let g = ctx.cgContext
+            if let b = blinds, let r = photo(b) {
+                // Slats hung inside the recess
+                UIColor(rgb: 0xCFC9BC).setFill()
+                g.fill(r)
+                UIColor(rgb: 0xB5AE9F).setFill()
+                var y = r.minY
+                while y < r.maxY { g.fill(CGRect(x: r.minX, y: y, width: r.width, height: 3)); y += 14 }
+            }
+            // The picture on the wall: a dark frame round a bright print
+            if let r = photo(clutter[2]) {
+                UIColor(rgb: 0x2B2B2B).setFill()
+                g.fill(r)
+                UIColor(rgb: 0xE6D9B8).setFill()
+                g.fill(r.insetBy(dx: 12, dy: 12))
+                UIColor(rgb: 0x8DA28B).setFill()
+                g.fill(r.insetBy(dx: 30, dy: 40))
+            }
+            // The valance above the window
+            if let r = photo(clutter[1]) {
+                g.saveGState()
+                g.setShadow(offset: CGSize(width: 0, height: 6), blur: 12, color: UIColor.black.withAlphaComponent(0.35).cgColor)
+                UIColor(rgb: 0x6E5B4B).setFill()
+                g.fill(r)
+                g.restoreGState()
+            }
+            // The lamp: a shade on a stand, in front of the lower-left corner
+            if let r = photo(clutter[0]) {
+                g.saveGState()
+                g.setShadow(offset: CGSize(width: 4, height: 8), blur: 14, color: UIColor.black.withAlphaComponent(0.4).cgColor)
+                UIColor(rgb: 0x3A3A3E).setFill()
+                g.fill(CGRect(x: r.midX - 7, y: r.minY + r.height * 0.45, width: 14, height: r.height * 0.55))
+                UIColor(rgb: 0xE9E0C9).setFill()
+                let shade = CGMutablePath()
+                shade.move(to: CGPoint(x: r.minX + r.width * 0.12, y: r.minY + r.height * 0.45))
+                shade.addLine(to: CGPoint(x: r.maxX - r.width * 0.12, y: r.minY + r.height * 0.45))
+                shade.addLine(to: CGPoint(x: r.maxX, y: r.minY))
+                shade.addLine(to: CGPoint(x: r.minX, y: r.minY))
+                shade.closeSubpath()
+                g.addPath(shade)
+                g.fillPath()
+                g.restoreGState()
+            }
+        }
+    }
+
+    /// A rectangle a shaky hand leaves: the left edge 1.6 in outside the frame, the bottom 1.4 in below it, the right side 0.4 in in.
+    static func off(_ opening: [Vec3], view: FrozenView) -> FrozenRect? {
+        guard let r = FrozenRect.bounding(of: opening, plane: view.wall, viewer: view.viewer) else { return nil }
+        var o = r
+        o.left -= 1.6 / inchesPerMetre
+        o.bottom -= 1.4 / inchesPerMetre
+        o.right -= 0.4 / inchesPerMetre
+        return o
     }
 }
 
 // MARK: - The AR screen, over a drawn window
 
 /// The measuring screens as they look on a phone: the capture screen with a drawn window where the camera would be, and the frozen-photo
-/// editor over the same drawn photo (`-debugOpen hud`, `freeze`, `freeze-skew`, `freeze-two`).
+/// editor over the same drawn photo (`-debugOpen hud`, `freeze`, `freeze-clutter`, `freeze-off`, `freeze-two`).
 struct DebugCaptureSample: View {
     let mode: String
     let session: MeasureSession
@@ -200,27 +322,31 @@ struct DebugCaptureSample: View {
     }
 
     @ViewBuilder private var freeze: some View {
-        let s = SampleFrozen.scene()
-        let capture = SampleFrozen.capture(s)
+        let clutter = mode == "freeze-clutter"
+        let s = SampleFrozen.scene(clutter: clutter)
+        let made = SampleFrozen.capture(s, clutter: clutter)
         let title = "WINDOW \(session.number) OF 7"
         switch mode {
-        case "freeze-skew":
-            FreezeFrameEditor(capture: capture, earlier: [], title: title, start: (SampleFrozen.shaky(s), .editing),
+        case "freeze-off":
+            // Dragged off the frame: the outline goes through the dots, wherever they are
+            FreezeFrameEditor(capture: made.capture, earlier: [], title: title, start: (SampleFrozen.off(made.opening, view: made.capture.view), .editing),
                               onClose: { }, onRetake: { }, onAddAnother: { _ in }, onUse: { _ in })
         case "freeze-two":
-            FreezeFrameEditor(capture: capture, earlier: Self.earlierPhoto(capture, s), title: title, start: (s.frameCorners, .editing),
+            FreezeFrameEditor(capture: made.capture, earlier: Self.earlierPhoto(made), title: title,
+                              start: (FrozenRect.bounding(of: made.opening, plane: made.capture.view.wall, viewer: made.capture.view.viewer), .editing),
                               onClose: { }, onRetake: { }, onAddAnother: { _ in }, onUse: { _ in })
         default:
-            // The whole pipeline: the phone looks for the window in the still, and each corner snaps onto the frame's corner
-            FreezeFrameEditor(capture: capture, earlier: [], title: title,
+            // The whole pipeline: the depth sensor finds the opening and each side is set onto its edge in the photo
+            FreezeFrameEditor(capture: made.capture, earlier: [], title: title,
                               onClose: { }, onRetake: { }, onAddAnother: { _ in }, onUse: { _ in })
         }
     }
 
-    /// The answer of an earlier photo of the same window, a little different.
-    private static func earlierPhoto(_ capture: FrozenCapture, _ s: SampleScene) -> [FrozenResult] {
-        let nudge = s.frameCorners.enumerated().map { i, p in Vec2(Double(p.x) + (i == 1 || i == 2 ? 5 : -2), Double(p.y) + (i < 2 ? -3 : 4)) }
-        return FrozenMeasure.measure(view: capture.view, photoPx: nudge).map { [$0] } ?? []
+    /// The answer of an earlier photo of the same window that is two inches wider.
+    private static func earlierPhoto(_ made: (capture: FrozenCapture, opening: [Vec3])) -> [FrozenResult] {
+        guard var r = FrozenRect.bounding(of: made.opening, plane: made.capture.view.wall, viewer: made.capture.view.viewer) else { return [] }
+        r.right += 2.0 / inchesPerMetre
+        return FrozenMeasure.measure(rect: r, view: made.capture.view).map { [$0] } ?? []
     }
 }
 
@@ -265,7 +391,7 @@ extension HomeownerStore {
     func openDebug(_ name: String) {
         let room = path.compactMap { r -> String? in if case .method(let room) = r { return room } else { return nil } }.last ?? "Bedroom 1"
         switch name {
-        case "hud", "hud-howto", "freeze", "freeze-skew", "freeze-two":
+        case "hud", "hud-howto", "freeze", "freeze-clutter", "freeze-off", "freeze-two":
             method = .corners
             measureSession = MeasureSession(method: .corners, room: room, number: 4)
         case "label":

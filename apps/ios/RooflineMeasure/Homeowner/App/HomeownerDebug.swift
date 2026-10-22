@@ -13,7 +13,7 @@ import RooflineCore
 ///                               (-debugE2EAddress "<address>" and -debugE2EServices windows,roof pick what it asks for,
 ///                               -debugE2EPause <seconds> holds each main screen for a screenshot; run it with `xcrun simctl launch --console`)
 ///   -debugGo <step>             show a step of the saved request after opening (welcome address results coaching rooms list styles quote contact book booked status)
-///   -debugOpen <name>           open a measuring screen over the scenario's: hud, hud-howto, freeze, freeze-skew, freeze-two, label, scan, needs-iphone, needs-pro,
+///   -debugOpen <name>           open a measuring screen over the scenario's: hud, hud-howto, freeze, freeze-clutter, freeze-off, freeze-two, label, scan, needs-iphone, needs-pro,
 ///                               card, card3, card4, window2, window4, windowdart (use with -debugScenario method)
 enum HomeownerDebug {
     struct Options {

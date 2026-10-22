@@ -52,16 +52,19 @@ enum WindowRectangleDetector {
     // MARK: A frozen frame
 
     /// The window frame in an upright photo (a frozen camera frame), TL, TR, BR, BL in the photo's own pixels, when one is believable;
-    /// nil otherwise. The largest believable outline wins, the casing round a window is stepped past (`AutoCorners.pickWindow`). Blocking
-    /// (tens of milliseconds): call it off the main thread.
-    static func window(in photo: CGImage) -> [Vec2]? {
+    /// nil otherwise. The largest believable outline that holds `aimedAt` (the circle the person aimed at the window, the photo's middle)
+    /// wins, and the casing round a window is stepped past (`AutoCorners.pickWindow`); one that does not hold it, a pane or a sash off to
+    /// the side, is out. Blocking (tens of milliseconds): call it off the main thread.
+    static func window(in photo: CGImage, aimedAt aim: Vec2? = nil) -> [Vec2]? {
         let width = photo.width, height = photo.height
         guard width > 0, height > 0 else { return nil }
         let k = min(1, photoSide / CGFloat(max(width, height)))
         let small = k < 1 ? scaled(photo, by: k) ?? photo : photo
         let sw = Double(small.width), sh = Double(small.height)
         let candidates = quads(in: small, requests: [makeRequest(minimumSize: 0.15, minimumAspect: 0.2)])
-        guard let picked = AutoCorners.pickWindow(candidates, imageWidth: sw, imageHeight: sh) else { return nil }
+        let scale = sw / Double(width)
+        let aimSmall = aim.map { Vec2($0.x * scale, $0.y * scale) }
+        guard let picked = AutoCorners.pickWindow(candidates, imageWidth: sw, imageHeight: sh, aimedAt: aimSmall) else { return nil }
         let back = Double(width) / sw
         return picked.corners.map { Vec2($0.x * back, $0.y * back) }
     }

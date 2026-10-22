@@ -163,6 +163,12 @@ public struct FrozenView: Equatable, Sendable {
     /// The depth may turn the plane by at most this much from the wall ARKit found (degrees).
     public static let maxTurnDeg = 4.0
 
+    /// A corner's own noise at a point on the wall: `pixelSpreadPx` photo pixels there, at least `minSpreadM`.
+    public func spreadM(atWorld p: Vec3) -> Double {
+        let distance = p.distance(to: viewer)
+        return max(Self.minSpreadM, Self.pixelSpreadPx * distance / max(intrinsics.fx, 1) * intrinsics.width / max(photoHeightPx, 1))
+    }
+
     /// The four corners on the photo (TL, TR, BR, BL in any order) as points on the frame's plane, with that plane and each corner's
     /// own noise in metres. Nil when a ray misses the plane.
     public func worldCorners(photoPx: [Vec2]) -> (points: [Vec3], plane: Plane, spreadM: [Double])? {
@@ -175,8 +181,7 @@ public struct FrozenView: Equatable, Sendable {
             guard let ray = ImageMapping.ray(throughNativePixel: native, cameraTransform: cameraTransform, intrinsics: intrinsics),
                   let hit = plane.intersect(rayOrigin: ray.origin, direction: ray.direction) else { return nil }
             points.append(hit)
-            let distance = hit.distance(to: ray.origin)
-            spreads.append(max(Self.minSpreadM, Self.pixelSpreadPx * distance / max(intrinsics.fx, 1) * intrinsics.width / max(photoHeightPx, 1)))
+            spreads.append(spreadM(atWorld: hit))
         }
         return (points, plane, spreads)
     }

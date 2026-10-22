@@ -51,32 +51,38 @@ Three ways to measure, each saved as one window:
   `cardauto` and `windowauto` run the real photo detection on the sample photo.
 
 **Measuring from a frozen photo** (depth/AR corners, homeowner app). Tapping a corner with a held phone, or watching an outline that
-jumps with every shake, is where wrong sizes came from, so the corners are now marked on a STILL:
+jumps with every shake, is where wrong sizes came from, so the window is marked on a STILL, as a rectangle:
 
-1. The camera finds the wall (`ArMeasureController`, as before). **Capture** (`ArCaptureHud`) waits up to 0.7 s for a still hand, then
-   freezes that one `ARFrame` (`ArFrameEngine.freeze`, `AR/FrozenCapture.swift`): the upright JPEG, camera pose and lens numbers, the locked
-   wall plane, and the LiDAR depth and confidence copied into plain arrays (`FrozenDepth`).
-2. The frozen photo opens in `FreezeFrameEditor`. `WindowRectangleDetector.window(in:)` (Vision) looks for the window; its corners count only
-   if, put on the wall, they make a believable window (`ArAutoCorners.isPlausibleWindow`), and each is then moved onto the crossing of the
-   strongest upright and level edges in the picture (`CornerSnap`, Core). Nothing believable: four dots start inset and the hint says to drag.
-3. The person drags the dots (slow 0.4 gain, magnifier, pinch to zoom). A dot let go within about 25 px (of a 1440 px photo) of a frame corner
-   snaps onto it, only when both edges are strong and clearly ahead of any look-alike (`CornerSnap`: Sobel + a Hough vote over lines within
-   14 degrees of upright/level, on a grey crop; no snap otherwise).
-4. Every change is measured at once from the frozen data alone (`FrozenMeasure.measure`): each dot's ray meets the frame's plane (the wall
-   moved to the frame's face by the depth readings round the four corners, within 5 cm), `CornerCapture.finish` orders them by gravity and
-   fits the level rectangle (`RectangleFit`), `sizeFromArPoints` sizes it. The drawn outline is that rectangle (the dots are small, numbered
-   rings: where the corners were left), and ONE `FrozenResult` feeds the two plates, the status card, the preview and what is sent, so there
-   is one width and one height everywhere.
-5. When the corners disagree, the dot that looks off is ringed red only if it is clearly one (the other three agree with each other and the
-   next-best explanation is still off by 0.4 in or more); a slanting top edge could be either end, so no dot is named and the hint says to check
-   the corners. "Use this size" is never blocked; the doubt travels in `cornerSpreadM` (the "about" grows, the list marks it a check).
-6. **Take another photo to double-check** (up to three of the same window, same tracking session; a restart sets the earlier ones aside):
-   each corner is the median over the photos, refitted to a rectangle; photos more than 3/4 in apart at a corner say so and mark the window
-   a check (`FrozenMeasure.combine`). The shown, drawn and sent size is the combined one; the photo kept is the last, with the combined
-   outline projected into it.
+1. The camera finds the wall (`ArMeasureController`, as before). The person aims the circle at the window and taps **Capture**
+   (`ArCaptureHud`); the phone waits up to 0.7 s for a still hand, then freezes that one `ARFrame` (`ArFrameEngine.freeze`,
+   `AR/FrozenCapture.swift`): the upright JPEG, camera pose and lens numbers, the locked wall plane, and the LiDAR depth and confidence
+   copied into plain arrays (`FrozenDepth`).
+2. The frozen photo opens in `FreezeFrameEditor`, which holds the window as a `FrozenRect` (Core): four edges (left, right, top, bottom,
+   level with gravity) on the frame's plane. The phone starts it from the DEPTH SENSOR (`OpeningFinder`): a window is where the wall isn't.
+   Depth pixels behind the wall's plane by more than 2 cm, or with no/low-confidence reading (glass), that are connected to the middle of the
+   picture are the opening; things in FRONT of the wall (more than 6 cm: a lamp, a valance) are neither wall nor window and never decide an
+   edge. Each side is the median of the opening's boundary along that side, counting only where the boundary pixel touches the wall's own
+   depth, so a lamp over a corner or a valance cannot move it; blinds hung inside the recess are just opening. Each side is then set onto the
+   strongest edge in the photo within 3 cm of it (`CornerSnap.edgeLine`, Sobel + Hough) when the picture is clear, else it keeps the depth's
+   edge. Only when depth finds nothing (no LiDAR, the middle on a solid wall, an opening cut off by the picture) does Vision's
+   rectangle finder run: the largest believable outline that holds the middle of the picture, and never one smaller than 15 in on a side
+   (`OpeningFinder.isPlausible`; a sash or a pane is not a window). Nothing found: the rectangle starts inset and the hint says to drag.
+3. The four dots ARE the rectangle's corners (the outline goes exactly through them) and a square on the middle of each side moves that
+   side only. Dragging a corner moves the two edges that meet there, so its neighbours follow (`FrozenRect.moved`); the dot stays under the
+   finger (no gain; a magnifier shows it above the finger) and pinch zooms. A corner let go within about 25 px of a frame corner snaps onto it
+   when both edges are strong and clear (`CornerSnap`); the snapped point is then converted to the edges. After each drag the depth round the
+   corners says again where the frame's face is (`FrozenView.framePlane`, `FrozenRect.rebased`), keeping the dots where they are.
+4. What is drawn is what is measured is what is sent: `FrozenMeasure.measure(rect:)` sizes the rectangle's own four corners
+   (`sizeFromArPoints`), and the two plates, the status card, the label sheet and the server get that one width and height. Nothing is
+   fitted or averaged after the finger lets go. A rectangle cannot disagree with itself, so the old "corner N looks off" is gone from the
+   editor; `RectangleFit` stays in Core for the corners-as-tapped path.
+5. **Take another photo to double-check** (up to three of the same window, same tracking session; a restart sets the earlier ones aside):
+   this photo's rectangle is what is sent; the earlier photos are only a check. Corners more than 3/4 in apart say so and mark the window a
+   check (`FrozenMeasure.combine`, `withDoubt`).
 
-`-debugOpen freeze` runs steps 2 to 4 on the drawn sample photo (a frozen frame with no depth sensor); `freeze-skew` starts from shaky
-dots, `freeze-two` from a second photo, `hud` shows the Capture screen.
+`-debugOpen freeze` runs steps 2 to 4 on the drawn sample photo (a frozen frame with a synthetic depth map); `freeze-clutter` adds the
+owner's window (blinds over the top, a lamp in front of a corner, a valance above, a picture beside it), `freeze-off` starts from a
+rectangle that is off the frame, `freeze-two` from an earlier photo that disagrees, `hud` shows the Capture screen.
 
 The older live path (reticle, hold still, tap each corner) is unchanged for the rep app (`MeasureChooserView`).
 
@@ -155,7 +161,7 @@ xcrun simctl launch booted com.premjeetech.winchoice.measure -debugFake -debugSc
 ```
 
 The simulator has no camera, AR or RoomPlan: the measuring screens show a designed "needs an iPhone" page, and DEBUG builds can
-open them over a drawn window photo (`-debugOpen hud|hud-howto|freeze|freeze-skew|freeze-two|label|scan|card|card3|card4|window2|window4|windowdart`, with
+open them over a drawn window photo (`-debugOpen hud|hud-howto|freeze|freeze-clutter|freeze-off|freeze-two|label|scan|card|card3|card4|window2|window4|windowdart`, with
 `-debugScenario method`). Unsigned simulator builds also have no Keychain: the app says it cannot save the request for later and carries on.
 
 **DEBUG-only launch arguments** (`Homeowner/App/HomeownerDebug.swift`, compiled out of Release):
@@ -176,7 +182,7 @@ xcrun simctl launch --console booted com.premjeetech.winchoice.measure -debugSer
 ### Tests
 
 ```sh
-cd apps/ios/Core && ./scripts/check.sh                       # the logic, plain swiftc, 120 checks
+cd apps/ios/Core && ./scripts/check.sh                       # the logic, plain swiftc, 125 checks
 cd apps/ios && xcodebuild test -project RooflineMeasure.xcodeproj -scheme WinChoice \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' CODE_SIGNING_ALLOWED=NO
 xcodebuild test -project RooflineMeasure.xcodeproj -scheme WinChoiceUITests \

@@ -58,8 +58,10 @@ public enum FrozenCopy {
     public static func offCorner(handle: Int) -> String { "Corner \(handle + 1) looks off the frame. Drag it onto the corner." }
     public static let notMeasurable = "These corners do not make a window on a wall. Drag them onto the frame."
     public static let looking = "Looking for your window..."
-    public static let notFound = "We couldn't find the window on its own. Drag the four dots onto the corners of the frame."
-    public static let foundWindow = "We found your window. Drag any dot that is off, then tap Use this size."
+    public static let notFound = "We couldn't find the window on its own. Drag the corners and the squares on the sides onto the frame."
+    public static let foundWindow = "We found your window. Drag any dot or square that is off, then tap Use this size."
+    public static let foundByDepth = "We found your window with the depth sensor. Drag any dot or square that is off, then tap Use this size."
+    public static let editing = "Drag a corner, or the square on a side, until the yellow outline sits on the frame. Then tap Use this size."
     /// Photos of one window that differ by more than the limit at some corner.
     public static func photosDisagree(inches: Double) -> String {
         "Your photos differ by \(Eighths.format(inches)) in. Check the corners, or take this photo again."
@@ -82,6 +84,14 @@ public enum FrozenMeasure {
         guard let w = view.worldCorners(photoPx: photoPx) else { return nil }
         let distance = Vec3.mean(w.points).map { $0.distance(to: view.viewer) } ?? 0
         return result(rawM: w.points, spreadM: w.spreadM, wall: w.plane, viewer: view.viewer, device: view.device, distanceM: distance)
+    }
+
+    /// The result for the rectangle the person edits: its four corners (they are the dots) on its plane, sized like any window. Nil when
+    /// the rectangle makes no window (a ray missing, no "up" in the plane).
+    public static func measure(rect: FrozenRect, view: FrozenView) -> FrozenResult? {
+        let corners = rect.cornersM
+        let distance = Vec3.mean(corners).map { $0.distance(to: view.viewer) } ?? 0
+        return result(rawM: corners, spreadM: corners.map { view.spreadM(atWorld: $0) }, wall: rect.plane, viewer: view.viewer, device: view.device, distanceM: distance)
     }
 
     /// The finished result for four points on a plane. The one place a `FrozenResult` is made.
@@ -149,11 +159,14 @@ public enum FrozenMeasure {
                                     distanceM: results.map { $0.distanceM }.max() ?? 0) else { return nil }
         let disagrees = worstIn > maxDisagreeIn
         // Photos that disagree are a window to check, whatever each looked like alone
-        var out = combined
-        if disagrees {
-            out.finished.cornerSpreadM = out.finished.cornerSpreadM.map { max($0, FitLimits.checkSpreadM) }
-            if let size = sizeFromArPoints(out.finished.windowPointsM, device: device, cornerSpreadM: out.finished.windowSpreadM) { out.size = size }
-        }
-        return Combined(result: out, photos: results.count, disagreeIn: worstIn, disagrees: disagrees)
+        return Combined(result: disagrees ? withDoubt(combined, device: device) : combined, photos: results.count, disagreeIn: worstIn, disagrees: disagrees)
+    }
+
+    /// The same window with every corner's spread at least `FitLimits.checkSpreadM`, so the server's "about" grows and the list marks it a check.
+    public static func withDoubt(_ r: FrozenResult, device: ArDevice) -> FrozenResult {
+        var out = r
+        out.finished.cornerSpreadM = out.finished.cornerSpreadM.map { max($0, FitLimits.checkSpreadM) }
+        if let size = sizeFromArPoints(out.finished.windowPointsM, device: device, cornerSpreadM: out.finished.windowSpreadM) { out.size = size }
+        return out
     }
 }
