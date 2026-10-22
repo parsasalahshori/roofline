@@ -47,23 +47,38 @@ Three ways to measure, each saved as one window:
   card-sized one), stepped in once from casing or trim to the opening that holds all the panes ("the inside of the frame"). The card's
   outline is moved in by the rounded-corner tip inset, since the model takes taps at the tips. The corners are put on `PhotoTapView` with
   "We found your card. Drag a corner if it's off."; nothing found with confidence means silent manual tapping, as before.
-- *Depth/AR corners* (the homeowner app only: `ArMeasureController(autoCorners: true)`): while the ring is on the locked wall with no
-  corner placed, about three times a second `ArWindowDetector` (its own queue) gives Vision the camera image; the outline holding the
-  reticle is sent as rays onto the wall plane (the frame's own plane where depth shows it stands off the wall) and must look like a window
-  (`ArAutoCorners`: sides, equal opposite sides, equal diagonals). After two looks in the same place the HUD draws it and offers "Use these
-  corners", which places the four points through `CornerCapture.place` exactly as taps do (wall check, gravity ordering, the photo of that
-  frame); Undo takes all four back. Hand tapping is unchanged. `-debugOpen hud-auto` draws it over the sample, `cardauto` and `windowauto`
-  run the real photo detection on the sample photo.
+- *Depth/AR corners* (the homeowner app): see the next section. The phone proposes the corners on a frozen photo, not on the live camera.
+  `cardauto` and `windowauto` run the real photo detection on the sample photo.
 
-**A window is a rectangle** (depth/AR corners, homeowner app): after the fourth corner `RectangleFit` (Core) fits the best level rectangle in
-the wall's plane (left = mean of the two left corners, and so on; turned only when all four sides agree on a tilt of 3 degrees or more).
-That rectangle is drawn, labelled with one width and one height, photographed and sent (`FinishedCorners.windowPointsM`), so the server's
-`sizeFromArPoints` gives back exactly the numbers on screen. The corners as placed are kept: when opposite sides differ by more than 3/4 in
-or 2% (or a corner is 3/4 in from its rectangle corner) the corner whose removal leaves the other three agreeing best gets a red ring,
-"Corner N looks off the frame. Move it onto the corner and tap again.", and "Redo corner N" (or tap its dot) places just that one again
-(`CornerCapture.removeCorner`). "Use this size" is never blocked; the server cannot be told "check" about a perfect rectangle, so the
-doubt travels in the corners' `cornerSpreadM` (the "about" grows, and the label sheet marks it a check). The magnifier moves off any placed
-corner (`LoupePlacement`). `-debugOpen hud-skew` draws a skewed quad.
+**Measuring from a frozen photo** (depth/AR corners, homeowner app). Tapping a corner with a held phone, or watching an outline that
+jumps with every shake, is where wrong sizes came from, so the corners are now marked on a STILL:
+
+1. The camera finds the wall (`ArMeasureController`, as before). **Capture** (`ArCaptureHud`) waits up to 0.7 s for a still hand, then
+   freezes that one `ARFrame` (`ArFrameEngine.freeze`, `AR/FrozenCapture.swift`): the upright JPEG, camera pose and lens numbers, the locked
+   wall plane, and the LiDAR depth and confidence copied into plain arrays (`FrozenDepth`).
+2. The frozen photo opens in `FreezeFrameEditor`. `WindowRectangleDetector.window(in:)` (Vision) looks for the window; its corners count only
+   if, put on the wall, they make a believable window (`ArAutoCorners.isPlausibleWindow`), and each is then moved onto the crossing of the
+   strongest upright and level edges in the picture (`CornerSnap`, Core). Nothing believable: four dots start inset and the hint says to drag.
+3. The person drags the dots (slow 0.4 gain, magnifier, pinch to zoom). A dot let go within about 25 px (of a 1440 px photo) of a frame corner
+   snaps onto it, only when both edges are strong and clearly ahead of any look-alike (`CornerSnap`: Sobel + a Hough vote over lines within
+   14 degrees of upright/level, on a grey crop; no snap otherwise).
+4. Every change is measured at once from the frozen data alone (`FrozenMeasure.measure`): each dot's ray meets the frame's plane (the wall
+   moved to the frame's face by the depth readings round the four corners, within 5 cm), `CornerCapture.finish` orders them by gravity and
+   fits the level rectangle (`RectangleFit`), `sizeFromArPoints` sizes it. The drawn outline is that rectangle (the dots are small, numbered
+   rings: where the corners were left), and ONE `FrozenResult` feeds the two plates, the status card, the preview and what is sent, so there
+   is one width and one height everywhere.
+5. When the corners disagree, the dot that looks off is ringed red only if it is clearly one (the other three agree with each other and the
+   next-best explanation is still off by 0.4 in or more); a slanting top edge could be either end, so no dot is named and the hint says to check
+   the corners. "Use this size" is never blocked; the doubt travels in `cornerSpreadM` (the "about" grows, the list marks it a check).
+6. **Take another photo to double-check** (up to three of the same window, same tracking session; a restart sets the earlier ones aside):
+   each corner is the median over the photos, refitted to a rectangle; photos more than 3/4 in apart at a corner say so and mark the window
+   a check (`FrozenMeasure.combine`). The shown, drawn and sent size is the combined one; the photo kept is the last, with the combined
+   outline projected into it.
+
+`-debugOpen freeze` runs steps 2 to 4 on the drawn sample photo (a frozen frame with no depth sensor); `freeze-skew` starts from shaky
+dots, `freeze-two` from a second photo, `hud` shows the Capture screen.
+
+The older live path (reticle, hold still, tap each corner) is unchanged for the rep app (`MeasureChooserView`).
 
 Wording rules (`Core/Sources/RooflineCore/SizeWording.swift`): whole inches and eighths ("35 5/8", never a decimal), accuracy rounded
 **up** and written "about 1/4 inch" (a plus-or-minus only ever follows "about"), "depth sensor" not "LiDAR", "bank card" not "ID-1".
@@ -140,7 +155,7 @@ xcrun simctl launch booted com.premjeetech.winchoice.measure -debugFake -debugSc
 ```
 
 The simulator has no camera, AR or RoomPlan: the measuring screens show a designed "needs an iPhone" page, and DEBUG builds can
-open them over a drawn window photo (`-debugOpen hud|hud-done|label|scan|card|card3|card4|window2|window4|windowdart`, with
+open them over a drawn window photo (`-debugOpen hud|hud-howto|freeze|freeze-skew|freeze-two|label|scan|card|card3|card4|window2|window4|windowdart`, with
 `-debugScenario method`). Unsigned simulator builds also have no Keychain: the app says it cannot save the request for later and carries on.
 
 **DEBUG-only launch arguments** (`Homeowner/App/HomeownerDebug.swift`, compiled out of Release):
@@ -161,7 +176,7 @@ xcrun simctl launch --console booted com.premjeetech.winchoice.measure -debugSer
 ### Tests
 
 ```sh
-cd apps/ios/Core && ./scripts/check.sh                       # the logic, plain swiftc, 113 checks
+cd apps/ios/Core && ./scripts/check.sh                       # the logic, plain swiftc, 120 checks
 cd apps/ios && xcodebuild test -project RooflineMeasure.xcodeproj -scheme WinChoice \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' CODE_SIGNING_ALLOWED=NO
 xcodebuild test -project RooflineMeasure.xcodeproj -scheme WinChoiceUITests \

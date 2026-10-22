@@ -4,8 +4,8 @@ import SwiftUI
 import UIKit
 
 // DEBUG only: what the measuring screens show in the simulator, which has no camera, AR or RoomPlan. A synthetic window photo
-// with a bank card on the glass (its corners are known, so tests can check them), the AR screen's controls over it, and a
-// scanned room. `-debugOpen <name>` opens one of them (see HomeownerDebug).
+// with a bank card on the glass (its corners are known, so tests can check them), the AR screen's controls over it, the frozen photo
+// to mark the corners on, and a scanned room. `-debugOpen <name>` opens one of them (see HomeownerDebug).
 
 /// A drawn window (35 5/8 x 59 5/8 in, the mockup's window) in any picture size, with a bank card on the lower sash.
 struct SampleScene {
@@ -123,146 +123,104 @@ struct SampleScene {
     }
 }
 
-// MARK: - Four corners placed skewed
+// MARK: - A frozen frame of the sample window
 
-/// The sample window with its four corners placed by a shaky hand: the top corners on the frame, the bottom-right a little low, the
-/// bottom-left far outside it (the way the owner's first real window came out). The level rectangle fitted to them is what `RectangleFit`
-/// makes of them, in screen points (the screen's points are put on a wall plane at the sample's scale, fitted, and brought back).
-struct SkewedSample {
-    /// The corners as placed, TL, TR, BR, BL, screen points.
-    let raw: [CGPoint]
-    /// The fitted rectangle, TL, TR, BR, BL.
-    let fitted: [CGPoint]
-    let widthIn: Double
-    let heightIn: Double
-    /// The corner the fit flags (0 to 3).
-    let flagged: Int?
+/// The sample window as a frozen camera frame would hold it: photographed square-on from the distance that makes the drawn window 35 5/8 x
+/// 59 5/8 in, with no depth sensor (the simulator has none). The corners of the drawing are therefore known in the world too.
+enum SampleFrozen {
+    static let photoSize = CGSize(width: 1440, height: 1920)
 
-    init(_ scene: SampleScene) {
+    static func scene() -> SampleScene { SampleScene(size: photoSize, windowShare: 0.6) }
+
+    static func capture(_ scene: SampleScene) -> FrozenCapture {
+        let lens = CameraIntrinsics(fx: 1400, fy: 1400, cx: 960, cy: 720, width: 1920, height: 1440)
+        let widthPx = Double(scene.frameCorners[1].x - scene.frameCorners[0].x)
+        // The wall's distance that puts a window of this width across that many pixels
+        let distance = SampleScene.widthIn / inchesPerMetre * lens.fx / widthPx
+        let camera = Mat4.rigid(right: Vec3(0, -1, 0), up: Vec3(1, 0, 0), back: Vec3(0, 0, 1), origin: Vec3(0, 1.5, 0))
+        let wall = Plane(point: Vec3(0, 0, -distance), normal: Vec3(0, 0, 1))!
+        let view = FrozenView(cameraTransform: camera, intrinsics: lens, wall: wall, depth: nil,
+                              photoWidthPx: Double(scene.size.width), photoHeightPx: Double(scene.size.height))
+        let jpeg = scene.image(withCard: false).jpegData(compressionQuality: 0.85) ?? Data()
+        return FrozenCapture(view: view, jpeg: jpeg, widthPx: Int(scene.size.width), heightPx: Int(scene.size.height), epoch: 0, trackingLostCount: 0, restartsForTracking: 0)
+    }
+
+    /// The corners a shaky hand leaves: the top ones on the frame, the bottom-right a little off, the bottom-left far outside it.
+    static func shaky(_ scene: SampleScene) -> [CGPoint] {
         let f = scene.frameCorners
-        let inPerPt = SampleScene.widthIn / Double(f[1].x - f[0].x)
-        raw = [f[0], f[1], CGPoint(x: f[2].x + 5, y: f[2].y + 7), CGPoint(x: f[3].x - 15, y: f[3].y + 24)]
-        func world(_ p: CGPoint) -> Vec3 { Vec3(Double(p.x) * inPerPt / inchesPerMetre, 3 - Double(p.y) * inPerPt / inchesPerMetre, -2) }
-        func screen(_ v: Vec3) -> CGPoint { CGPoint(x: v.x * inchesPerMetre / inPerPt, y: (3 - v.y) * inchesPerMetre / inPerPt) }
-        let plane = Plane(point: Vec3(0, 0, -2), normal: Vec3(0, 0, 1))!
-        if let fit = RectangleFit.fit(ordered: raw.map(world), plane: plane, viewer: Vec3(0, 1.4, 0)) {
-            fitted = fit.pointsM.map(screen)
-            widthIn = fit.widthIn
-            heightIn = fit.heightIn
-            flagged = fit.flaggedCorner
-        } else {
-            fitted = f
-            widthIn = SampleScene.widthIn
-            heightIn = SampleScene.heightIn
-            flagged = nil
-        }
+        let pxPerIn = (f[1].x - f[0].x) / CGFloat(SampleScene.widthIn)
+        return [f[0], f[1], CGPoint(x: f[2].x + 0.4 * pxPerIn, y: f[2].y + 0.3 * pxPerIn), CGPoint(x: f[3].x - 1.6 * pxPerIn, y: f[3].y + 1.4 * pxPerIn)]
     }
 }
 
 // MARK: - The AR screen, over a drawn window
 
-/// The measuring screen as it looks on a phone: a drawn window where the camera would be, the controls over it.
-struct DebugHudSample: View {
+/// The measuring screens as they look on a phone: the capture screen with a drawn window where the camera would be, and the frozen-photo
+/// editor over the same drawn photo (`-debugOpen hud`, `freeze`, `freeze-skew`, `freeze-two`).
+struct DebugCaptureSample: View {
     let mode: String
     let session: MeasureSession
     @State private var backdrop: UIImage?
     @State private var scene: SampleScene?
 
-    private var done: Bool { mode == "hud-done" || mode == "label" || skew }
-    /// Four corners placed with the bottom-left one off the frame (`-debugOpen hud-skew`): the level rectangle fitted to them is drawn and
-    /// sized, the corner that looks off has a red ring, and "Redo corner 4" is offered.
-    private var skew: Bool { mode == "hud-skew" }
-    /// The phone has found the window and offers its outline (`-debugOpen hud-auto`): no corner is placed yet.
-    private var auto: Bool { mode == "hud-auto" }
-
     var body: some View {
+        if mode.hasPrefix("freeze") { freeze } else { hud }
+    }
+
+    private var hud: some View {
         ZStack {
             // The picture fills the screen, under the status bar and the home indicator, as the camera does
             GeometryReader { geo in
-                ZStack {
+                Group {
                     if let image = backdrop {
                         Image(uiImage: image).resizable().frame(width: geo.size.width, height: geo.size.height).accessibilityHidden(true)
                     } else {
                         Color.black
                     }
-                    if let scene = scene, !auto { overlay(scene, size: geo.size) }
                 }
                 .task(id: geo.size) {
-                    let s = SampleScene(size: geo.size, windowShare: auto ? 0.4 : (skew ? 0.5 : 0.62))
+                    let s = SampleScene(size: geo.size, windowShare: 0.62)
                     scene = s
                     backdrop = s.image(withCard: false)
                 }
             }
             .ignoresSafeArea()
-            ArHud(model: model(scene), onClose: { }, onPlace: { }, onUndo: { }, onDone: { }, onHow: { }, onUseProposal: { }, onRedo: { _ in })
+            ArCaptureHud(model: model, onClose: { }, onCapture: { }, onHow: { })
             if mode == "hud-howto" { ArHowTo { } }
         }
     }
 
-    /// The tape between the corners, drawn on the picture (the AR scene draws it in 3D on a phone).
-    private func overlay(_ s: SampleScene, size: CGSize) -> some View {
-        // The fitted rectangle when the corners were placed skewed; the frame's own corners otherwise
-        let c = skew ? SkewedSample(s).fitted : s.frameCorners
-        return Canvas { ctx, _ in
-            var solid = Path()
-            solid.move(to: c[0]); solid.addLine(to: c[1]); solid.addLine(to: c[2])
-            if done { solid.addLine(to: c[3]); solid.closeSubpath() }
-            ctx.stroke(solid, with: .color(Theme.tape), style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
-            if !done {
-                var dash = Path()
-                dash.move(to: c[2]); dash.addLine(to: CGPoint(x: c[3].x + (c[2].x - c[3].x) * 0.06, y: c[3].y))
-                ctx.stroke(dash, with: .color(Theme.tape), style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [10, 7]))
-            }
-        }
-        .allowsHitTesting(false)
-    }
-
-    private func model(_ scene: SampleScene?) -> ArHudModel {
-        var m = ArHudModel()
+    private var model: ArCaptureModel {
+        var m = ArCaptureModel()
         m.title = "WINDOW \(session.number) OF 7"
         m.deviceChip = "Depth sensor on"
-        let placed = done ? 4 : (auto ? 0 : 2)
-        m.readout = auto ? LiveReadout() : LiveReadout(widthIn: SampleScene.widthIn, heightIn: done ? SampleScene.heightIn : nil, placed: placed)
-        m.phase = done ? .complete : .ready
-        m.canPlace = !done
-        m.canUndo = true
-        m.hint = done ? ArHowTo.checkHint : ArHudModel.cornerHint(placed: placed)
-        if auto, let s = scene {
-            m.proposal = s.frameCorners
-            m.hint = ArHudModel.proposalHint
-        } else if skew, let s = scene {
-            let k = SkewedSample(s)
-            m.readout = LiveReadout(widthIn: k.widthIn, heightIn: k.heightIn, placed: 4)
-            m.dots = k.raw
-            m.flaggedCorner = k.flagged.map { $0 + 1 }
-            m.hint = k.flagged.map { ArHudModel.offCornerHint(corner: $0 + 1) } ?? ArHowTo.checkHint
-            // One width on the top side, one height on the right side
-            m.edges = [
-                ArHudModel.Edge(id: 0, point: CGPoint(x: (k.fitted[0].x + k.fitted[1].x) / 2, y: k.fitted[0].y - 22), inches: k.widthIn, live: false),
-                ArHudModel.Edge(id: 1, point: CGPoint(x: min(k.fitted[1].x + 46, s.size.width - 40), y: (k.fitted[1].y + k.fitted[2].y) / 2), inches: k.heightIn, live: false),
-            ]
-        } else if let s = scene {
-            let c = s.frameCorners
-            m.dots = done ? c : Array(c.prefix(2))
-            m.edges = [
-                ArHudModel.Edge(id: 0, point: CGPoint(x: (c[0].x + c[1].x) / 2, y: c[0].y - 22), inches: SampleScene.widthIn, live: false),
-                ArHudModel.Edge(id: 1, point: CGPoint(x: min(c[1].x + 46, s.size.width - 40), y: (c[1].y + c[2].y) / 2), inches: SampleScene.heightIn, live: false),
-            ]
-            if !done { m.edges.removeLast() }
-        }
-        m.loupe = scene.flatMap { loupe(of: $0) }
+        m.phase = .ready
+        m.hint = ArCaptureModel.readyHint(photosTaken: 0)
         return m
     }
 
-    /// The picture around the corner being aimed at, as the magnifier shows it.
-    private func loupe(of s: SampleScene) -> UIImage? {
-        guard let image = backdrop, let cg = image.cgImage else { return nil }
-        let scale = CGFloat(cg.width) / s.size.width
-        let target = s.frameCorners[3]
-        let side: CGFloat = 36 * scale
-        let rect = CGRect(x: target.x * scale - side / 2, y: target.y * scale - side / 2, width: side, height: side)
-        guard let crop = cg.cropping(to: rect.integral) else { return nil }
-        return UIImage(cgImage: crop)
+    @ViewBuilder private var freeze: some View {
+        let s = SampleFrozen.scene()
+        let capture = SampleFrozen.capture(s)
+        let title = "WINDOW \(session.number) OF 7"
+        switch mode {
+        case "freeze-skew":
+            FreezeFrameEditor(capture: capture, earlier: [], title: title, start: (SampleFrozen.shaky(s), .editing),
+                              onClose: { }, onRetake: { }, onAddAnother: { _ in }, onUse: { _ in })
+        case "freeze-two":
+            FreezeFrameEditor(capture: capture, earlier: Self.earlierPhoto(capture, s), title: title, start: (s.frameCorners, .editing),
+                              onClose: { }, onRetake: { }, onAddAnother: { _ in }, onUse: { _ in })
+        default:
+            // The whole pipeline: the phone looks for the window in the still, and each corner snaps onto the frame's corner
+            FreezeFrameEditor(capture: capture, earlier: [], title: title,
+                              onClose: { }, onRetake: { }, onAddAnother: { _ in }, onUse: { _ in })
+        }
+    }
+
+    /// The answer of an earlier photo of the same window, a little different.
+    private static func earlierPhoto(_ capture: FrozenCapture, _ s: SampleScene) -> [FrozenResult] {
+        let nudge = s.frameCorners.enumerated().map { i, p in Vec2(Double(p.x) + (i == 1 || i == 2 ? 5 : -2), Double(p.y) + (i < 2 ? -3 : 4)) }
+        return FrozenMeasure.measure(view: capture.view, photoPx: nudge).map { [$0] } ?? []
     }
 }
 
@@ -307,7 +265,7 @@ extension HomeownerStore {
     func openDebug(_ name: String) {
         let room = path.compactMap { r -> String? in if case .method(let room) = r { return room } else { return nil } }.last ?? "Bedroom 1"
         switch name {
-        case "hud", "hud-done", "hud-howto", "hud-auto", "hud-skew":
+        case "hud", "hud-howto", "freeze", "freeze-skew", "freeze-two":
             method = .corners
             measureSession = MeasureSession(method: .corners, room: room, number: 4)
         case "label":

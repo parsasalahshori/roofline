@@ -73,6 +73,23 @@ struct PhotoTapView: View {
     /// The markers are corners the phone found (the person drags any that is off): VoiceOver says so.
     var proposed = false
     var onEdit: () -> Void = {}
+    /// A straightened outline to draw (the rectangle fitted to the markers, photo pixels, TL TR BR BL) in place of the line through the
+    /// markers, which then are small dots only: what is drawn is what is measured and sent.
+    var outline: [CGPoint] = []
+    /// Length plates on the picture, each at its photo point (the same numbers the status card shows).
+    var plates: [Plate] = []
+    /// The marker (index) that looks off the frame: it gets a red ring.
+    var flagged: Int?
+    /// When a marker is let go: the point it should land on instead (the frame's corner in the picture), or nil to leave it where it is.
+    var snap: ((CGPoint) -> CGPoint?)?
+
+    struct Plate: Identifiable, Equatable {
+        var id: String
+        var point: CGPoint
+        var inches: Double
+        /// Moved this far from the point, in screen points (so a plate sits just inside a side whatever the zoom).
+        var offset: CGSize = .zero
+    }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var zoom: CGFloat = 1
@@ -154,7 +171,18 @@ struct PhotoTapView: View {
                     }
                     .stroke(Color(white: 1, opacity: 0.85), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
                 }
-                if points.count >= 2 {
+                if outline.count == 4 {
+                    // The straightened rectangle, dark under tape yellow so it reads on any picture
+                    let q = outline.map(place.toScreen)
+                    Path { p in
+                        p.move(to: q[0]); q.dropFirst().forEach { p.addLine(to: $0) }; p.closeSubpath()
+                    }
+                    .stroke(Color.black.opacity(0.5), style: StrokeStyle(lineWidth: 5, lineJoin: .round))
+                    Path { p in
+                        p.move(to: q[0]); q.dropFirst().forEach { p.addLine(to: $0) }; p.closeSubpath()
+                    }
+                    .stroke(Theme.tape, style: StrokeStyle(lineWidth: 2.5, lineJoin: .round))
+                } else if points.count >= 2 {
                     Path { p in
                         let q = (points.count == 4 ? ordered(points) : points).map(place.toScreen)
                         p.move(to: q[0]); q.dropFirst().forEach { p.addLine(to: $0) }
@@ -163,7 +191,18 @@ struct PhotoTapView: View {
                     .stroke(Theme.tape, style: StrokeStyle(lineWidth: 2, lineJoin: .round, dash: points.count == 4 ? [] : [8, 5]))
                 }
                 ForEach(Array(points.enumerated()), id: \.offset) { i, p in
-                    Marker(active: touch?.dot == i).position(place.toScreen(p))
+                    Marker(active: touch?.dot == i, small: outline.count == 4, flagged: flagged == i, number: outline.count == 4 ? i + 1 : nil)
+                        .position(place.toScreen(p))
+                }
+                ForEach(plates) { plate in
+                    Text(SizeFormat.attributed(plate.inches, size: 17, weight: .bold, color: Theme.tapeInk))
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(Theme.tape, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.black.opacity(0.35), lineWidth: 1))
+                        .position(place.toScreen(plate.point))
+                        .offset(plate.offset)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                 }
                 if let t = touch, !t.pinched, t.dot != nil || !t.moved {
                     let target = t.dot.flatMap { points.indices.contains($0) ? points[$0] : nil } ?? place.toPhoto(t.location)
@@ -238,7 +277,12 @@ struct PhotoTapView: View {
                 let place = self.place(view)
                 defer { touch = nil }
                 guard let t = touch, !t.pinched else { return }
-                if t.dot != nil {
+                if let i = t.dot {
+                    // Let go near a corner of the frame in the picture: onto it, when the picture is clear about where it is
+                    if points.indices.contains(i), let to = snap?(points[i]), to != points[i] {
+                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) { points[i] = clampPoint(to) }
+                        Haptics.tap()
+                    }
                     onEdit()
                 } else if !t.moved, points.count < maxPoints {
                     points.append(clampPoint(place.toPhoto(v.location)))
@@ -308,17 +352,37 @@ struct PhotoTapView: View {
     }
 }
 
-/// A corner marker: a small ring with a dot at its centre, so the corner itself stays visible inside it.
+/// A corner marker: a small ring with a dot at its centre, so the corner itself stays visible inside it. `small` (the outline is the
+/// straightened rectangle, these are where the corners were left): a smaller ring with its number; `flagged`: a red ring round it.
 private struct Marker: View {
     var active: Bool
+    var small = false
+    var flagged = false
+    var number: Int?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pulse = false
 
     var body: some View {
+        let d: CGFloat = small ? 15 : 20
         ZStack {
-            Circle().strokeBorder(Theme.navy.opacity(0.75), lineWidth: 4.5).frame(width: 20, height: 20)
-            Circle().strokeBorder(Theme.tape, lineWidth: 2.5).frame(width: 20, height: 20)
+            if flagged {
+                Circle().strokeBorder(Color.white, lineWidth: 6).frame(width: 36, height: 36)
+                Circle().strokeBorder(Theme.red, lineWidth: 4).frame(width: 36, height: 36)
+                    .scaleEffect(pulse && !reduceMotion ? 1.18 : 1)
+                    .opacity(pulse && !reduceMotion ? 0.7 : 1)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulse)
+            }
+            Circle().strokeBorder(Theme.navy.opacity(0.75), lineWidth: 4.5).frame(width: d, height: d)
+            Circle().strokeBorder(Theme.tape, lineWidth: 2.5).frame(width: d, height: d)
             Circle().fill(Theme.tape).frame(width: 3.5, height: 3.5)
+            if let n = number {
+                Text("\(n)").wcMono(11, .bold, relativeTo: .caption2).foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.8), radius: 1.5)
+                    .offset(x: 14, y: -13)
+            }
         }
         .scaleEffect(active ? 1.3 : 1)
+        .onAppear { pulse = true }
         .accessibilityHidden(true)
     }
 }

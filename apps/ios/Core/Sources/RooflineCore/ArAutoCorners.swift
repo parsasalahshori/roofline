@@ -1,10 +1,9 @@
 import Foundation
 
-// The AR side of proposing the corners: a window outline found in the live camera image (a quad in image pixels, from
-// `AutoCorners`) is turned into four points in the world by sending a ray from the camera through each corner onto the wall's
-// plane, then judged (is this a believable window?) and steadied over a few looks before the phone offers it. The points that come
-// out are exactly what four taps would give `CornerCapture`: the app places them through `CornerCapture.place`, so the wall check,
-// the ordering, the size and the server's data do not change. No ARKit, no Vision: it is all checked on a Mac.
+// The AR side of proposing the corners: a window outline found in a photo (a quad in image pixels, from `AutoCorners`) is turned into four
+// points in the world by sending a ray from the camera through each corner onto the wall's plane, then judged (is this a believable
+// window?) before the phone offers it. The frozen-photo measuring (`FrozenView`) does the same for the corners a person drags. No ARKit, no
+// Vision: it is all checked on a Mac.
 
 extension ImageMapping {
     /// A native-image (landscape) pixel from a pixel of the upright portrait image: the inverse of `nativeToPortrait`.
@@ -63,79 +62,5 @@ public enum ArAutoCorners {
         let w = (p[0].distance(to: p[1]) + p[3].distance(to: p[2])) / 2
         let h = (p[0].distance(to: p[3]) + p[1].distance(to: p[2])) / 2
         return (w * inchesPerMetre, h * inchesPerMetre)
-    }
-}
-
-/// Keeps a window outline steady across camera looks: an outline is offered only after it has been found in about the same place
-/// twice in a row, it is the mean of its last few looks (so it does not shiver on screen), it goes when it stops being found, and
-/// each corner's spread (how much it moved between looks) is the noise reported with it.
-public struct QuadTracker: Sendable {
-    /// Two looks are "the same outline" when their corners are this close, on average (metres).
-    public static let matchM = 0.03
-    /// Looks in a row, in about the same place, before the outline is offered.
-    public static let looksToOffer = 2
-    /// The outline is the mean of this many of the latest looks.
-    public static let memory = 5
-    /// Looks in a row that found nothing (or nothing believable) before the outline is dropped.
-    public static let missesToDrop = 2
-    /// The least spread a corner is reported with (metres): a detected outline is never better than a few millimetres.
-    public static let minSpreadM = 0.004
-
-    private var recent: [[Vec3]] = []
-    private var misses = 0
-    public private(set) var streak = 0
-
-    public init() {}
-
-    /// The steadied outline (TL, TR, BR, BL), or nil before one is offered.
-    public var offered: [Vec3]? { streak >= Self.looksToOffer ? smoothed : nil }
-
-    public var smoothed: [Vec3]? {
-        guard let first = recent.first else { return nil }
-        return (0..<first.count).compactMap { i in Vec3.mean(recent.map { $0[i] }) }
-    }
-
-    /// Each corner's spread over the recent looks, metres (at least `minSpreadM`).
-    public var spreadM: [Double] {
-        guard let mean = smoothed else { return [] }
-        return (0..<mean.count).map { i in
-            guard recent.count >= 2 else { return Self.minSpreadM }
-            let v = recent.reduce(0.0) { $0 + ($1[i] - mean[i]).dot($1[i] - mean[i]) } / Double(recent.count - 1)
-            return max(Self.minSpreadM, v.squareRoot())
-        }
-    }
-
-    /// A look that found an outline (four world points).
-    public mutating func add(_ corners: [Vec3]) {
-        misses = 0
-        guard corners.count == 4, corners.allSatisfy({ $0.isFinite }) else {
-            miss()
-            return
-        }
-        if let mean = smoothed, meanDistance(mean, corners) <= Self.matchM {
-            recent.append(corners)
-            if recent.count > Self.memory { recent.removeFirst(recent.count - Self.memory) }
-            streak += 1
-        } else {
-            // Somewhere else, or the first: start again from this one
-            recent = [corners]
-            streak = 1
-        }
-    }
-
-    /// A look that found nothing believable.
-    public mutating func miss() {
-        misses += 1
-        if misses >= Self.missesToDrop { reset() }
-    }
-
-    public mutating func reset() {
-        recent = []
-        misses = 0
-        streak = 0
-    }
-
-    private func meanDistance(_ a: [Vec3], _ b: [Vec3]) -> Double {
-        zip(a, b).reduce(0.0) { $0 + $1.0.distance(to: $1.1) } / 4
     }
 }

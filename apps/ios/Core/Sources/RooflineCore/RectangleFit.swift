@@ -19,8 +19,11 @@ public enum FitLimits {
     public static let sideDiffIn = 0.75
     /// ...or by more than this share of their mean (2%), or a corner is further than `sideDiffIn` from where the rectangle puts it.
     public static let sideDiffShare = 0.02
-    /// Two corners whose removal explains the rest equally well (within this, inches) are told apart by their spread.
-    public static let tieIn = 0.1
+    /// The corner that looks off is named only when it is clearly the one: the three others agree with each other (their leave-one-out
+    /// disagreement is under `culpritMaxShare` of the runner-up's) and the runner-up is itself at least this far from agreeing, inches.
+    /// A top edge that slants is a left corner too low or a right corner too high: no one can tell which, so none is named.
+    public static let culpritMarginIn = 0.4
+    public static let culpritMaxShare = 0.45
     /// A corner this uncertain (metres, 1 cm) is not an order-grade measure: the preview marks the window 'check'.
     public static let checkSpreadM = 0.01
 }
@@ -43,18 +46,22 @@ public struct RectangleFit: Equatable, Sendable {
     public var rightIn: Double
     /// The placed corners disagree with the rectangle (see `FitLimits`).
     public var disagrees: Bool
-    /// The corner whose placement explains the disagreement best (0 TL, 1 TR, 2 BR, 3 BL), whether or not they disagree.
-    public var worstCorner: Int
+    /// The corner whose placement explains the disagreement (0 TL, 1 TR, 2 BR, 3 BL) when it is clearly one corner, else nil (see
+    /// `FitLimits.culpritMarginIn`). Set whether or not the corners disagree.
+    public var worstCorner: Int?
 
-    /// The corner to ask the person to place again: only when the corners disagree.
+    /// The corner to name to the person: only when the corners disagree and it is clear which one.
     public var flaggedCorner: Int? { disagrees ? worstCorner : nil }
 
     /// The spread of each corner for the server: at least the corner's own, and at least how far it is from the rectangle; the flagged
     /// corner never under `FitLimits.checkSpreadM`. The server's uncertainty takes the larger of this and its own noise per corner, so
-    /// a window whose corners did not line up says so in its "about X in".
+    /// a window whose corners did not line up says so in its "about X in". When they disagree and no corner is to blame, every corner
+    /// carries the doubt.
     public func spreadM(corner own: [Double]) -> [Double] {
         var out = (0..<4).map { i in max(i < own.count ? own[i] : 0, residualIn[i] / inchesPerMetre) }
-        if let w = flaggedCorner { out[w] = max(out[w], FitLimits.checkSpreadM) }
+        if disagrees {
+            if let w = worstCorner { out[w] = max(out[w], FitLimits.checkSpreadM) } else { out = out.map { max($0, FitLimits.checkSpreadM) } }
+        }
         return out
     }
 
@@ -62,7 +69,7 @@ public struct RectangleFit: Equatable, Sendable {
     /// `viewer`. Gravity-aligned unless the window is truly turned in its plane; the left side is the mean of the two left corners'
     /// positions, the right side of the two right ones', the top and bottom likewise, which is the least-squares fit. Nil for a plane
     /// with no "up" in it (a floor, a skylight) or corners that make no rectangle.
-    public static func fit(ordered raw: [Vec3], plane: Plane, viewer: Vec3, spreadM: [Double] = []) -> RectangleFit? {
+    public static func fit(ordered raw: [Vec3], plane: Plane, viewer: Vec3) -> RectangleFit? {
         guard raw.count == 4, raw.allSatisfy({ $0.isFinite }), let c = Vec3.mean(raw) else { return nil }
         var n = plane.normal
         if (viewer - c).dot(n) < 0 { n = -n }
@@ -117,15 +124,10 @@ public struct RectangleFit: Equatable, Sendable {
             let rest = edges.filter { !$0.corners.contains(i) }
             return (rest.reduce(0) { $0 + $1.off * $1.off } / 2).squareRoot() * inchesPerMetre
         }
-        let best = explained.min() ?? 0
-        let ties = (0..<4).filter { explained[$0] <= best + FitLimits.tieIn }
-        // Among corners explaining it equally well: the less certain one, then the one further from its rectangle corner, then the lower
-        let worst = ties.max { x, y in
-            let sx = x < spreadM.count ? spreadM[x] : 0, sy = y < spreadM.count ? spreadM[y] : 0
-            if abs(sx - sy) > 1e-9 { return sx < sy }
-            if abs(residual[x] - residual[y]) > 1e-9 { return residual[x] < residual[y] }
-            return x < y
-        } ?? 0
+        // Clear only when one corner's removal leaves the rest in agreement and every other removal still leaves a real disagreement
+        let ranked = (0..<4).sorted { explained[$0] < explained[$1] }
+        let winner = ranked[0], runnerUp = explained[ranked[1]]
+        let worst: Int? = runnerUp >= FitLimits.culpritMarginIn && explained[winner] <= FitLimits.culpritMaxShare * runnerUp ? winner : nil
 
         return RectangleFit(pointsM: fitted, rawPointsM: raw, widthIn: widthIn, heightIn: heightIn, residualIn: residual, tiltDeg: theta,
                             topIn: topIn, bottomIn: bottomIn, leftIn: leftIn, rightIn: rightIn, disagrees: disagrees, worstCorner: worst)

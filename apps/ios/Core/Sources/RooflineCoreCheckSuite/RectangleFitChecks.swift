@@ -22,8 +22,8 @@ private let skewed: [(Double, Double)] = [(0, 0), (29.5, 0), (30.5, -47.1), (-1,
 
 private func dist(_ a: Vec3, _ b: Vec3) -> Double { a.distance(to: b) * inchesPerMetre }
 
-private func fit(_ p: [Vec3], spread: [Double] = []) -> RectangleFit? {
-    RectangleFit.fit(ordered: p, plane: wallPlane, viewer: viewer, spreadM: spread)
+private func fit(_ p: [Vec3]) -> RectangleFit? {
+    RectangleFit.fit(ordered: p, plane: wallPlane, viewer: viewer)
 }
 
 let rectangleFitChecks: [Check] = [
@@ -60,7 +60,9 @@ let rectangleFitChecks: [Check] = [
         // As placed the server would have called it 'check' (top and bottom differ by 7%): the corners disagree with the rectangle
         ctx.equal(sizeFromArPoints(raw, device: .arkitLidar)?.quality, .check)
         ctx.expect(f.disagrees)
-        ctx.expect(f.flaggedCorner == 2 || f.flaggedCorner == 3, "a bottom corner, got \(String(describing: f.flaggedCorner))")
+        // Both bottom corners explain it equally well (a bottom edge that climbs is a low left or a high right): no one corner is named
+        ctx.equal(f.worstCorner, nil)
+        ctx.equal(f.flaggedCorner, nil)
         ctx.equal(f.tiltDeg, 0)
         // The raw corners are kept as they were
         ctx.equal(f.rawPointsM, raw)
@@ -78,13 +80,47 @@ let rectangleFitChecks: [Check] = [
             d[bad] = (d[bad].0 - 1.3, d[bad].1 + 1.9)
             ctx.equal(fit(quad(d))?.flaggedCorner, bad, "corner \(bad) the other way")
         }
-        // A corner off along the frame only (the bottom-left too far left): the left edge slants, so it is that corner or the one above it:
-        // the one that is less sure is flagged, then the lower one
+        // A corner off along the frame only (the bottom-left too far left): the left edge slants, and the top-left corner explains it as
+        // well as the bottom-left: nobody can tell which, so no corner is named, but the corners still disagree and every spread says so
         var c = trueCorners
-        c[3] = (-1.5, -60)
-        ctx.equal(fit(quad(c))?.flaggedCorner, 3, "tied: the lower corner")
-        ctx.equal(fit(quad(c), spread: [0.009, 0.001, 0.001, 0.002])?.flaggedCorner, 0, "tied: the one with the larger spread")
-        ctx.equal(fit(quad(c), spread: [0.001, 0.001, 0.001, 0.009])?.flaggedCorner, 3)
+        c[3] = (-1.8, -60)
+        let tie = fit(quad(c))
+        ctx.equal(tie?.disagrees, true)
+        ctx.equal(tie?.flaggedCorner, nil, "tied: none")
+        ctx.expect((tie?.spreadM(corner: [0.002, 0.002, 0.002, 0.002]) ?? []).allSatisfy { $0 >= FitLimits.checkSpreadM }, "the doubt is on every corner")
+    },
+
+    Check("RectangleFit: the owner's cases. A top edge that slants names no corner; a corner off both ways does; two off name none") { ctx in
+        // Owner, build 2610221602: the top edge slanted from corner 1 to corner 2. A climb on the right (or the left being as low) is
+        // the same picture: either corner could be the one
+        var slant = trueCorners
+        slant[1] = (36, 1.8)
+        let a = fit(quad(slant))
+        ctx.equal(a?.disagrees, true)
+        ctx.equal(a?.flaggedCorner, nil, "TR up 1.8 in: could be TL low or TR high")
+        // The same, split between the two (left 0.9 low, right 0.9 high)
+        var split = trueCorners
+        split[0] = (0, -0.9)
+        split[1] = (36, 0.9)
+        ctx.equal(fit(quad(split))?.flaggedCorner, nil, "split slant")
+        // A corner off both along and across the frame is the one that is named, in every position
+        for bad in 0..<4 {
+            var c = trueCorners
+            c[bad] = (c[bad].0 + (bad % 3 == 0 ? 1.4 : -1.4), c[bad].1 + (bad < 2 ? -1.4 : 1.4))
+            ctx.equal(fit(quad(c))?.flaggedCorner, bad, "corner \(bad) off both ways")
+        }
+        // Two corners off: no clear culprit, so none is named (the person is told to check them all)
+        var two = trueCorners
+        two[0] = (1.5, -1.5)
+        two[2] = (34.5, -61.5)
+        let t = fit(quad(two))
+        ctx.equal(t?.disagrees, true)
+        ctx.equal(t?.flaggedCorner, nil, "two off")
+        // A mild error (everything within a quarter inch) is neither a disagreement nor a culprit
+        var mild = trueCorners
+        mild[2] = (36.2, -60.2)
+        ctx.equal(fit(quad(mild))?.disagrees, false)
+        ctx.equal(fit(quad(mild))?.flaggedCorner, nil)
     },
 
     Check("RectangleFit: corners that agree make a rectangle and no flag; a level fit unless the window is really turned") { ctx in
@@ -189,7 +225,9 @@ let rectangleFitChecks: [Check] = [
         let badSpreads = bad.spreadM(corner: own)
         // Every corner's spread is at least how far it was from the rectangle, the flagged one at least a centimetre
         for i in 0..<4 { ctx.expect(badSpreads[i] >= bad.residualIn[i] / inchesPerMetre - 1e-12, "residual \(i)") }
-        ctx.expect(badSpreads[bad.worstCorner] >= FitLimits.checkSpreadM)
+        // No one corner is to blame in the owner's window, so every corner carries the doubt
+        ctx.equal(bad.worstCorner, nil)
+        ctx.expect(badSpreads.allSatisfy { $0 >= FitLimits.checkSpreadM })
         ctx.equal(good.spreadM(corner: own), own, "a clean rectangle keeps the corners' own spreads")
         // The same rectangle through the preview the label sheet and the list use: size as the HUD, check when they did not line up
         func preview(_ f: RectangleFit) -> WindowPreview? {

@@ -2,8 +2,9 @@ import ARKit
 import RooflineCore
 import SwiftUI
 
-/// "Tap the 4 corners" on a phone: the AR camera with the HUD over it. The controller (shared with the rep app) does the
-/// AR; this screen turns its state into the HUD's values and its finished corners into a pending window.
+/// "Measure a window" on a phone. The camera finds the wall; Capture freezes one frame (its photo, the camera's pose and lens, the wall and
+/// the LiDAR depth); the four corners are then dragged on that still photo (`FreezeFrameEditor`), where nothing moves; and the window goes
+/// on as the level rectangle fitted to them. One to three photos of the same window may be taken: the size is the middle of them.
 struct ArMeasureScreen: View {
     @Environment(HomeownerStore.self) private var store
     let session: MeasureSession
@@ -11,12 +12,17 @@ struct ArMeasureScreen: View {
     @State private var controller: ArMeasureController?
     @State private var access: CameraAccess.State?
     @State private var showHowTo = !HowToSeen.isSeen("ar")
+    /// The frozen photo being worked on, and the answers of the photos kept before it (from one tracking session).
+    @State private var editing: FrozenCapture?
+    @State private var kept: [FrozenResult] = []
+    @State private var keptEpoch: Int?
+    @State private var notice: String?
 
     var body: some View {
         Group {
             #if DEBUG
-            if let mode = store.debugOpen, mode.hasPrefix("hud") || mode == "label" {
-                DebugHudSample(mode: mode, session: session)
+            if let mode = store.debugOpen, mode.hasPrefix("hud") || mode == "label" || mode.hasPrefix("freeze") {
+                DebugCaptureSample(mode: mode, session: session)
             } else {
                 live
             }
@@ -35,13 +41,27 @@ struct ArMeasureScreen: View {
             UnsupportedMeasureView(reason: .cameraRestricted, method: .corners) { store.measureSession = nil }
         } else if let controller = controller {
             ZStack {
+                // The camera keeps running under the photo, so another photo of the same window is in the same world
                 ArSceneContainer(view: controller.sceneView).ignoresSafeArea()
-                ArHud(model: model(controller), onClose: { store.measureSession = nil }, onPlace: { controller.placeCorner() }, onUndo: { controller.undo() },
-                      onDone: { finish(controller) }, onHow: { showHowTo = true }, onUseProposal: { controller.useProposal() }, onRedo: { controller.redo(corner: $0) })
+                if let capture = editing {
+                    FreezeFrameEditor(capture: capture, earlier: kept, title: title,
+                                      onClose: { store.measureSession = nil },
+                                      onRetake: { editing = nil },
+                                      onAddAnother: { keep($0) },
+                                      onUse: { finish($0, capture: capture, controller: controller) })
+                        .id(capture.id)
+                        .transition(.opacity)
+                } else {
+                    ArCaptureHud(model: model(controller), onClose: { store.measureSession = nil }, onCapture: { controller.captureFrozen() },
+                                 onHow: { showHowTo = true })
+                }
                 if showHowTo { ArHowTo { HowToSeen.markSeen("ar"); showHowTo = false } }
             }
+            .onChange(of: controller.frozen?.id) { _, id in
+                if id != nil, let f = controller.frozen { open(f) }
+            }
             .onChange(of: controller.message) { _, m in
-                // A refused tap or a restart: say it once, in the hint's place
+                // A refused capture or a restart: say it once, in the hint's place
                 if m != nil { Haptics.warning() }
             }
             .onDisappear { controller.pause() }
@@ -51,7 +71,7 @@ struct ArMeasureScreen: View {
                     guard DeviceCaps.arSupported else { return }
                     access = await CameraAccess.request()
                     if access == .allowed {
-                        let c = ArMeasureController(tapeStyle: true, autoCorners: true, rectangleFit: true)
+                        let c = ArMeasureController(tapeStyle: true)
                         controller = c
                         c.start()
                     }
@@ -59,63 +79,65 @@ struct ArMeasureScreen: View {
         }
     }
 
-    private func model(_ controller: ArMeasureController) -> ArHudModel {
-        var m = ArHudModel()
-        m.title = WindowCountHint.hudTitle(number: session.number, estimate: store.windowEstimate)
+    private var title: String { WindowCountHint.hudTitle(number: session.number, estimate: store.windowEstimate) }
+
+    private func model(_ controller: ArMeasureController) -> ArCaptureModel {
+        var m = ArCaptureModel()
+        m.title = title
         m.deviceChip = controller.lidar ? "Depth sensor on" : nil
-        m.readout = controller.liveReadout
-        m.canUndo = !controller.capture.points.isEmpty
-        m.dots = controller.cornerDots
-        m.proposal = controller.proposalDots
-        m.dotNumbers = controller.cornerNumbers
-        m.flaggedCorner = controller.flaggedCorner.map { $0 + 1 }
-        m.redoing = controller.redoSlot
-        m.edges = controller.edgeLabels.map { ArHudModel.Edge(id: $0.id, point: $0.point, inches: $0.inches, live: $0.live) }
-        m.loupe = controller.loupe
-        m.canPlace = controller.canPlace
+        m.photosTaken = kept.count
         switch controller.phase {
         case .starting, .searching:
             m.phase = .searching
-            m.hint = "Move the phone slowly to find the wall."
-        case .aiming:
-            m.phase = .ready
-            m.hint = m.hasProposal ? ArHudModel.proposalHint : (m.redoing.map(ArHudModel.redoHint(corner:)) ?? ArHudModel.cornerHint(placed: controller.capture.points.count))
-        case .sampling:
-            m.phase = .sampling(controller.sampleProgress)
-            m.hint = "Hold still on the corner."
-        case .holdStill:
-            m.phase = .holdStill
-            m.hint = "Hold the phone still."
+            m.hint = ArCaptureModel.searchHint
+        case .aiming, .sampling, .holdStill, .complete:
+            m.phase = controller.capturing ? .holding : .ready
+            m.hint = controller.capturing ? ArCaptureModel.holdingHint : ArCaptureModel.readyHint(photosTaken: kept.count)
         case .limited(let why):
-            m.phase = .searching
+            m.phase = controller.capturing ? .holding : .searching
             m.hint = why
         case .lost:
             m.phase = .lost
-            m.hint = controller.message ?? "Tracking was lost. Start again from the first corner."
-        case .complete:
-            m.phase = .complete
-            m.cornersInPhoto = controller.cornersInPhoto
-            m.hint = !controller.cornersInPhoto ? ArHowTo.stepBackHint : (m.flaggedCorner.map(ArHudModel.offCornerHint(corner:)) ?? ArHowTo.checkHint)
+            m.hint = controller.message ?? "Tracking was lost. Move the phone slowly to find the wall again."
         }
-        if let message = controller.message, controller.phase != .lost { m.hint = message }
+        if let message = notice ?? controller.message, controller.phase != .lost { m.hint = message }
         return m
     }
 
-    /// The four corners are set: the photo of this frame, the corners in it, and the size the phone works out.
-    private func finish(_ controller: ArMeasureController) {
-        guard let cap = controller.makeCapture() else { return }
+    /// A photo was taken: work on it. Photos from before a tracking restart are set aside (the world is not the same).
+    private func open(_ f: FrozenCapture) {
+        if let e = keptEpoch, e != f.epoch, !kept.isEmpty {
+            kept = []
+            notice = "Tracking restarted, so the earlier photos were set aside."
+        } else {
+            notice = nil
+        }
+        keptEpoch = f.epoch
+        editing = f
+    }
+
+    /// Keep this photo's answer and go back to the camera for another of the same window.
+    private func keep(_ result: FrozenResult) {
+        kept.append(result)
+        notice = nil
+        editing = nil
+    }
+
+    /// The size is the middle of the photos (or this photo's alone). The window goes as the level rectangle fitted to the corners, with the
+    /// doubt of any corner that did not line up; the outline is drawn into this photo for the corners the server sees.
+    private func finish(_ combined: FrozenMeasure.Combined, capture: FrozenCapture, controller: ArMeasureController) {
+        let r = combined.result
+        guard let drawing = FrozenMeasure.drawing(r, view: capture.view) else { return }
         controller.pause()
-        // The window goes as the rectangle fitted to the four corners (the same one the screen drew and sized), with the doubt of any corner that did not line up
-        let scale = WindowPhotoScale.ar(ArScale(pointsM: cap.finished.windowPointsM, trackingLostCount: controller.capture.trackingLostCount, device: controller.device, cornerSpreadM: cap.finished.windowSpreadM))
-        store.capture(scale: scale, corners: cap.shot.corners, jpeg: cap.shot.jpeg, widthPx: cap.shot.widthPx, heightPx: cap.shot.heightPx, in: session)
+        let corners = drawing.outline.map { ImageMapping.clamp($0, width: Double(capture.widthPx), height: Double(capture.heightPx)) }
+        let scale = WindowPhotoScale.ar(ArScale(pointsM: r.windowPointsM, trackingLostCount: capture.trackingLostCount, device: capture.view.device, cornerSpreadM: r.windowSpreadM))
+        store.capture(scale: scale, corners: corners, jpeg: capture.jpeg, widthPx: capture.widthPx, heightPx: capture.heightPx, in: session)
     }
 }
 
-/// The AR screen's how-to (shown the first time, and from "How?"): the same three steps as the coaching, in the order of the taps.
+/// The AR screen's how-to (shown the first time, and from "How?"): the same steps as the coaching, in the order of the screens.
 struct ArHowTo: View {
-    static let steps = ["Stand 3 to 5 feet back, blinds up.", "Aim the ring at each corner of the frame, starting top-left.", "Tap the red button on each corner."]
-    static let checkHint = "Check the yellow lines follow the frame, then tap Use this size."
-    static let stepBackHint = "Step back so the whole window is on screen."
+    static let steps = ["Stand 3 to 5 feet back, blinds up, and tap Capture.", "Drag the four dots onto the corners of the frame. They snap on.", "Check the yellow outline follows the frame, then tap Use this size."]
     let onDone: () -> Void
 
     var body: some View {

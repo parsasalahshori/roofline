@@ -5,9 +5,8 @@ import XCTest
 @testable import WinChoice
 
 /// Proposing the corners: Apple Vision on the drawn sample photo (a 35 5/8 x 59 5/8 in window with a bank card on the glass,
-/// 3024 x 4032 px), what the card screen puts on the photo, and the AR screen's outline controls. Vision runs here on the CPU in the
-/// simulator; the decisions it feeds (`AutoCorners`, `ArAutoCorners`) are checked on their own in RooflineCore's checks. The live AR
-/// look (a camera, the wall plane, the depth sensor) can only run on an iPhone.
+/// 3024 x 4032 px) and what the card screen puts on the photo. Vision runs here on the CPU in the simulator; the decisions it feeds
+/// (`AutoCorners`, `ArAutoCorners`) are checked on their own in RooflineCore's checks. The frozen-photo measuring is in FreezeFrameTests.
 @MainActor
 final class AutoCornersTests: XCTestCase {
     private let scene = SampleScene.photo
@@ -78,22 +77,5 @@ final class AutoCornersTests: XCTestCase {
         let alone = CardPhotoFlow.checked(AutoCornerProposal(window: window, card: nil), widthPx: w, heightPx: h)
         XCTAssertNotNil(alone.window)
         XCTAssertNil(alone.card)
-    }
-
-    func testTheOutlineIsOfferedOnlyBeforeAnyCornerIsPlacedAndInPlainWords() {
-        var m = ArHudModel()
-        m.phase = .ready
-        XCTAssertFalse(m.hasProposal, "no outline, no button")
-        m.proposal = [CGPoint(x: 100, y: 100), CGPoint(x: 300, y: 100), CGPoint(x: 300, y: 500), CGPoint(x: 100, y: 500)]
-        XCTAssertTrue(m.hasProposal)
-        m.readout = LiveReadout(widthIn: 30, heightIn: nil, placed: 1)
-        XCTAssertFalse(m.hasProposal, "a corner tapped by hand puts the outline away")
-        m.readout = LiveReadout()
-        m.phase = .sampling(0.4)
-        XCTAssertFalse(m.hasProposal)
-        m.phase = .ready
-        m.proposal = Array(m.proposal.prefix(3))
-        XCTAssertFalse(m.hasProposal, "three points are not an outline")
-        XCTAssertEqual(ArHudModel.proposalHint, "We found your window. Use these corners, or tap them yourself.")
     }
 }

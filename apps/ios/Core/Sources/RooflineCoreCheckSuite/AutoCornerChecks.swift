@@ -2,7 +2,7 @@ import Foundation
 import RooflineCore
 
 // Checks for proposing the corners (AutoCorners.swift, ArAutoCorners.swift): which of the shapes Vision finds is the window and which
-// is the card, the card's corners as the model takes them, the image-to-wall mapping the AR side uses, and the steadying of an outline.
+// is the card, the card's corners as the model takes them, and the image-to-wall mapping the AR side uses.
 // Vision itself and the camera are not here (the app's tests run Vision on the drawn sample photo); these are the decisions.
 
 // MARK: - Shapes for the picker
@@ -346,64 +346,17 @@ let autoCornerChecks: [Check] = [
         ctx.near(size?.heightIn, 1.5 * inchesPerMetre, 1e-9)
     },
 
-    Check("QuadTracker: offered after two steady looks, steadied, dropped after two misses, a jump starts again") { ctx in
-        var t = QuadTracker()
-        let a = windowOnWall()
-        ctx.expect(t.offered == nil)
-        t.add(a)
-        ctx.expect(t.offered == nil, "one look is not enough")
-        ctx.equal(t.streak, 1)
-        // A hair of noise (2 mm)
-        let b = a.map { $0 + Vec3(0.002, -0.001, 0) }
-        t.add(b)
-        ctx.expect(t.offered != nil)
-        ctx.equal(t.streak, 2)
-        // The offered outline is the mean of the looks
-        ctx.near(t.offered?[0].x, (a[0].x + b[0].x) / 2, 1e-12)
-        // Spread: at least the floor, and about the size of the wobble
-        ctx.expect(t.spreadM.count == 4 && t.spreadM.allSatisfy { $0 >= QuadTracker.minSpreadM })
-        // A look 10 cm away is a different outline: it starts again and is not offered yet
-        t.add(a.map { $0 + Vec3(0.1, 0, 0) })
-        ctx.equal(t.streak, 1)
-        ctx.expect(t.offered == nil)
-        t.add(a.map { $0 + Vec3(0.1, 0, 0) })
-        ctx.expect(t.offered != nil)
-        // One miss keeps it, the second drops it; a look in between resets the count of misses
-        t.miss()
-        ctx.expect(t.offered != nil)
-        t.add(a.map { $0 + Vec3(0.1, 0, 0) })
-        t.miss()
-        ctx.expect(t.offered != nil)
-        t.miss()
-        ctx.expect(t.offered == nil)
-        ctx.equal(t.streak, 0)
-        // Only the latest looks count
-        var m = QuadTracker()
-        for i in 0..<10 { m.add(a.map { $0 + Vec3(0.001 * Double(i), 0, 0) }) }
-        let expected = (5..<10).map { a[0].x + 0.001 * Double($0) }.reduce(0, +) / 5
-        ctx.near(m.offered?[0].x, expected, 1e-12)
-        // Garbage is a miss
-        var g = QuadTracker()
-        g.add(a)
-        g.add([Vec3(.nan, 0, 0), a[1], a[2], a[3]])
-        g.add(a)
-        ctx.equal(g.streak, 2, "one bad look between two good ones is ignored, it is not a look")
-    },
-
     Check("Proposed corners go through CornerCapture like taps: the same four points, ordered by gravity, and the wall check still runs") { ctx in
         let truth = windowOnWall(width: 0.9144, height: 1.5)
         let cam = camera(at: Vec3(0, 1.5, 0), looking: Vec3(0, 0, -1))
         let native = truth.compactMap { ImageMapping.project($0, cameraTransform: cam, intrinsics: nativeK) }
         let world = ArAutoCorners.worldQuad(nativePx: native, cameraTransform: cam, intrinsics: nativeK, planes: Array(repeating: wall, count: 4))!
-        var tracker = QuadTracker()
-        tracker.add(world)
-        tracker.add(world)
-        let offered = tracker.offered!
+        let offered = world
         var capture = CornerCapture()
         capture.setTracking(normal: true)
         capture.setWallPlane(wall, viewer: Vec3(0, 1.5, 0))
         ctx.expect(capture.canPlaceNext(aimed: true, sampling: false))
-        let spreads = tracker.spreadM
+        let spreads = [Double](repeating: 0.004, count: 4)
         // Depth points on the wall around each corner (the off-wall check passes)
         for i in 0..<4 {
             let near = (0..<8).map { k in offered[i] + Vec3(0.002 * Double(k % 3), 0.002 * Double(k % 2), 0) }

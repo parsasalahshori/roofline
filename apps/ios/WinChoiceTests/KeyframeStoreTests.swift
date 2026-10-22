@@ -26,11 +26,4 @@ final class KeyframeStoreTests: XCTestCase {
         XCTAssertEqual(CardPhotoFlow.counter(onCard: false, count: 2), "Window corner 3 of 4")
         XCTAssertEqual(CardPhotoFlow.counter(onCard: false, count: 4), "Window: 4 corners set")
     }
-
-    func testTheHudNamesEachCornerOnce() {
-        XCTAssertEqual(ArHudModel.cornerHint(placed: 0), "Aim the ring at the top-left corner of the frame")
-        XCTAssertEqual(ArHudModel.cornerHint(placed: 1), "Now the top-right corner")
-        XCTAssertEqual(ArHudModel.cornerHint(placed: 2), "Now the bottom-right corner")
-        XCTAssertEqual(ArHudModel.cornerHint(placed: 3), "Last one: the bottom-left corner")
-    }
 }

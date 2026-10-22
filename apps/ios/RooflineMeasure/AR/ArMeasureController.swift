@@ -51,20 +51,18 @@ final class ArMeasureController {
     private(set) var shot: FrameCapture.Shot?
     @ObservationIgnored private var lastShotSeq = 0
     private(set) var loupe: UIImage?
+    /// The newest frozen frame (Capture), the Capture button was tapped and the phone is waiting for a still hand, and the tracking session
+    /// the frame came from (photos of one window combine only within one).
+    private(set) var frozen: FrozenCapture?
+    private(set) var capturing = false
+    private(set) var epoch = 0
+    @ObservationIgnored private var lastFrozenSeq = 0
     /// Has ARKit locked the wall plane the window is on?
     private(set) var wallLocked = false
     /// The corners placed so far, as screen points of the AR view (for the homeowner app's dots and size plates).
     private(set) var cornerDots: [CGPoint] = []
     /// A length plate for each side drawn so far, at its midpoint on screen.
     private(set) var edgeLabels: [EdgeLabel] = []
-    /// The window outline the phone found (TL, TR, BR, BL on screen), when it offers one: "Use these corners" places it.
-    private(set) var proposalDots: [CGPoint] = []
-    /// The number each placed corner's dot shows (empty: 1, 2, 3, 4 in order).
-    private(set) var cornerNumbers: [Int] = []
-    /// The corner (0 TL, 1 TR, 2 BR, 3 BL) that looks off the frame, once the four are placed.
-    private(set) var flaggedCorner: Int?
-    /// The number (1 to 4) of the corner being placed again.
-    private(set) var redoSlot: Int?
     /// A corner may be placed now: tracking normal, wall locked, a surface under the reticle, not already sampling.
     private(set) var canPlace = false
 
@@ -91,10 +89,8 @@ final class ArMeasureController {
     @ObservationIgnored private var lastMessageSeq = 0
     @ObservationIgnored private let haptics = UINotificationFeedbackGenerator()
 
-    /// `tapeStyle`: the homeowner app draws corners and sides in tape yellow (Chalk Line's measuring colour). `autoCorners`: the phone
-    /// looks for the window in the camera image and offers its outline (the homeowner app; the rep app taps every corner).
-    /// `rectangleFit`: the four corners are fitted to a level rectangle that is drawn, sized and sent (the homeowner app).
-    init(tapeStyle: Bool = false, autoCorners: Bool = false, rectangleFit: Bool = false) {
+    /// `tapeStyle`: the homeowner app draws corners and sides in tape yellow (Chalk Line's measuring colour).
+    init(tapeStyle: Bool = false) {
         lidar = DeviceCaps.hasLiDAR
         overlay = ArOverlay(tapeStyle: tapeStyle)
         sceneView = ArMeasureSceneView(frame: .zero)
@@ -102,7 +98,7 @@ final class ArMeasureController {
         sceneView.rendersCameraGrain = false
         sceneView.scene.rootNode.addChildNode(overlay.root)
         let mailbox = self.mailbox
-        engine = ArFrameEngine(lidar: lidar, device: lidar ? .arkitLidar : .arkit, autoCorners: autoCorners, rectangleFit: rectangleFit) { [weak self] snapshot, haptics in
+        engine = ArFrameEngine(lidar: lidar, device: lidar ? .arkitLidar : .arkit) { [weak self] snapshot, haptics in
             // Called on the engine's queue: keep only the newest snapshot, and wake the main queue once
             guard mailbox.post(snapshot, haptics) else { return }
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.drain() } }
@@ -173,21 +169,23 @@ final class ArMeasureController {
             shot = s.shot
         }
         if let l = s.loupe, l !== loupe { loupe = l }
+        if capturing != s.capturing { capturing = s.capturing }
+        if epoch != s.epoch { epoch = s.epoch }
+        if s.frozenSeq != lastFrozenSeq {
+            lastFrozenSeq = s.frozenSeq
+            frozen = s.frozen
+        }
         func moved(_ a: [CGPoint], _ b: [CGPoint]) -> Bool {
             a.count != b.count || zip(a, b).contains { abs($0.x - $1.x) > 0.5 || abs($0.y - $1.y) > 0.5 }
         }
         if moved(s.cornerDots, cornerDots) { cornerDots = s.cornerDots }
-        if moved(s.proposalDots, proposalDots) { proposalDots = s.proposalDots }
-        if cornerNumbers != s.cornerNumbers { cornerNumbers = s.cornerNumbers }
-        if flaggedCorner != s.flaggedCorner { flaggedCorner = s.flaggedCorner }
-        if redoSlot != s.redoSlot { redoSlot = s.redoSlot }
         if s.edgeLabels.count != edgeLabels.count
             || zip(s.edgeLabels, edgeLabels).contains(where: { moved([$0.point], [$1.point]) || $0.text != $1.text || $0.live != $1.live }) {
             edgeLabels = s.edgeLabels
         }
         if s.overlay.key != lastOverlayKey {
             lastOverlayKey = s.overlay.key
-            overlay.update(corners: s.overlay.corners, outline: s.overlay.outline, flagged: s.overlay.flagged, aim: s.overlay.aim, wallNormal: s.overlay.wallNormal, closed: s.overlay.closed)
+            overlay.update(corners: s.overlay.corners, aim: s.overlay.aim, wallNormal: s.overlay.wallNormal, closed: s.overlay.closed)
         }
     }
 
@@ -201,23 +199,17 @@ final class ArMeasureController {
         engine.place()
     }
 
+    /// Freeze the camera frame for the homeowner's measuring: the photo, and what turns its pixels into points on the wall.
+    func captureFrozen() {
+        guard canPlace, !capturing else { return }
+        message = nil
+        haptics.prepare()
+        engine.captureFrozen()
+    }
+
     func undo() {
         message = nil
         engine.undo()
-    }
-
-    /// Place one corner again, by its number (1 to 4, as its dot shows it), without starting over.
-    func redo(corner number: Int) {
-        message = nil
-        haptics.prepare()
-        engine.redo(corner: number)
-    }
-
-    /// Place the four corners of the outline the phone found (the same corners four taps would give).
-    func useProposal() {
-        message = nil
-        haptics.prepare()
-        engine.useProposal()
     }
 
     func startOver() {
@@ -339,20 +331,18 @@ final class ArOverlay {
         self.tapeStyle = tapeStyle
     }
 
-    /// `corners`: the corners as placed (a dot each). `outline`: the sides to draw when they are not the corners' own (the fitted rectangle).
-    /// `flagged`: the dot to draw red.
-    func update(corners: [Vec3], outline: [Vec3]? = nil, flagged: Int? = nil, aim: Vec3?, wallNormal: Vec3?, closed: Bool) {
+    func update(corners: [Vec3], aim: Vec3?, wallNormal: Vec3?, closed: Bool) {
         root.childNodes.forEach { $0.removeFromParentNode() }
         for (i, c) in corners.enumerated() {
-            let s = SCNSphere(radius: i == flagged ? 0.009 : 0.006)
-            s.firstMaterial?.diffuse.contents = i == flagged ? UIColor.systemRed : (tapeStyle ? Self.tape : (i == 0 ? UIColor.systemYellow : UIColor.systemGreen))
+            let s = SCNSphere(radius: 0.006)
+            s.firstMaterial?.diffuse.contents = tapeStyle ? Self.tape : (i == 0 ? UIColor.systemYellow : UIColor.systemGreen)
             s.firstMaterial?.lightingModel = .constant
             let n = SCNNode(geometry: s)
             n.simdPosition = c.simd
             root.addChildNode(n)
         }
-        var path = closed ? (outline ?? corners) : corners
-        if closed, let first = path.first { path.append(first) }
+        var path = corners
+        if closed, let first = corners.first { path.append(first) }
         if !closed, let a = aim, !corners.isEmpty { path.append(a) }
         if path.count >= 2 {
             for i in 1..<path.count {

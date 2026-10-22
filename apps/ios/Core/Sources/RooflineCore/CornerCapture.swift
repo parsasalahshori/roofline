@@ -140,8 +140,15 @@ public struct CornerCapture: Sendable {
     /// that same order and how far the raw corners were off the plane before projecting.
     public func finished(viewer: Vec3) -> FinishedCorners? {
         guard isComplete else { return nil }
-        let raw = points
-        let plane = wallPlane.map { wall -> Plane in
+        return Self.finish(raw: points, spreadM: corners.map { $0.spreadM }, wall: wallPlane, viewer: viewer)
+    }
+
+    /// Four corners in any order (world metres, `spreadM` in the same order) into the finished window: projected onto the plane (the
+    /// wall's, moved to the frame's face, when given; else the best fit through the four), ordered TL, TR, BR, BL by gravity as seen
+    /// from `viewer`, and fitted to a rectangle. Taps and a frozen photo both end here, so they size the same way.
+    public static func finish(raw: [Vec3], spreadM: [Double], wall: Plane?, viewer: Vec3) -> FinishedCorners? {
+        guard raw.count == 4, raw.allSatisfy({ $0.isFinite }) else { return nil }
+        let plane = wall.map { wall -> Plane in
             // The frame's own plane: parallel to the wall, through the corners (they were sampled on local planes)
             let offs = raw.map { wall.signedDistance($0) }
             return wall.offset(by: median(offs) ?? 0)
@@ -150,15 +157,11 @@ public struct CornerCapture: Sendable {
         let maxOff = raw.map { pl.distance($0) }.max() ?? 0
         let projected = raw.map { pl.project($0) }
         guard let ordered = gravityOrderedCorners(projected, viewer: viewer) else { return nil }
-        // Spreads follow their corners into the gravity order
-        let spreads: [Double] = ordered.map { q in
-            let i = projected.enumerated().min { $0.element.distance(to: q) < $1.element.distance(to: q) }!.offset
-            return corners[i].spreadM
-        }
-        // Which tap each ordered corner was
+        // Which corner as given each ordered corner was; the spreads follow their corners into the gravity order
         let tapIndex: [Int] = ordered.map { q in projected.enumerated().min { $0.element.distance(to: q) < $1.element.distance(to: q) }!.offset }
-        let fit = RectangleFit.fit(ordered: ordered, plane: pl, viewer: viewer, spreadM: spreads)
-        return FinishedCorners(pointsM: ordered, cornerSpreadM: spreads, maxOffPlaneM: maxOff, usedWallPlane: wallPlane != nil, tapIndex: tapIndex, fit: fit)
+        let spreads: [Double] = tapIndex.map { $0 < spreadM.count ? spreadM[$0] : 0 }
+        let fit = RectangleFit.fit(ordered: ordered, plane: pl, viewer: viewer)
+        return FinishedCorners(pointsM: ordered, cornerSpreadM: spreads, maxOffPlaneM: maxOff, usedWallPlane: wall != nil, tapIndex: tapIndex, fit: fit)
     }
 }
 

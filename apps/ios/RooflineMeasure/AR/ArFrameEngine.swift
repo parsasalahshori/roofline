@@ -18,17 +18,16 @@ struct ArSnapshot {
     var shotSeq = 0
     var cornersInPhoto = false
     var cornerDots: [CGPoint] = []
-    /// The window outline the phone found, TL, TR, BR, BL on screen (empty unless one is offered: found twice in a row, no corner placed).
-    var proposalDots: [CGPoint] = []
-    /// The number (1 to 4, as the dots show them) of each placed corner's dot; while one corner is placed again the others keep theirs.
-    var cornerNumbers: [Int] = []
-    /// The corner (0 TL, 1 TR, 2 BR, 3 BL) that looks off the frame, once the four are placed.
-    var flaggedCorner: Int?
-    /// The number (1 to 4) of the corner being placed again, or nil.
-    var redoSlot: Int?
     var edgeLabels: [ArMeasureController.EdgeLabel] = []
     var overlay = ArOverlayState()
     var loupe: UIImage?
+    /// The newest frozen frame (the homeowner app's Capture), and a counter that goes up with each. `capturing`: the button was tapped
+    /// and the phone is waiting a moment for the hand to be still.
+    var frozen: FrozenCapture?
+    var frozenSeq = 0
+    var capturing = false
+    /// Goes up whenever tracking was lost or the session restarted: photos from different epochs are not combined.
+    var epoch = 0
     /// The one-off message and a counter that goes up each time the engine sets it (even to nil).
     var message: String?
     var messageSeq = 0
@@ -36,10 +35,6 @@ struct ArSnapshot {
 
 struct ArOverlayState {
     var corners: [Vec3] = []
-    /// The sides to draw when they are not the corners' own (the fitted rectangle, with the corners as placed kept as dots).
-    var outline: [Vec3]?
-    /// The dot to draw in red (an index into `corners`).
-    var flagged: Int?
     var aim: Vec3?
     var wallNormal: Vec3?
     var closed = false
@@ -54,10 +49,6 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
     let queue = DispatchQueue(label: "com.winchoice.ar.frames", qos: .userInitiated)
     private let lidar: Bool
     private let device: ArDevice
-    /// The homeowner app has the phone look for the window and offer its outline; the rep app does not.
-    private let autoCorners: Bool
-    /// The homeowner app fits a level rectangle to the four corners and sends that; the rep app sends the corners as placed.
-    private let rectangleFit: Bool
     private let deliver: (ArSnapshot, [UINotificationFeedbackGenerator.FeedbackType]) -> Void
 
     // Everything below is touched only on `queue`.
@@ -78,40 +69,22 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
     private var viewport = CGSize.zero
     private var lastViewer = Vec3.zero
     private var haptics: [UINotificationFeedbackGenerator.FeedbackType] = []
+    /// While set, the next still frame (or the first one after this time) is frozen.
+    private var freezeDeadline: Date?
 
-    // The proposed window (only with `autoCorners`), also touched only on `queue`.
-    private let detector = ArWindowDetector()
-    private var tracker = QuadTracker()
-    /// Is a look at the camera image running now (one at a time)?
-    private var looking = false
-    private var lastLookAt = -1.0
-    /// Goes up whenever the world may have changed (a restart, tracking lost): a look that started before it is thrown away.
-    private var lookGeneration = 0
-    /// The depth points around each corner of the latest outline, for the wall check when it is placed.
-    private var proposalDepth: [[Vec3]] = [[], [], [], []]
-    /// "Use these corners" was tapped: the next frame places them (the photo needs a frame).
-    private var useRequested = false
-    /// The four corners came from the outline: Undo takes all four back, not one.
-    private var placedAsGroup = false
-    /// One corner is being placed again: its number (1 to 4), and the numbers of the corners that stay (in tap order).
-    private var redoSlot: Int?
-    private var redoNumbers: [Int] = []
-
-    /// Seconds between looks at the camera image for a window outline.
-    static let lookInterval: TimeInterval = 0.3
     /// Seconds a corner may take to sample before it is placed from what it has (or refused with < minSamples samples).
     static let samplingTimeout: TimeInterval = 4
     /// Seconds of limited tracking (without an interruption) the corners survive.
     static let limitedGrace: TimeInterval = 8
+    /// Seconds the phone waits for a still hand after Capture before it takes the frame it has.
+    static let freezeWait: TimeInterval = 0.7
     static let pausedMessage = "The camera was paused. Aim at the first corner again."
     /// Re-runs the session with a reset (set by the controller, which owns the configuration).
     var rerun: ((ARSession) -> Void)?
 
-    init(lidar: Bool, device: ArDevice, autoCorners: Bool = false, rectangleFit: Bool = false, deliver: @escaping (ArSnapshot, [UINotificationFeedbackGenerator.FeedbackType]) -> Void) {
+    init(lidar: Bool, device: ArDevice, deliver: @escaping (ArSnapshot, [UINotificationFeedbackGenerator.FeedbackType]) -> Void) {
         self.lidar = lidar
         self.device = device
-        self.autoCorners = autoCorners
-        self.rectangleFit = rectangleFit
         self.deliver = deliver
         super.init()
     }
@@ -132,54 +105,25 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
             self.sampling = true
             self.samplingDeadline = Date().addingTimeInterval(Self.samplingTimeout)
             self.snap.canPlace = false
-            self.tracker.reset()
             self.publish()
         }
     }
 
-    /// Place one corner again (its number, 1 to 4, as its dot shows it) without starting over: the other three and the wall stay, the
-    /// window is no longer finished, and the next tap puts the corner back (then the rectangle is fitted again).
-    func redo(corner number: Int) {
+    /// Freeze a frame: the first still one in the next moment (the tap itself shakes the phone). Needs the wall locked and tracking normal.
+    func captureFrozen() {
         queue.async {
-            guard self.snap.capture.isComplete, let f = self.snap.finished, f.tapIndex.indices.contains(number - 1) else { return }
-            let tap = f.tapIndex[number - 1]
-            // The corners that stay keep the numbers their dots had
-            let numbers = self.snap.capture.corners.indices.filter { $0 != tap }.map { (f.tapIndex.firstIndex(of: $0) ?? $0) + 1 }
-            self.cancelSampling()
-            guard self.snap.capture.removeCorner(at: tap) else { return }
-            self.placedAsGroup = false
-            self.redoSlot = number
-            self.redoNumbers = numbers
-            self.clearFinished()
+            guard self.canPlaceNow, self.freezeDeadline == nil else { return }
             self.setMessage(nil)
+            self.freezeDeadline = Date().addingTimeInterval(Self.freezeWait)
+            self.snap.capturing = true
             self.publish()
-        }
-    }
-
-    private func clearRedo() {
-        redoSlot = nil
-        redoNumbers = []
-    }
-
-    /// "Use these corners": the outline on screen becomes the four corners, in the next frame.
-    func useProposal() {
-        queue.async {
-            guard self.autoCorners, self.tracker.offered != nil else { return }
-            self.useRequested = true
         }
     }
 
     func undo() {
         queue.async {
             self.cancelSampling()
-            self.clearRedo()
-            if self.placedAsGroup {
-                // Four corners that came as one outline go back as one: the outline can be used again, or the corners tapped by hand
-                self.snap.capture.startOver()
-                self.placedAsGroup = false
-            } else {
-                self.snap.capture.undo()
-            }
+            self.snap.capture.undo()
             if self.snap.capture.corners.isEmpty { self.wallAnchorId = nil }
             self.clearFinished()
             self.setMessage(nil)
@@ -191,8 +135,6 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
         queue.async {
             self.cancelSampling()
             self.snap.capture.startOver()
-            self.placedAsGroup = false
-            self.clearRedo()
             self.wallAnchorId = nil
             self.clearFinished()
             self.setMessage(nil)
@@ -246,10 +188,9 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
 
     private func restartSession(_ session: ARSession) {
         cancelSampling()
+        cancelFreeze()
+        snap.epoch += 1
         snap.capture.resetForNewSession()
-        placedAsGroup = false
-        clearRedo()
-        resetProposal()
         wallAnchorId = nil
         limitedSince = nil
         normalFrames = 0
@@ -266,7 +207,6 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
 
     private func clearFinished() {
         snap.finished = nil
-        snap.flaggedCorner = nil
         snap.preview = nil
         snap.shot = nil
         snap.shotSeq += 1
@@ -319,7 +259,6 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
             return
         }
         if warmingUp {
-            resetProposal()
             snap.aim = nil
             snap.canPlace = false
             snap.phase = .searching
@@ -371,10 +310,11 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
             if sampler.isFull || Date() >= samplingDeadline { finishSampling(viewer: viewer, frame: frame) }
         }
 
-        // The outline the phone found: placed now when "Use these corners" was tapped
-        if autoCorners, useRequested {
-            useRequested = false
-            applyProposal(viewer: viewer, frame: frame)
+        // A Capture waits for a still hand (or its deadline), then freezes this very frame
+        if let deadline = freezeDeadline, limitedReason == nil, still || Date() >= deadline {
+            freeze(frame: frame)
+        } else if freezeDeadline != nil, limitedReason != nil, Date() >= (freezeDeadline ?? .distantFuture) {
+            cancelFreeze()
         }
 
         // Phase. No corner can be placed before the wall plane is locked: until then the phase stays "searching".
@@ -392,7 +332,6 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
         snap.phase = next
         snap.canPlace = canPlaceNow
 
-        if autoCorners { lookForWindow(frame: frame, imageCenter: imageCenter) }
         updateOverlay()
         updateScreenMarks(camera: cam)
         if frameCount % 6 == 0, !snap.capture.isComplete {
@@ -407,15 +346,17 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
 
     private func trackingLost(reason: String?) {
         // Once per loss (while lost, every frame lands here): count it, and restart a window in progress
-        resetProposal()
-        if snap.capture.tracking, snap.capture.setTracking(normal: false) {
-            cancelSampling()
-            placedAsGroup = false
-            clearRedo()
-            wallAnchorId = nil
-            clearFinished()
-            setMessage((reason ?? "Tracking was lost.") + " Start this window again from its first corner.")
-            haptics.append(.warning)
+        if snap.capture.tracking {
+            // The world can shift after a loss: photos taken before it are not combined with those after
+            snap.epoch += 1
+            cancelFreeze()
+            if snap.capture.setTracking(normal: false) {
+                cancelSampling()
+                wallAnchorId = nil
+                clearFinished()
+                setMessage((reason ?? "Tracking was lost.") + " Start this window again from its first corner.")
+                haptics.append(.warning)
+            }
         }
         snap.aim = nil
         snap.canPlace = false
@@ -452,20 +393,38 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
     /// must be the one the corners were placed in, and Done may come after the phone has moved).
     private func finish(viewer: Vec3, frame: ARFrame) {
         snap.finished = snap.capture.finished(viewer: viewer)
-        clearRedo()
         if let f = snap.finished {
-            // The window is a rectangle: the homeowner app sizes, draws, photographs and sends the fitted one, and asks about the
-            // corner that looks off; the rep app uses the corners as placed
-            let points = rectangleFit ? f.windowPointsM : f.pointsM
-            snap.flaggedCorner = rectangleFit ? f.flaggedCorner : nil
-            snap.preview = previewArSize(points, device: device, cornerSpreadM: rectangleFit ? f.windowSpreadM : f.cornerSpreadM)
-            let shot = FrameCapture.shot(frame: frame, points: points)
+            snap.preview = previewArSize(f.pointsM, device: device, cornerSpreadM: f.cornerSpreadM)
+            let shot = FrameCapture.shot(frame: frame, points: f.pointsM)
             snap.shot = shot
             snap.shotSeq += 1
             snap.cornersInPhoto = shot?.allInView ?? false
         } else {
             setMessage("These four corners do not make a window (in a line, or on a floor). Start over.")
         }
+    }
+
+    /// The frame is frozen: its photo, the camera's pose and lens, the wall, and the LiDAR depth, all from this one ARFrame.
+    private func freeze(frame: ARFrame) {
+        freezeDeadline = nil
+        snap.capturing = false
+        guard let wall = snap.capture.wallPlane, let encoded = FrameCapture.uprightJPEG(frame.capturedImage) else {
+            setMessage("The photo could not be made. Try again.")
+            haptics.append(.error)
+            return
+        }
+        let (jpeg, w, h) = encoded
+        let view = FrozenView(cameraTransform: Mat4(frame.camera.transform), intrinsics: CameraIntrinsics(frame.camera), wall: wall,
+                              depth: lidar ? FrozenDepth(frame: frame) : nil, photoWidthPx: Double(w), photoHeightPx: Double(h))
+        snap.frozen = FrozenCapture(view: view, jpeg: jpeg, widthPx: w, heightPx: h, epoch: snap.epoch,
+                                    trackingLostCount: snap.capture.trackingLostCount, restartsForTracking: snap.capture.restartsForTracking)
+        snap.frozenSeq += 1
+        haptics.append(.success)
+    }
+
+    private func cancelFreeze() {
+        freezeDeadline = nil
+        snap.capturing = false
     }
 
     private func cancelSampling() {
@@ -485,11 +444,9 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
     private func updateOverlay() {
         let normal = snap.capture.wallPlane?.normal
         let mm: (Vec3) -> String = { "\(Int($0.x * 500)),\(Int($0.y * 500)),\(Int($0.z * 500))" }
-        let key = (snap.capture.points.map(mm) + [snap.aim.map(mm) ?? "-", sampling ? "s" : "", snap.capture.isComplete ? "c" : "", snap.finished?.flaggedCorner.map(String.init) ?? ""]).joined(separator: "|")
+        let key = (snap.capture.points.map(mm) + [snap.aim.map(mm) ?? "-", sampling ? "s" : "", snap.capture.isComplete ? "c" : ""]).joined(separator: "|")
         guard key != snap.overlay.key else { return }
-        let fitted = rectangleFit ? snap.finished?.fit?.pointsM : nil
-        snap.overlay = ArOverlayState(corners: snap.finished?.pointsM ?? snap.capture.points, outline: fitted, flagged: rectangleFit ? snap.finished?.flaggedCorner : nil,
-                                      aim: snap.capture.isComplete ? nil : snap.aim,
+        snap.overlay = ArOverlayState(corners: snap.finished?.pointsM ?? snap.capture.points, aim: snap.capture.isComplete ? nil : snap.aim,
                                       wallNormal: normal, closed: snap.capture.isComplete, key: key)
     }
 
@@ -516,106 +473,8 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
             let inches = pr.0.distance(to: pr.1) * inchesPerMetre
             labels.append(ArMeasureController.EdgeLabel(id: i, point: mid, text: Eighths.format(inches), inches: inches, live: pr.2))
         }
-        // A rectangle has one width and one height: the plate on its top side and the plate on its right side
-        if rectangleFit, let fit = snap.finished?.fit {
-            labels = []
-            let q = fit.pointsM
-            if let top = screen((q[0] + q[1]) / 2) { labels.append(ArMeasureController.EdgeLabel(id: 0, point: top, text: Eighths.format(fit.widthIn), inches: fit.widthIn, live: false)) }
-            if let side = screen((q[1] + q[2]) / 2) { labels.append(ArMeasureController.EdgeLabel(id: 1, point: side, text: Eighths.format(fit.heightIn), inches: fit.heightIn, live: false)) }
-        }
-        // Dots are numbered 1 to 4 (a finished window in the order TL, TR, BR, BL); while one is placed again the others keep their numbers
-        snap.cornerNumbers = redoSlot != nil && redoNumbers.count == points.count ? redoNumbers : []
-        snap.redoSlot = redoSlot
         snap.cornerDots = dots
         snap.edgeLabels = labels
-        // The outline offered, where it is on this frame (it is fixed on the wall, so it follows the wall as the phone moves)
-        if autoCorners, snap.capture.corners.isEmpty, !sampling, let outline = tracker.offered {
-            let onScreen = outline.compactMap(screen)
-            snap.proposalDots = onScreen.count == 4 ? onScreen : []
-        } else {
-            snap.proposalDots = []
-        }
-    }
-
-    // MARK: The proposed window
-
-    /// Forgets the outline and any look in flight (the world may not be where it was).
-    private func resetProposal() {
-        tracker.reset()
-        snap.proposalDots = []
-        useRequested = false
-        looking = false
-        lookGeneration += 1
-    }
-
-    /// While the phone is aimed at a wall with no corner placed, about three times a second Vision looks at the camera image (on the
-    /// detector's own queue) for the window being aimed at.
-    private func lookForWindow(frame: ARFrame, imageCenter: CGPoint) {
-        let open = snap.capture.corners.isEmpty && !sampling && snap.phase == .aiming && snap.capture.wallPlane != nil
-        guard open else {
-            tracker.reset()
-            return
-        }
-        guard !looking, frame.timestamp - lastLookAt >= Self.lookInterval else { return }
-        looking = true
-        lastLookAt = frame.timestamp
-        let depth = frame.smoothedSceneDepth ?? frame.sceneDepth
-        let input = ArWindowDetector.Input(pixelBuffer: frame.capturedImage, depthMap: depth?.depthMap, confidenceMap: depth?.confidenceMap,
-                                           cameraTransform: Mat4(frame.camera.transform), intrinsics: CameraIntrinsics(frame.camera), reticle: imageCenter)
-        let generation = lookGeneration
-        detector.look(input) { [weak self] output in
-            self?.queue.async {
-                guard let self = self, self.lookGeneration == generation else { return }
-                self.receiveLook(output)
-            }
-        }
-    }
-
-    /// A look came back (on `queue`): the outline's corners are sent as rays onto the wall (each onto the frame's own plane where the
-    /// depth sensor shows the frame stands off the wall), checked for being a window, and kept with the looks before it.
-    private func receiveLook(_ output: ArWindowDetector.Output?) {
-        looking = false
-        guard snap.capture.corners.isEmpty, !sampling, let wall = snap.capture.wallPlane, let output = output else {
-            tracker.miss()
-            return
-        }
-        let planes = (0..<4).map { localFramePlane(wall: wall, depthPoints: output.depthPoints[$0], maxOffsetM: CornerCapture.maxOffPlaneM) }
-        guard let world = ArAutoCorners.worldQuad(nativePx: output.nativeQuad, cameraTransform: output.cameraTransform, intrinsics: output.intrinsics, planes: planes),
-              ArAutoCorners.isPlausibleWindow(world) else {
-            tracker.miss()
-            return
-        }
-        tracker.add(world)
-        proposalDepth = output.depthPoints
-    }
-
-    /// The outline becomes the four corners, through the same `CornerCapture.place` a tap goes through: the wall check, then the
-    /// photo of this frame with the corners in it. A refused corner puts them all back: the person taps them.
-    private func applyProposal(viewer: Vec3, frame: ARFrame) {
-        guard let outline = tracker.offered, snap.capture.corners.isEmpty, !sampling, let wall = snap.capture.wallPlane,
-              snap.capture.canPlaceNext(aimed: snap.aim != nil, sampling: false),
-              outline.allSatisfy({ wall.distance($0) <= CornerCapture.maxOffPlaneM + 0.02 }) else {
-            tracker.reset()
-            setMessage("That outline moved. Tap the corners yourself, or aim at the window again.")
-            haptics.append(.warning)
-            return
-        }
-        let spreads = tracker.spreadM
-        for i in 0..<4 {
-            let estimate = CornerEstimate(point: outline[i], spreadM: spreads[i], used: tracker.streak, rejected: 0)
-            guard case .placed = snap.capture.place(estimate, depthPoints: proposalDepth[i]) else {
-                snap.capture.startOver()
-                wallAnchorId = nil
-                tracker.reset()
-                setMessage("We couldn't line that up on the window. Tap the corners yourself.")
-                haptics.append(.error)
-                return
-            }
-        }
-        placedAsGroup = true
-        tracker.reset()
-        haptics.append(.success)
-        finish(viewer: viewer, frame: frame)
     }
 
     // MARK: Out to the main actor

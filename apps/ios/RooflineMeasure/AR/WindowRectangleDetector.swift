@@ -10,14 +10,10 @@ import Vision
 /// phone, no network.
 ///
 /// Vision's rectangle detector is a little unsteady (the same picture can give a different set of shapes from one run to the next),
-/// so the callers never trust one shape on its own: the photo flow shows what it found for the person to drag into place, and the
-/// AR side waits for the same outline twice in a row.
+/// so the callers never trust one shape on its own: they show what it found for the person to drag into place.
 enum WindowRectangleDetector {
     /// The longest side of the copy of a photo that Vision looks at: the finder does not need 12 megapixels to see a window frame.
     static let photoSide: CGFloat = 1600
-    /// The longest side of the copy of a camera frame that Vision looks at (the frame is looked at about three times a second).
-    static let liveSide: CGFloat = 1280
-
     // MARK: A photo
 
     /// The window and the card in an upright photo, each only when found with good confidence, in the photo's own pixels. Blocking
@@ -53,28 +49,21 @@ enum WindowRectangleDetector {
         return AutoCorners.refineCard(first: card, candidates: found)
     }
 
-    // MARK: A camera frame
+    // MARK: A frozen frame
 
-    /// The window outline in the live camera image, in the NATIVE (landscape) image's pixels, TL, TR, BR, BL as the person holding the
-    /// phone upright sees them; nil when none is believable. `reticle` is where the camera is aimed, 0...1 of the native image from its
-    /// top-left: only the window that holds it counts. Blocking: call it off the main thread (and off the AR session's queue).
-    static func window(inCameraImage pixelBuffer: CVPixelBuffer, reticle: CGPoint) -> [Vec2]? {
-        let nativeW = Double(CVPixelBufferGetWidth(pixelBuffer)), nativeH = Double(CVPixelBufferGetHeight(pixelBuffer))
-        guard nativeW > 0, nativeH > 0 else { return nil }
-        // The phone is held upright: the sensor's landscape image turned a quarter clockwise (as FrameCapture does for the photo),
-        // made small, then looked at the way a photo is
-        let k = min(1, liveSide / CGFloat(max(nativeW, nativeH)))
-        let upright = CIImage(cvPixelBuffer: pixelBuffer).oriented(.right).transformed(by: CGAffineTransform(scaleX: k, y: k))
-        guard let image = FrameCapture.context.createCGImage(upright, from: upright.extent) else { return nil }
-        let sw = Double(image.width), sh = Double(image.height)
-        let candidates = quads(in: image, requests: [makeRequest(minimumSize: 0.15, minimumAspect: 0.2)])
-        // The reticle in the upright small image (the native image's top-left is the upright image's top-right)
-        let aim = ImageMapping.nativeToPortrait(Vec2(Double(reticle.x) * nativeW, Double(reticle.y) * nativeH), nativeWidth: nativeW, nativeHeight: nativeH)
-        let scale = sw / nativeH
-        guard let picked = AutoCorners.pickWindow(candidates, imageWidth: sw, imageHeight: sh, aimedAt: Vec2(aim.x * scale, aim.y * scale)) else { return nil }
-        return picked.corners.map { c in
-            ImageMapping.portraitToNative(Vec2(c.x / scale, c.y / scale), nativeWidth: nativeW, nativeHeight: nativeH)
-        }
+    /// The window frame in an upright photo (a frozen camera frame), TL, TR, BR, BL in the photo's own pixels, when one is believable;
+    /// nil otherwise. The largest believable outline wins, the casing round a window is stepped past (`AutoCorners.pickWindow`). Blocking
+    /// (tens of milliseconds): call it off the main thread.
+    static func window(in photo: CGImage) -> [Vec2]? {
+        let width = photo.width, height = photo.height
+        guard width > 0, height > 0 else { return nil }
+        let k = min(1, photoSide / CGFloat(max(width, height)))
+        let small = k < 1 ? scaled(photo, by: k) ?? photo : photo
+        let sw = Double(small.width), sh = Double(small.height)
+        let candidates = quads(in: small, requests: [makeRequest(minimumSize: 0.15, minimumAspect: 0.2)])
+        guard let picked = AutoCorners.pickWindow(candidates, imageWidth: sw, imageHeight: sh) else { return nil }
+        let back = Double(width) / sw
+        return picked.corners.map { Vec2($0.x * back, $0.y * back) }
     }
 
     // MARK: Vision
