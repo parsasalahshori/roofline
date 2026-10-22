@@ -56,10 +56,6 @@ struct WelcomeScreen: View {
                 .foregroundStyle(.white)
                 .padding(.top, 10)
                 .padding(.bottom, 26)
-                .onLongPressGesture(minimumDuration: 1.5) {
-                    // The server address is a tester's setting, never shown in the App Store build
-                    if BuildEnvironment.isTesterBuild { showServerSetting = true }
-                }
                 .accessibilityAddTraits(.isHeader)
             Text("Measure your windows. Get your price tonight.")
                 .wcHeading(30, .heavy, relativeTo: .largeTitle)
@@ -81,6 +77,13 @@ struct WelcomeScreen: View {
         .padding(.top, StatusBar.height)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.navy)
+        // Held anywhere on the navy hero, not just the wordmark: the wordmark sits under the transparent navigation
+        // bar, which takes its touches, so a hold on it alone never fired on a phone.
+        .contentShape(Rectangle())
+        .onLongPressGesture(minimumDuration: 1.2) {
+            // The server address is a tester's setting, never shown in the App Store build
+            if BuildEnvironment.isTesterBuild { showServerSetting = true }
+        }
         .accessibilityElement(children: .contain)
     }
 }
