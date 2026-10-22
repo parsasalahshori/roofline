@@ -286,12 +286,16 @@ actor FakeHomeownerAPI: HomeownerAPI {
             roof: services.contains(.roof) && !satellite ? HomeownerRoofEstimate(low: 9800, high: 12100, squares: 23) : nil,
             roofNote: satellite ? HomeownerRoofNote() : nil
         )
-        // A small house outline near the address (longitude, latitude), as the real server's roof ring would give
-        let lon = -92.3926, lat = 34.7449
-        let dx = 0.000063, dy = 0.000036
-        let ring = [[lon - dx, lat - dy], [lon + dx, lat - dy], [lon + dx, lat + dy], [lon - dx, lat + dy]]
+        // A real house's roof ring as the server gives it (longitude, latitude): the footprint of 120 Briar Rose, Irvine, taken from the
+        // local server, so the results screen's satellite hero has a real roof to draw round. (The address is the mockups' Little Rock
+        // one; only the picture is Irvine's.)
+        let ring: [[Double]] = [
+            [-117.710856, 33.68851], [-117.710884, 33.688482], [-117.710918, 33.688481], [-117.710931, 33.688468], [-117.710931, 33.688453],
+            [-117.710947, 33.688437], [-117.710809, 33.688343], [-117.710799, 33.688342], [-117.71073, 33.688413], [-117.710724, 33.688432],
+            [-117.710839, 33.68851],
+        ]
         return Stored(id: id, token: "fake-token-\(id)", address: address, services: services, status: .ready, callbackReason: nil,
-                      home: HomeownerHome(address: address, floors: 1, outline: HomeownerOutline(center: [lon, lat], ring: ring)), estimate: estimate, createdAt: config.now())
+                      home: HomeownerHome(address: address, floors: 1, outline: HomeownerOutline(center: [-117.710871, 33.688444], ring: ring)), estimate: estimate, createdAt: config.now())
     }
 
     private func render(_ r: Stored) throws -> HomeownerRequestView {

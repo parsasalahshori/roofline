@@ -22,6 +22,12 @@ Branches: an apartment, duplex or address the server will not price goes to **Ca
 form, then "We'll call you"); a roof-only request skips the window screens. It resumes where the homeowner left off
 (the request id and bearer token are in the **Keychain**, the last screen and rooms in UserDefaults).
 
+The results screen opens with the home from above (`Screens/HomeHero.swift`, `HomeOutlineGeometry.swift`): Apple's satellite
+imagery (MapKit only), the camera settling on the house, the server's roof ring (`home.outline.ring`, longitude/latitude) drawn
+round it on the map's own projection (`MapProxy`), then the cards. About 2.5 s, plays once per request, a tap skips it, and it never
+holds back the price (the pinned button is there throughout). With no outline, or when the phone is offline, it is the small static
+card as before.
+
 Three ways to measure, each saved as one window:
 
 - **Tap the 4 corners** (ARKit, any iPhone with AR; a depth sensor is "about 1/4 inch · best"): `ArMeasureController` with the
@@ -89,7 +95,8 @@ wordmark, no logo. Another company = another JSON, another target.
 - **Targets and contrast**: 44 pt minimum targets; the quiet text colour (`ink3`) is a touch darker than the mockups' so small
   text clears 4.5:1 on every surface; the main button's label is 18 pt bold (large text, 3:1) because white on the brand red
   `#ED3A2B` is 4.0:1 (a darker red such as `#DB3425` would be 4.6:1: the brand owner's call).
-- **Reduce Motion**: the press scale, the notice's slide and the zoom reset are off.
+- **Reduce Motion**: the press scale, the notice's slide, the zoom reset and the results screen's "finding your home" reveal are off
+  (the finished satellite picture with the outline is shown at once; VoiceOver gets the same).
 - **Checked by Apple's accessibility audit** (`WinChoiceUITests`, below): contrast, hit areas, Dynamic Type, clipped text and
   descriptions on every screen, light, dark and at the largest accessibility size.
 

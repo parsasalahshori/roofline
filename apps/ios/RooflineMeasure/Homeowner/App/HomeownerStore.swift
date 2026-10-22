@@ -93,6 +93,8 @@ final class HomeownerStore {
     var callbackReason: String?
     var requestStatus: HomeownerRequestStatus = .ready
     var progress = HomeownerProgress()
+    /// The request whose "finding your home" reveal on the results screen has played (it plays once; not kept on disk).
+    var revealedRequestId: String?
     var outboxItems: [OutboxItem] = []
     var slots: HomeownerSlots?
     var status: HomeownerStatus?
