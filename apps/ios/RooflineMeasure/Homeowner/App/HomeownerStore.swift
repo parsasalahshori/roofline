@@ -253,6 +253,11 @@ final class HomeownerStore {
 
     var timeZone: TimeZone { VisitTimes.zone(slots?.timeZone ?? view?.booking?.timeZone ?? status?.timeZone) }
 
+    // Not DEBUG-only: TestFlight (Release) builds send the testers' dump too.
+    /// Testers' capture dump: the server said its dump is off (404), so no more is sent until the app restarts.
+    @ObservationIgnored var debugCapturesOff = false
+    /// `-debugCaptureDir` (Debug builds) and tests: capture files are written here instead of being sent to the server.
+    @ObservationIgnored var debugCaptureFolder: URL?
     #if DEBUG
     /// DEBUG launch arguments: seeds the fake server, then the store opens `debugStep` instead of resuming.
     @ObservationIgnored var debugPlan: ((HomeownerStore) async -> Void)?
@@ -260,10 +265,6 @@ final class HomeownerStore {
     @ObservationIgnored var debugRoute: Route?
     /// `-debugOpen`: a measuring screen to open over the scenario's screen.
     @ObservationIgnored var debugOpen: String?
-    /// Testers' capture dump: the server said its dump is off (404), so no more is sent until the app restarts.
-    @ObservationIgnored var debugCapturesOff = false
-    /// `-debugCaptureDir` (Debug builds) and tests: capture files are written here instead of being sent to the server.
-    @ObservationIgnored var debugCaptureFolder: URL?
     @ObservationIgnored var debugCardSeed: DebugCardSeed?
     /// `-debugServer ... -debugE2E`: run after the app has opened (the scripted journey).
     @ObservationIgnored var debugAfterLaunch: ((HomeownerStore) async -> Void)?
