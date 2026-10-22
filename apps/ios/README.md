@@ -49,6 +49,16 @@ Three ways to measure, each saved as one window:
   frame); Undo takes all four back. Hand tapping is unchanged. `-debugOpen hud-auto` draws it over the sample, `cardauto` and `windowauto`
   run the real photo detection on the sample photo.
 
+**A window is a rectangle** (depth/AR corners, homeowner app): after the fourth corner `RectangleFit` (Core) fits the best level rectangle in
+the wall's plane (left = mean of the two left corners, and so on; turned only when all four sides agree on a tilt of 3 degrees or more).
+That rectangle is drawn, labelled with one width and one height, photographed and sent (`FinishedCorners.windowPointsM`), so the server's
+`sizeFromArPoints` gives back exactly the numbers on screen. The corners as placed are kept: when opposite sides differ by more than 3/4 in
+or 2% (or a corner is 3/4 in from its rectangle corner) the corner whose removal leaves the other three agreeing best gets a red ring,
+"Corner N looks off the frame. Move it onto the corner and tap again.", and "Redo corner N" (or tap its dot) places just that one again
+(`CornerCapture.removeCorner`). "Use this size" is never blocked; the server cannot be told "check" about a perfect rectangle, so the
+doubt travels in the corners' `cornerSpreadM` (the "about" grows, and the label sheet marks it a check). The magnifier moves off any placed
+corner (`LoupePlacement`). `-debugOpen hud-skew` draws a skewed quad.
+
 Wording rules (`Core/Sources/RooflineCore/SizeWording.swift`): whole inches and eighths ("35 5/8", never a decimal), accuracy rounded
 **up** and written "about 1/4 inch" (a plus-or-minus only ever follows "about"), "depth sensor" not "LiDAR", "bank card" not "ID-1".
 
@@ -144,7 +154,7 @@ xcrun simctl launch --console booted com.premjeetech.winchoice.measure -debugSer
 ### Tests
 
 ```sh
-cd apps/ios/Core && ./scripts/check.sh                       # the logic, plain swiftc, 107 checks
+cd apps/ios/Core && ./scripts/check.sh                       # the logic, plain swiftc, 113 checks
 cd apps/ios && xcodebuild test -project RooflineMeasure.xcodeproj -scheme WinChoice \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' CODE_SIGNING_ALLOWED=NO
 xcodebuild test -project RooflineMeasure.xcodeproj -scheme WinChoiceUITests \

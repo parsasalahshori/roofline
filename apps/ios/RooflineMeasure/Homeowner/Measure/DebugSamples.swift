@@ -123,6 +123,42 @@ struct SampleScene {
     }
 }
 
+// MARK: - Four corners placed skewed
+
+/// The sample window with its four corners placed by a shaky hand: the top corners on the frame, the bottom-right a little low, the
+/// bottom-left far outside it (the way the owner's first real window came out). The level rectangle fitted to them is what `RectangleFit`
+/// makes of them, in screen points (the screen's points are put on a wall plane at the sample's scale, fitted, and brought back).
+struct SkewedSample {
+    /// The corners as placed, TL, TR, BR, BL, screen points.
+    let raw: [CGPoint]
+    /// The fitted rectangle, TL, TR, BR, BL.
+    let fitted: [CGPoint]
+    let widthIn: Double
+    let heightIn: Double
+    /// The corner the fit flags (0 to 3).
+    let flagged: Int?
+
+    init(_ scene: SampleScene) {
+        let f = scene.frameCorners
+        let inPerPt = SampleScene.widthIn / Double(f[1].x - f[0].x)
+        raw = [f[0], f[1], CGPoint(x: f[2].x + 5, y: f[2].y + 7), CGPoint(x: f[3].x - 15, y: f[3].y + 24)]
+        func world(_ p: CGPoint) -> Vec3 { Vec3(Double(p.x) * inPerPt / inchesPerMetre, 3 - Double(p.y) * inPerPt / inchesPerMetre, -2) }
+        func screen(_ v: Vec3) -> CGPoint { CGPoint(x: v.x * inchesPerMetre / inPerPt, y: (3 - v.y) * inchesPerMetre / inPerPt) }
+        let plane = Plane(point: Vec3(0, 0, -2), normal: Vec3(0, 0, 1))!
+        if let fit = RectangleFit.fit(ordered: raw.map(world), plane: plane, viewer: Vec3(0, 1.4, 0)) {
+            fitted = fit.pointsM.map(screen)
+            widthIn = fit.widthIn
+            heightIn = fit.heightIn
+            flagged = fit.flaggedCorner
+        } else {
+            fitted = f
+            widthIn = SampleScene.widthIn
+            heightIn = SampleScene.heightIn
+            flagged = nil
+        }
+    }
+}
+
 // MARK: - The AR screen, over a drawn window
 
 /// The measuring screen as it looks on a phone: a drawn window where the camera would be, the controls over it.
@@ -132,7 +168,10 @@ struct DebugHudSample: View {
     @State private var backdrop: UIImage?
     @State private var scene: SampleScene?
 
-    private var done: Bool { mode == "hud-done" || mode == "label" }
+    private var done: Bool { mode == "hud-done" || mode == "label" || skew }
+    /// Four corners placed with the bottom-left one off the frame (`-debugOpen hud-skew`): the level rectangle fitted to them is drawn and
+    /// sized, the corner that looks off has a red ring, and "Redo corner 4" is offered.
+    private var skew: Bool { mode == "hud-skew" }
     /// The phone has found the window and offers its outline (`-debugOpen hud-auto`): no corner is placed yet.
     private var auto: Bool { mode == "hud-auto" }
 
@@ -149,20 +188,21 @@ struct DebugHudSample: View {
                     if let scene = scene, !auto { overlay(scene, size: geo.size) }
                 }
                 .task(id: geo.size) {
-                    let s = SampleScene(size: geo.size, windowShare: auto ? 0.4 : 0.62)
+                    let s = SampleScene(size: geo.size, windowShare: auto ? 0.4 : (skew ? 0.5 : 0.62))
                     scene = s
                     backdrop = s.image(withCard: false)
                 }
             }
             .ignoresSafeArea()
-            ArHud(model: model(scene), onClose: { }, onPlace: { }, onUndo: { }, onDone: { }, onHow: { }, onUseProposal: { })
+            ArHud(model: model(scene), onClose: { }, onPlace: { }, onUndo: { }, onDone: { }, onHow: { }, onUseProposal: { }, onRedo: { _ in })
             if mode == "hud-howto" { ArHowTo { } }
         }
     }
 
     /// The tape between the corners, drawn on the picture (the AR scene draws it in 3D on a phone).
     private func overlay(_ s: SampleScene, size: CGSize) -> some View {
-        let c = s.frameCorners
+        // The fitted rectangle when the corners were placed skewed; the frame's own corners otherwise
+        let c = skew ? SkewedSample(s).fitted : s.frameCorners
         return Canvas { ctx, _ in
             var solid = Path()
             solid.move(to: c[0]); solid.addLine(to: c[1]); solid.addLine(to: c[2])
@@ -190,6 +230,17 @@ struct DebugHudSample: View {
         if auto, let s = scene {
             m.proposal = s.frameCorners
             m.hint = ArHudModel.proposalHint
+        } else if skew, let s = scene {
+            let k = SkewedSample(s)
+            m.readout = LiveReadout(widthIn: k.widthIn, heightIn: k.heightIn, placed: 4)
+            m.dots = k.raw
+            m.flaggedCorner = k.flagged.map { $0 + 1 }
+            m.hint = k.flagged.map { ArHudModel.offCornerHint(corner: $0 + 1) } ?? ArHowTo.checkHint
+            // One width on the top side, one height on the right side
+            m.edges = [
+                ArHudModel.Edge(id: 0, point: CGPoint(x: (k.fitted[0].x + k.fitted[1].x) / 2, y: k.fitted[0].y - 22), inches: k.widthIn, live: false),
+                ArHudModel.Edge(id: 1, point: CGPoint(x: min(k.fitted[1].x + 46, s.size.width - 40), y: (k.fitted[1].y + k.fitted[2].y) / 2), inches: k.heightIn, live: false),
+            ]
         } else if let s = scene {
             let c = s.frameCorners
             m.dots = done ? c : Array(c.prefix(2))
@@ -198,7 +249,6 @@ struct DebugHudSample: View {
                 ArHudModel.Edge(id: 1, point: CGPoint(x: min(c[1].x + 46, s.size.width - 40), y: (c[1].y + c[2].y) / 2), inches: SampleScene.heightIn, live: false),
             ]
             if !done { m.edges.removeLast() }
-            if done { m.edges.append(ArHudModel.Edge(id: 2, point: CGPoint(x: (c[2].x + c[3].x) / 2, y: c[2].y + 22), inches: SampleScene.widthIn, live: false)) }
         }
         m.loupe = scene.flatMap { loupe(of: $0) }
         return m
@@ -257,7 +307,7 @@ extension HomeownerStore {
     func openDebug(_ name: String) {
         let room = path.compactMap { r -> String? in if case .method(let room) = r { return room } else { return nil } }.last ?? "Bedroom 1"
         switch name {
-        case "hud", "hud-done", "hud-howto", "hud-auto":
+        case "hud", "hud-done", "hud-howto", "hud-auto", "hud-skew":
             method = .corners
             measureSession = MeasureSession(method: .corners, room: room, number: 4)
         case "label":

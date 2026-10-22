@@ -36,8 +36,11 @@ public enum LocalWindowPreview {
         switch w.scale {
         case .ar(let s):
             guard let size = sizeFromArPoints(s.pointsM, device: s.device ?? .arkit, cornerSpreadM: s.cornerSpreadM) else { return nil }
+            // Corners that did not line up are sent as a rectangle with a spread that says so (`RectangleFit.spreadM`): that is a check too
+            let unsure = (s.cornerSpreadM ?? []).contains { $0 >= FitLimits.checkSpreadM }
             return WindowPreview(widthIn: size.widthIn, heightIn: size.heightIn, uncertaintyIn: max(size.uncertaintyWidthIn, size.uncertaintyHeightIn),
-                                 needsCheck: size.quality == .check, reasons: size.reasons)
+                                 needsCheck: size.quality == .check || unsure,
+                                 reasons: size.reasons + (unsure && size.quality == .good ? ["a corner did not line up with the others"] : []))
         case .roomplan(let s):
             let u = RoomPlanLimits.uncertaintyIn(s.confidence)
             return WindowPreview(widthIn: s.widthM * inchesPerMetre, heightIn: s.heightM * inchesPerMetre, uncertaintyIn: u,

@@ -20,6 +20,12 @@ struct ArSnapshot {
     var cornerDots: [CGPoint] = []
     /// The window outline the phone found, TL, TR, BR, BL on screen (empty unless one is offered: found twice in a row, no corner placed).
     var proposalDots: [CGPoint] = []
+    /// The number (1 to 4, as the dots show them) of each placed corner's dot; while one corner is placed again the others keep theirs.
+    var cornerNumbers: [Int] = []
+    /// The corner (0 TL, 1 TR, 2 BR, 3 BL) that looks off the frame, once the four are placed.
+    var flaggedCorner: Int?
+    /// The number (1 to 4) of the corner being placed again, or nil.
+    var redoSlot: Int?
     var edgeLabels: [ArMeasureController.EdgeLabel] = []
     var overlay = ArOverlayState()
     var loupe: UIImage?
@@ -30,6 +36,10 @@ struct ArSnapshot {
 
 struct ArOverlayState {
     var corners: [Vec3] = []
+    /// The sides to draw when they are not the corners' own (the fitted rectangle, with the corners as placed kept as dots).
+    var outline: [Vec3]?
+    /// The dot to draw in red (an index into `corners`).
+    var flagged: Int?
     var aim: Vec3?
     var wallNormal: Vec3?
     var closed = false
@@ -46,6 +56,8 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
     private let device: ArDevice
     /// The homeowner app has the phone look for the window and offer its outline; the rep app does not.
     private let autoCorners: Bool
+    /// The homeowner app fits a level rectangle to the four corners and sends that; the rep app sends the corners as placed.
+    private let rectangleFit: Bool
     private let deliver: (ArSnapshot, [UINotificationFeedbackGenerator.FeedbackType]) -> Void
 
     // Everything below is touched only on `queue`.
@@ -81,6 +93,9 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
     private var useRequested = false
     /// The four corners came from the outline: Undo takes all four back, not one.
     private var placedAsGroup = false
+    /// One corner is being placed again: its number (1 to 4), and the numbers of the corners that stay (in tap order).
+    private var redoSlot: Int?
+    private var redoNumbers: [Int] = []
 
     /// Seconds between looks at the camera image for a window outline.
     static let lookInterval: TimeInterval = 0.3
@@ -92,10 +107,11 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
     /// Re-runs the session with a reset (set by the controller, which owns the configuration).
     var rerun: ((ARSession) -> Void)?
 
-    init(lidar: Bool, device: ArDevice, autoCorners: Bool = false, deliver: @escaping (ArSnapshot, [UINotificationFeedbackGenerator.FeedbackType]) -> Void) {
+    init(lidar: Bool, device: ArDevice, autoCorners: Bool = false, rectangleFit: Bool = false, deliver: @escaping (ArSnapshot, [UINotificationFeedbackGenerator.FeedbackType]) -> Void) {
         self.lidar = lidar
         self.device = device
         self.autoCorners = autoCorners
+        self.rectangleFit = rectangleFit
         self.deliver = deliver
         super.init()
     }
@@ -121,6 +137,30 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
         }
     }
 
+    /// Place one corner again (its number, 1 to 4, as its dot shows it) without starting over: the other three and the wall stay, the
+    /// window is no longer finished, and the next tap puts the corner back (then the rectangle is fitted again).
+    func redo(corner number: Int) {
+        queue.async {
+            guard self.snap.capture.isComplete, let f = self.snap.finished, f.tapIndex.indices.contains(number - 1) else { return }
+            let tap = f.tapIndex[number - 1]
+            // The corners that stay keep the numbers their dots had
+            let numbers = self.snap.capture.corners.indices.filter { $0 != tap }.map { (f.tapIndex.firstIndex(of: $0) ?? $0) + 1 }
+            self.cancelSampling()
+            guard self.snap.capture.removeCorner(at: tap) else { return }
+            self.placedAsGroup = false
+            self.redoSlot = number
+            self.redoNumbers = numbers
+            self.clearFinished()
+            self.setMessage(nil)
+            self.publish()
+        }
+    }
+
+    private func clearRedo() {
+        redoSlot = nil
+        redoNumbers = []
+    }
+
     /// "Use these corners": the outline on screen becomes the four corners, in the next frame.
     func useProposal() {
         queue.async {
@@ -132,6 +172,7 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
     func undo() {
         queue.async {
             self.cancelSampling()
+            self.clearRedo()
             if self.placedAsGroup {
                 // Four corners that came as one outline go back as one: the outline can be used again, or the corners tapped by hand
                 self.snap.capture.startOver()
@@ -151,6 +192,7 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
             self.cancelSampling()
             self.snap.capture.startOver()
             self.placedAsGroup = false
+            self.clearRedo()
             self.wallAnchorId = nil
             self.clearFinished()
             self.setMessage(nil)
@@ -206,6 +248,7 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
         cancelSampling()
         snap.capture.resetForNewSession()
         placedAsGroup = false
+        clearRedo()
         resetProposal()
         wallAnchorId = nil
         limitedSince = nil
@@ -223,6 +266,7 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
 
     private func clearFinished() {
         snap.finished = nil
+        snap.flaggedCorner = nil
         snap.preview = nil
         snap.shot = nil
         snap.shotSeq += 1
@@ -367,6 +411,7 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
         if snap.capture.tracking, snap.capture.setTracking(normal: false) {
             cancelSampling()
             placedAsGroup = false
+            clearRedo()
             wallAnchorId = nil
             clearFinished()
             setMessage((reason ?? "Tracking was lost.") + " Start this window again from its first corner.")
@@ -407,9 +452,14 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
     /// must be the one the corners were placed in, and Done may come after the phone has moved).
     private func finish(viewer: Vec3, frame: ARFrame) {
         snap.finished = snap.capture.finished(viewer: viewer)
+        clearRedo()
         if let f = snap.finished {
-            snap.preview = previewArSize(f.pointsM, device: device, cornerSpreadM: f.cornerSpreadM)
-            let shot = FrameCapture.shot(frame: frame, points: f.pointsM)
+            // The window is a rectangle: the homeowner app sizes, draws, photographs and sends the fitted one, and asks about the
+            // corner that looks off; the rep app uses the corners as placed
+            let points = rectangleFit ? f.windowPointsM : f.pointsM
+            snap.flaggedCorner = rectangleFit ? f.flaggedCorner : nil
+            snap.preview = previewArSize(points, device: device, cornerSpreadM: rectangleFit ? f.windowSpreadM : f.cornerSpreadM)
+            let shot = FrameCapture.shot(frame: frame, points: points)
             snap.shot = shot
             snap.shotSeq += 1
             snap.cornersInPhoto = shot?.allInView ?? false
@@ -435,9 +485,11 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
     private func updateOverlay() {
         let normal = snap.capture.wallPlane?.normal
         let mm: (Vec3) -> String = { "\(Int($0.x * 500)),\(Int($0.y * 500)),\(Int($0.z * 500))" }
-        let key = (snap.capture.points.map(mm) + [snap.aim.map(mm) ?? "-", sampling ? "s" : "", snap.capture.isComplete ? "c" : ""]).joined(separator: "|")
+        let key = (snap.capture.points.map(mm) + [snap.aim.map(mm) ?? "-", sampling ? "s" : "", snap.capture.isComplete ? "c" : "", snap.finished?.flaggedCorner.map(String.init) ?? ""]).joined(separator: "|")
         guard key != snap.overlay.key else { return }
-        snap.overlay = ArOverlayState(corners: snap.finished?.pointsM ?? snap.capture.points, aim: snap.capture.isComplete ? nil : snap.aim,
+        let fitted = rectangleFit ? snap.finished?.fit?.pointsM : nil
+        snap.overlay = ArOverlayState(corners: snap.finished?.pointsM ?? snap.capture.points, outline: fitted, flagged: rectangleFit ? snap.finished?.flaggedCorner : nil,
+                                      aim: snap.capture.isComplete ? nil : snap.aim,
                                       wallNormal: normal, closed: snap.capture.isComplete, key: key)
     }
 
@@ -464,6 +516,16 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
             let inches = pr.0.distance(to: pr.1) * inchesPerMetre
             labels.append(ArMeasureController.EdgeLabel(id: i, point: mid, text: Eighths.format(inches), inches: inches, live: pr.2))
         }
+        // A rectangle has one width and one height: the plate on its top side and the plate on its right side
+        if rectangleFit, let fit = snap.finished?.fit {
+            labels = []
+            let q = fit.pointsM
+            if let top = screen((q[0] + q[1]) / 2) { labels.append(ArMeasureController.EdgeLabel(id: 0, point: top, text: Eighths.format(fit.widthIn), inches: fit.widthIn, live: false)) }
+            if let side = screen((q[1] + q[2]) / 2) { labels.append(ArMeasureController.EdgeLabel(id: 1, point: side, text: Eighths.format(fit.heightIn), inches: fit.heightIn, live: false)) }
+        }
+        // Dots are numbered 1 to 4 (a finished window in the order TL, TR, BR, BL); while one is placed again the others keep their numbers
+        snap.cornerNumbers = redoSlot != nil && redoNumbers.count == points.count ? redoNumbers : []
+        snap.redoSlot = redoSlot
         snap.cornerDots = dots
         snap.edgeLabels = labels
         // The outline offered, where it is on this frame (it is fixed on the wall, so it follows the wall as the phone moves)
