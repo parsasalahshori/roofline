@@ -70,6 +70,8 @@ struct PhotoTapView: View {
     /// Start zoomed on this photo point (a sample or a test); nil starts with the whole photo in view.
     var focus: CGPoint?
     var startZoom: CGFloat = 1
+    /// The markers are corners the phone found (the person drags any that is off): VoiceOver says so.
+    var proposed = false
     var onEdit: () -> Void = {}
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -192,7 +194,8 @@ struct PhotoTapView: View {
             }
             .onAppear { start(view) }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Photo. \(points.count) of \(maxPoints) corners placed. Touch the photo to place a corner. Pinch to zoom.")
+            .accessibilityLabel(proposed ? "Photo. We found \(points.count) corners. Touch a corner and drag to move it. Pinch to zoom."
+                                         : "Photo. \(points.count) of \(maxPoints) corners placed. Touch the photo to place a corner. Pinch to zoom.")
             .accessibilityAddTraits(.allowsDirectInteraction)
         }
     }

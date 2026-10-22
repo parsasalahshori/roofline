@@ -133,6 +133,8 @@ struct DebugHudSample: View {
     @State private var scene: SampleScene?
 
     private var done: Bool { mode == "hud-done" || mode == "label" }
+    /// The phone has found the window and offers its outline (`-debugOpen hud-auto`): no corner is placed yet.
+    private var auto: Bool { mode == "hud-auto" }
 
     var body: some View {
         ZStack {
@@ -144,16 +146,16 @@ struct DebugHudSample: View {
                     } else {
                         Color.black
                     }
-                    if let scene = scene { overlay(scene, size: geo.size) }
+                    if let scene = scene, !auto { overlay(scene, size: geo.size) }
                 }
                 .task(id: geo.size) {
-                    let s = SampleScene(size: geo.size, windowShare: 0.62)
+                    let s = SampleScene(size: geo.size, windowShare: auto ? 0.4 : 0.62)
                     scene = s
                     backdrop = s.image(withCard: false)
                 }
             }
             .ignoresSafeArea()
-            ArHud(model: model(scene), onClose: { }, onPlace: { }, onUndo: { }, onDone: { }, onHow: { })
+            ArHud(model: model(scene), onClose: { }, onPlace: { }, onUndo: { }, onDone: { }, onHow: { }, onUseProposal: { })
             if mode == "hud-howto" { ArHowTo { } }
         }
     }
@@ -179,13 +181,16 @@ struct DebugHudSample: View {
         var m = ArHudModel()
         m.title = "WINDOW \(session.number) OF 7"
         m.deviceChip = "Depth sensor on"
-        let placed = done ? 4 : 2
-        m.readout = LiveReadout(widthIn: SampleScene.widthIn, heightIn: done ? SampleScene.heightIn : nil, placed: placed)
+        let placed = done ? 4 : (auto ? 0 : 2)
+        m.readout = auto ? LiveReadout() : LiveReadout(widthIn: SampleScene.widthIn, heightIn: done ? SampleScene.heightIn : nil, placed: placed)
         m.phase = done ? .complete : .ready
         m.canPlace = !done
         m.canUndo = true
         m.hint = done ? ArHowTo.checkHint : ArHudModel.cornerHint(placed: placed)
-        if let s = scene {
+        if auto, let s = scene {
+            m.proposal = s.frameCorners
+            m.hint = ArHudModel.proposalHint
+        } else if let s = scene {
             let c = s.frameCorners
             m.dots = done ? c : Array(c.prefix(2))
             m.edges = [
@@ -241,6 +246,10 @@ struct DebugCardSeed {
     /// The window's fourth corner tapped inside the other three (not a four-sided shape): the screen says what to fix.
     /// (Corners tapped across each other are put in order by the app and size fine.)
     var dart = false
+    /// The photo opens with NO corners and the phone looks for the card and the window itself (`-debugOpen cardauto`, `windowauto`).
+    var auto = false
+    /// With `auto`: go on to the window step once the phone has looked (`windowauto`).
+    var thenWindow = false
 }
 
 extension HomeownerStore {
@@ -248,7 +257,7 @@ extension HomeownerStore {
     func openDebug(_ name: String) {
         let room = path.compactMap { r -> String? in if case .method(let room) = r { return room } else { return nil } }.last ?? "Bedroom 1"
         switch name {
-        case "hud", "hud-done", "hud-howto":
+        case "hud", "hud-done", "hud-howto", "hud-auto":
             method = .corners
             measureSession = MeasureSession(method: .corners, room: room, number: 4)
         case "label":
@@ -278,6 +287,12 @@ extension HomeownerStore {
             startCard(room)
         case "window4":
             debugCardSeed = DebugCardSeed(step: .window, cardCount: 4, windowCount: 4)
+            startCard(room)
+        case "cardauto":
+            debugCardSeed = DebugCardSeed(step: .card, cardCount: 0, windowCount: 0, auto: true)
+            startCard(room)
+        case "windowauto":
+            debugCardSeed = DebugCardSeed(step: .card, cardCount: 0, windowCount: 0, auto: true, thenWindow: true)
             startCard(room)
         case "windowdart":
             debugCardSeed = DebugCardSeed(step: .window, cardCount: 4, windowCount: 4, dart: true)

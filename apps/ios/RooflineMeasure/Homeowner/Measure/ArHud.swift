@@ -31,6 +31,8 @@ struct ArHudModel: Equatable {
     var canPlace = false
     var canUndo = false
     var dots: [CGPoint] = []
+    /// The window outline the phone found (TL, TR, BR, BL, full-screen points), or empty. With it the screen offers "Use these corners".
+    var proposal: [CGPoint] = []
     var edges: [Edge] = []
     var loupe: UIImage?
     /// The corner the button will place next (1 to 4).
@@ -47,6 +49,12 @@ struct ArHudModel: Equatable {
     }
 
     var canUse: Bool { phase == .complete && cornersInPhoto }
+
+    /// An outline is on screen and no corner is placed: "Use these corners" is offered.
+    var hasProposal: Bool { proposal.count == 4 && phase == .ready && readout.placed == 0 }
+
+    /// What the hint says while an outline is offered.
+    static let proposalHint = "We found your window. Use these corners, or tap them yourself."
 
     var buttonLabel: String {
         switch phase {
@@ -68,11 +76,13 @@ struct ArHud: View {
     let onUndo: () -> Void
     let onDone: () -> Void
     var onHow: () -> Void = {}
+    var onUseProposal: () -> Void = {}
 
     var body: some View {
         ZStack {
             // Corners and side plates sit on the picture
             GeometryReader { _ in
+                if model.hasProposal { outline(model.proposal) }
                 ForEach(Array(model.dots.enumerated()), id: \.offset) { i, p in
                     Circle().fill(Theme.tape).frame(width: 22, height: 22)
                         .overlay(Circle().strokeBorder(Theme.navy, lineWidth: 2))
@@ -107,6 +117,7 @@ struct ArHud: View {
                 }
                 .padding(.horizontal, 16).padding(.top, 14)
                 Spacer()
+                if model.hasProposal { useCorners }
                 hint
                 controls
             }
@@ -115,6 +126,30 @@ struct ArHud: View {
         // Over the camera the controls stop at the largest ordinary text size: bigger would hide the window being measured
         // (VoiceOver reads the same words at any size)
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+    }
+
+    /// The window the phone found: a dashed tape outline with a ring on each corner, on the picture (fixed on the wall, as the tape is).
+    private func outline(_ q: [CGPoint]) -> some View {
+        ZStack {
+            Path { p in
+                p.move(to: q[0])
+                q.dropFirst().forEach { p.addLine(to: $0) }
+                p.closeSubpath()
+            }
+            .stroke(Color.black.opacity(0.45), style: StrokeStyle(lineWidth: 5.5, lineJoin: .round))
+            Path { p in
+                p.move(to: q[0])
+                q.dropFirst().forEach { p.addLine(to: $0) }
+                p.closeSubpath()
+            }
+            .stroke(Theme.tape, style: StrokeStyle(lineWidth: 3, lineJoin: .round, dash: [10, 6]))
+            ForEach(0..<4, id: \.self) { i in
+                Circle().strokeBorder(Theme.tape, lineWidth: 3).frame(width: 22, height: 22)
+                    .background(Circle().fill(Color.black.opacity(0.3)))
+                    .position(q[i])
+            }
+        }
+        .accessibilityHidden(true)
     }
 
     private var topBar: some View {
@@ -176,6 +211,24 @@ struct ArHud: View {
         if let h = model.readout.heightIn { parts.append("Height \(SizeWording.spoken(h)) inches") }
         parts.append("\(model.readout.placed) of 4 corners set")
         return parts.joined(separator: ". ")
+    }
+
+    /// Over the hint, when the phone found the window: one tap puts all four corners on it.
+    private var useCorners: some View {
+        Button(action: onUseProposal) {
+            HStack(spacing: 8) {
+                IconView(icon: .check, size: 18, weight: 2.2)
+                Text("Use these corners").wc(17, .bold, relativeTo: .headline)
+            }
+            .foregroundStyle(Theme.tapeInk)
+            .padding(.horizontal, 22)
+            .frame(minHeight: 48)
+            .background(Capsule().fill(Theme.tape))
+            .overlay(Capsule().strokeBorder(Color.black.opacity(0.5), lineWidth: 2))
+        }
+        .padding(.bottom, 10)
+        .accessibilityLabel("Use these corners")
+        .accessibilityHint("Puts the four corners on the window outlined in yellow")
     }
 
     private var hint: some View {

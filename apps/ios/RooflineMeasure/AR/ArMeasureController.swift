@@ -57,6 +57,8 @@ final class ArMeasureController {
     private(set) var cornerDots: [CGPoint] = []
     /// A length plate for each side drawn so far, at its midpoint on screen.
     private(set) var edgeLabels: [EdgeLabel] = []
+    /// The window outline the phone found (TL, TR, BR, BL on screen), when it offers one: "Use these corners" places it.
+    private(set) var proposalDots: [CGPoint] = []
     /// A corner may be placed now: tracking normal, wall locked, a surface under the reticle, not already sampling.
     private(set) var canPlace = false
 
@@ -83,8 +85,9 @@ final class ArMeasureController {
     @ObservationIgnored private var lastMessageSeq = 0
     @ObservationIgnored private let haptics = UINotificationFeedbackGenerator()
 
-    /// `tapeStyle`: the homeowner app draws corners and sides in tape yellow (Chalk Line's measuring colour).
-    init(tapeStyle: Bool = false) {
+    /// `tapeStyle`: the homeowner app draws corners and sides in tape yellow (Chalk Line's measuring colour). `autoCorners`: the phone
+    /// looks for the window in the camera image and offers its outline (the homeowner app; the rep app taps every corner).
+    init(tapeStyle: Bool = false, autoCorners: Bool = false) {
         lidar = DeviceCaps.hasLiDAR
         overlay = ArOverlay(tapeStyle: tapeStyle)
         sceneView = ArMeasureSceneView(frame: .zero)
@@ -92,7 +95,7 @@ final class ArMeasureController {
         sceneView.rendersCameraGrain = false
         sceneView.scene.rootNode.addChildNode(overlay.root)
         let mailbox = self.mailbox
-        engine = ArFrameEngine(lidar: lidar, device: lidar ? .arkitLidar : .arkit) { [weak self] snapshot, haptics in
+        engine = ArFrameEngine(lidar: lidar, device: lidar ? .arkitLidar : .arkit, autoCorners: autoCorners) { [weak self] snapshot, haptics in
             // Called on the engine's queue: keep only the newest snapshot, and wake the main queue once
             guard mailbox.post(snapshot, haptics) else { return }
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.drain() } }
@@ -167,6 +170,7 @@ final class ArMeasureController {
             a.count != b.count || zip(a, b).contains { abs($0.x - $1.x) > 0.5 || abs($0.y - $1.y) > 0.5 }
         }
         if moved(s.cornerDots, cornerDots) { cornerDots = s.cornerDots }
+        if moved(s.proposalDots, proposalDots) { proposalDots = s.proposalDots }
         if s.edgeLabels.count != edgeLabels.count
             || zip(s.edgeLabels, edgeLabels).contains(where: { moved([$0.point], [$1.point]) || $0.text != $1.text || $0.live != $1.live }) {
             edgeLabels = s.edgeLabels
@@ -190,6 +194,13 @@ final class ArMeasureController {
     func undo() {
         message = nil
         engine.undo()
+    }
+
+    /// Place the four corners of the outline the phone found (the same corners four taps would give).
+    func useProposal() {
+        message = nil
+        haptics.prepare()
+        engine.useProposal()
     }
 
     func startOver() {

@@ -21,6 +21,12 @@ struct CardPhotoFlow: View {
     @State private var cameraRestricted = false
     @State private var cameraNote: String?
     @State private var showHowTo = false
+    /// The card's (window's) corners on the photo are the ones the phone found, not the person's taps: the screen says so and the person
+    /// drags any that is off. Both go false when the person starts over or retakes the photo.
+    @State private var cardFound = false
+    @State private var windowFound = false
+    /// Which photo the phone is looking at: a look that finishes after the photo was retaken is thrown away.
+    @State private var lookToken = 0
 
     var body: some View {
         Group {
@@ -99,8 +105,61 @@ struct CardPhotoFlow: View {
         cardPoints = []
         windowPoints = []
         step = .card
+        look(for: p)
         // The first card photo ever: the steps again, before the tapping
         if !HowToSeen.isSeen("card") { showHowTo = true }
+    }
+
+    // MARK: Finding the corners
+
+    /// While the person reads the first screen, Apple Vision looks for the card and the window in the photo (off the main thread, a
+    /// fraction of a second). What it finds with good confidence is put on the photo for the person to check; nothing found means
+    /// nothing changes: the person taps, as always.
+    private func look(for p: PreparedPhoto) {
+        lookToken += 1
+        let token = lookToken
+        cardFound = false
+        windowFound = false
+        Task {
+            let found = await Task.detached(priority: .userInitiated) { () -> AutoCornerProposal in
+                guard let cg = p.image.cgImage else { return AutoCornerProposal() }
+                return WindowRectangleDetector.propose(in: cg)
+            }.value
+            guard token == lookToken, photo != nil else { return }
+            adopt(found)
+        }
+    }
+
+    /// Puts the found corners on the photo, unless the person has already started tapping them.
+    private func adopt(_ found: AutoCornerProposal) {
+        guard let photo = photo else { return }
+        let proposal = Self.checked(found, widthPx: Double(photo.widthPx), heightPx: Double(photo.heightPx))
+        if cardPoints.isEmpty, let taps = proposal.cardTaps {
+            cardPoints = taps.map { CGPoint(x: $0.x, y: $0.y) }
+            cardFound = true
+        }
+        if windowPoints.isEmpty, let window = proposal.window {
+            windowPoints = window.corners.map { CGPoint(x: $0.x, y: $0.y) }
+            windowFound = true
+        }
+        #if DEBUG
+        if store.debugCardSeed?.thenWindow == true { step = .window }
+        #endif
+    }
+
+    /// What the screens may put on the photo: corners clamped onto it, and a card and window that the server would refuse together
+    /// (`CardSizing.problem`) are not proposed at all (the person taps them).
+    static func checked(_ found: AutoCornerProposal, widthPx: Double, heightPx: Double) -> AutoCornerProposal {
+        func clamp(_ p: PickedQuad) -> PickedQuad {
+            PickedQuad(corners: p.corners.map { Vec2(min(max($0.x, 0), widthPx), min(max($0.y, 0), heightPx)) }, confidence: p.confidence)
+        }
+        var out = AutoCornerProposal(window: found.window.map(clamp), card: found.card.map(clamp))
+        if let taps = out.cardTaps, let card = CardSizing.cardCornersForAPI(taps), let w = out.window, let window = CardSizing.orderedQuad(w.corners) {
+            if CardSizing.problem(cardCorners: card, windowCorners: window, imageWidthPx: widthPx, imageHeightPx: heightPx) != nil { out = AutoCornerProposal() }
+        } else if out.window != nil, out.card != nil {
+            out = AutoCornerProposal()
+        }
+        return out
     }
 
     // MARK: Tapping
@@ -112,7 +171,8 @@ struct CardPhotoFlow: View {
         return VStack(spacing: 10) {
             topBar(onCard: onCard)
             instruction(onCard: onCard)
-            PhotoTapView(photo: photo, points: points, reference: onCard ? [] : cardPoints, focus: debugFocus(onCard: onCard), startZoom: debugFocus(onCard: onCard) == nil ? 1 : 5)
+            PhotoTapView(photo: photo, points: points, reference: onCard ? [] : cardPoints, focus: debugFocus(onCard: onCard), startZoom: debugFocus(onCard: onCard) == nil ? 1 : 5,
+                         proposed: onCard ? cardFound : windowFound)
                 .id(onCard)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -172,6 +232,12 @@ struct CardPhotoFlow: View {
     }
 
     private func instructionText(onCard: Bool) -> AttributedString {
+        if onCard ? cardFound : windowFound {
+            // The phone found it: the person only checks
+            var found = AttributedString(onCard ? "We found your card. " : "We found your window. ")
+            found.inlinePresentationIntent = .stronglyEmphasized
+            return found + AttributedString("Drag a corner if it's off.")
+        }
         var lead = AttributedString(onCard ? "Tap the 4 corners of the card. " : "Tap the 4 corners of the window frame. ")
         lead.inlinePresentationIntent = .stronglyEmphasized
         let rest = onCard ? "Every bank card is the same size (85.60 × 53.98 mm), so it works as a ruler. Tap the very tip of each rounded corner; drag a dot to adjust."
@@ -183,7 +249,8 @@ struct CardPhotoFlow: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(Self.counter(onCard: onCard, count: count)).wcMono(20, .bold, relativeTo: .title3).foregroundStyle(.white)
             if onCard {
-                Text(count < 4 ? "Next, tap the 4 corners of the window frame. Then we show the size." : "Good. Next, tap the 4 corners of the window frame.")
+                Text(count < 4 ? "Next, tap the 4 corners of the window frame. Then we show the size."
+                     : (windowFound ? "Good. Next, check the window we found." : "Good. Next, tap the 4 corners of the window frame."))
                     .wc(15, relativeTo: .subheadline).foregroundStyle(Color.white.opacity(0.8)).fixedSize(horizontal: false, vertical: true)
             } else if count == 4 {
                 sizeLine
@@ -253,7 +320,16 @@ struct CardPhotoFlow: View {
     private func buttons(onCard: Bool, count: Int) -> some View {
         HStack(spacing: 12) {
             Button {
-                if onCard { photo = nil; step = .intro } else { windowPoints = [] }
+                if onCard {
+                    photo = nil
+                    lookToken += 1
+                    cardFound = false
+                    windowFound = false
+                    step = .intro
+                } else {
+                    windowPoints = []
+                    windowFound = false
+                }
             } label: {
                 Text(onCard ? "Retake" : "Start over").wc(17, .semibold, relativeTo: .headline).foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: Theme.buttonHeight)
@@ -284,6 +360,12 @@ struct CardPhotoFlow: View {
         #if DEBUG
         guard let seed = store.debugCardSeed, photo == nil else { return }
         useSample()
+        if seed.auto {
+            // No corners seeded: the phone looks for them on the drawn photo
+            if let p = photo { look(for: p) }
+            step = .card
+            return
+        }
         cardPoints = Array(SampleScene.cardCorners.prefix(seed.cardCount))
         let frame = SampleScene.frameCorners
         let inside = CGPoint(x: (frame[0].x + frame[1].x + frame[2].x) / 3, y: (frame[0].y + frame[1].y + frame[2].y) / 3)

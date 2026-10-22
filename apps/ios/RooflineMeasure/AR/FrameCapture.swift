@@ -85,8 +85,14 @@ enum DepthSampler {
     /// it (else the raw scene depth). Only `ARConfidenceLevel.high` pixels count. Empty without scene depth.
     static func points(frame: ARFrame, center: CGPoint, radiusM: Double = CornerCapture.depthRadiusM) -> [Vec3] {
         guard let depth = frame.smoothedSceneDepth ?? frame.sceneDepth else { return [] }
-        let map = depth.depthMap
-        let conf = depth.confidenceMap
+        return points(depthMap: depth.depthMap, confidenceMap: depth.confidenceMap, cameraTransform: Mat4(frame.camera.transform),
+                      intrinsics: CameraIntrinsics(frame.camera), center: center, radiusM: radiusM)
+    }
+
+    /// The same from the depth buffers and the camera's pose alone (no ARFrame), so a look taken on another queue can be read after
+    /// the frame's own callback has returned. `intrinsics` are the camera's, for the native image.
+    static func points(depthMap map: CVPixelBuffer, confidenceMap conf: CVPixelBuffer?, cameraTransform camT: Mat4, intrinsics: CameraIntrinsics,
+                       center: CGPoint, radiusM: Double = CornerCapture.depthRadiusM) -> [Vec3] {
         CVPixelBufferLockBaseAddress(map, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(map, .readOnly) }
         if let c = conf { CVPixelBufferLockBaseAddress(c, .readOnly) }
@@ -100,8 +106,7 @@ enum DepthSampler {
         let conf8 = conf.flatMap { CVPixelBufferGetPixelFormatType($0) == kCVPixelFormatType_OneComponent8 ? $0 : nil }
         let confBase = conf8.flatMap { CVPixelBufferGetBaseAddress($0) }
         let confRow = conf8.map { CVPixelBufferGetBytesPerRow($0) } ?? 0
-        let k = CameraIntrinsics(frame.camera).scaled(toWidth: Double(w), height: Double(h))
-        let camT = Mat4(frame.camera.transform)
+        let k = intrinsics.scaled(toWidth: Double(w), height: Double(h))
         let cx = Int(center.x * CGFloat(w)), cy = Int(center.y * CGFloat(h))
         guard cx >= 0, cy >= 0, cx < w, cy < h else { return [] }
         func depthAt(_ x: Int, _ y: Int) -> Float32 {

@@ -56,6 +56,7 @@ targets:
       - package: RooflineCore
         product: RooflineCore
       - sdk: ARKit.framework
+      - sdk: Vision.framework
       - sdk: RoomPlan.framework
       - sdk: SceneKit.framework
       - sdk: MapKit.framework
@@ -152,6 +153,7 @@ targets:
       - package: RooflineCore
         product: RooflineCore
       - sdk: ARKit.framework
+      - sdk: Vision.framework
       - sdk: RoomPlan.framework
       - sdk: SceneKit.framework
       - sdk: WebKit.framework

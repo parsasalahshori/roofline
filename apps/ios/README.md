@@ -33,6 +33,22 @@ Three ways to measure, each saved as one window:
   against the real server's answers), scale kind `card`. Orientation is applied to the pixels and the 35 mm focal length is the only
   EXIF tag kept (no location).
 
+**The phone proposes the corners** (Apple Vision only, on the phone, no network), so the person usually just confirms:
+
+- *Photo with a card*: when the photo is taken, `WindowRectangleDetector` (Vision's rectangle finder, `AR/`) looks at a 1600 px copy,
+  then at a full-size crop round the card. `AutoCorners` (Core) decides: the card is the small shape in a card's proportion (85.60 : 53.98,
+  either way round) that lies inside a believable window; the window is the largest believable shape (not the photo's own border, not a
+  card-sized one), stepped in once from casing or trim to the opening that holds all the panes ("the inside of the frame"). The card's
+  outline is moved in by the rounded-corner tip inset, since the model takes taps at the tips. The corners are put on `PhotoTapView` with
+  "We found your card. Drag a corner if it's off."; nothing found with confidence means silent manual tapping, as before.
+- *Depth/AR corners* (the homeowner app only: `ArMeasureController(autoCorners: true)`): while the ring is on the locked wall with no
+  corner placed, about three times a second `ArWindowDetector` (its own queue) gives Vision the camera image; the outline holding the
+  reticle is sent as rays onto the wall plane (the frame's own plane where depth shows it stands off the wall) and must look like a window
+  (`ArAutoCorners`: sides, equal opposite sides, equal diagonals). After two looks in the same place the HUD draws it and offers "Use these
+  corners", which places the four points through `CornerCapture.place` exactly as taps do (wall check, gravity ordering, the photo of that
+  frame); Undo takes all four back. Hand tapping is unchanged. `-debugOpen hud-auto` draws it over the sample, `cardauto` and `windowauto`
+  run the real photo detection on the sample photo.
+
 Wording rules (`Core/Sources/RooflineCore/SizeWording.swift`): whole inches and eighths ("35 5/8", never a decimal), accuracy rounded
 **up** and written "about 1/4 inch" (a plus-or-minus only ever follows "about"), "depth sensor" not "LiDAR", "bank card" not "ID-1".
 
@@ -128,7 +144,7 @@ xcrun simctl launch --console booted com.premjeetech.winchoice.measure -debugSer
 ### Tests
 
 ```sh
-cd apps/ios/Core && ./scripts/check.sh                       # the logic, plain swiftc, 85 checks
+cd apps/ios/Core && ./scripts/check.sh                       # the logic, plain swiftc, 107 checks
 cd apps/ios && xcodebuild test -project RooflineMeasure.xcodeproj -scheme WinChoice \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' CODE_SIGNING_ALLOWED=NO
 xcodebuild test -project RooflineMeasure.xcodeproj -scheme WinChoiceUITests \
@@ -140,7 +156,7 @@ TypeScript by `Core/scripts/card-parity/`; regenerate it whenever `packages/shar
 
 ### Only a real iPhone can show
 
-The AR HUD (tracking, the magnifier on live depth), the RoomPlan scan and its review on a real scan, the camera and the EXIF focal
+The AR HUD (tracking, the magnifier on live depth, the live window outline and how well Vision finds real windows and real cards), the RoomPlan scan and its review on a real scan, the camera and the EXIF focal
 length of a real photo, the Keychain on a signed build, Add to Calendar (EventKitUI), the location button, Dynamic Type and
 VoiceOver on a phone, and how accurate each method is on real windows (`Field accuracy test` below applies to the AR and scan paths).
 

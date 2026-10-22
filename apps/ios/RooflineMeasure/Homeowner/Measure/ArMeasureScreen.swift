@@ -37,7 +37,7 @@ struct ArMeasureScreen: View {
             ZStack {
                 ArSceneContainer(view: controller.sceneView).ignoresSafeArea()
                 ArHud(model: model(controller), onClose: { store.measureSession = nil }, onPlace: { controller.placeCorner() }, onUndo: { controller.undo() },
-                      onDone: { finish(controller) }, onHow: { showHowTo = true })
+                      onDone: { finish(controller) }, onHow: { showHowTo = true }, onUseProposal: { controller.useProposal() })
                 if showHowTo { ArHowTo { HowToSeen.markSeen("ar"); showHowTo = false } }
             }
             .onChange(of: controller.message) { _, m in
@@ -51,7 +51,7 @@ struct ArMeasureScreen: View {
                     guard DeviceCaps.arSupported else { return }
                     access = await CameraAccess.request()
                     if access == .allowed {
-                        let c = ArMeasureController(tapeStyle: true)
+                        let c = ArMeasureController(tapeStyle: true, autoCorners: true)
                         controller = c
                         c.start()
                     }
@@ -66,6 +66,7 @@ struct ArMeasureScreen: View {
         m.readout = controller.liveReadout
         m.canUndo = !controller.capture.points.isEmpty
         m.dots = controller.cornerDots
+        m.proposal = controller.proposalDots
         m.edges = controller.edgeLabels.map { ArHudModel.Edge(id: $0.id, point: $0.point, inches: $0.inches, live: $0.live) }
         m.loupe = controller.loupe
         m.canPlace = controller.canPlace
@@ -75,7 +76,7 @@ struct ArMeasureScreen: View {
             m.hint = "Move the phone slowly to find the wall."
         case .aiming:
             m.phase = .ready
-            m.hint = ArHudModel.cornerHint(placed: controller.capture.points.count)
+            m.hint = m.hasProposal ? ArHudModel.proposalHint : ArHudModel.cornerHint(placed: controller.capture.points.count)
         case .sampling:
             m.phase = .sampling(controller.sampleProgress)
             m.hint = "Hold still on the corner."
