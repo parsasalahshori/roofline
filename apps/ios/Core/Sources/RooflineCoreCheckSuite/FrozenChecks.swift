@@ -109,6 +109,21 @@ private func cornerPatch(n: Int = 141, corner: (Double, Double), deg: Double = 0
 private func distance(_ a: Vec2, _ b: (Double, Double)) -> Double { ((a.x - b.0) * (a.x - b.0) + (a.y - b.1) * (a.y - b.1)).squareRoot() }
 
 let frozenChecks: [Check] = [
+    Check("FrozenView: ARKit's wall on the wrong surface (1.2 m in front of the window's wall, like a sofa's back) is replaced by the wall round the window") { ctx in
+        let good = frozenView(proud: 0, yaw: 6)
+        let wrongWall = Plane(point: Vec3(0, 0, wallZ + 1.2), normal: Vec3(0, 0, 1))!
+        let bad = FrozenView(cameraTransform: good.cameraTransform, intrinsics: good.intrinsics, wall: wrongWall, depth: good.depth,
+                             photoWidthPx: good.photoWidthPx, photoHeightPx: good.photoHeightPx)
+        let px = photoPoints(bad, openingCorners(z: wallZ))
+        let r = FrozenMeasure.measure(view: bad, photoPx: px)
+        ctx.near(r?.widthIn, 36, 0.25, "width with the wrong ARKit wall")
+        ctx.near(r?.heightIn, 60, 0.25, "height with the wrong ARKit wall")
+        // ARKit's wall right: nothing changes
+        let ok = FrozenMeasure.measure(view: good, photoPx: photoPoints(good, openingCorners(z: wallZ)))
+        ctx.near(ok?.widthIn, 36, 0.25)
+        ctx.near(ok?.heightIn, 60, 0.25)
+    },
+
     Check("FrozenDepth: readings become world points on the wall; low confidence, holes and far readings are left out") { ctx in
         let cam = uprightPhone(at: Vec3(0, 1.5, 0))
         var d = FrozenDepth(width: 8, height: 6, depthM: [Float](repeating: 2, count: 48), confidence: [UInt8](repeating: 2, count: 48))

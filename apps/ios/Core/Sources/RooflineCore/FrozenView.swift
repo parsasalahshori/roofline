@@ -135,6 +135,10 @@ public struct FrozenView: Equatable, Sendable {
     /// (`photoPx`: the corners on the photo, any order). The wall itself without depth, or with too few readings.
     public func framePlane(photoPx: [Vec2]) -> Plane {
         guard let depth = depth, photoPx.count == 4 else { return wall }
+        // ARKit's "wall" can be another surface altogether (a sofa's back, a table in front): the owner's first AI capture had it
+        // 1.1 m from the phone with the window's wall 2.4 m away, which halved every size. The depth just OUTSIDE the window's
+        // edges is the wall the window is in: when it is clearly elsewhere, it replaces ARKit's plane for everything below.
+        let wall = wallAround(photoPx: photoPx, depth: depth) ?? self.wall
         var offsets: [Double] = []
         var kept: [Vec3] = []
         var cornersWithReadings = 0
@@ -156,6 +160,45 @@ public struct FrozenView: Equatable, Sendable {
         guard near.count >= Self.minDepthPoints, let fitted = Plane.fit(near)?.facing(viewer),
               fitted.normal.dot(wall.normal) >= cos(Self.maxTurnDeg * .pi / 180) else { return shifted }
         return fitted
+    }
+
+    /// Further than this (metres) between ARKit's wall and the depth round the window, the depth's wall is used.
+    public static let wrongWallM = 0.10
+    /// How far outside the window's edges the wall is read: this share of the window's size in the photo.
+    public static let ringShare = 0.07
+
+    /// The wall the window is in, from the depth readings in a ring just outside its four edges (photo corners in any order), when
+    /// it is clearly not ARKit's wall (further than `wrongWallM` from it). Nil when ARKit's wall agrees or there are too few readings.
+    func wallAround(photoPx: [Vec2], depth: FrozenDepth) -> Plane? {
+        guard !photoPx.isEmpty else { return nil }
+        let c = Vec2(photoPx.map { $0.x }.reduce(0, +) / Double(photoPx.count), photoPx.map { $0.y }.reduce(0, +) / Double(photoPx.count))
+        let size = photoPx.map { hypot($0.x - c.x, $0.y - c.y) }.max() ?? 0
+        guard size > 4 else { return nil }
+        // Points along each edge, pushed outward from the window's centre
+        var samples: [Vec2] = []
+        let ordered = photoPx.sorted { atan2($0.y - c.y, $0.x - c.x) < atan2($1.y - c.y, $1.x - c.x) }
+        for i in 0..<4 {
+            let a = ordered[i], b = ordered[(i + 1) % 4]
+            for k in 1...5 {
+                let t = Double(k) / 6
+                let p = Vec2(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
+                let dx = p.x - c.x, dy = p.y - c.y, len = max(hypot(dx, dy), 1e-9)
+                let push = Self.ringShare * size * 2
+                samples.append(Vec2(p.x + dx / len * push, p.y + dy / len * push))
+            }
+        }
+        var points: [Vec3] = []
+        for p in samples where p.x >= 0 && p.y >= 0 && p.x <= photoWidthPx && p.y <= photoHeightPx {
+            points += depth.points(aroundNative: nativePixel(fromPhoto: p), radiusM: 0.03, cameraTransform: cameraTransform, intrinsics: intrinsics)
+        }
+        guard points.count >= Self.minDepthPoints * 2, let off = median(points.map { self.wall.signedDistance($0) }),
+              abs(off) > Self.wrongWallM else { return nil }
+        // The readings on that wall (things in front of it, and the room through the glass, stay out)
+        let shifted = self.wall.offset(by: off)
+        let near = points.filter { abs(shifted.signedDistance($0)) <= 0.04 }
+        guard near.count >= Self.minDepthPoints else { return shifted }
+        if let fitted = Plane.fit(near)?.facing(viewer), fitted.normal.dot(self.wall.normal) >= cos(25 * .pi / 180) { return fitted }
+        return shifted
     }
 
     /// Readings this close to the frame's face (metres) count for its turn: the glass, the room and the casing's edge stay out.
