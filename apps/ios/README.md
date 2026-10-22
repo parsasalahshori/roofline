@@ -58,7 +58,8 @@ jumps with every shake, is where wrong sizes came from, so the window is marked 
    `AR/FrozenCapture.swift`): the upright JPEG, camera pose and lens numbers, the locked wall plane, and the LiDAR depth and confidence
    copied into plain arrays (`FrozenDepth`).
 2. The frozen photo opens in `FreezeFrameEditor`, which holds the window as a `FrozenRect` (Core): four edges (left, right, top, bottom,
-   level with gravity) on the frame's plane. The phone starts it from the DEPTH SENSOR (`OpeningFinder`): a window is where the wall isn't.
+   level with gravity) on the frame's plane. **The phone starts it from the server's AI window finder when that answers** (below), else from
+   the DEPTH SENSOR (`OpeningFinder`): a window is where the wall isn't.
    Depth pixels behind the wall's plane by more than 2 cm, or with no/low-confidence reading (glass), that are connected to the middle of the
    picture are the opening; things in FRONT of the wall (more than 6 cm: a lamp, a valance) are neither wall nor window and never decide an
    edge. Each side is the median of the opening's boundary along that side, counting only where the boundary pixel touches the wall's own
@@ -67,6 +68,15 @@ jumps with every shake, is where wrong sizes came from, so the window is marked 
    edge. Only when depth finds nothing (no LiDAR, the middle on a solid wall, an opening cut off by the picture) does Vision's
    rectangle finder run: the largest believable outline that holds the middle of the picture, and never one smaller than 15 in on a side
    (`OpeningFinder.isPlausible`; a sash or a pane is not a window). Nothing found: the rectangle starts inset and the hint says to drag.
+   **AI window finder** (`Measure/AiFinding.swift`, Core `AiWindow.swift`): after Capture the photo, cut down to about 1024 px on its long
+   side (JPEG 0.7), goes to `POST .../detect-windows` (OWLv2 finds the window boxes; with `WINDOW_SEGMENTER=sam2` SAM 2 cuts the picked window
+   out and a line fit turns its mask into four corners, `quad`, with a `quality`). Only when online with a request saved; 6 s timeout, one try.
+   While it waits (after 0.5 s) the rectangle starts inset with a small "Finding your window..." spinner and can be dragged at once; a
+   proposal that arrives after the first touch is not put over the person's rectangle. `WindowProposal.choose` decides: the box that holds the
+   photo's middle (best score; of nested boxes the largest within 70% of it), as the quad when its `quality` is 0.7 or more, else as the box;
+   its corners are raycast to the frame plane and the level rectangle is each side set onto the strongest edge in the photo within 6 cm
+   (`OpeningFinder.refineSides`, wider than the depth path's 3 cm). If the depth opening overlaps that rectangle on the photo (IoU over 0.6) the
+   depth opening is used (better measured); if they disagree the AI wins; Vision runs only when neither exists.
 3. The four dots ARE the rectangle's corners (the outline goes exactly through them) and a square on the middle of each side moves that
    side only. Dragging a corner moves the two edges that meet there, so its neighbours follow (`FrozenRect.moved`); the dot stays under the
    finger (no gain; a magnifier shows it above the finger) and pinch zooms. A corner let go within about 25 px of a frame corner snaps onto it
@@ -79,6 +89,17 @@ jumps with every shake, is where wrong sizes came from, so the window is marked 
 5. **Take another photo to double-check** (up to three of the same window, same tracking session; a restart sets the earlier ones aside):
    this photo's rectangle is what is sent; the earlier photos are only a check. Corners more than 3/4 in apart say so and mark the window a
    check (`FrozenMeasure.combine`, `withDoubt`).
+
+**Standard sizes** (`Core/StandardWindowSizes.swift`): the editor's status card, the window list and the label sheet say "Looks like a standard
+24 × 36 window" when BOTH measured sides are within an inch of a common double-hung or slider size (or of it less a half inch, the unit size).
+It is a suggestion on the screen only: the measured size is what is sent and priced.
+
+**Debug dump and replay** (Debug and TestFlight builds only, `BuildEnvironment.isTesterBuild`): each Capture's full photo, depth and confidence,
+lens, camera pose, wall plane and, when the AI answered, its answer, then the source, the proposed rectangle and the final one, go to
+`POST .../debug-captures/:captureId/:file`, which exists only when the server has `DEBUG_CAPTURES_DIR` (files in `<dir>/<captureId>/`, no
+database). The format is `Core/DebugCapture.swift`. On a Mac, `cd apps/ios/Core && swift run RooflineReplay <that folder> [--boxes answer.json]`
+re-runs the depth finder, the AI pick and the refine on the real data and prints the rectangle beside what the phone proposed and what the
+person used. `-debugCaptureDir <path>` writes the dump to a local folder instead (simulator).
 
 `-debugOpen freeze` runs steps 2 to 4 on the drawn sample photo (a frozen frame with a synthetic depth map); `freeze-clutter` adds the
 owner's window (blinds over the top, a lamp in front of a corner, a valance above, a picture beside it), `freeze-off` starts from a
@@ -95,6 +116,7 @@ Everything goes through the `HomeownerAPI` protocol (`Homeowner/API/`): `LiveHom
 `{ error, field, code }` errors, one retry after a short 429) and `FakeHomeownerAPI` (in memory, the same rules: windows idempotent
 on id, 409 for a different window with the same id, consent version, 60 windows). Endpoints used, under
 `/api/public/homeowner/:slug`: `GET company`, `POST requests`, `GET requests/:id`, `POST requests/:id/uploads` (raw JPEG),
+`POST requests/:id/detect-windows` (raw JPEG, best-effort, the AI window finder), `POST requests/:id/debug-captures/:captureId/:file` (testers only),
 `POST requests/:id/windows`, `DELETE requests/:id/windows/:windowId`, `PATCH requests/:id` (`estimatedTotalOverride`),
 `POST requests/:id/contact`, `GET requests/:id/slots`, `POST requests/:id/book`, `GET requests/:id/status`.
 `HomeownerFeatures.contract` (the live client) hides what the API does not carry yet (window colour, best time to call, order
@@ -182,7 +204,7 @@ xcrun simctl launch --console booted com.premjeetech.winchoice.measure -debugSer
 ### Tests
 
 ```sh
-cd apps/ios/Core && ./scripts/check.sh                       # the logic, plain swiftc, 125 checks
+cd apps/ios/Core && ./scripts/check.sh                       # the logic, plain swiftc, 133 checks (or `swift run -q RooflineCoreChecks`)
 cd apps/ios && xcodebuild test -project RooflineMeasure.xcodeproj -scheme WinChoice \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' CODE_SIGNING_ALLOWED=NO
 xcodebuild test -project RooflineMeasure.xcodeproj -scheme WinChoiceUITests \

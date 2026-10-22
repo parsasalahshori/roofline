@@ -76,6 +76,13 @@ struct WindowRow: Identifiable, Equatable {
         return SizeWording.sizeText(widthIn: w, heightIn: h)
     }
 
+    /// "Looks like a standard 24 × 36 window", when the measured size lands on a common one (a suggestion on the screen only: what is sent and priced
+    /// is the measured size).
+    var standardSizeLine: String? {
+        guard let w = widthIn, let h = heightIn else { return nil }
+        return StandardWindowSizes.line(widthIn: w, heightIn: h)
+    }
+
     /// "Depth sensor · about 1/8 in".
     var methodLine: String { MethodLabel.listLine(scale, uncertaintyIn: uncertaintyIn) }
 

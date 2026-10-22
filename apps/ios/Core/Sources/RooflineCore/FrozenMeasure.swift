@@ -58,6 +58,7 @@ public enum FrozenCopy {
     public static func offCorner(handle: Int) -> String { "Corner \(handle + 1) looks off the frame. Drag it onto the corner." }
     public static let notMeasurable = "These corners do not make a window on a wall. Drag them onto the frame."
     public static let looking = "Looking for your window..."
+    public static let findingWindow = "Finding your window... You can drag the corners yourself in the meantime."
     public static let notFound = "We couldn't find the window on its own. Drag the corners and the squares on the sides onto the frame."
     public static let foundWindow = "We found your window. Drag any dot or square that is off, then tap Use this size."
     public static let foundByDepth = "We found your window with the depth sensor. Drag any dot or square that is off, then tap Use this size."

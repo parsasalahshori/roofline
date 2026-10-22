@@ -188,8 +188,9 @@ public enum OpeningFinder {
         return nil
     }
 
-    /// Each side set onto the strongest edge in the photo within `refineRadiusM` of where it is, when the picture is clear about one.
-    static func refineSides(_ rect: FrozenRect, view: FrozenView, photo: PatchSource) -> (rect: FrozenRect, refined: [Bool]) {
+    /// Each side set onto the strongest edge in the photo within `radiusM` (3 cm unless asked for more: an AI box is rougher than the depth
+    /// sensor's opening) of where it is, when the picture is clear about one. `maxRadiusPx` caps the search in photo pixels (a close-up).
+    static func refineSides(_ rect: FrozenRect, view: FrozenView, photo: PatchSource, radiusM: Double = refineRadiusM, maxRadiusPx: Double = 80) -> (rect: FrozenRect, refined: [Bool]) {
         var out = rect
         var refined = [false, false, false, false]
         // Left, right (upright lines) and top, bottom (level ones): each side's ends pulled in a tenth, its middle, and the strip round it
@@ -200,10 +201,10 @@ public enum OpeningFinder {
             let across: Double = { switch side { case .left: return rect.left; case .right: return rect.right; case .top: return rect.top; default: return rect.bottom } }()
             func at(_ along: Double, _ across: Double) -> Vec3 { upright ? rect.point(s: across, t: along) : rect.point(s: along, t: across) }
             guard let a = view.photoPixel(ofWorld: at(along0, across)), let b = view.photoPixel(ofWorld: at(along1, across)),
-                  let beside = view.photoPixel(ofWorld: at((along0 + along1) / 2, across + refineRadiusM)) else { continue }
+                  let beside = view.photoPixel(ofWorld: at((along0 + along1) / 2, across + radiusM)) else { continue }
             let mid = Vec2((a.x + b.x) / 2, (a.y + b.y) / 2)
-            // About 3 cm, in photo pixels, at this side
-            let r = min(80, max(4, ((beside.x - mid.x) * (beside.x - mid.x) + (beside.y - mid.y) * (beside.y - mid.y)).squareRoot()))
+            // `radiusM`, in photo pixels, at this side
+            let r = min(maxRadiusPx, max(4, ((beside.x - mid.x) * (beside.x - mid.x) + (beside.y - mid.y) * (beside.y - mid.y)).squareRoot()))
             let margin = r + 14
             let half = min(180.0, (upright ? abs(b.y - a.y) : abs(b.x - a.x)) / 2)
             let box = upright ? (x: mid.x - margin, y: mid.y - half, w: 2 * margin, h: 2 * half) : (x: mid.x - half, y: mid.y - margin, w: 2 * half, h: 2 * margin)
@@ -214,7 +215,7 @@ public enum OpeningFinder {
             let target = upright ? Vec2(mid.x + line.offset, mid.y) : Vec2(mid.x, mid.y + line.offset)
             guard let c = rect.coords(ofPhoto: target, view: view) else { continue }
             let value = upright ? c.s : c.t
-            guard abs(value - across) <= refineRadiusM * 1.5 else { continue }
+            guard abs(value - across) <= radiusM * 1.5 else { continue }
             switch side {
             case .left: out.left = min(value, out.right - FrozenRect.minSideM)
             case .right: out.right = max(value, out.left + FrozenRect.minSideM)

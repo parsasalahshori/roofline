@@ -36,6 +36,8 @@ final class SwitchableAPI: HomeownerAPI, @unchecked Sendable {
     func slots(_ s: HomeownerSession) async throws -> HomeownerSlots { try gate(); return try await fake.slots(s) }
     func book(_ s: HomeownerSession, choice: HomeownerBookingChoice) async throws -> HomeownerRequestView { try gate(); return try await fake.book(s, choice: choice) }
     func status(_ s: HomeownerSession) async throws -> HomeownerStatus { try gate(); return try await fake.status(s) }
+    func detectWindows(_ s: HomeownerSession, jpeg: Data, timeout: TimeInterval) async throws -> WindowDetection { try gate(); return try await fake.detectWindows(s, jpeg: jpeg, timeout: timeout) }
+    func uploadDebugCapture(_ s: HomeownerSession, captureId: String, file: String, data: Data) async throws { try gate(); try await fake.uploadDebugCapture(s, captureId: captureId, file: file, data: data) }
 }
 
 /// A vault whose Keychain always refuses (an unsigned build, a full Keychain).

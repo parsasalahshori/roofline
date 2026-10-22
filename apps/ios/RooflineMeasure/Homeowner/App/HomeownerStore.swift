@@ -256,6 +256,10 @@ final class HomeownerStore {
     @ObservationIgnored var debugRoute: Route?
     /// `-debugOpen`: a measuring screen to open over the scenario's screen.
     @ObservationIgnored var debugOpen: String?
+    /// Testers' capture dump: the server said its dump is off (404), so no more is sent until the app restarts.
+    @ObservationIgnored var debugCapturesOff = false
+    /// `-debugCaptureDir` (Debug builds) and tests: capture files are written here instead of being sent to the server.
+    @ObservationIgnored var debugCaptureFolder: URL?
     @ObservationIgnored var debugCardSeed: DebugCardSeed?
     /// `-debugServer ... -debugE2E`: run after the app has opened (the scripted journey).
     @ObservationIgnored var debugAfterLaunch: ((HomeownerStore) async -> Void)?

@@ -46,6 +46,7 @@ struct ArMeasureScreen: View {
                 ArSceneContainer(view: controller.sceneView).ignoresSafeArea()
                 if let capture = editing {
                     FreezeFrameEditor(capture: capture, earlier: kept, title: title,
+                                      services: FreezeServices(findWindow: { await store.findWindow(jpeg: $0) }, dumpCapture: { store.dumpCapture($0) }, dumpResult: { store.dumpResult($0) }),
                                       onClose: { store.measureSession = nil },
                                       onRetake: { editing = nil },
                                       onAddAnother: { keep($0) },

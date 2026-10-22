@@ -42,4 +42,20 @@ protocol HomeownerAPI: Sendable {
     func book(_ s: HomeownerSession, choice: HomeownerBookingChoice) async throws -> HomeownerRequestView
     /// GET /requests/:id/status
     func status(_ s: HomeownerSession) async throws -> HomeownerStatus
+    /// POST /requests/:id/detect-windows: the windows an AI detector sees in one upright JPEG (a frozen frame at about 1024 px), and the
+    /// picked one's four corners when the server cuts it out. Best-effort: the caller marks the window by hand when this throws.
+    func detectWindows(_ s: HomeownerSession, jpeg: Data, timeout: TimeInterval) async throws -> WindowDetection
+    /// POST /requests/:id/debug-captures/:captureId/:file: a tester build's dump of one Capture (see DebugCapture). 404 when the server's dump is off.
+    func uploadDebugCapture(_ s: HomeownerSession, captureId: String, file: String, data: Data) async throws
+}
+
+extension HomeownerAPI {
+    /// A server (or a test double) that does not look for windows: the caller carries on by hand.
+    func detectWindows(_ s: HomeownerSession, jpeg: Data, timeout: TimeInterval) async throws -> WindowDetection {
+        throw HomeownerAPIError(status: 503, message: "Finding windows automatically isn't available right now.", code: "detector_unavailable")
+    }
+
+    func uploadDebugCapture(_ s: HomeownerSession, captureId: String, file: String, data: Data) async throws {
+        throw HomeownerAPIError(status: 404, message: "We couldn't find that.", code: "debug_captures_off")
+    }
 }

@@ -102,7 +102,7 @@ extension Vec2: Codable {
 }
 
 /// 4x4 matrix, column-major like simd_float4x4 (`m[col * 4 + row]`).
-public struct Mat4: Equatable, Sendable {
+public struct Mat4: Equatable, Sendable, Codable {
     public var m: [Double]
 
     public init(_ m: [Double]) {

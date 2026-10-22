@@ -37,6 +37,7 @@ enum AppEnvironment {
         if isRunningTests || options.fake { return HomeownerDebug.makeFakeStore(options, brand: brand) }
         if let server = options.server, let url = URL(string: server) {
             let store = makeLive(url: url, brand: brand, features: options.features)
+            store.debugCaptureFolder = options.captureDir.map { URL(fileURLWithPath: $0, isDirectory: true) }
             if options.e2e {
                 let address = options.e2eAddress, services = options.e2eServices, pause = options.e2ePause
                 store.debugAfterLaunch = { store in await HomeownerE2E.run(store: store, address: address, services: services, pause: pause) }

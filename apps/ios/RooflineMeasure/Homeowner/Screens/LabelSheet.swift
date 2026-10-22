@@ -148,6 +148,9 @@ struct LabelSheet: View {
                 if let p = showable {
                     SizeText(widthIn: p.widthIn, heightIn: p.heightIn, size: 34, weight: .semibold, unit: true)
                     Text(subtitle(p)).wc(14, relativeTo: .footnote).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
+                    if let line = StandardWindowSizes.line(widthIn: p.widthIn, heightIn: p.heightIn) {
+                        Text(line).wc(14, .medium, relativeTo: .footnote).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+                    }
                 } else {
                     Text("Window \(pending.number) measured").wc(18, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
                     Text("The size comes after we upload your photo. A rep checks every size anyway.").wc(14, relativeTo: .footnote).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)

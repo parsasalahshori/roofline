@@ -224,6 +224,9 @@ struct WindowListRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(row.title).wc(17, .semibold, relativeTo: .body).foregroundStyle(Theme.ink).lineLimit(large ? nil : 2)
                     secondLine
+                    if let line = row.standardSizeLine {
+                        Text(line).wc(13, relativeTo: .footnote).foregroundStyle(Theme.ink3).lineLimit(large ? nil : 2)
+                    }
                     // With large text the size goes under the name instead of beside it
                     if large { sizeView }
                 }
@@ -237,7 +240,7 @@ struct WindowListRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Window \(row.number), \(row.title). \(row.spokenSize). \(row.flagged ? "Needs a look. \(row.lookReason). " : "")\(statusWords)")
+        .accessibilityLabel("Window \(row.number), \(row.title). \(row.spokenSize). \(row.flagged ? "Needs a look. \(row.lookReason). " : "")\(statusWords)\(row.standardSizeLine.map { ". \($0)" } ?? "")")
         .accessibilityHint("Opens options for this window")
         .accessibilityAddTraits(.isButton)
     }

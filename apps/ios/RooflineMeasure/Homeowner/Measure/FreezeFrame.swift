@@ -12,12 +12,16 @@ struct FreezeEditing {
     enum Stage: Equatable {
         /// Looking in the depth map and the photo.
         case looking
+        /// The photo is with the AI window finder on the server: the rectangle starts inset and can be dragged meanwhile.
+        case findingWindow
         /// Nothing believable was found: the rectangle starts inset and the person drags it.
         case notFound
         /// The rectangle is what the depth sensor found and the person has not touched it.
         case proposedByDepth
         /// The rectangle is what Vision found in the photo and the person has not touched it.
         case proposedByPhoto
+        /// The rectangle is what the AI found (alone, or the same window as the depth sensor's) and the person has not touched it.
+        case proposedByAI
         case editing
     }
 
@@ -73,11 +77,17 @@ struct FreezeEditing {
     var needsCheck: Bool { sent?.needsCheck ?? false }
     var photosDisagree: Bool { agreement?.disagrees ?? false }
     var canUse: Bool { sent != nil }
+    /// "Looks like a standard 24 × 36 window": a suggestion on the screen only; the measured size is what is sent and priced.
+    var standardSize: StandardWindowSize? {
+        guard let w = sent?.widthIn, let h = sent?.heightIn else { return nil }
+        return StandardWindowSizes.suggestion(widthIn: w, heightIn: h)
+    }
 
     /// The one line under the picture.
     func hint(_ stage: Stage) -> String {
         switch stage {
         case .looking: return FrozenCopy.looking
+        case .findingWindow: return FrozenCopy.findingWindow
         case .notFound: return FrozenCopy.notFound
         default: break
         }
@@ -85,7 +95,7 @@ struct FreezeEditing {
         if let a = agreement, a.disagrees { return FrozenCopy.photosDisagree(inches: a.disagreeIn) }
         switch stage {
         case .proposedByDepth: return FrozenCopy.foundByDepth
-        case .proposedByPhoto: return FrozenCopy.foundWindow
+        case .proposedByPhoto, .proposedByAI: return FrozenCopy.foundWindow
         default: return FrozenCopy.editing
         }
     }
@@ -97,23 +107,39 @@ enum FreezeProposal {
         case photo
     }
 
-    /// The window to start from, in the order of trust: the depth sensor's opening (where the wall isn't, around the middle of the picture,
-    /// each side then set onto the edge in the photo), else Vision's rectangle that holds the middle of the picture, when it is a whole
-    /// window and not a sash (Vision cannot tell a sash from a window; the depth can). Nil when neither finds one. Blocking: call it off
-    /// the main thread.
-    static func rect(in image: CGImage, view: FrozenView) -> (rect: FrozenRect, source: Source)? {
+    /// The depth sensor's opening: where the wall isn't, around the middle of the picture, each side then set onto the edge in the photo.
+    /// Nil without depth or when it shows no window. Blocking: call it off the main thread.
+    static func depth(in image: CGImage, view: FrozenView) -> OpeningFinder.Found? {
+        guard view.depth != nil else { return nil }
+        return OpeningFinder.find(view: view, reticle: Vec2(view.photoWidthPx / 2, view.photoHeightPx / 2), photo: { x, y, w, h in PhotoSnap.gray(image, x: x, y: y, width: w, height: h) })
+    }
+
+    /// Vision's rectangle that holds the middle of the picture, when it is a whole window and not a sash (Vision cannot tell a sash from a
+    /// window; the depth can), each corner set onto the frame's corner in the picture when that is clear. Blocking: call it off the main thread.
+    static func vision(in image: CGImage, view: FrozenView) -> FrozenRect? {
         let reticle = Vec2(view.photoWidthPx / 2, view.photoHeightPx / 2)
-        if view.depth != nil, let found = OpeningFinder.find(view: view, reticle: reticle, photo: { x, y, w, h in PhotoSnap.gray(image, x: x, y: y, width: w, height: h) }) {
-            return (found.rect, .depth)
-        }
         guard let quad = WindowRectangleDetector.window(in: image, aimedAt: reticle), quad.count == 4 else { return nil }
-        // Each corner onto the frame's corner in the picture when it is clear, then as a rectangle on the wall
         let snapped = quad.map { v -> Vec2 in
             let p = CGPoint(x: v.x, y: v.y)
             return PhotoSnap.snap(p, in: image).map { Vec2(Double($0.x), Double($0.y)) } ?? v
         }
         guard let r = FrozenRect.fromPhoto(corners: snapped, view: view), OpeningFinder.isPlausible(r, fromDepth: false) else { return nil }
-        return (r, .photo)
+        return r
+    }
+
+    /// The window to start from, in the order of trust (`WindowProposal`): the AI's window (its quad when that fits well, else its box) with each
+    /// side set onto the frame's edge in the photo; the depth sensor's opening when it is the same window; else the depth opening alone;
+    /// else Vision. Nil when none finds one. Blocking: call it off the main thread.
+    static func resolve(in image: CGImage, view: FrozenView, ai: WindowDetection?, depth: OpeningFinder.Found?) -> WindowProposal.Result? {
+        WindowProposal.choose(view: view, ai: ai, depth: depth, photo: { x, y, w, h in PhotoSnap.gray(image, x: x, y: y, width: w, height: h) },
+                              vision: { vision(in: image, view: view) })
+    }
+
+    /// The window to start from with no AI answer: the depth sensor's opening, else Vision's rectangle. Nil when neither finds one.
+    /// Blocking: call it off the main thread.
+    static func rect(in image: CGImage, view: FrozenView) -> (rect: FrozenRect, source: Source)? {
+        if let found = depth(in: image, view: view) { return (found.rect, .depth) }
+        return vision(in: image, view: view).map { ($0, .photo) }
     }
 
     /// Where the rectangle starts when nothing was found: the photo inset on every side.

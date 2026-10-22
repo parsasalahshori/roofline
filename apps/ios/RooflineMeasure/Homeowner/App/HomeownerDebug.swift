@@ -13,7 +13,8 @@ import RooflineCore
 ///                               (-debugE2EAddress "<address>" and -debugE2EServices windows,roof pick what it asks for,
 ///                               -debugE2EPause <seconds> holds each main screen for a screenshot; run it with `xcrun simctl launch --console`)
 ///   -debugGo <step>             show a step of the saved request after opening (welcome address results coaching rooms list styles quote contact book booked status)
-///   -debugOpen <name>           open a measuring screen over the scenario's: hud, hud-howto, freeze, freeze-clutter, freeze-off, freeze-two, label, scan, needs-iphone, needs-pro,
+///   -debugCaptureDir <path>     write each Capture's debug dump (photo, depth, camera, result) into this folder instead of sending it to the server
+///   -debugOpen <name>           open a measuring screen over the scenario's: hud, hud-howto, freeze, freeze-clutter, freeze-off, freeze-two, freeze-ai, freeze-ai-wall, label, scan, needs-iphone, needs-pro,
 ///                               card, card3, card4, window2, window4, windowdart (use with -debugScenario method)
 enum HomeownerDebug {
     struct Options {
@@ -23,6 +24,8 @@ enum HomeownerDebug {
         var strict = false
         var latency = 0.0
         var open: String?
+        /// `-debugCaptureDir <path>`
+        var captureDir: String?
         /// `-debugE2E [address]`: walk the whole journey against the server (with `-debugServer`).
         var e2e = false
         var e2eAddress = "4810 Underwood Ave, Omaha, NE 68132"
@@ -44,6 +47,7 @@ enum HomeownerDebug {
             strict = arguments.contains("-debugStrict")
             latency = value("-debugLatency").flatMap(Double.init) ?? 0
             open = value("-debugOpen")
+            captureDir = value("-debugCaptureDir")
             e2e = arguments.contains("-debugE2E")
             if let a = value("-debugE2EAddress") { e2eAddress = a }
             go = value("-debugGo")
@@ -65,6 +69,7 @@ enum HomeownerDebug {
         let store = HomeownerStore(api: api, vault: MemorySessionVault(), progressStore: MemoryProgressStore(), outboxDirectory: dir, brand: brand,
                                    capabilities: AppEnvironment.isRunningTests ? .none : DeviceCaps.measureCapabilities)
         store.debugPlan = { store in await HomeownerDebug.run(options, store: store, api: api) }
+        store.debugCaptureFolder = options.captureDir.map { URL(fileURLWithPath: $0, isDirectory: true) }
         return store
     }
 

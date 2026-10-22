@@ -2,7 +2,7 @@ import Foundation
 
 /// A pinhole camera as ARKit describes it for ARFrame.capturedImage: focal lengths and principal point in pixels of
 /// the NATIVE (landscape, sensor-orientation) image of `width` x `height`.
-public struct CameraIntrinsics: Equatable, Sendable {
+public struct CameraIntrinsics: Equatable, Sendable, Codable {
     public var fx: Double
     public var fy: Double
     public var cx: Double

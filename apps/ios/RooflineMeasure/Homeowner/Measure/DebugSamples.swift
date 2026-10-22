@@ -280,6 +280,7 @@ enum SampleFrozen {
 /// The measuring screens as they look on a phone: the capture screen with a drawn window where the camera would be, and the frozen-photo
 /// editor over the same drawn photo (`-debugOpen hud`, `freeze`, `freeze-clutter`, `freeze-off`, `freeze-two`).
 struct DebugCaptureSample: View {
+    @Environment(HomeownerStore.self) private var store
     let mode: String
     let session: MeasureSession
     @State private var backdrop: UIImage?
@@ -335,11 +336,41 @@ struct DebugCaptureSample: View {
             FreezeFrameEditor(capture: made.capture, earlier: Self.earlierPhoto(made), title: title,
                               start: (FrozenRect.bounding(of: made.opening, plane: made.capture.view.wall, viewer: made.capture.view.viewer), .editing),
                               onClose: { }, onRetake: { }, onAddAnother: { _ in }, onUse: { _ in })
+        case "freeze-ai", "freeze-ai-wall":
+            aiSample(made, title: title, noDepth: mode == "freeze-ai-wall")
         default:
             // The whole pipeline: the depth sensor finds the opening and each side is set onto its edge in the photo
             FreezeFrameEditor(capture: made.capture, earlier: [], title: title,
                               onClose: { }, onRetake: { }, onAddAnother: { _ in }, onUse: { _ in })
         }
+    }
+
+    /// The AI path with a faked server: the photo "goes" (two seconds, the small spinner shows), the window comes back as a box and a quad, and
+    /// the editor starts from the quad with each side set onto the frame. `noDepth`: no depth reading (the depth sensor on a wall finds nothing
+    /// useful), so the AI is the only way in.
+    private func aiSample(_ made: (capture: FrozenCapture, opening: [Vec3]), title: String, noDepth: Bool) -> FreezeFrameEditor {
+        var capture = made.capture
+        if noDepth { capture.view.depth = nil }
+        let detection = Self.sampleDetection(made.opening, view: capture.view)
+        return FreezeFrameEditor(capture: capture, earlier: [], title: title,
+                                 services: FreezeServices(findWindow: { _ in
+                                     try? await Task.sleep(nanoseconds: 2_000_000_000)
+                                     return AiAttempt(status: "ok", detection: detection, ms: 2000)
+                                 }, dumpCapture: { store.dumpCapture($0) }, dumpResult: { store.dumpResult($0) }),
+                                 onClose: { }, onRetake: { }, onAddAnother: { _ in }, onUse: { _ in })
+    }
+
+    /// What the server's AI would answer for the sample window: a box a little loose all round it and a quad a little loose, as photo fractions.
+    static func sampleDetection(_ opening: [Vec3], view: FrozenView) -> WindowDetection {
+        let px = opening.compactMap { view.photoPixel(ofWorld: $0) }
+        guard px.count == 4 else { return WindowDetection(boxes: []) }
+        let (w, h) = (view.photoWidthPx, view.photoHeightPx)
+        let cx = px.map { $0.x }.reduce(0, +) / 4, cy = px.map { $0.y }.reduce(0, +) / 4
+        func grown(_ k: Double) -> [[Double]] { px.map { [(cx + ($0.x - cx) * k) / w, (cy + ($0.y - cy) * k) / h] } }
+        let box = grown(1.08)
+        let xs = box.map { $0[0] }, ys = box.map { $0[1] }
+        let b = DetectedBox(x: xs.min()!, y: ys.min()!, w: xs.max()! - xs.min()!, h: ys.max()! - ys.min()!, confidence: 0.41)
+        return WindowDetection(boxes: [b], picked: b, quad: DetectedQuad(corners: grown(1.03), quality: 0.93, fill: 0.98, residual: 0.002, maskScore: 0.9), ms: 1300)
     }
 
     /// The answer of an earlier photo of the same window that is two inches wider.
@@ -391,7 +422,7 @@ extension HomeownerStore {
     func openDebug(_ name: String) {
         let room = path.compactMap { r -> String? in if case .method(let room) = r { return room } else { return nil } }.last ?? "Bedroom 1"
         switch name {
-        case "hud", "hud-howto", "freeze", "freeze-clutter", "freeze-off", "freeze-two":
+        case "hud", "hud-howto", "freeze", "freeze-clutter", "freeze-off", "freeze-two", "freeze-ai", "freeze-ai-wall":
             method = .corners
             measureSession = MeasureSession(method: .corners, room: room, number: 4)
         case "label":

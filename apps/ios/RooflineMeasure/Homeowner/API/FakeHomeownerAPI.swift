@@ -18,6 +18,11 @@ actor FakeHomeownerAPI: HomeownerAPI {
         var pricePerWindow: [String: Double] = ["good": 600, "better": 800, "best": 1200]
         /// Today, for the open visit times (tests pin it).
         var now: @Sendable () -> Date = { Date() }
+        /// What `detect-windows` answers (nil: the detector is off, 503 detector_unavailable), after `detectLatency` seconds.
+        var detection: WindowDetection?
+        var detectLatency: Double = 0
+        /// Whether `debug-captures` is on (the server has DEBUG_CAPTURES_DIR).
+        var debugCaptures = false
     }
 
     private struct Stored {
@@ -255,6 +260,29 @@ actor FakeHomeownerAPI: HomeownerAPI {
     func status(_ s: HomeownerSession) async throws -> HomeownerStatus {
         try await enter("GET status")
         return statusBody(try stored(s))
+    }
+
+    /// The photos sent to `detect-windows`, in bytes (tests check what the app sends).
+    private(set) var detectedPhotoSizes: [Int] = []
+    /// The capture files sent to `debug-captures`, "<captureId>/<file>".
+    private(set) var debugFiles: [String] = []
+
+    func detectWindows(_ s: HomeownerSession, jpeg: Data, timeout: TimeInterval) async throws -> WindowDetection {
+        log.append("POST detect-windows")
+        _ = try stored(s)
+        detectedPhotoSizes.append(jpeg.count)
+        if config.detectLatency > 0 { try? await Task.sleep(nanoseconds: UInt64(config.detectLatency * 1_000_000_000)) }
+        guard let detection = config.detection else {
+            throw HomeownerAPIError(status: 503, message: "Finding windows automatically isn't available right now.", code: "detector_unavailable")
+        }
+        return detection
+    }
+
+    func uploadDebugCapture(_ s: HomeownerSession, captureId: String, file: String, data: Data) async throws {
+        log.append("POST debug-captures \(file)")
+        _ = try stored(s)
+        guard config.debugCaptures else { throw HomeownerAPIError(status: 404, message: "We couldn't find that.", code: "debug_captures_off") }
+        debugFiles.append("\(captureId)/\(file)")
     }
 
     // MARK: Building the answers

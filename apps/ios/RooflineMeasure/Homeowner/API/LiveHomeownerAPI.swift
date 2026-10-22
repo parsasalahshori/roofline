@@ -82,6 +82,21 @@ struct LiveHomeownerAPI: HomeownerAPI {
         try decode(HomeownerStatus.self, from: try await send("GET", "requests/\(s.requestId)/status", token: s.token))
     }
 
+    /// A build with no server in its file points at an address that fails plainly (`.example`): nothing to ask.
+    var hasServer: Bool { !(baseURL.host ?? "").hasSuffix(".example") }
+
+    func detectWindows(_ s: HomeownerSession, jpeg: Data, timeout: TimeInterval) async throws -> WindowDetection {
+        guard hasServer else { throw HomeownerAPIError(status: nil, message: Self.offlineMessage, code: "no_server") }
+        // One try, no waiting for a 429: the person is looking at the photo, and drags the corners themselves instead
+        let data = try await sendOnce("POST", "requests/\(s.requestId)/detect-windows", token: s.token, json: nil, raw: jpeg, contentType: "image/jpeg", timeout: timeout)
+        return try decode(WindowDetection.self, from: data)
+    }
+
+    func uploadDebugCapture(_ s: HomeownerSession, captureId: String, file: String, data: Data) async throws {
+        guard hasServer else { throw HomeownerAPIError(status: nil, message: Self.offlineMessage, code: "no_server") }
+        _ = try await sendOnce("POST", "requests/\(s.requestId)/debug-captures/\(captureId)/\(file)", token: s.token, json: nil, raw: data, contentType: "application/octet-stream", timeout: 120)
+    }
+
     // MARK: HTTP
 
     private func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {

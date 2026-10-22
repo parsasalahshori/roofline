@@ -4,6 +4,7 @@
 //
 // - The app (project.yml) depends on the library product "RooflineCore".
 // - `swift test` runs Tests/RooflineCoreTests (XCTest; needs Xcode, or a toolchain that ships XCTest).
+// - `swift run RooflineReplay <capture folder>` replays one capture the phone sent to the server's DEBUG_CAPTURES_DIR.
 // - `swift run RooflineCoreChecks` runs the same checks without XCTest (scripts/check.sh does it with swiftc alone,
 //   for a Mac with only a bare Command Line Tools install).
 //
@@ -23,6 +24,8 @@ let package = Package(
         // The checks, as a library both runners use: one list, no drift between XCTest and the plain runner.
         .target(name: "RooflineCoreCheckSuite", dependencies: ["RooflineCore"]),
         .executableTarget(name: "RooflineCoreChecks", dependencies: ["RooflineCore", "RooflineCoreCheckSuite"]),
+        // Mac-side: replays a capture the phone dumped (DebugCapture): depth finder, AI pick and refine, against what the phone did.
+        .executableTarget(name: "RooflineReplay", dependencies: ["RooflineCore"]),
         .testTarget(name: "RooflineCoreTests", dependencies: ["RooflineCore", "RooflineCoreCheckSuite"]),
     ]
 )

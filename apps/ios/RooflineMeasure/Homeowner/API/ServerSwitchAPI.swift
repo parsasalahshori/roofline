@@ -28,4 +28,6 @@ final class ServerSwitchAPI: HomeownerAPI, @unchecked Sendable {
     func slots(_ s: HomeownerSession) async throws -> HomeownerSlots { try await current.slots(s) }
     func book(_ s: HomeownerSession, choice: HomeownerBookingChoice) async throws -> HomeownerRequestView { try await current.book(s, choice: choice) }
     func status(_ s: HomeownerSession) async throws -> HomeownerStatus { try await current.status(s) }
+    func detectWindows(_ s: HomeownerSession, jpeg: Data, timeout: TimeInterval) async throws -> WindowDetection { try await current.detectWindows(s, jpeg: jpeg, timeout: timeout) }
+    func uploadDebugCapture(_ s: HomeownerSession, captureId: String, file: String, data: Data) async throws { try await current.uploadDebugCapture(s, captureId: captureId, file: file, data: data) }
 }

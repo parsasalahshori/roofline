@@ -385,4 +385,131 @@ let openingChecks: [Check] = [
         let flat = FrozenView(cameraTransform: v.cameraTransform, intrinsics: lens, wall: wallPlane, depth: nil, photoWidthPx: photoW, photoHeightPx: photoH)
         ctx.equal(wallRect.rebased(view: flat), wallRect)
     },
+
+    // MARK: - The AI window finder (AiWindow.swift)
+
+    Check("AiWindow: a box or a quad round the window becomes a level rectangle on the frame's plane; the photo's edges pull each side onto the frame, 6 cm either way") { ctx in
+        let scene = Scene()
+        let v = view(scene)
+        let photo = grayPhoto(scene, view: v)
+        let reticle = Vec2(photoW / 2, photoH / 2)
+        // A box a little loose all round the opening, as the model draws it: 4 cm out
+        let loose = aiBox(scene, v, marginM: 0.04)
+        guard let raw = AiWindow.rect(from: loose, view: v) else { return ctx.expect(false, "no rectangle from the box") }
+        ctx.near(raw.widthM * inchesPerMetre, 21 + 2 * 0.04 * inchesPerMetre, 0.8, "the box's own width")
+        // Without the photo: the box's rectangle as it is
+        let plain = WindowProposal.choose(view: v, ai: WindowDetection(boxes: [loose]), depth: nil, photo: nil, vision: { nil })
+        ctx.equal(plain?.source, .ai)
+        ctx.equal(plain?.refined, [false, false, false, false])
+        ctx.expect(plain?.rect == raw)
+        // With the photo: every side finds the real frame line
+        let refined = WindowProposal.choose(view: v, ai: WindowDetection(boxes: [loose]), depth: nil, photo: patchSource(photo), vision: { nil })
+        ctx.equal(refined?.source, .ai)
+        ctx.equal(refined?.refined, [true, true, true, true], "every side found its edge")
+        edgesNear(ctx, refined?.rect, scene, 0.006, "box + photo")
+        // A box 5.5 cm out is still inside the 6 cm search; one 9 cm out is not pulled all the way (it keeps what it cannot reach)
+        let far = WindowProposal.choose(view: v, ai: WindowDetection(boxes: [aiBox(scene, v, marginM: 0.055)]), depth: nil, photo: patchSource(photo), vision: { nil })
+        edgesNear(ctx, far?.rect, scene, 0.008, "a box 5.5 cm out")
+        let wild = WindowProposal.choose(view: v, ai: WindowDetection(boxes: [aiBox(scene, v, marginM: 0.09)]), depth: nil, photo: patchSource(photo), vision: { nil })
+        ctx.expect((wild?.rect.widthM ?? 0) * inchesPerMetre > 21.3, "a box 9 cm out is not dragged all the way in")
+        // A quad that fits well is the start instead of the box; a poor fit is not
+        let tight = aiQuad(scene, v, marginM: 0.02, quality: 0.95)
+        let fromQuad = WindowProposal.choose(view: v, ai: WindowDetection(boxes: [loose], quad: tight), depth: nil, photo: nil, vision: { nil })
+        ctx.equal(fromQuad?.source, .aiQuad)
+        ctx.near((fromQuad?.rect.widthM ?? 0) * inchesPerMetre, 21 + 2 * 0.02 * inchesPerMetre, 0.8, "the quad's own width")
+        let quadRefined = WindowProposal.choose(view: v, ai: WindowDetection(boxes: [loose], quad: tight), depth: nil, photo: patchSource(photo), vision: { nil })
+        edgesNear(ctx, quadRefined?.rect, scene, 0.006, "quad + photo")
+        let poor = WindowProposal.choose(view: v, ai: WindowDetection(boxes: [loose], quad: aiQuad(scene, v, marginM: 0.02, quality: 0.6)), depth: nil, photo: nil, vision: { nil })
+        ctx.equal(poor?.source, .ai)
+        // A quad on some other thing than the box the person aimed at is not used
+        var elsewhere = aiQuad(scene, v, marginM: 0.02, quality: 0.95)
+        elsewhere.corners = elsewhere.corners.map { [$0[0] * 0.3 + 0.7, $0[1] * 0.3 + 0.05] }
+        let off = WindowProposal.choose(view: v, ai: WindowDetection(boxes: [loose], quad: elsewhere), depth: nil, photo: nil, vision: { nil })
+        ctx.equal(off?.source, .ai)
+        _ = reticle
+    },
+
+    Check("WindowProposal: the AI window first; the depth sensor's opening only when it is the same window; Vision only when neither exists") { ctx in
+        let scene = Scene()
+        let v = view(scene)
+        let photo = grayPhoto(scene, view: v)
+        let reticle = Vec2(photoW / 2, photoH / 2)
+        let loose = aiBox(scene, v, marginM: 0.04)
+        let ai = WindowDetection(boxes: [loose])
+        guard let depthFound = OpeningFinder.find(view: v, reticle: reticle, photo: patchSource(photo)) else { return ctx.expect(false, "depth found nothing") }
+        var visionAsked = 0
+        let vision: () -> FrozenRect? = {
+            visionAsked += 1
+            return depthFound.rect
+        }
+        // The depth opening and the AI box are the same window: the depth sensor's rectangle (already on the frame's edges) is used
+        let same = WindowProposal.choose(view: v, ai: ai, depth: depthFound, photo: patchSource(photo), vision: vision)
+        ctx.equal(same?.source, .aiDepth)
+        ctx.expect(same?.rect == depthFound.rect)
+        // The owner's phone: the depth finds the wall round the window, not the window. The AI is right, the depth is not: the AI wins
+        var onWall = depthFound
+        onWall.rect.left -= 0.6
+        onWall.rect.right += 0.6
+        onWall.rect.top += 0.5
+        let disagree = WindowProposal.choose(view: v, ai: ai, depth: onWall, photo: patchSource(photo), vision: vision)
+        ctx.equal(disagree?.source, .ai)
+        edgesNear(ctx, disagree?.rect, scene, 0.006, "the AI beats a wall-sized depth opening")
+        // A depth opening that is only a pane of the window (half of it) is not the same window either
+        var pane = depthFound
+        pane.rect.right = pane.rect.left + pane.rect.widthM * 0.45
+        ctx.equal(WindowProposal.choose(view: v, ai: ai, depth: pane, photo: patchSource(photo), vision: vision)?.source, .ai)
+        // No AI box (nothing held the middle): the depth sensor's opening
+        let picture = DetectedBox(x: 0.8, y: 0.1, w: 0.15, h: 0.15, confidence: 0.5)
+        let noBox = WindowProposal.choose(view: v, ai: WindowDetection(boxes: [picture]), depth: depthFound, photo: patchSource(photo), vision: vision)
+        ctx.equal(noBox?.source, .depth)
+        ctx.expect(noBox?.rect == depthFound.rect)
+        ctx.equal(WindowProposal.choose(view: v, ai: nil, depth: depthFound, photo: nil, vision: vision)?.source, .depth)
+        ctx.equal(visionAsked, 0, "Vision is never asked while the AI or the depth found a window")
+        // Neither: Vision
+        let fallback = WindowProposal.choose(view: v, ai: WindowDetection(boxes: []), depth: nil, photo: nil, vision: vision)
+        ctx.equal(fallback?.source, .vision)
+        ctx.equal(visionAsked, 1)
+        // Nothing at all
+        ctx.expect(WindowProposal.choose(view: v, ai: nil, depth: nil, photo: nil, vision: { nil }) == nil)
+        // A box that is not a window's size (a sliver of a pane, 5 cm) is not a rectangle
+        let tiny = DetectedBox(x: 0.45, y: 0.45, w: 0.06, h: 0.06, confidence: 0.4)
+        ctx.expect(AiWindow.rect(from: tiny, view: v) == nil)
+    },
+
+    Check("AiWindow.photoIoU: the same rectangle overlaps itself fully, a far one not at all, a half-shifted one a third") { ctx in
+        let scene = Scene()
+        let v = view(scene)
+        guard let a = FrozenRect(plane: wallPlane, viewer: v.viewer, left: -0.3, right: 0.3, top: 1.8, bottom: 1.0) else { return ctx.expect(false, "rect") }
+        ctx.near(AiWindow.photoIoU(a, a, view: v), 1, 1e-9)
+        var far = a
+        far.left += 3
+        far.right += 3
+        ctx.near(AiWindow.photoIoU(a, far, view: v), 0, 1e-9)
+        var half = a
+        half.left += 0.3
+        half.right += 0.3
+        ctx.near(AiWindow.photoIoU(a, half, view: v), 1.0 / 3.0, 0.03)
+    },
 ]
+
+// MARK: - What the server's boxes and quads look like for a scene
+
+/// The box a detector draws round the opening, `marginM` out on every side, as fractions of the photo.
+private func aiBox(_ scene: Scene, _ v: FrozenView, marginM m: Double) -> DetectedBox {
+    let corners = openingCorners(scene, v, marginM: m)
+    let xs = corners.map { $0.x }, ys = corners.map { $0.y }
+    let (x0, x1, y0, y1) = (xs.min()! / photoW, xs.max()! / photoW, ys.min()! / photoH, ys.max()! / photoH)
+    return DetectedBox(x: x0, y: y0, w: x1 - x0, h: y1 - y0, confidence: 0.4)
+}
+
+/// The window quad (TL, TR, BR, BL) the segmenter draws, `marginM` out on every side.
+private func aiQuad(_ scene: Scene, _ v: FrozenView, marginM m: Double, quality: Double) -> DetectedQuad {
+    DetectedQuad(corners: openingCorners(scene, v, marginM: m).map { [$0.x / photoW, $0.y / photoH] }, quality: quality)
+}
+
+/// The opening's corners TL, TR, BR, BL (grown by `marginM`) on the photo, in its pixels.
+private func openingCorners(_ scene: Scene, _ v: FrozenView, marginM m: Double) -> [Vec2] {
+    let o = scene.opening
+    let world = [Vec3(o.x0 - m, o.y1 + m, wallZ), Vec3(o.x1 + m, o.y1 + m, wallZ), Vec3(o.x1 + m, o.y0 - m, wallZ), Vec3(o.x0 - m, o.y0 - m, wallZ)]
+    return world.compactMap { v.photoPixel(ofWorld: $0) }
+}
