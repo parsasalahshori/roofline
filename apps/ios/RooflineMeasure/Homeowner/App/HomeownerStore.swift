@@ -64,6 +64,8 @@ struct PendingWindow: Identifiable {
     /// The photo's 35 mm-equivalent focal length (a card photo is sized with it), kept so a restored window shows the same size.
     var focal35mm: Double? = nil
     var method: MeasureMethod = .corners
+    /// The window's own frame just inside the measured opening (photo measure only): shown next to the opening's size, never sent.
+    var windowFrame: WindowFrameSize? = nil
 }
 
 /// Everything the homeowner screens read and do. One instance for the app; the screens never talk to the network.
@@ -208,10 +210,10 @@ final class HomeownerStore {
 
     var windowRows: [WindowRow] {
         WindowRows.merge(server: view?.windows ?? [], outbox: outboxItems.filter { $0.measurementId == requestId }).map { row in
-            // A style chosen while the window's send was uncertain shows at once
-            guard let key = progress.pendingStyles[row.id] else { return row }
             var r = row
-            r.style = key
+            // A style chosen while the window's send was uncertain shows at once
+            if let key = progress.pendingStyles[row.id] { r.style = key }
+            r.windowFrame = progress.windowFrames[row.id]
             return r
         }
     }

@@ -103,6 +103,22 @@ jumps with every shake, is where wrong sizes came from, so the window is marked 
 24 × 36 window" when BOTH measured sides are within an inch of a common double-hung or slider size (or of it less a half inch, the unit size).
 It is a suggestion on the screen only: the measured size is what is sent and priced.
 
+**Two sizes for one window** (`Core/WindowFrameFinder.swift`, `WindowFrameSize`, `TwoSizes`): the rectangle the person confirms is the OPENING (where
+the wall stops: trim or casing's inner edge). It is shown big ("Opening 34 5/8 × 55 3/4 in"), drawn as the yellow outline, and is the only thing sent.
+Just inside it is the WINDOW's own frame, about 1 to 2 cm in on each side, which is what a tape across the window reads. After the rectangle settles
+(proposal applied, or a dot let go) the editor looks for that inner edge in the photo, off the main thread: from each side of the opening it samples
+the photo across the side from 0.6 cm to 8 cm in (through the plane's own projection, so a window seen at an angle is searched where it is), measures
+the step in brightness at each depth, and takes as the edge the step that at least half of the places along the middle 80% of the side agree on
+(a percentile, so a long line counts and a cord or a latch does not). The FIRST clear edge inward wins, not the strongest (slats and cords make
+stronger lines further in); two opposite edges within 9 mm are one thin line and go; the sides' insets must agree (about the same frame thickness all round) or
+the odd one is dropped, and a missing side takes the median of the others; fewer than two sides: no window size (nothing is shown, the opening stands
+alone). It is shown as "Window about 33 1/4 × 54 3/8 in" under the opening's size, a thinner dashed line inside the yellow one, a second line on the
+window list row and the label sheet, and the standard-size line goes by the window's size when there is one. The server has no place for it (a window
+body with an unknown key is a `400`, `label` is the homeowner's own name), so it stays on this phone by window id (`HomeownerProgress.windowFrames`,
+`PendingDisk`). Limits: a frame recessed behind the opening reads a little further in than it is (parallax), and a blind that hides the frame's edge
+on most of a side (the owner's capture `c454e67a`) leaves nothing to find. `-debugOpen freeze-frame` and `label-frame` show both on the drawn sample;
+`RooflineReplay` prints each side's candidate edges and the window size.
+
 **Debug dump and replay** (Debug and TestFlight builds only, `BuildEnvironment.isTesterBuild`): each Capture's full photo, depth and confidence,
 lens, camera pose, wall plane and, when the AI answered, its answer, then the source, the proposed rectangle and the final one, go to
 `POST .../debug-captures/:captureId/:file`, which exists only when the server has `DEBUG_CAPTURES_DIR` (files in `<dir>/<captureId>/`, no

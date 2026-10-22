@@ -22,7 +22,7 @@ struct ArMeasureScreen: View {
     var body: some View {
         Group {
             #if DEBUG
-            if let mode = store.debugOpen, mode.hasPrefix("hud") || mode == "label" || mode.hasPrefix("freeze") {
+            if let mode = store.debugOpen, mode.hasPrefix("hud") || mode.hasPrefix("label") || mode.hasPrefix("freeze") {
                 DebugCaptureSample(mode: mode, session: session)
             } else {
                 live
@@ -132,7 +132,8 @@ struct ArMeasureScreen: View {
         controller.pause()
         let corners = drawing.outline.map { ImageMapping.clamp($0, width: Double(capture.widthPx), height: Double(capture.heightPx)) }
         let scale = WindowPhotoScale.ar(ArScale(pointsM: r.windowPointsM, trackingLostCount: capture.trackingLostCount, device: capture.view.device, cornerSpreadM: r.windowSpreadM))
-        store.capture(scale: scale, corners: corners, jpeg: capture.jpeg, widthPx: capture.widthPx, heightPx: capture.heightPx, in: session)
+        // The opening goes to the server as before; the window's own frame inside it only rides along, to be shown next to it on this phone
+        store.capture(scale: scale, corners: corners, jpeg: capture.jpeg, widthPx: capture.widthPx, heightPx: capture.heightPx, windowFrame: r.windowFrame, in: session)
     }
 }
 

@@ -104,11 +104,11 @@ extension HomeownerStore {
     // MARK: A measured window (08)
 
     /// A finished measure becomes a pending window with its size from the phone's own math; the label sheet takes it from there.
-    func capture(scale: WindowPhotoScale, corners: [Vec2]?, jpeg: Data?, widthPx: Int, heightPx: Int, focal35mm: Double? = nil, in session: MeasureSession) {
+    func capture(scale: WindowPhotoScale, corners: [Vec2]?, jpeg: Data?, widthPx: Int, heightPx: Int, focal35mm: Double? = nil, windowFrame: WindowFrameSize? = nil, in session: MeasureSession) {
         let window = PhotoWindowInput(id: WindowIds.new(), uploadId: nil, label: nil, windowKey: nil, corners: corners, scale: scale, room: session.room, style: nil)
         let preview = LocalWindowPreview.of(window, imageWidthPx: widthPx, imageHeightPx: heightPx, focal35mm: focal35mm)
         let made = PendingWindow(id: window.id, scale: scale, corners: corners, jpeg: jpeg, imageWidthPx: widthPx, imageHeightPx: heightPx, preview: preview,
-                                 room: session.room, name: "", number: session.number, replacing: session.replacing, focal35mm: focal35mm, method: session.method)
+                                 room: session.room, name: "", number: session.number, replacing: session.replacing, focal35mm: focal35mm, method: session.method, windowFrame: windowFrame)
         pending = made
         pendingRestored = false
         // On disk at once: nothing measured is lost by closing the app before "Save"
@@ -152,6 +152,9 @@ extension HomeownerStore {
         do {
             _ = try await outbox.enqueue(window: window, measurementId: s.requestId, address: s.address, jpeg: p.jpeg, imageWidthPx: p.imageWidthPx, imageHeightPx: p.imageHeightPx, held: oldRow?.style == nil)
             if let old = oldRow, let color = progress.colors[old.id] { progress.colors[p.id] = color }
+            // The window's own frame stays on this phone, by the window's id (the server has no place for it)
+            progress.windowFrames[p.id] = p.windowFrame
+            saveProgress()
         } catch {
             notice = Notice(text: "This phone couldn't save the window (\(error.localizedDescription)). Please try again.")
             return
@@ -210,6 +213,10 @@ extension HomeownerStore {
     /// The window is on the server (delete it there), on this phone (drop it), or both.
     private func deleteEverywhere(_ id: String) async {
         try? await outbox.remove(id: id)
+        if progress.windowFrames[id] != nil {
+            progress.windowFrames[id] = nil
+            saveProgress()
+        }
         guard let s = session, view?.windows.contains(where: { $0.id == id }) == true else { return }
         do {
             accept(try await api.deleteWindow(s, windowId: id))
@@ -273,6 +280,7 @@ extension HomeownerStore {
         copy.id = WindowIds.new()
         copy.style = key
         if let color = progress.colors[windowId] { progress.colors[copy.id] = color }
+        if let frame = progress.windowFrames[windowId] { progress.windowFrames[copy.id] = frame }
         do {
             _ = try await outbox.enqueue(window: copy, measurementId: s.requestId, address: s.address, jpeg: nil, imageWidthPx: 0, imageHeightPx: 0, held: false)
             await outbox.syncAll()

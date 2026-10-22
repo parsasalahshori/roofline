@@ -15,6 +15,7 @@ struct PendingDisk {
         var number: Int
         var replacing: String?
         var method: String
+        var windowFrame: WindowFrameSize?
     }
 
     let directory: URL
@@ -30,7 +31,7 @@ struct PendingDisk {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let input = PhotoWindowInput(id: p.id, uploadId: nil, label: nil, windowKey: nil, corners: p.corners, scale: p.scale, room: p.room, style: nil)
         let record = Record(requestId: requestId, window: input, imageWidthPx: p.imageWidthPx, imageHeightPx: p.imageHeightPx, focal35mm: p.focal35mm,
-                            name: p.name, number: p.number, replacing: p.replacing, method: p.method.rawValue)
+                            name: p.name, number: p.number, replacing: p.replacing, method: p.method.rawValue, windowFrame: p.windowFrame)
         if let jpeg = p.jpeg { try? jpeg.write(to: photoURL(requestId), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]) } else { try? FileManager.default.removeItem(at: photoURL(requestId)) }
         if let data = try? JSONEncoder().encode(record) { try? data.write(to: recordURL(requestId), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]) }
     }
@@ -41,7 +42,7 @@ struct PendingDisk {
         let preview = LocalWindowPreview.of(r.window, imageWidthPx: r.imageWidthPx, imageHeightPx: r.imageHeightPx, focal35mm: r.focal35mm)
         return PendingWindow(id: r.window.id, scale: r.window.scale, corners: r.window.corners, jpeg: jpeg, imageWidthPx: r.imageWidthPx, imageHeightPx: r.imageHeightPx,
                              preview: preview, room: r.window.room ?? "", name: r.name, number: r.number, replacing: r.replacing,
-                             focal35mm: r.focal35mm, method: MeasureMethod(rawValue: r.method) ?? .corners)
+                             focal35mm: r.focal35mm, method: MeasureMethod(rawValue: r.method) ?? .corners, windowFrame: r.windowFrame)
     }
 
     /// Pending windows of requests that no longer exist join this one (the saved request went stale and a new one was made).

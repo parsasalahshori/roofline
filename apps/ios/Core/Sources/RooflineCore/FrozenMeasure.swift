@@ -14,6 +14,8 @@ public struct FrozenResult: Equatable, Sendable {
     public var size: ArSize
     /// How far the camera was from the window, metres (zero when unknown).
     public var distanceM: Double
+    /// The window's own frame, just inside the rectangle above (see `WindowFrameFinder`): shown next to the opening's size, never sent.
+    public var windowFrame: WindowFrameSize?
 
     public var widthIn: Double { size.widthIn }
     public var heightIn: Double { size.heightIn }
@@ -43,11 +45,12 @@ public struct FrozenResult: Equatable, Sendable {
         return FrozenCopy.looksRight
     }
 
-    public init(handlePointsM: [Vec3], finished: FinishedCorners, size: ArSize, distanceM: Double) {
+    public init(handlePointsM: [Vec3], finished: FinishedCorners, size: ArSize, distanceM: Double, windowFrame: WindowFrameSize? = nil) {
         self.handlePointsM = handlePointsM
         self.finished = finished
         self.size = size
         self.distanceM = distanceM
+        self.windowFrame = windowFrame
     }
 }
 

@@ -76,6 +76,8 @@ struct PhotoTapView: View {
     /// A straightened outline to draw (the rectangle fitted to the markers, photo pixels, TL TR BR BL) in place of the line through the
     /// markers, which then are small dots only: what is drawn is what is measured and sent.
     var outline: [CGPoint] = []
+    /// The window's own frame just inside the outline (TL TR BR BL, photo pixels): a thinner dashed line, drawn under the markers.
+    var innerOutline: [CGPoint] = []
     /// Length plates on the picture, each at its photo point (the same numbers the status card shows).
     var plates: [Plate] = []
     /// When marker `i` is let go: the point it should land on instead (the frame's corner in the picture), or nil to leave it where it is.
@@ -186,6 +188,18 @@ struct PhotoTapView: View {
                         p.move(to: q[0]); q.dropFirst().forEach { p.addLine(to: $0) }; p.closeSubpath()
                     }
                     .stroke(Theme.tape, style: StrokeStyle(lineWidth: 2.5, lineJoin: .round))
+                    if innerOutline.count == 4 {
+                        let inner = innerOutline.map(place.toScreen)
+                        let dash: [CGFloat] = [6, 4]
+                        Path { p in
+                            p.move(to: inner[0]); inner.dropFirst().forEach { p.addLine(to: $0) }; p.closeSubpath()
+                        }
+                        .stroke(Color.black.opacity(0.45), style: StrokeStyle(lineWidth: 3.5, lineJoin: .round, dash: dash))
+                        Path { p in
+                            p.move(to: inner[0]); inner.dropFirst().forEach { p.addLine(to: $0) }; p.closeSubpath()
+                        }
+                        .stroke(Theme.tape, style: StrokeStyle(lineWidth: 1.5, lineJoin: .round, dash: dash))
+                    }
                 } else if points.count >= 2 {
                     Path { p in
                         let q = (points.count == 4 ? ordered(points) : points).map(place.toScreen)

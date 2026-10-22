@@ -32,11 +32,14 @@ struct FreezeFrameEditor: View {
     @State private var depthOnly: FrozenRect?
     /// False when the person had touched a dot before the proposal came, so it was not put on the screen.
     @State private var proposalApplied: Bool?
+    /// The window's own frame inside the rectangle (found in the photo after the rectangle settles; dropped while a dot is dragged).
+    @State private var frame: FreezeFrameFound?
+    @State private var frameTask: Task<Void, Never>?
 
     private var photoNumber: Int { earlier.count + 1 }
 
     var body: some View {
-        let editing = FreezeEditing(capture: capture, earlier: earlier, rect: rect)
+        let editing = FreezeEditing(capture: capture, earlier: earlier, rect: rect, frame: frame)
         ZStack {
             Color.black.ignoresSafeArea()
             VStack(spacing: 0) {
@@ -45,7 +48,7 @@ struct FreezeFrameEditor: View {
                     if let photo = photo {
                         PhotoTapView(photo: photo, points: handles(editing), maxPoints: 0, proposed: false,
                                      onEdit: { released() },
-                                     outline: editing.outline, plates: editing.plates,
+                                     outline: editing.outline, innerOutline: editing.windowOutline, plates: editing.plates,
                                      snap: { i, p in i < 4 ? photo.image.cgImage.flatMap { PhotoSnap.snap(p, in: $0) } : nil },
                                      gain: 1, sideHandlesFrom: 4,
                                      voiceOver: "Photo of the window. The outline has a dot on each corner and a square on each side. Touch one and drag to move it. Pinch to zoom.")
@@ -77,6 +80,7 @@ struct FreezeFrameEditor: View {
         if let start = start {
             rect = start.rect
             stage = start.stage
+            findFrame(in: start.rect, of: image)
             return
         }
         stage = .looking
@@ -85,6 +89,8 @@ struct FreezeFrameEditor: View {
         attempt = nil
         depthOnly = nil
         proposalApplied = nil
+        frame = nil
+        frameTask?.cancel()
         guard let cg = image.cgImage else { return }
         let view = capture.view
         // The depth sensor's opening, off the main thread, while the server looks
@@ -117,6 +123,7 @@ struct FreezeFrameEditor: View {
             if let found = result {
                 rect = found.rect
                 stage = [.ai, .aiQuad, .aiDepth].contains(found.source) ? .proposedByAI : (found.source == .depth ? .proposedByDepth : .proposedByPhoto)
+                findFrame(in: found.rect, of: image)
             } else {
                 rect = FreezeProposal.inset(view: view)
                 stage = .notFound
@@ -148,12 +155,31 @@ struct FreezeFrameEditor: View {
         rect = r.moved(handle, toPhoto: Vec2(Double(new[i].x), Double(new[i].y)), view: capture.view)
         // From the first touch on it is the person's: a proposal still on its way is not put over it
         stage = .editing
+        // The window's frame was found for the old rectangle: it goes while a dot is on the move, and is looked for again when it is let go
+        frameTask?.cancel()
+        frame = nil
     }
 
     /// A marker was let go (after any snap): the depth round the corners as they are now says more exactly where the frame's face is.
     private func released() {
         stage = .editing
         rect = rect?.rebased(view: capture.view)
+        if let image = photo?.image { findFrame(in: rect, of: image) }
+    }
+
+    /// Looks for the window's own frame just inside `opening` in the photo, off the main thread. The answer is kept only for that exact
+    /// rectangle (`FreezeEditing` shows it only while the rectangle is still the one it was found for).
+    private func findFrame(in opening: FrozenRect?, of image: UIImage) {
+        frameTask?.cancel()
+        guard let opening = opening, let cg = image.cgImage else { return }
+        let view = capture.view
+        frameTask = Task {
+            let found = await Task.detached(priority: .userInitiated) {
+                WindowFrameFinder.find(opening: opening, view: view, photo: { x, y, w, h in PhotoSnap.gray(cg, x: x, y: y, width: w, height: h) })
+            }.value
+            guard !Task.isCancelled else { return }
+            frame = found.map { FreezeFrameFound(opening: opening, found: $0) }
+        }
     }
 
     // MARK: Pieces
@@ -172,13 +198,17 @@ struct FreezeFrameEditor: View {
                     Text(photosLine).wc(14, .semibold, relativeTo: .footnote).foregroundStyle(Theme.tape)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("Width").wc(15, relativeTo: .subheadline).foregroundStyle(Color.white.opacity(0.7))
+                    Text("Opening").wc(15, relativeTo: .subheadline).foregroundStyle(Color.white.opacity(0.7))
                     number(editing.widthIn)
-                    Text("Height").wc(15, relativeTo: .subheadline).foregroundStyle(Color.white.opacity(0.7))
+                    Text("×").wc(20, .medium, relativeTo: .title3).foregroundStyle(Color.white.opacity(0.7))
                     number(editing.heightIn)
                     Text("in").wcMono(15, .semibold, relativeTo: .subheadline).foregroundStyle(.white)
                 }
                 .lineLimit(1).minimumScaleFactor(0.7)
+                if let window = editing.windowSize {
+                    Text(window.line).wc(15, .semibold, relativeTo: .subheadline).foregroundStyle(Color.white.opacity(0.88))
+                        .lineLimit(1).minimumScaleFactor(0.75)
+                }
                 if let standard = editing.standardSize {
                     Text(standard.sentence).wc(14, .medium, relativeTo: .footnote).foregroundStyle(Color.white.opacity(0.78))
                         .lineLimit(2).minimumScaleFactor(0.8)
@@ -216,8 +246,8 @@ struct FreezeFrameEditor: View {
 
     private func accessibilityReadout(_ editing: FreezeEditing) -> String {
         var parts = [title.capitalized]
-        if let w = editing.widthIn { parts.append("Width \(SizeWording.spoken(w)) inches") }
-        if let h = editing.heightIn { parts.append("Height \(SizeWording.spoken(h)) inches") }
+        if let w = editing.widthIn, let h = editing.heightIn { parts.append("Opening \(SizeWording.spokenSize(widthIn: w, heightIn: h))") }
+        if let window = editing.windowSize { parts.append(TwoSizes.windowSpoken(window)) }
         if let standard = editing.standardSize { parts.append(standard.sentence) }
         parts.append(photosLine)
         if editing.needsCheck { parts.append("Needs a check") }
@@ -272,8 +302,10 @@ struct FreezeFrameEditor: View {
                 .accessibilityLabel("Retake")
                 .accessibilityHint("Goes back to the camera to take this photo again")
                 Button {
-                    if let r = editing.sent {
+                    if var r = editing.sent {
                         if start == nil { services.dumpResult?(debugResult(final: rect, usedAt: ISO8601DateFormatter().string(from: Date()))) }
+                        // The opening is what is sent; the window's frame is only kept to show next to it
+                        r.windowFrame = editing.windowSize
                         onUse(r)
                     }
                 } label: {

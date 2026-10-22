@@ -264,6 +264,71 @@ enum SampleFrozen {
         }
     }
 
+    /// The window of `-debugOpen freeze-frame`: a 35 5/8 x 59 5/8 in OPENING (where the wall stops) with the window's own frame 1.75 cm inside it
+    /// (the white frame, then the glass with venetian blinds hung over the top of it), drawn over the sample frozen frame. The editor starts
+    /// from the opening and finds the frame in the picture.
+    static func twoSizes() -> (capture: FrozenCapture, opening: FrozenRect)? {
+        let s = scene()
+        var made = capture(s)
+        let view = made.capture.view
+        guard let opening = FrozenRect.bounding(of: made.opening, plane: view.wall, viewer: view.viewer) else { return nil }
+        var frame = opening
+        frame.left += 0.0175
+        frame.right -= 0.0175
+        frame.top -= 0.0175
+        frame.bottom += 0.0175
+        func path(_ r: FrozenRect) -> CGPath? {
+            let px = r.cornersM.compactMap { view.photoPixel(ofWorld: $0) }
+            guard px.count == 4 else { return nil }
+            let p = CGMutablePath()
+            p.addLines(between: px.map { CGPoint(x: $0.x, y: $0.y) })
+            p.closeSubpath()
+            return p
+        }
+        guard let outer = path(opening), let inner = path(frame) else { return nil }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let image = UIGraphicsImageRenderer(size: s.size, format: format).image { ctx in
+            let g = ctx.cgContext
+            let space = CGColorSpaceCreateDeviceRGB()
+            // The wall, lighter in the middle
+            let wall = CGGradient(colorsSpace: space, colors: [UIColor(rgb: 0xD9D3C6).cgColor, UIColor(rgb: 0xB1A99A).cgColor] as CFArray, locations: [0, 1])!
+            g.drawRadialGradient(wall, startCenter: CGPoint(x: s.size.width / 2, y: s.size.height * 0.4), startRadius: 0,
+                                 endCenter: CGPoint(x: s.size.width / 2, y: s.size.height * 0.4), endRadius: s.size.height * 0.75, options: [.drawsAfterEndLocation])
+            // The window's own frame (white), filling the opening
+            UIColor(rgb: 0xF3F0E9).setFill()
+            g.addPath(outer)
+            g.fillPath()
+            // The glass and the blinds, inside the frame
+            let box = inner.boundingBoxOfPath
+            g.saveGState()
+            g.addPath(inner)
+            g.clip()
+            let glass = CGGradient(colorsSpace: space, colors: [UIColor(rgb: 0xA3B8C6).cgColor, UIColor(rgb: 0x5F7684).cgColor] as CFArray, locations: [0, 1])!
+            g.drawLinearGradient(glass, start: CGPoint(x: box.midX, y: box.minY), end: CGPoint(x: box.midX, y: box.maxY), options: [])
+            // Venetian blinds over the top half: a light slat and a dark gap line, every 46 px
+            let blindsBottom = box.minY + box.height * 0.52
+            var y = box.minY
+            while y < blindsBottom {
+                UIColor(rgb: 0xCFC9BC).setFill()
+                g.fill(CGRect(x: box.minX, y: y, width: box.width, height: 38))
+                UIColor(rgb: 0x8E877A).setFill()
+                g.fill(CGRect(x: box.minX, y: y + 38, width: box.width, height: 8))
+                y += 46
+            }
+            // The meeting rail between the sashes
+            UIColor(rgb: 0xEDE9DF).setFill()
+            g.fill(CGRect(x: box.minX, y: box.minY + box.height * 0.53, width: box.width, height: box.height * 0.022))
+            g.restoreGState()
+            // The sill
+            UIColor(rgb: 0xEFEBE2).setFill()
+            g.fill(CGRect(x: outer.boundingBoxOfPath.minX - 18, y: outer.boundingBoxOfPath.maxY, width: outer.boundingBoxOfPath.width + 36, height: 26))
+        }
+        made.capture.jpeg = image.jpegData(compressionQuality: 0.9) ?? Data()
+        return (made.capture, opening)
+    }
+
     /// A rectangle a shaky hand leaves: the left edge 1.6 in outside the frame, the bottom 1.4 in below it, the right side 0.4 in in.
     static func off(_ opening: [Vec3], view: FrozenView) -> FrozenRect? {
         guard let r = FrozenRect.bounding(of: opening, plane: view.wall, viewer: view.viewer) else { return nil }
@@ -338,6 +403,12 @@ struct DebugCaptureSample: View {
                               onClose: { }, onRetake: { }, onAddAnother: { _ in }, onUse: { _ in })
         case "freeze-ai", "freeze-ai-wall":
             aiSample(made, title: title, noDepth: mode == "freeze-ai-wall")
+        case "freeze-frame":
+            // The opening found, the window's own frame inside it: both outlines and both sizes
+            if let two = SampleFrozen.twoSizes() {
+                FreezeFrameEditor(capture: two.capture, earlier: [], title: title, start: (two.opening, .proposedByDepth),
+                                  onClose: { }, onRetake: { }, onAddAnother: { _ in }, onUse: { _ in })
+            }
         default:
             // The whole pipeline: the depth sensor finds the opening and each side is set onto its edge in the photo
             FreezeFrameEditor(capture: made.capture, earlier: [], title: title,
@@ -458,13 +529,15 @@ extension HomeownerStore {
     func openDebug(_ name: String) {
         let room = path.compactMap { r -> String? in if case .method(let room) = r { return room } else { return nil } }.last ?? "Bedroom 1"
         switch name {
-        case "hud", "hud-howto", "freeze", "freeze-clutter", "freeze-off", "freeze-two", "freeze-ai", "freeze-ai-wall":
+        case "hud", "hud-howto", "freeze", "freeze-clutter", "freeze-off", "freeze-two", "freeze-ai", "freeze-ai-wall", "freeze-frame":
             method = .corners
             measureSession = MeasureSession(method: .corners, room: room, number: 4)
-        case "label":
+        case "label", "label-frame":
             method = .corners
             measureSession = MeasureSession(method: .corners, room: room, number: 4)
             pending = Self.sampleWindow(room: room)
+            // `label-frame`: the window's own frame was found too (1.75 cm in on each side)
+            if name == "label-frame" { pending?.windowFrame = WindowFrameSize(widthIn: SampleScene.widthIn - 0.035 * inchesPerMetre, heightIn: SampleScene.heightIn - 0.035 * inchesPerMetre) }
         case "scan", "scan-review":
             method = .roomScan
             measureSession = MeasureSession(method: .roomScan, room: room, number: 4)

@@ -30,6 +30,8 @@ struct WindowRow: Identifiable, Equatable {
     var reasons: [String]
     var scale: WindowPhotoScale
     var send: Send
+    /// The window's own frame just inside the opening above (photo measure; kept on this phone, never sent).
+    var windowFrame: WindowFrameSize? = nil
 
     /// "Living room", or the name the homeowner gave ("Bedroom 1, front").
     var title: String {
@@ -79,9 +81,15 @@ struct WindowRow: Identifiable, Equatable {
     /// "Looks like a standard 24 × 36 window", when the measured size lands on a common one (a suggestion on the screen only: what is sent and priced
     /// is the measured size).
     var standardSizeLine: String? {
+        // A window's nominal size is its frame's: keyed to the window's own size when it was found, else to the opening's
+        if let f = windowFrame { return StandardWindowSizes.line(widthIn: f.widthIn, heightIn: f.heightIn) }
         guard let w = widthIn, let h = heightIn else { return nil }
         return StandardWindowSizes.line(widthIn: w, heightIn: h)
     }
+
+    /// "Window about 33 1/4 × 54 3/8 in" under the opening's size, when the photo showed the window's own frame.
+    var windowSizeLine: String? { hasSize ? windowFrame?.line : nil }
+    var spokenWindowSize: String? { hasSize ? windowFrame.map { TwoSizes.windowSpoken($0) } : nil }
 
     /// "Depth sensor · about 1/8 in".
     var methodLine: String { MethodLabel.listLine(scale, uncertaintyIn: uncertaintyIn) }

@@ -105,6 +105,25 @@ if let c = chosen {
     print("  proposal: none (the phone would try Apple Vision, then start inset)")
 }
 
+// The two sizes: the opening (what the app proposes and sends) and the window's own frame just inside it
+if let c = chosen {
+    let o = c.rect
+    func cm(_ m: Double) -> String { String(format: "%.1f cm", m * 100) }
+    print("\ntwo sizes (opening = what is sent; window = the frame's edge just inside it):")
+    print("  opening \(size(o)) = \(cm(o.widthM)) x \(cm(o.heightM)); corners on the photo \(corners(o).map { String(format: "(%.0f, %.0f)", $0.x, $0.y) }.joined(separator: " "))")
+    for side in WindowFrameFinder.Side.allCases {
+        let found = WindowFrameFinder.edges(of: side, opening: o, view: view, photo: patches)
+        let line = found.map { String(format: "%.2f cm %@ (step %.0f)", $0.insetM * 100, $0.brighterInside ? "light in" : "dark in", $0.step) }.joined(separator: ", ")
+        print("  \(side) edges: \(line.isEmpty ? "none" : line)")
+    }
+    if let w = WindowFrameFinder.find(opening: o, view: view, photo: patches) {
+        print("  window  \(size(w.rect)) = \(cm(w.widthM)) x \(cm(w.heightM)); insets \(w.insetsM.map { String(format: "%.2f", $0 * 100) }.joined(separator: " ")) cm (L R T B), own edge: \(w.seen.map { $0 ? "yes" : "filled" }.joined(separator: " "))")
+        print("  window corners on the photo \(corners(w.rect).map { String(format: "(%.0f, %.0f)", $0.x, $0.y) }.joined(separator: " "))")
+    } else {
+        print("  window  none (fewer than two sides found a clear edge)")
+    }
+}
+
 // Against the phone
 if let c = chosen, let r = recorded {
     print("\ncompare:")

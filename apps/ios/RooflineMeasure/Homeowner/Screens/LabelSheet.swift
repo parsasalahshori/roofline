@@ -146,9 +146,14 @@ struct LabelSheet: View {
             .frame(width: 34, height: 34)
             VStack(alignment: .leading, spacing: 3) {
                 if let p = showable {
+                    if pending.windowFrame != nil { Text("Opening").wc(13, .medium, relativeTo: .footnote).foregroundStyle(Theme.ink3) }
                     SizeText(widthIn: p.widthIn, heightIn: p.heightIn, size: 34, weight: .semibold, unit: true)
+                    if let frame = pending.windowFrame {
+                        Text(frame.line).wc(15, .semibold, relativeTo: .subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+                    }
                     Text(subtitle(p)).wc(14, relativeTo: .footnote).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
-                    if let line = StandardWindowSizes.line(widthIn: p.widthIn, heightIn: p.heightIn) {
+                    // A window's nominal size is its frame's: keyed to the window's own size when it was found, else to the opening's
+                    if let line = pending.windowFrame.map({ StandardWindowSizes.line(widthIn: $0.widthIn, heightIn: $0.heightIn) }) ?? StandardWindowSizes.line(widthIn: p.widthIn, heightIn: p.heightIn) {
                         Text(line).wc(14, .medium, relativeTo: .footnote).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
                     }
                 } else {

@@ -6,6 +6,12 @@ import UIKit
 // dots), what it measures, where the phone starts it from (the depth sensor first, Vision second), and snapping a dragged corner onto the
 // frame's corner in the picture. All of it is plain values and CoreGraphics, so it is tested without a camera.
 
+/// The window's own frame found inside one opening: only good for that rectangle (a drag makes it stale, and it is dropped).
+struct FreezeFrameFound: Equatable {
+    let opening: FrozenRect
+    let found: WindowFrameFinder.Found
+}
+
 /// What the rectangle on the photo comes to, with the photos taken before this one in the same window. Made once per change.
 struct FreezeEditing {
     /// Where the editor is in finding the window.
@@ -36,8 +42,11 @@ struct FreezeEditing {
     let drawing: FrozenDrawing?
     /// Photos so far, this one included.
     let photos: Int
+    /// The window's own frame inside the rectangle (what it is, only when it was found for THIS rectangle) and its size.
+    let windowOutline: [CGPoint]
+    let windowSize: WindowFrameSize?
 
-    init(capture: FrozenCapture, earlier: [FrozenResult], rect: FrozenRect?) {
+    init(capture: FrozenCapture, earlier: [FrozenResult], rect: FrozenRect?, frame: FreezeFrameFound? = nil) {
         self.rect = rect
         photos = earlier.count + 1
         guard let rect = rect, let now = FrozenMeasure.measure(rect: rect, view: capture.view) else {
@@ -45,7 +54,17 @@ struct FreezeEditing {
             agreement = nil
             handles = rect?.handlePhotoPoints(view: capture.view)?.map { CGPoint(x: $0.x, y: $0.y) } ?? []
             drawing = nil
+            windowOutline = []
+            windowSize = nil
             return
+        }
+        if let f = frame, f.opening == rect {
+            let px = f.found.rect.cornersM.compactMap { capture.view.photoPixel(ofWorld: $0) }
+            windowOutline = px.count == 4 ? px.map { CGPoint(x: $0.x, y: $0.y) } : []
+            windowSize = windowOutline.isEmpty ? nil : f.found.size(inOpening: now)
+        } else {
+            windowOutline = []
+            windowSize = nil
         }
         handles = rect.handlePhotoPoints(view: capture.view)?.map { CGPoint(x: $0.x, y: $0.y) } ?? []
         let agree = earlier.isEmpty ? nil : FrozenMeasure.combine(earlier + [now], viewer: capture.view.viewer, device: capture.view.device)
@@ -77,8 +96,10 @@ struct FreezeEditing {
     var needsCheck: Bool { sent?.needsCheck ?? false }
     var photosDisagree: Bool { agreement?.disagrees ?? false }
     var canUse: Bool { sent != nil }
-    /// "Looks like a standard 24 × 36 window": a suggestion on the screen only; the measured size is what is sent and priced.
+    /// "Looks like a standard 24 × 36 window": a suggestion on the screen only; the measured size is what is sent and priced. A window's
+    /// nominal size is its frame's, so it goes by the window's own size when that was found, else by the opening's.
     var standardSize: StandardWindowSize? {
+        if let s = windowSize { return StandardWindowSizes.suggestion(widthIn: s.widthIn, heightIn: s.heightIn) }
         guard let w = sent?.widthIn, let h = sent?.heightIn else { return nil }
         return StandardWindowSizes.suggestion(widthIn: w, heightIn: h)
     }

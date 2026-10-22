@@ -32,11 +32,13 @@ struct HomeownerProgress: Codable, Equatable {
     var lastMethod: String?
     /// A style picked while the window's send was uncertain: kept until it can be applied.
     var pendingStyles: [String: String] = [:]
+    /// A photo-measured window's own frame (inside the opening that was sent), by window id: kept here because the server has no place for it.
+    var windowFrames: [String: WindowFrameSize] = [:]
 
     init() {}
 
     private enum Keys: String, CodingKey {
-        case step, rooms, tierKey, tierTotal, tierWindowCount, colors, bestTime, requestStatus, hasContact, hasBooking, windowCount, callbackReason, estimateWindows, estimateRoof, estimateRoofNote, floors, perimeterFt, lastMethod, pendingStyles
+        case step, rooms, tierKey, tierTotal, tierWindowCount, colors, bestTime, requestStatus, hasContact, hasBooking, windowCount, callbackReason, estimateWindows, estimateRoof, estimateRoofNote, floors, perimeterFt, lastMethod, pendingStyles, windowFrames
     }
 
     // Lenient: a progress record written by an older build still reads
@@ -61,6 +63,7 @@ struct HomeownerProgress: Codable, Equatable {
         perimeterFt = try? c.decodeIfPresent(Int.self, forKey: .perimeterFt)
         lastMethod = try? c.decodeIfPresent(String.self, forKey: .lastMethod)
         pendingStyles = (try? c.decodeIfPresent([String: String].self, forKey: .pendingStyles)) ?? [:]
+        windowFrames = (try? c.decodeIfPresent([String: WindowFrameSize].self, forKey: .windowFrames)) ?? [:]
     }
 }
 
