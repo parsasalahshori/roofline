@@ -59,6 +59,12 @@ final class ArMeasureController {
     private(set) var edgeLabels: [EdgeLabel] = []
     /// The window outline the phone found (TL, TR, BR, BL on screen), when it offers one: "Use these corners" places it.
     private(set) var proposalDots: [CGPoint] = []
+    /// The number each placed corner's dot shows (empty: 1, 2, 3, 4 in order).
+    private(set) var cornerNumbers: [Int] = []
+    /// The corner (0 TL, 1 TR, 2 BR, 3 BL) that looks off the frame, once the four are placed.
+    private(set) var flaggedCorner: Int?
+    /// The number (1 to 4) of the corner being placed again.
+    private(set) var redoSlot: Int?
     /// A corner may be placed now: tracking normal, wall locked, a surface under the reticle, not already sampling.
     private(set) var canPlace = false
 
@@ -87,7 +93,8 @@ final class ArMeasureController {
 
     /// `tapeStyle`: the homeowner app draws corners and sides in tape yellow (Chalk Line's measuring colour). `autoCorners`: the phone
     /// looks for the window in the camera image and offers its outline (the homeowner app; the rep app taps every corner).
-    init(tapeStyle: Bool = false, autoCorners: Bool = false) {
+    /// `rectangleFit`: the four corners are fitted to a level rectangle that is drawn, sized and sent (the homeowner app).
+    init(tapeStyle: Bool = false, autoCorners: Bool = false, rectangleFit: Bool = false) {
         lidar = DeviceCaps.hasLiDAR
         overlay = ArOverlay(tapeStyle: tapeStyle)
         sceneView = ArMeasureSceneView(frame: .zero)
@@ -95,7 +102,7 @@ final class ArMeasureController {
         sceneView.rendersCameraGrain = false
         sceneView.scene.rootNode.addChildNode(overlay.root)
         let mailbox = self.mailbox
-        engine = ArFrameEngine(lidar: lidar, device: lidar ? .arkitLidar : .arkit, autoCorners: autoCorners) { [weak self] snapshot, haptics in
+        engine = ArFrameEngine(lidar: lidar, device: lidar ? .arkitLidar : .arkit, autoCorners: autoCorners, rectangleFit: rectangleFit) { [weak self] snapshot, haptics in
             // Called on the engine's queue: keep only the newest snapshot, and wake the main queue once
             guard mailbox.post(snapshot, haptics) else { return }
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.drain() } }
@@ -171,13 +178,16 @@ final class ArMeasureController {
         }
         if moved(s.cornerDots, cornerDots) { cornerDots = s.cornerDots }
         if moved(s.proposalDots, proposalDots) { proposalDots = s.proposalDots }
+        if cornerNumbers != s.cornerNumbers { cornerNumbers = s.cornerNumbers }
+        if flaggedCorner != s.flaggedCorner { flaggedCorner = s.flaggedCorner }
+        if redoSlot != s.redoSlot { redoSlot = s.redoSlot }
         if s.edgeLabels.count != edgeLabels.count
             || zip(s.edgeLabels, edgeLabels).contains(where: { moved([$0.point], [$1.point]) || $0.text != $1.text || $0.live != $1.live }) {
             edgeLabels = s.edgeLabels
         }
         if s.overlay.key != lastOverlayKey {
             lastOverlayKey = s.overlay.key
-            overlay.update(corners: s.overlay.corners, aim: s.overlay.aim, wallNormal: s.overlay.wallNormal, closed: s.overlay.closed)
+            overlay.update(corners: s.overlay.corners, outline: s.overlay.outline, flagged: s.overlay.flagged, aim: s.overlay.aim, wallNormal: s.overlay.wallNormal, closed: s.overlay.closed)
         }
     }
 
@@ -194,6 +204,13 @@ final class ArMeasureController {
     func undo() {
         message = nil
         engine.undo()
+    }
+
+    /// Place one corner again, by its number (1 to 4, as its dot shows it), without starting over.
+    func redo(corner number: Int) {
+        message = nil
+        haptics.prepare()
+        engine.redo(corner: number)
     }
 
     /// Place the four corners of the outline the phone found (the same corners four taps would give).
@@ -322,18 +339,20 @@ final class ArOverlay {
         self.tapeStyle = tapeStyle
     }
 
-    func update(corners: [Vec3], aim: Vec3?, wallNormal: Vec3?, closed: Bool) {
+    /// `corners`: the corners as placed (a dot each). `outline`: the sides to draw when they are not the corners' own (the fitted rectangle).
+    /// `flagged`: the dot to draw red.
+    func update(corners: [Vec3], outline: [Vec3]? = nil, flagged: Int? = nil, aim: Vec3?, wallNormal: Vec3?, closed: Bool) {
         root.childNodes.forEach { $0.removeFromParentNode() }
         for (i, c) in corners.enumerated() {
-            let s = SCNSphere(radius: 0.006)
-            s.firstMaterial?.diffuse.contents = tapeStyle ? Self.tape : (i == 0 ? UIColor.systemYellow : UIColor.systemGreen)
+            let s = SCNSphere(radius: i == flagged ? 0.009 : 0.006)
+            s.firstMaterial?.diffuse.contents = i == flagged ? UIColor.systemRed : (tapeStyle ? Self.tape : (i == 0 ? UIColor.systemYellow : UIColor.systemGreen))
             s.firstMaterial?.lightingModel = .constant
             let n = SCNNode(geometry: s)
             n.simdPosition = c.simd
             root.addChildNode(n)
         }
-        var path = corners
-        if closed, let first = corners.first { path.append(first) }
+        var path = closed ? (outline ?? corners) : corners
+        if closed, let first = path.first { path.append(first) }
         if !closed, let a = aim, !corners.isEmpty { path.append(a) }
         if path.count >= 2 {
             for i in 1..<path.count {

@@ -35,8 +35,27 @@ struct ArHudModel: Equatable {
     var proposal: [CGPoint] = []
     var edges: [Edge] = []
     var loupe: UIImage?
-    /// The corner the button will place next (1 to 4).
-    var nextCorner: Int { min(readout.placed + 1, 4) }
+    /// The number each dot shows (empty: 1, 2, 3, 4 in order). While one corner is placed again the others keep their own numbers.
+    var dotNumbers: [Int] = []
+    /// The corner (1 to 4) that looks off the frame once the four are placed: its dot gets a red ring and "Redo corner N" is offered.
+    var flaggedCorner: Int?
+    /// The corner (1 to 4) being placed again, or nil.
+    var redoing: Int?
+    /// The corner the button will place next (1 to 4): the one being placed again, or the next in order.
+    var nextCorner: Int { redoing ?? min(readout.placed + 1, 4) }
+
+    /// The number the dot at `index` shows.
+    func number(ofDot index: Int) -> Int { index < dotNumbers.count ? dotNumbers[index] : index + 1 }
+
+    static let cornerNames = ["top-left", "top-right", "bottom-right", "bottom-left"]
+
+    /// The hint while one corner is placed again.
+    static func redoHint(corner n: Int) -> String {
+        "Aim the ring at the \(cornerNames[min(max(n, 1), 4) - 1]) corner (corner \(n)) again, then tap."
+    }
+
+    /// The hint for a corner that looks off the frame (the other three agree with each other, this one does not).
+    static func offCornerHint(corner n: Int) -> String { "Corner \(n) looks off the frame. Move it onto the corner and tap again." }
 
     /// The hint for the next corner, by name, one at a time (the corners are asked for top-left first, clockwise).
     static func cornerHint(placed: Int) -> String {
@@ -62,7 +81,7 @@ struct ArHudModel: Equatable {
         case .sampling: return "Hold still"
         case .holdStill: return "Hold the phone still"
         case .lost: return "Start again"
-        default: return "Tap corner \(nextCorner)"
+        default: return redoing != nil ? "Tap corner \(nextCorner) again" : "Tap corner \(nextCorner)"
         }
     }
 }
@@ -77,6 +96,11 @@ struct ArHud: View {
     let onDone: () -> Void
     var onHow: () -> Void = {}
     var onUseProposal: () -> Void = {}
+    /// A placed corner's dot was tapped (its number, 1 to 4): place that one again.
+    var onRedo: (Int) -> Void = { _ in }
+
+    /// Where the status card ends and how wide the screen is, as laid out (the magnifier stays clear of the corners).
+    @State private var topBarFrame = CGRect(x: 12, y: 8, width: 378, height: 124)
 
     var body: some View {
         ZStack {
@@ -84,10 +108,7 @@ struct ArHud: View {
             GeometryReader { _ in
                 if model.hasProposal { outline(model.proposal) }
                 ForEach(Array(model.dots.enumerated()), id: \.offset) { i, p in
-                    Circle().fill(Theme.tape).frame(width: 22, height: 22)
-                        .overlay(Circle().strokeBorder(Theme.navy, lineWidth: 2))
-                        .overlay(Text("\(i + 1)").wcMono(12, .bold, relativeTo: .caption2).foregroundStyle(Theme.tapeInk))
-                        .position(p)
+                    cornerDot(number: model.number(ofDot: i)).position(p)
                 }
                 ForEach(model.edges) { e in
                     Text(SizeFormat.attributed(e.inches, size: 17, weight: .bold, color: Theme.tapeInk))
@@ -111,21 +132,51 @@ struct ArHud: View {
             }
             VStack(spacing: 0) {
                 topBar
+                    .background(GeometryReader { g in Color.clear.preference(key: HudTopBarKey.self, value: g.frame(in: .global)) })
+                // The magnifier keeps clear of the corners on screen: top left unless one is under it, then top right
                 HStack(alignment: .top) {
+                    if loupeSide != .leading { Spacer() }
                     Magnifier(image: model.loupe)
-                    Spacer()
+                    if loupeSide != .trailing { Spacer() }
                 }
-                .padding(.horizontal, 16).padding(.top, 14)
+                .padding(.horizontal, LoupePlacement.inset).padding(.top, LoupePlacement.gap + (loupeSide == .center ? LoupePlacement.centerDrop : 0))
                 Spacer()
-                if model.hasProposal { useCorners }
                 hint
                 controls
             }
         }
+        .onPreferenceChange(HudTopBarKey.self) { topBarFrame = $0 }
         .environment(\.colorScheme, .dark)
         // Over the camera the controls stop at the largest ordinary text size: bigger would hide the window being measured
         // (VoiceOver reads the same words at any size)
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+    }
+
+    private var loupeSide: LoupePlacement.Side {
+        LoupePlacement.side(avoiding: model.dots + (model.hasProposal ? model.proposal : []), topBarBottom: topBarFrame.maxY, screenWidth: topBarFrame.maxX + 12)
+    }
+
+    /// A placed corner: a numbered tape dot. Once the four are placed a dot is a button (place that corner again), and the one that looks
+    /// off the frame has a pulsing red ring.
+    @ViewBuilder private func cornerDot(number: Int) -> some View {
+        let dot = Circle().fill(Theme.tape).frame(width: 22, height: 22)
+            .overlay(Circle().strokeBorder(Theme.navy, lineWidth: 2))
+            .overlay(Text("\(number)").wcMono(12, .bold, relativeTo: .caption2).foregroundStyle(Theme.tapeInk))
+        if model.phase == .complete {
+            Button { onRedo(number) } label: {
+                ZStack {
+                    if model.flaggedCorner == number { FlagRing() }
+                    dot
+                }
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Corner \(number)")
+            .accessibilityHint(model.flaggedCorner == number ? "Looks off the frame. Double tap to place it again" : "Double tap to place it again")
+        } else {
+            dot
+        }
     }
 
     /// The window the phone found: a dashed tape outline with a ring on each corner, on the picture (fixed on the wall, as the tape is).
@@ -226,9 +277,25 @@ struct ArHud: View {
             .background(Capsule().fill(Theme.tape))
             .overlay(Capsule().strokeBorder(Color.black.opacity(0.5), lineWidth: 2))
         }
-        .padding(.bottom, 10)
         .accessibilityLabel("Use these corners")
         .accessibilityHint("Puts the four corners on the window outlined in yellow")
+    }
+
+    /// A corner looks off the frame: place just that one again (the other three and the wall stay).
+    private func redoButton(corner n: Int) -> some View {
+        Button { onRedo(n) } label: {
+            HStack(spacing: 8) {
+                IconView(icon: .undo, size: 18, weight: 2.2)
+                Text("Redo corner \(n)").wc(17, .bold, relativeTo: .headline)
+            }
+            .foregroundStyle(Theme.tapeInk)
+            .padding(.horizontal, 22)
+            .frame(minHeight: 48)
+            .background(Capsule().fill(Theme.tape))
+            .overlay(Capsule().strokeBorder(Color.black.opacity(0.5), lineWidth: 2))
+        }
+        .accessibilityLabel("Redo corner \(n)")
+        .accessibilityHint("Aim at the real corner and tap to place just this one again")
     }
 
     private var hint: some View {
@@ -255,7 +322,12 @@ struct ArHud: View {
             }
             .padding(.horizontal, 28)
             if model.phase != .complete {
-                Text(model.buttonLabel).wc(17, .semibold, relativeTo: .headline).foregroundStyle(.white).padding(.bottom, 6)
+                // The outline the phone found is offered where the caption of the red button is: at the bottom, clear of the window's corners
+                if model.hasProposal { useCorners.padding(.bottom, 2) } else {
+                    Text(model.buttonLabel).wc(17, .semibold, relativeTo: .headline).foregroundStyle(.white).padding(.bottom, 6)
+                }
+            } else if let n = model.flaggedCorner {
+                redoButton(corner: n).padding(.bottom, 2)
             }
         }
         .padding(.top, 14)
@@ -307,6 +379,30 @@ struct ArHud: View {
         }
         .disabled(!enabled)
         .accessibilityLabel(label)
+    }
+}
+
+/// The magnifier clears the corners: where the status card ends (and, from its width, the screen's).
+private struct HudTopBarKey: PreferenceKey {
+    static var defaultValue = CGRect(x: 12, y: 8, width: 378, height: 124)
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
+}
+
+/// A red ring round the corner that looks off the frame; it pulses (not with Reduce Motion).
+private struct FlagRing: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pulse = false
+
+    var body: some View {
+        ZStack {
+            Circle().strokeBorder(Color.white, lineWidth: 6).frame(width: 38, height: 38)
+            Circle().strokeBorder(Theme.red, lineWidth: 4).frame(width: 38, height: 38)
+        }
+        .scaleEffect(pulse && !reduceMotion ? 1.22 : 1)
+        .opacity(pulse && !reduceMotion ? 0.7 : 1)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulse)
+        .onAppear { pulse = true }
+        .accessibilityHidden(true)
     }
 }
 

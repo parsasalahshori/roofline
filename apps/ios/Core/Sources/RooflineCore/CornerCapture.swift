@@ -91,6 +91,16 @@ public struct CornerCapture: Sendable {
         return .placed(index: corners.count - 1)
     }
 
+    /// Takes one corner back (its index in tap order) so that corner can be placed again; the others and the wall stay. With none left
+    /// the wall is let go, as in `undo`.
+    @discardableResult
+    public mutating func removeCorner(at index: Int) -> Bool {
+        guard corners.indices.contains(index) else { return false }
+        corners.remove(at: index)
+        if corners.isEmpty { wallPlane = nil }
+        return true
+    }
+
     /// Takes the last corner back. With none left, the wall is let go too: the next first corner locks the plane under
     /// the reticle again (the homeowner may be about to measure a different window).
     public mutating func undo() {
@@ -145,7 +155,10 @@ public struct CornerCapture: Sendable {
             let i = projected.enumerated().min { $0.element.distance(to: q) < $1.element.distance(to: q) }!.offset
             return corners[i].spreadM
         }
-        return FinishedCorners(pointsM: ordered, cornerSpreadM: spreads, maxOffPlaneM: maxOff, usedWallPlane: wallPlane != nil)
+        // Which tap each ordered corner was
+        let tapIndex: [Int] = ordered.map { q in projected.enumerated().min { $0.element.distance(to: q) < $1.element.distance(to: q) }!.offset }
+        let fit = RectangleFit.fit(ordered: ordered, plane: pl, viewer: viewer, spreadM: spreads)
+        return FinishedCorners(pointsM: ordered, cornerSpreadM: spreads, maxOffPlaneM: maxOff, usedWallPlane: wallPlane != nil, tapIndex: tapIndex, fit: fit)
     }
 }
 
@@ -156,4 +169,15 @@ public struct FinishedCorners: Equatable, Sendable {
     /// How far the raw corners were off the plane they were projected onto (metres).
     public var maxOffPlaneM: Double
     public var usedWallPlane: Bool
+    /// For each ordered corner (TL, TR, BR, BL), which tap it was (an index into `CornerCapture.corners`).
+    public var tapIndex: [Int] = []
+    /// The best level rectangle through the four corners (see `RectangleFit`); nil when there is none (a floor, a skylight).
+    public var fit: RectangleFit?
+
+    /// The window to show, size and send: the fitted rectangle when there is one, else the four corners as placed.
+    public var windowPointsM: [Vec3] { fit?.pointsM ?? pointsM }
+    /// The spreads that go with `windowPointsM` (see `RectangleFit.spreadM(corner:)`).
+    public var windowSpreadM: [Double] { fit?.spreadM(corner: cornerSpreadM) ?? cornerSpreadM }
+    /// The corner (0 TL, 1 TR, 2 BR, 3 BL) that looks off the frame, when the corners disagree with the rectangle.
+    public var flaggedCorner: Int? { fit?.flaggedCorner }
 }

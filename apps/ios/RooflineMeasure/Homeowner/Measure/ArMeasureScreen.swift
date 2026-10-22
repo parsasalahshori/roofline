@@ -37,7 +37,7 @@ struct ArMeasureScreen: View {
             ZStack {
                 ArSceneContainer(view: controller.sceneView).ignoresSafeArea()
                 ArHud(model: model(controller), onClose: { store.measureSession = nil }, onPlace: { controller.placeCorner() }, onUndo: { controller.undo() },
-                      onDone: { finish(controller) }, onHow: { showHowTo = true }, onUseProposal: { controller.useProposal() })
+                      onDone: { finish(controller) }, onHow: { showHowTo = true }, onUseProposal: { controller.useProposal() }, onRedo: { controller.redo(corner: $0) })
                 if showHowTo { ArHowTo { HowToSeen.markSeen("ar"); showHowTo = false } }
             }
             .onChange(of: controller.message) { _, m in
@@ -51,7 +51,7 @@ struct ArMeasureScreen: View {
                     guard DeviceCaps.arSupported else { return }
                     access = await CameraAccess.request()
                     if access == .allowed {
-                        let c = ArMeasureController(tapeStyle: true, autoCorners: true)
+                        let c = ArMeasureController(tapeStyle: true, autoCorners: true, rectangleFit: true)
                         controller = c
                         c.start()
                     }
@@ -67,6 +67,9 @@ struct ArMeasureScreen: View {
         m.canUndo = !controller.capture.points.isEmpty
         m.dots = controller.cornerDots
         m.proposal = controller.proposalDots
+        m.dotNumbers = controller.cornerNumbers
+        m.flaggedCorner = controller.flaggedCorner.map { $0 + 1 }
+        m.redoing = controller.redoSlot
         m.edges = controller.edgeLabels.map { ArHudModel.Edge(id: $0.id, point: $0.point, inches: $0.inches, live: $0.live) }
         m.loupe = controller.loupe
         m.canPlace = controller.canPlace
@@ -76,7 +79,7 @@ struct ArMeasureScreen: View {
             m.hint = "Move the phone slowly to find the wall."
         case .aiming:
             m.phase = .ready
-            m.hint = m.hasProposal ? ArHudModel.proposalHint : ArHudModel.cornerHint(placed: controller.capture.points.count)
+            m.hint = m.hasProposal ? ArHudModel.proposalHint : (m.redoing.map(ArHudModel.redoHint(corner:)) ?? ArHudModel.cornerHint(placed: controller.capture.points.count))
         case .sampling:
             m.phase = .sampling(controller.sampleProgress)
             m.hint = "Hold still on the corner."
@@ -92,7 +95,7 @@ struct ArMeasureScreen: View {
         case .complete:
             m.phase = .complete
             m.cornersInPhoto = controller.cornersInPhoto
-            m.hint = controller.cornersInPhoto ? ArHowTo.checkHint : ArHowTo.stepBackHint
+            m.hint = !controller.cornersInPhoto ? ArHowTo.stepBackHint : (m.flaggedCorner.map(ArHudModel.offCornerHint(corner:)) ?? ArHowTo.checkHint)
         }
         if let message = controller.message, controller.phase != .lost { m.hint = message }
         return m
@@ -102,7 +105,8 @@ struct ArMeasureScreen: View {
     private func finish(_ controller: ArMeasureController) {
         guard let cap = controller.makeCapture() else { return }
         controller.pause()
-        let scale = WindowPhotoScale.ar(ArScale(pointsM: cap.finished.pointsM, trackingLostCount: controller.capture.trackingLostCount, device: controller.device, cornerSpreadM: cap.finished.cornerSpreadM))
+        // The window goes as the rectangle fitted to the four corners (the same one the screen drew and sized), with the doubt of any corner that did not line up
+        let scale = WindowPhotoScale.ar(ArScale(pointsM: cap.finished.windowPointsM, trackingLostCount: controller.capture.trackingLostCount, device: controller.device, cornerSpreadM: cap.finished.windowSpreadM))
         store.capture(scale: scale, corners: cap.shot.corners, jpeg: cap.shot.jpeg, widthPx: cap.shot.widthPx, heightPx: cap.shot.heightPx, in: session)
     }
 }
