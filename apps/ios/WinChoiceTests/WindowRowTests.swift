@@ -124,7 +124,7 @@ final class WindowRowTests: XCTestCase {
         let pro = StoreHarness(capabilities: .depthSensorPhone("iPhone 15 Pro")).store
         XCTAssertEqual(pro.methodAccuracy(.corners).text, "About 1/4 inch · best")
         XCTAssertTrue(pro.methodAccuracy(.corners).best)
-        XCTAssertEqual(pro.methodAccuracy(.roomScan).text, "About 1 inch · good for a quote")
+        XCTAssertEqual(pro.methodAccuracy(.roomScan).text, "Good for a quote", "Apple publishes no size accuracy for its room scan, so none is claimed")
         XCTAssertEqual(pro.methodAccuracy(.card).text, "About 1/4 to 1/2 inch")
         let basic = StoreHarness(capabilities: MeasureCapabilities(deviceName: "iPhone 14", corners: true, depthSensor: false, roomScan: false, camera: true)).store
         XCTAssertEqual(basic.methodAccuracy(.corners).text, "About 3/8 inch")

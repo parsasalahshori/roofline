@@ -50,7 +50,7 @@ extension HomeownerStore {
     func isAvailable(_ m: MeasureMethod) -> Bool {
         switch m {
         case .corners: return capabilities.corners
-        case .roomScan: return capabilities.roomScan
+        case .roomScan, .quickScan: return capabilities.roomScan
         case .card: return capabilities.camera
         }
     }
@@ -70,7 +70,8 @@ extension HomeownerStore {
         case .corners:
             return capabilities.depthSensor ? ("\(SizeWording.accuracyRange(lowIn: 0.25, highIn: 0.25)) · best", true)
                                             : (SizeWording.accuracyRange(lowIn: 0.375, highIn: 0.375), false)
-        case .roomScan: return ("\(SizeWording.accuracyRange(lowIn: 1, highIn: 1)) · good for a quote", false)
+        // Apple publishes no size accuracy for its room scan, so none is claimed here: it is a quote-grade size, confirmed at the visit
+        case .roomScan, .quickScan: return ("Good for a quote", false)
         case .card: return (SizeWording.accuracyRange(lowIn: 0.25, highIn: 0.5), false)
         }
     }
@@ -80,7 +81,8 @@ extension HomeownerStore {
         switch m {
         case .corners:
             return capabilities.depthSensor ? ("Most exact (recommended)", true) : ("\(methodAccuracy(m).text) · good for a quote", false)
-        case .roomScan: return ("Fastest · whole room", false)
+        case .roomScan: return ("Every window in the room", false)
+        case .quickScan: return ("Recommended for speed", false)
         case .card: return capabilities.depthSensor ? ("Works on any iPhone", false) : ("Recommended for your iPhone", true)
         }
     }

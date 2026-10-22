@@ -2,7 +2,8 @@ import RoomPlan
 import RooflineCore
 import SwiftUI
 
-/// "Scan the whole room" on a phone with a depth sensor: Apple's room capture with a small bar over it, then the review (07b).
+/// "Scan the whole room" or "Quick scan (Apple)" on a phone with a depth sensor: Apple's room capture with the windows-found bar
+/// over it, then the review (07b). The quick scan is one wall: point at it, pan a few seconds, Done.
 /// The scanner (shared with the rep app) keeps a photo to go with each window it finds.
 struct RoomScanScreen: View {
     @Environment(HomeownerStore.self) private var store
@@ -11,10 +12,12 @@ struct RoomScanScreen: View {
     @State private var scanner: RoomScanner?
     @State private var access: CameraAccess.State?
 
+    private var mode: RoomScanMode { session.method == .quickScan ? .oneWall : .wholeRoom }
+
     var body: some View {
         Group {
             #if DEBUG
-            if let mode = store.debugOpen, mode.hasPrefix("scan") {
+            if let mode = store.debugOpen, mode.hasPrefix("scan") || mode.hasPrefix("quickscan") {
                 DebugScanSample(session: session)
             } else {
                 live
@@ -48,7 +51,7 @@ struct RoomScanScreen: View {
                 .task {
                     access = await CameraAccess.request()
                     if access == .allowed {
-                        let s = RoomScanner()
+                        let s = RoomScanner(mode: mode)
                         scanner = s
                         s.start()
                     }
@@ -62,46 +65,49 @@ struct RoomScanScreen: View {
             if scanner.phase == .processing {
                 VStack(spacing: 16) {
                     ProgressView().tint(.white).scaleEffect(1.3)
-                    Text("Building your room…").wc(17, .semibold, relativeTo: .headline).foregroundStyle(.white)
+                    Text(mode == .oneWall ? "Measuring your windows…" : "Building your room…").wc(17, .semibold, relativeTo: .headline).foregroundStyle(.white)
                 }
                 .padding(28)
                 .background(RoundedRectangle(cornerRadius: 20).fill(Color(white: 0.12, opacity: 0.85)))
             } else {
-            VStack {
-                HStack(spacing: 10) {
-                    Button { store.measureSession = nil } label: {
-                        IconView(icon: .close, size: 20, weight: 2).foregroundStyle(.white).frame(width: 44, height: 44).background(Circle().fill(Color(white: 0.12, opacity: 0.75)))
-                    }
-                    .accessibilityLabel("Cancel the scan")
-                    Text(session.room).wc(17, .semibold, relativeTo: .headline).foregroundStyle(.white)
-                        .padding(.horizontal, 16).frame(height: 44)
-                        .background(Capsule().fill(Color(white: 0.12, opacity: 0.75)))
-                    Spacer()
-                }
-                .padding(.horizontal, 12).padding(.top, 8)
-                Spacer()
-                Text("Walk slowly around the room. Keep every window in view.").wc(16, .medium, relativeTo: .body).foregroundStyle(.white).multilineTextAlignment(.center)
-                    .padding(.horizontal, 16).padding(.vertical, 12)
-                    .background(Capsule().fill(Color(white: 0.12, opacity: 0.78)))
-                    .padding(.horizontal, 20)
-                WCPrimaryButton(title: "Done scanning") { scanner.stop() }
-                    .padding(.horizontal, Theme.gutter).padding(.vertical, 12)
-            }
-            // Over the camera the controls stop at the largest ordinary text size, so the room stays in view
-            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                ScanHud(room: session.room, progress: scanner.progress, windows: scanner.liveWindows,
+                        onCancel: { store.measureSession = nil }, onDone: { scanner.stop() })
             }
         }
     }
 
-    private func review(_ scanner: RoomScanner) -> some View {
+    @ViewBuilder private func review(_ scanner: RoomScanner) -> some View {
         let windows = scanner.found.filter { !$0.isDoor }
-        let rows = windows.enumerated().map { i, f in
-            ScanReviewRow(id: f.id, letter: Self.letter(i), name: windows.count > 1 ? "Window \(Self.letter(i))" : "Window", room: session.room, included: f.include,
-                          widthM: f.widthM, heightM: f.heightM, confidence: f.confidence,
-                          styleKey: StyleGuess.suggestion(widthIn: f.widthM * inchesPerMetre, heightIn: f.heightM * inchesPerMetre, offered: store.styles.map { $0.key }).keys.first)
+        if windows.isEmpty {
+            noWindows
+        } else {
+            let rows = windows.enumerated().map { i, f in
+                ScanReviewRow(id: f.id, letter: ScanWording.letter(i), name: windows.count > 1 ? "Window \(ScanWording.letter(i))" : "Window", room: session.room, included: f.include,
+                              widthM: f.widthM, heightM: f.heightM, confidence: f.confidence,
+                              styleKey: StyleGuess.suggestion(widthIn: f.widthM * inchesPerMetre, heightIn: f.heightM * inchesPerMetre, offered: store.styles.map { $0.key }).keys.first,
+                              photo: f.photo)
+            }
+            RoomScanReview(mode: mode, room: session.room, seconds: scanner.scanSeconds, plan: scanner.plan ?? ScanPlan(walls: [], openings: [], wallHeight: 2.4), rows: rows,
+                           onAdd: { chosen in add(chosen, scanner: scanner) }, onCorners: { corners() }, onCancel: { store.measureSession = nil })
         }
-        return RoomScanReview(room: session.room, seconds: scanner.scanSeconds, plan: scanner.plan ?? ScanPlan(walls: [], openings: [], wallHeight: 2.4), rows: rows,
-                              onAdd: { chosen in add(chosen, scanner: scanner) }, onCorners: { corners() }, onCancel: { store.measureSession = nil })
+    }
+
+    /// The scan worked, but there is no window in it: say so, and offer another go or the photo method.
+    private var noWindows: some View {
+        VStack(spacing: 18) {
+            Text(ScanWording.foundTitle(0)).wcHeading(24, .heavy, relativeTo: .title).foregroundStyle(.white).multilineTextAlignment(.center)
+                .accessibilityAddTraits(.isHeader)
+            Text(mode == .oneWall ? "Point your phone at the window for a few seconds, then tap Done. Or measure it with a photo and a bank card."
+                                  : "Walk round the room again with every window in view. Or measure them with a photo and a bank card.")
+                .wc(16, relativeTo: .body).foregroundStyle(Color.white.opacity(0.85)).multilineTextAlignment(.center)
+            WCPrimaryButton(title: "Scan again") { store.measureSession = MeasureSession(method: session.method, room: session.room, number: session.number) }
+            if store.isAvailable(.card) {
+                WCSecondaryButton(title: "Measure with a photo instead") { photoMethod() }
+            }
+            Button("Close") { store.measureSession = nil }
+                .wc(17, .semibold, relativeTo: .body).foregroundStyle(Color.white.opacity(0.85)).frame(minHeight: Theme.minTap)
+        }
+        .padding(Theme.gutter)
     }
 
     private func failed(_ message: String) -> some View {
@@ -109,7 +115,7 @@ struct RoomScanScreen: View {
             Text("The scan didn't finish").wcHeading(24, .heavy, relativeTo: .title).foregroundStyle(.white).multilineTextAlignment(.center)
                 .accessibilityAddTraits(.isHeader)
             Text(message).wc(16, relativeTo: .body).foregroundStyle(Color.white.opacity(0.85)).multilineTextAlignment(.center)
-            WCPrimaryButton(title: "Try again") { store.measureSession = MeasureSession(method: .roomScan, room: session.room, number: session.number) }
+            WCPrimaryButton(title: "Try again") { store.measureSession = MeasureSession(method: session.method, room: session.room, number: session.number) }
             WCSecondaryButton(title: "Measure one window at a time instead") { corners() }
             Button("Close") { store.measureSession = nil }
                 .wc(17, .semibold, relativeTo: .body).foregroundStyle(Color.white.opacity(0.85)).frame(minHeight: Theme.minTap)
@@ -117,17 +123,21 @@ struct RoomScanScreen: View {
         .padding(Theme.gutter)
     }
 
-    private static func letter(_ i: Int) -> String { String(UnicodeScalar(UInt8(65 + i % 26))) }
-
+    /// Saves the windows that were kept, each in the room it was given (the review can rename the room or move one window), through
+    /// the same path as every other measured window: the outbox, unchanged.
     private func add(_ chosen: [ScanReviewRow], scanner: RoomScanner) {
         let multiple = chosen.count > 1
         let list: [ScannedWindow] = chosen.compactMap { row in
             guard let f = scanner.found.first(where: { $0.id == row.id }) else { return nil }
-            let shot = scanner.keyframePhoto(for: f)
-            return ScannedWindow(name: multiple ? "\(row.room), window \(row.letter)" : "", widthM: f.widthM, heightM: f.heightM, confidence: f.confidence,
-                                 jpeg: shot?.jpeg, imageWidthPx: shot?.widthPx ?? 0, imageHeightPx: shot?.heightPx ?? 0, corners: shot?.corners, room: row.room)
+            return row.scannedWindow(multiple: multiple, photo: scanner.keyframePhoto(for: f))
         }
-        Task { await store.saveScanned(list, room: session.room) }
+        Task { await store.saveScanned(list, room: chosen.first?.room ?? session.room) }
+    }
+
+    /// "Measure with a photo instead": the same room, the bank-card photo.
+    private func photoMethod() {
+        store.method = .card
+        store.measureSession = MeasureSession(method: .card, room: session.room, number: session.number)
     }
 
     /// "Tap corners for each one": the same room, the corner method instead.

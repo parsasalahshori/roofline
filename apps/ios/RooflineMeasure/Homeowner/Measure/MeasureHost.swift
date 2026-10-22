@@ -17,7 +17,7 @@ struct MeasureHost: View {
             if !store.pendingRestored {
                 switch session.method {
                 case .corners: ArMeasureScreen(session: session).id(attempt)
-                case .roomScan: RoomScanScreen(session: session).id(attempt)
+                case .roomScan, .quickScan: RoomScanScreen(session: session).id(attempt)
                 case .card: CardPhotoFlow(session: session).id(attempt)
                 }
             }

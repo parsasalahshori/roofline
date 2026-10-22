@@ -28,12 +28,21 @@ round it on the map's own projection (`MapProxy`), then the cards. About 2.5 s, 
 holds back the price (the pinned button is there throughout). With no outline, or when the phone is offline, it is the small static
 card as before.
 
-Three ways to measure, each saved as one window:
+Four ways to measure, each saved as one window:
+
+- **Quick scan (Apple)** (RoomPlan, depth-sensor iPhones; listed first on the method screen, "Recommended for speed"): point at the wall with
+  the window, pan a few seconds, Done (the button waits 3 s, `ScanProgress`). While it runs, RoomCaptureView outlines the windows and a bar
+  says "2 windows found" with each one's size so far (`ScanHud`, fed by the capture session's `didUpdate`). The review lists each window
+  with its photo and outline, its size to the eighth and "Apple's scan · fairly sure"; a wrong one can be left out, the room named. If the
+  finished room has no window or cannot be built from a short pan, the windows seen while scanning are used (`ScanFinish`); none at all
+  is "We didn't find a window" with Scan again and the photo method. Scale kind `roomplan`, quote-grade ("check"), no accuracy number claimed.
 
 - **Tap the 4 corners** (ARKit, any iPhone with AR; a depth sensor is "about 1/4 inch · best"): `ArMeasureController` with the
   tape-style HUD, scale kind `ar`.
 - **Scan the whole room** (RoomPlan, depth-sensor iPhones): finds every window in the room, a 3D / plan review where each can be
-  left out or moved to another room, scale kind `roomplan`.
+  left out or moved to another room, scale kind `roomplan`. A window is a level rectangle (`RoomWindowShape`, Core): RoomPlan's
+  `dimensions`, or its `polygonCorners` when those are four square corners that agree with the dimensions (else the dimensions stand and
+  the confidence drops a step).
 - **Photo with a bank card** (any iPhone with a camera): one photo with a card flat on the glass, tap the card's four corners and
   the frame's four with a magnifier; the phone shows the size live with `CardSizing` (a Swift port of the server's model, checked
   against the real server's answers), scale kind `card`. Orientation is applied to the pixels and the 35 mm focal length is the only
@@ -161,7 +170,7 @@ xcrun simctl launch booted com.premjeetech.winchoice.measure -debugFake -debugSc
 ```
 
 The simulator has no camera, AR or RoomPlan: the measuring screens show a designed "needs an iPhone" page, and DEBUG builds can
-open them over a drawn window photo (`-debugOpen hud|hud-howto|freeze|freeze-clutter|freeze-off|freeze-two|label|scan|card|card3|card4|window2|window4|windowdart`, with
+open them over a drawn window photo (`-debugOpen hud|hud-howto|freeze|freeze-clutter|freeze-off|freeze-two|label|scan|quickscan|quickscan-live|card|card3|card4|window2|window4|windowdart`, with
 `-debugScenario method`). Unsigned simulator builds also have no Keychain: the app says it cannot save the request for later and carries on.
 
 **DEBUG-only launch arguments** (`Homeowner/App/HomeownerDebug.swift`, compiled out of Release):

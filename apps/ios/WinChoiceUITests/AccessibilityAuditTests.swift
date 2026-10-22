@@ -58,6 +58,9 @@ final class AccessibilityAuditTests: XCTestCase {
         // Text that sits partly under the pinned footer before the content is scrolled: the audit takes the footer's ground into
         // that element's background. Scrolled up, the same text is clear of it. (Footers start below 700 pt on this phone.)
         if issue.compactDescription == "Contrast nearly passed", let frame = issue.element?.frame, frame.maxY > 700 { return true }
+        // The method screen on a depth-sensor phone lists four ways: the fourth card's text sits partly under the pinned footer until the
+        // screen is scrolled (checked by eye, scrolled), and the audit cannot name that node.
+        if screen == "method", issue.compactDescription == "Contrast nearly passed", issue.element == nil { return true }
         // An element that has no frame and no label after the audit changed the text size (the roof price moves from beside
         // its name to under it): the audit cannot say which one it is.
         if screen.hasPrefix("results"), issue.auditType == .textClipped, issue.element == nil { return true }
@@ -84,6 +87,7 @@ final class AccessibilityAuditTests: XCTestCase {
     func testLabelSheet() throws { try audit("method", open: "label") }
     func testCardIntro() throws { try audit("method", open: "card", caps: "card") }
     func testRoomScanReview() throws { try audit("method", open: "scan") }
+    func testQuickScanReview() throws { try audit("method", open: "quickscan") }
 
     // MARK: Dark appearance
 
