@@ -81,6 +81,7 @@ import { windowMeasurementRoutes } from './routes/window-measurements.ts';
 import { windowMeasurementOrderRoutes, windowOrderRoutes, windowOrderSettingsRoutes } from './routes/window-orders.ts';
 import type { StreetView } from './providers/street-view.ts';
 import type { WindowDetector } from './providers/window-detector.ts';
+import type { WindowSegmenter } from './providers/window-segmenter.ts';
 import { tierTemplateRoutes } from './routes/tier-templates.ts';
 import { estimatorSettingsRoutes } from './routes/estimator-settings.ts';
 import { stormLayerRoutes, stormRoutes } from './routes/storms.ts';
@@ -203,6 +204,8 @@ export type AppDeps = {
   streetView: StreetView;
   /** Measure windows' optional window detector (providers/window-detector.ts): none by default. */
   windowDetector: WindowDetector;
+  /** The homeowner app's optional window segmenter (providers/window-segmenter.ts): none by default. */
+  windowSegmenter: WindowSegmenter;
 };
 
 export type AppOptions = {

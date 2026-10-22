@@ -28,6 +28,7 @@ import { HOMEOWNER_LIMITS, HOMEOWNER_UNKNOWN_REQUEST } from '../src/public/homeo
 import { DETECT_MAX_BYTES } from '../src/public/homeowner-detect.ts';
 import { UPLOAD_GUARD } from '../src/public/homeowner-upload.ts';
 import { DetectorError, type DetectedBox, type WindowDetector } from '../src/providers/window-detector.ts';
+import type { WindowQuad, WindowSegmenter } from '../src/providers/window-segmenter.ts';
 import { systemCtx } from '../src/public/quote-access.ts';
 import { seedFootprintFixture } from '../src/scripts/footprint-fixture.ts';
 import { arCorners, boxCorners, cardScene, greyJpeg, sha256 } from './homeowner-fixture.ts';
@@ -1677,14 +1678,60 @@ describe('POST /requests/:id/detect-windows (the AI window finder)', () => {
         { x: 0.2712, y: 0.23, w: 0.4921, h: 0.5481, confidence: 0.2923 },
         { x: 0.3, y: 0.3, w: 0.4, h: 0.2, confidence: 0.15 },
       ],
+      // The first box holds the middle of the photo (0.27..0.76 across, 0.23..0.78 down): it is the one the person aimed at
+      picked: { x: 0.2712, y: 0.23, w: 0.4921, h: 0.5481, confidence: 0.2923 },
+      quad: null,
       widthPx: 1024,
       heightPx: 768,
       detector: 'owlv2',
+      segmenter: null,
       ms: expect.any(Number),
+      msDetect: expect.any(Number),
+      msSegment: 0,
     });
     expect(seen).toBe(bytes.length);
     expect(await count('window_measurements', t.seed.a.companyId)).toBe(0);
     expect(await view(s).then((v) => v.windows)).toEqual([]);
+  });
+
+  test('with the segmenter on: the picked box and its four corners; a segmenter that fails or finds no quad leaves the boxes', async () => {
+    t.deps.windowDetector = detector(async () => [
+      { x: 0.25, y: 0.25, w: 0.5, h: 0.5, confidence: 0.3 },
+      { x: 0.8, y: 0.2, w: 0.15, h: 0.2, confidence: 0.4 },
+    ]);
+    const asked: unknown[] = [];
+    const quad: WindowQuad = { corners: [[0.25, 0.25], [0.75, 0.25], [0.75, 0.75], [0.25, 0.75]], quality: 0.97, fill: 0.99, residual: 0.001, maskScore: 0.9 };
+    const segmenter: WindowSegmenter = {
+      name: 'sam2',
+      configured: true,
+      segment: async (_jpeg, box, aim) => {
+        asked.push({ box, aim });
+        return quad;
+      },
+    };
+    t.deps.windowSegmenter = segmenter;
+    const s = await start();
+    const res = await post(s);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body).toMatchObject({ picked: { x: 0.25, w: 0.5 }, quad, segmenter: 'sam2' });
+    expect(asked).toEqual([{ box: { x: 0.25, y: 0.25, w: 0.5, h: 0.5, confidence: 0.3 }, aim: { x: 0.5, y: 0.5 } }]);
+    // The app may say where it aimed
+    const other = await request(t.app).post(`${base()}/requests/${s.id}/detect-windows?aimX=0.85&aimY=0.3`).set('X-Forwarded-For', nextIp()).set('Authorization', `Bearer ${s.token}`).set('Content-Type', 'image/jpeg').send(photo());
+    expect(other.body.picked).toMatchObject({ x: 0.8, confidence: 0.4 });
+    // A segmenter that fails: the boxes still come, the failure is logged, never shown
+    const logged: string[] = [];
+    t.deps.logError = (_e: unknown, where?: string) => void logged.push(where ?? '');
+    t.deps.windowSegmenter = { name: 'sam2', configured: true, segment: async () => Promise.reject(new Error('onnx exploded')) };
+    const failed = await post(s);
+    expect(failed.status).toBe(200);
+    expect(failed.body.quad).toBeNull();
+    expect(failed.body.boxes).toHaveLength(2);
+    expect(logged).toContain('homeowner-segment-window');
+    // No box holds the aim: nothing to cut out
+    t.deps.windowSegmenter = { name: 'sam2', configured: true, segment: async () => Promise.reject(new Error('must not be asked')) };
+    t.deps.windowDetector = detector(async () => [{ x: 0.8, y: 0.2, w: 0.15, h: 0.2, confidence: 0.4 }]);
+    const none = await post(s);
+    expect(none.body).toMatchObject({ picked: null, quad: null });
   });
 
   test('no windows in the photo is an empty list, not an error', async () => {

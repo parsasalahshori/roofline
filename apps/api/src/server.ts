@@ -43,6 +43,7 @@ const server = app.listen(config.PORT, config.HOST, (err?: Error) => {
 
 // The window detector's model loads now, not with the first photo (a phone waits a few seconds for it)
 void deps.windowDetector.warm?.().catch((err: unknown) => console.warn(`The window detector did not warm up: ${describeErrorForLog(err)}`));
+void deps.windowSegmenter.warm?.().catch((err: unknown) => console.warn(`The window segmenter did not warm up: ${describeErrorForLog(err)}`));
 
 // D1 Front Desk: the /relay WebSocket upgrade
 const relay = attachRelayUpgrade(server, deps);

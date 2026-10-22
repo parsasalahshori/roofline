@@ -69,6 +69,7 @@ describe('loadConfig', () => {
       GOOGLE_SOLAR_DATA_LAYERS: true,
       ROOF_3D_MODE: 'on',
       WINDOW_DETECTOR: 'off',
+      WINDOW_SEGMENTER: 'off',
       GOOGLE_ADS_API_VERSION: 'v21',
       META_GRAPH_VERSION: 'v24.0',
       POSTMARK_BROADCAST_STREAM: 'broadcast',

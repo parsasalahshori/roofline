@@ -416,21 +416,33 @@ so it does not count toward the request's photos.
 {
   "boxes": [
     { "x": 0.2712, "y": 0.23, "w": 0.4921, "h": 0.5481, "confidence": 0.2923 },
-    { "x": 0.3, "y": 0.3, "w": 0.4, "h": 0.2, "confidence": 0.15 }
+    { "x": 0.8, "y": 0.2, "w": 0.15, "h": 0.2, "confidence": 0.4 }
   ],
-  "widthPx": 768, "heightPx": 1024, "detector": "owlv2", "ms": 910
+  "picked": { "x": 0.2712, "y": 0.23, "w": 0.4921, "h": 0.5481, "confidence": 0.2923 },
+  "quad": { "corners": [[0.274, 0.227], [0.736, 0.228], [0.737, 0.76], [0.289, 0.76]], "quality": 0.941, "fill": 1, "residual": 0.0011, "maskScore": 0.943 },
+  "widthPx": 768, "heightPx": 1024, "detector": "owlv2", "segmenter": "sam2",
+  "ms": 1330, "msDetect": 830, "msSegment": 500
 }
 ```
 
 `x`, `y`, `w`, `h` are fractions (0 to 1) of the photo's width and height, from its top-left. `boxes` are best first, at most 8,
-and may be empty. A box inside another (a sash inside its window) is kept: choosing is the app's (it takes the box that holds
-the photo's middle, preferring the largest that scores within 70% of the best). `confidence` is the model's own score, low in
+and may be empty. A box inside another (a sash inside its window) is kept. `confidence` is the model's own score, low in
 absolute terms (a clear window is about 0.25 to 0.5); only compare it between boxes of one photo. Picture frames, doors,
-mirrors and televisions are asked for too, and a window box that one of them scores about as well on is dropped. `ms` is the
-server's time for the detection.
+mirrors and televisions are asked for too, and a window box that one of them scores about as well on is dropped.
+
+`picked` is the window the person aimed at: the box that holds the photo's middle (or the point `?aimX=0.5&aimY=0.5`, 0 to 1),
+the one with the best score, and when boxes nest the largest that holds it and scores within 70% of the best; `null` when no box
+holds it. `quad` is that window cut out by SAM 2 and fitted with four straight lines: its corners TL, TR, BR, BL as fractions of
+the photo, and how good the fit is. `quality` (0 to 1) is how much of the quad the mask fills, how smooth its contour is round the
+lines and how much of each side the contour runs along (a side hidden behind a curtain lowers it); the app starts from the quad
+at 0.7 or more and from `picked` below that. `quad` is `null` when `WINDOW_SEGMENTER` is off (then `segmenter` is `null`), when
+nothing is picked, when the mask has no believable four-sided shape or the window runs off the photo, or when the segmenter
+failed (the boxes still come). `ms` is the server's time for all of it, `msDetect` and `msSegment` for each step.
 
 `503 detector_unavailable` / `detector_failed`, `409 callback_only`, `413`, `415` (not a JPEG), `429` as in the tables above.
-Turn it on with `WINDOW_DETECTOR=owlv2` and `WINDOW_MODEL_DIR=<dir holding Xenova/owlv2-base-patch16-ensemble>`.
+Turn it on with `WINDOW_DETECTOR=owlv2` and `WINDOW_MODEL_DIR=<dir holding Xenova/owlv2-base-patch16-ensemble>`; add
+`WINDOW_SEGMENTER=sam2` (with `SAM_MODEL_DIR=<dir holding onnx-community/sam2.1-hiera-tiny-ONNX>`, default `WINDOW_MODEL_DIR`) for the quad.
+Neither downloads anything: a model that is not in the folder is reported as unavailable.
 
 ## POST /requests/:id/debug-captures/:captureId/:file (tester builds only)
 

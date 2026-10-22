@@ -178,6 +178,17 @@ const ConfigSchema = z
       .transform((v) => path.resolve(REPO_ROOT, v))
       .optional(),
     /**
+     * The optional second step of "find your window" (public/homeowner-detect.ts): SAM 2.1 cuts out the window OWLv2 found and its
+     * mask becomes the window's four corners. off (default): no quad, the phone starts from the box. sam2: loaded only from
+     * SAM_MODEL_DIR (else WINDOW_MODEL_DIR), no download; without the model there it is reported as unconfigured and skipped.
+     */
+    WINDOW_SEGMENTER: z.enum(['off', 'sam2'], { error: 'must be off or sam2' }).default('off'),
+    /** transformers.js local model directory holding onnx-community/sam2.1-hiera-tiny-ONNX. Defaults to WINDOW_MODEL_DIR. Resolved from the repository root. */
+    SAM_MODEL_DIR: z
+      .string()
+      .transform((v) => path.resolve(REPO_ROOT, v))
+      .optional(),
+    /**
      * The homeowner app's DEBUG capture dump (public/homeowner-debug.ts): a directory that tester builds of the phone app
      * (Debug or TestFlight) write each Capture's photo, depth, camera and result into, so a bad proposal can be replayed on a
      * Mac. Unset (default): the route does not exist (404 debug_captures_off). Resolved from the repository root. Holds

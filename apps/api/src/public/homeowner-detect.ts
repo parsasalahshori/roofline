@@ -4,7 +4,8 @@ import { type Router } from 'express';
 import type { AppDeps } from '../app.ts';
 import { AppError } from '../errors.ts';
 import { readImageInfo } from '../estimator/window-uploads.ts';
-import { DetectorError, DetectorUnconfiguredError, type DetectedBox } from '../providers/window-detector.ts';
+import { DetectorError, DetectorUnconfiguredError, pickWindowBox, type DetectedBox } from '../providers/window-detector.ts';
+import type { WindowQuad } from '../providers/window-segmenter.ts';
 import { readUpload } from '../routes/window-measurements.ts';
 import { authed, rateLimited, type TokenBudget } from './homeowner-auth.ts';
 import { guardUpload } from './homeowner-upload.ts';
@@ -16,8 +17,11 @@ import { route } from './quote-access.ts';
  *
  *   POST /:slug/requests/:id/detect-windows
  *     One upright JPEG of the frozen frame (the app sends it at about 1024 px on its long side, quality 0.7) as the raw body.
- *     Answers the windows the OWLv2 detector sees in it: { boxes: [{ x, y, w, h, confidence }], widthPx, heightPx, detector, ms },
- *     boxes 0..1 of the photo from its top-left, best first, nested boxes kept. 503 `detector_unavailable` when the detector is
+ *     Answers the windows the OWLv2 detector sees in it: { boxes: [{ x, y, w, h, confidence }], picked, quad, widthPx, heightPx,
+ *     detector, segmenter, ms, msDetect, msSegment }, boxes 0..1 of the photo from its top-left, best first, nested boxes kept.
+ *     `picked` is the box the person aimed at (the one holding the photo's middle, or the point ?aimX=&aimY=; the largest of the
+ *     nested ones scoring within 70% of the best), and `quad` its four corners (TL, TR, BR, BL, 0..1) cut out by SAM 2 with a fit
+ *     quality, or null when WINDOW_SEGMENTER is off or the mask has no believable quad. 503 `detector_unavailable` when the detector is
  *     off or its model is not on this machine (WINDOW_DETECTOR / WINDOW_MODEL_DIR), 503 `detector_failed` when it failed or
  *     timed out. Nothing is stored and nothing is logged about the photo.
  *
@@ -66,7 +70,30 @@ export class DetectGate {
   }
 }
 
-export type DetectResponse = { boxes: DetectedBox[]; widthPx: number; heightPx: number; detector: 'owlv2'; ms: number };
+export type DetectResponse = {
+  boxes: DetectedBox[];
+  /** The box the person aimed at, or null when none holds the aim. */
+  picked: DetectedBox | null;
+  /** The picked window's four corners, or null (no segmenter, no believable quad). */
+  quad: WindowQuad | null;
+  widthPx: number;
+  heightPx: number;
+  detector: 'owlv2';
+  segmenter: 'sam2' | null;
+  /** The server's time for all of it, and for each step, milliseconds. */
+  ms: number;
+  msDetect: number;
+  msSegment: number;
+};
+
+/** The point the person aimed at, 0..1 of the photo: the photo's middle unless the app sends `aimX` and `aimY`. */
+function aimOf(query: Record<string, unknown>): { x: number; y: number } {
+  const num = (v: unknown, fallback: number): number => {
+    const n = typeof v === 'string' ? Number(v) : NaN;
+    return Number.isFinite(n) && n >= 0 && n <= 1 ? n : fallback;
+  };
+  return { x: num(query.aimX, 0.5), y: num(query.aimY, 0.5) };
+}
 
 const round4 = (v: number): number => Math.round(v * 10_000) / 10_000;
 
@@ -109,6 +136,7 @@ export function registerDetectRoutes(router: Router, o: { deps: AppDeps; budget:
         const info = await readImageInfo(bytes);
         if (info === null || info === 'heic' || info.kind !== 'jpeg') throw new AppError(415, DETECT_TYPE_MESSAGE, 'photo');
         const started = clock();
+        const aim = aimOf(req.query);
         let boxes: DetectedBox[];
         try {
           boxes = await detector.detectInterior(bytes);
@@ -120,12 +148,31 @@ export function registerDetectRoutes(router: Router, o: { deps: AppDeps; budget:
           }
           throw err;
         }
+        const detected = clock();
+        const rounded = boxes.map((b) => ({ x: round4(b.x), y: round4(b.y), w: round4(b.w), h: round4(b.h), confidence: round4(b.confidence) }));
+        const picked = pickWindowBox(rounded, aim);
+        // The second step is a bonus: a failure of it (or of the model) leaves the boxes, never an error
+        let quad: WindowQuad | null = null;
+        const segmenter = deps.windowSegmenter;
+        if (picked !== null && segmenter.configured) {
+          try {
+            quad = await segmenter.segment(bytes, picked, aim);
+          } catch (err) {
+            deps.logError?.(err, 'homeowner-segment-window');
+          }
+        }
+        const done = clock();
         const body: DetectResponse = {
-          boxes: boxes.map((b) => ({ x: round4(b.x), y: round4(b.y), w: round4(b.w), h: round4(b.h), confidence: round4(b.confidence) })),
+          boxes: rounded,
+          picked,
+          quad,
           widthPx: info.widthPx,
           heightPx: info.heightPx,
           detector: 'owlv2',
-          ms: Math.round(clock() - started),
+          segmenter: segmenter.configured ? segmenter.name : null,
+          ms: Math.round(done - started),
+          msDetect: Math.round(detected - started),
+          msSegment: Math.round(done - detected),
         };
         res.json(body);
       } finally {

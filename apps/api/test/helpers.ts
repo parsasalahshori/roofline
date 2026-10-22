@@ -16,6 +16,7 @@ import { FakeAdImageRenderer } from '../src/providers/fakes/ad-image.ts';
 import { FakeStaticMap } from '../src/providers/fakes/static-map.ts';
 import { FakeStreetView } from '../src/providers/fakes/street-view.ts';
 import { NoDetector, type WindowDetector } from '../src/providers/window-detector.ts'; // G1 Task 7
+import { NoSegmenter, type WindowSegmenter } from '../src/providers/window-segmenter.ts';
 import { FakeAdsGoogle } from '../src/providers/fakes/ads-google.ts';
 import { FakeAdsMeta } from '../src/providers/fakes/ads-meta.ts';
 import { FakeBroadcastMailer } from '../src/providers/fakes/broadcast.ts';
@@ -187,6 +188,8 @@ export type TestApp = {
   /** Measure windows: Street View (a grey JPEG from a camera 20 m south) and the window detector (none by default). */
   streetView: FakeStreetView;
   windowDetector: WindowDetector;
+  /** The homeowner app's window segmenter (none by default). */
+  windowSegmenter: WindowSegmenter;
   /** Billing: it records each customer, checkout, and meter event. */
   billing: FakeBillingProvider;
   /** Texting registration: `failNext` makes the next registrar call fail. */
@@ -246,6 +249,7 @@ export function testConfig(
     GOOGLE_SOLAR_DATA_LAYERS: true,
     ROOF_3D_MODE: 'on',
     WINDOW_DETECTOR: 'off',
+    WINDOW_SEGMENTER: 'off',
     FOOTPRINT_WAIT_MS: 120_000,
     GOOGLE_ADS_API_VERSION: 'v21',
     META_GRAPH_VERSION: 'v24.0',
@@ -317,6 +321,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
   const staticMap = new FakeStaticMap();
   const streetView = new FakeStreetView();
   const windowDetector: WindowDetector = new NoDetector();
+  const windowSegmenter: WindowSegmenter = new NoSegmenter();
   const billing = new FakeBillingProvider();
   const registrar = new FakeTextingRegistrar();
   const jobs = new InlineJobs();
@@ -350,6 +355,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     staticMap,
     streetView,
     windowDetector,
+    windowSegmenter,
     billing,
     registrar,
     jobs,
@@ -390,6 +396,7 @@ export async function makeTestApp(overrides: Partial<Config> = {}): Promise<Test
     staticMap,
     streetView,
     windowDetector,
+    windowSegmenter,
     billing,
     registrar,
     jobs,

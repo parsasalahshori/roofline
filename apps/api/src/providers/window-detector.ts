@@ -175,6 +175,25 @@ export function keepWindows(raw: LabelledBox[], region: DetectHints['region']): 
   return kept;
 }
 
+/** A box this much of the best score that holds the aim may win by being larger (a window that holds its own sash). */
+export const NESTED_SCORE_SHARE = 0.7;
+
+/**
+ * The window the person aimed at: among the boxes that hold `aim` (0..1 of the photo), the one with the best score; when boxes nest
+ * (a sash inside its window), the LARGEST that holds `aim` and scores at least 70% of that best. The same rule the phone app uses
+ * (AiWindow.pick in RooflineCore). Null when no box holds the aim.
+ */
+export function pickWindowBox(boxes: readonly DetectedBox[], aim: { x: number; y: number } = { x: 0.5, y: 0.5 }): DetectedBox | null {
+  const held = boxes.filter(
+    (b) => [b.x, b.y, b.w, b.h, b.confidence].every(Number.isFinite) && b.w >= INTERIOR_MIN_SIDE && b.h >= INTERIOR_MIN_SIDE && aim.x >= b.x && aim.x <= b.x + b.w && aim.y >= b.y && aim.y <= b.y + b.h,
+  );
+  if (held.length === 0) return null;
+  const best = Math.max(...held.map((b) => b.confidence));
+  let pick: DetectedBox | null = null;
+  for (const b of held) if (b.confidence >= best * NESTED_SCORE_SHARE && (pick === null || b.w * b.h > pick.w * pick.h)) pick = b;
+  return pick;
+}
+
 export class OwlV2Detector implements WindowDetector {
   readonly name = 'owlv2' as const;
   readonly configured = true;
