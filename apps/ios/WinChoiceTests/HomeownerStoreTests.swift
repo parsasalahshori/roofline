@@ -636,4 +636,64 @@ final class HomeownerStoreTests: XCTestCase {
         XCTAssertEqual(h.store.methodTag(.card).text, "Recommended for your iPhone")
         XCTAssertEqual(h.store.methodTag(.corners).text, "About 3/8 inch · good for a quote")
     }
+
+    // MARK: Changing the address or the services
+
+    func testGoingBackToChangeTheAddressStartsANewQuoteAndKeepsTheName() async throws {
+        let h = StoreHarness()
+        await h.store.loadCompany()
+        h.store.selectedServices = [.roof]
+        h.store.continueFromWelcome()
+        h.store.addressText = "305 Ridgeway Dr, Little Rock, AR 72205"
+        await h.store.confirmAddress()
+        let first = try XCTUnwrap(h.store.session?.requestId)
+        h.store.contactDraft.firstName = "Pat"
+        h.store.pop()
+        XCTAssertFalse(h.store.addressLocked, "the address can be changed")
+        h.store.addressText = "12 Oak St, Little Rock, AR 72205"
+        h.store.addressPlace = nil
+        await h.store.confirmAddress()
+        let second = try XCTUnwrap(h.store.session?.requestId)
+        XCTAssertNotEqual(first, second, "a new address is a new quote")
+        XCTAssertEqual(h.store.session?.address.hasPrefix("12 Oak St"), true)
+        XCTAssertEqual(h.store.contactDraft.firstName, "Pat", "the person's details stay filled in")
+        XCTAssertNil(h.store.pendingAddressChange, "nothing measured, so no question")
+    }
+
+    func testChangingTheServicesForTheSameAddressStartsANewQuote() async throws {
+        let h = StoreHarness()
+        await h.store.loadCompany()
+        h.store.selectedServices = [.roof]
+        h.store.continueFromWelcome()
+        h.store.addressText = "305 Ridgeway Dr, Little Rock, AR 72205"
+        await h.store.confirmAddress()
+        let first = try XCTUnwrap(h.store.session?.requestId)
+        h.store.pop()
+        h.store.pop()
+        h.store.selectedServices = [.windows]
+        h.store.continueFromWelcome()
+        await h.store.confirmAddress()
+        XCTAssertNotEqual(h.store.session?.requestId, first)
+        XCTAssertEqual(h.store.session?.services, [.windows])
+    }
+
+    func testANewAddressAfterMeasuringAsksBeforeDroppingTheWindows() async throws {
+        let h = StoreHarness()
+        await h.store.loadCompany()
+        h.store.selectedServices = [.windows]
+        h.store.continueFromWelcome()
+        h.store.addressText = "305 Ridgeway Dr, Little Rock, AR 72205"
+        await h.store.confirmAddress()
+        let first = try XCTUnwrap(h.store.session?.requestId)
+        await h.capture(room: "Kitchen")
+        XCTAssertGreaterThan(h.store.windowCount, 0)
+        h.store.addressText = "12 Oak St, Little Rock, AR 72205"
+        h.store.addressPlace = nil
+        await h.store.confirmAddress()
+        XCTAssertEqual(h.store.session?.requestId, first, "nothing changes until they say yes")
+        XCTAssertNotNil(h.store.pendingAddressChange)
+        await h.store.confirmAddressChange()
+        XCTAssertNotEqual(h.store.session?.requestId, first)
+        XCTAssertNil(h.store.pendingAddressChange)
+    }
 }

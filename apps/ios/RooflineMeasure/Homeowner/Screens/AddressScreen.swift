@@ -67,6 +67,15 @@ struct AddressScreen: View {
             }
         }
         .wcScreenChrome()
+        .alert(
+            "Start over at this address?",
+            isPresented: Binding(get: { store.pendingAddressChange != nil }, set: { if !$0 { store.pendingAddressChange = nil } })
+        ) {
+            Button("Start over") { Task { await store.confirmAddressChange() } }
+            Button("Keep my windows", role: .cancel) {}
+        } message: {
+            Text("The \(store.windowCount) windows you measured are for your old address. A new address starts a new quote.")
+        }
         .onAppear {
             search.onResults = { suggestions = $0 }
         }

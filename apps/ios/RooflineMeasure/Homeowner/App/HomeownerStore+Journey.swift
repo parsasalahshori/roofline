@@ -56,19 +56,37 @@ extension HomeownerStore {
 
     // MARK: Address (02)
 
-    /// A request with windows or details cannot change address (they belong to it).
-    var addressLocked: Bool { session != nil && (windowCount > 0 || hasContact) }
+    /// The address can always be changed. A new address (or a different choice of services) starts a new request; the only
+    /// thing that needs a yes first is dropping windows already measured at the old address.
+    var addressLocked: Bool { false }
 
-    func confirmAddress() async {
+    /// The request in hand is for exactly this address and these services, so going forward reuses it.
+    private func sessionMatches(_ text: String) -> Bool {
+        guard let s = session else { return false }
+        return s.address.caseInsensitiveCompare(text) == .orderedSame && Set(s.services) == selectedServices
+    }
+
+    /// The homeowner said yes to starting over at a new address (their measured windows stay with the old one).
+    func confirmAddressChange() async {
+        pendingAddressChange = nil
+        await confirmAddress(startOver: true)
+    }
+
+    func confirmAddress(startOver: Bool = false) async {
         guard !creating else { return }
         let text = (addressPlace?.oneLine ?? addressText).trimmingCharacters(in: .whitespaces)
         guard text.count >= 5 else {
             addressError = "Please enter your street address."
             return
         }
-        // The same address again (back, then forward): carry on with the request in hand
-        if let s = session, s.address.caseInsensitiveCompare(text) == .orderedSame || addressLocked {
+        // The same address and services again (back, then forward): carry on with the request in hand
+        if sessionMatches(text) {
             push(requestStatus == .callback ? .callback : .results)
+            return
+        }
+        // A new address after windows were measured: ask first, they belong to the old address
+        if session != nil && windowCount > 0 && !startOver {
+            pendingAddressChange = text
             return
         }
         creating = true
@@ -102,7 +120,7 @@ extension HomeownerStore {
             await adoptKeptWindows(into: saved)
             status = nil
             slots = nil
-            contactDraft = HomeownerContact()
+            // The name and phone stay filled in: it is the same person, only the house changed
             progress.perimeterFt = created.home.outline.flatMap { RoofOutline.perimeterFeet($0) }
             if created.status == .callback {
                 push(.callback)

@@ -106,6 +106,8 @@ final class HomeownerStore {
     /// Nothing is picked until the homeowner taps a card: a pre-ticked card meant a tap on "Windows" unticked it.
     var selectedServices: Set<HomeownerService> = []
     var addressText = ""
+    /// A new address waiting for the homeowner's yes, because windows were already measured at the old one.
+    var pendingAddressChange: String?
     var addressPlace: AddressPlace?
     var contactDraft = HomeownerContact()
     var contactErrors: [ContactField: String] = [:]
