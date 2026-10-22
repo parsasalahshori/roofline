@@ -82,7 +82,7 @@ struct WindowRow: Identifiable, Equatable {
     /// is the measured size).
     var standardSizeLine: String? {
         // A window's nominal size is its frame's: keyed to the window's own size when it was found, else to the opening's
-        if let f = windowFrame { return StandardWindowSizes.line(widthIn: f.widthIn, heightIn: f.heightIn) }
+        if let f = windowFrame, f.estimated != true { return StandardWindowSizes.line(widthIn: f.widthIn, heightIn: f.heightIn) }
         guard let w = widthIn, let h = heightIn else { return nil }
         return StandardWindowSizes.line(widthIn: w, heightIn: h)
     }

@@ -44,7 +44,7 @@ struct FreezeEditing {
     let photos: Int
     /// The window's own frame inside the rectangle (what it is, only when it was found for THIS rectangle) and its size.
     let windowOutline: [CGPoint]
-    let windowSize: WindowFrameSize?
+    var windowSize: WindowFrameSize?
 
     init(capture: FrozenCapture, earlier: [FrozenResult], rect: FrozenRect?, frame: FreezeFrameFound? = nil) {
         self.rect = rect
@@ -66,6 +66,8 @@ struct FreezeEditing {
             windowOutline = []
             windowSize = nil
         }
+        // The frame hidden (blinds): the window's size from a typical frame, said to be an estimate
+        if windowSize == nil { windowSize = WindowFrameSize.estimate(openingWidthIn: now.widthIn, openingHeightIn: now.heightIn) }
         handles = rect.handlePhotoPoints(view: capture.view)?.map { CGPoint(x: $0.x, y: $0.y) } ?? []
         let agree = earlier.isEmpty ? nil : FrozenMeasure.combine(earlier + [now], viewer: capture.view.viewer, device: capture.view.device)
         agreement = agree
@@ -99,7 +101,7 @@ struct FreezeEditing {
     /// "Looks like a standard 24 × 36 window": a suggestion on the screen only; the measured size is what is sent and priced. A window's
     /// nominal size is its frame's, so it goes by the window's own size when that was found, else by the opening's.
     var standardSize: StandardWindowSize? {
-        if let s = windowSize { return StandardWindowSizes.suggestion(widthIn: s.widthIn, heightIn: s.heightIn) }
+        if let s = windowSize, s.estimated != true { return StandardWindowSizes.suggestion(widthIn: s.widthIn, heightIn: s.heightIn) }
         guard let w = sent?.widthIn, let h = sent?.heightIn else { return nil }
         return StandardWindowSizes.suggestion(widthIn: w, heightIn: h)
     }

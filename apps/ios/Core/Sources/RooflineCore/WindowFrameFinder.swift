@@ -284,10 +284,23 @@ public enum WindowFrameFinder {
 public struct WindowFrameSize: Codable, Equatable, Sendable {
     public var widthIn: Double
     public var heightIn: Double
+    /// Not seen in the photo (blinds over the frame): the opening less a typical frame (`typicalFrameM` each side). Optional so
+    /// sizes saved before it still read.
+    public var estimated: Bool?
 
-    public init(widthIn: Double, heightIn: Double) {
+    public init(widthIn: Double, heightIn: Double, estimated: Bool? = nil) {
         self.widthIn = widthIn
         self.heightIn = heightIn
+        self.estimated = estimated
+    }
+
+    /// A window frame's usual width inside the opening, each side (the owner's own window: 88 cm opening, 84.5 cm window).
+    public static let typicalFrameM = 0.0175
+    /// The window when its frame could not be seen: the opening less `typicalFrameM` on every side, marked estimated.
+    public static func estimate(openingWidthIn w: Double, openingHeightIn h: Double) -> WindowFrameSize? {
+        let inset = 2 * typicalFrameM * inchesPerMetre
+        guard w > inset * 2, h > inset * 2 else { return nil }
+        return WindowFrameSize(widthIn: w - inset, heightIn: h - inset, estimated: true)
     }
 
     /// "33 1/4 × 54 3/8 in"
@@ -301,7 +314,7 @@ public enum TwoSizes {
     /// "Opening 34 5/8 × 55 3/4 in"
     public static func openingLine(widthIn: Double, heightIn: Double) -> String { "Opening " + SizeWording.sizeText(widthIn: widthIn, heightIn: heightIn) }
     /// "Window about 33 1/4 × 54 3/8 in"
-    public static func windowLine(_ s: WindowFrameSize) -> String { "Window about " + s.text }
+    public static func windowLine(_ s: WindowFrameSize) -> String { "Window about " + s.text + (s.estimated == true ? " (estimated)" : "") }
     /// For VoiceOver: "Window about 33 and a quarter by 54 and 3 eighths inches".
     public static func windowSpoken(_ s: WindowFrameSize) -> String { "Window about " + SizeWording.spokenSize(widthIn: s.widthIn, heightIn: s.heightIn) }
 }

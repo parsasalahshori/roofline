@@ -45,11 +45,13 @@ final class TwoSizesTests: XCTestCase {
         moved.left -= 0.05
         let stale = FreezeEditing(capture: two.capture, earlier: [], rect: moved, frame: frame)
         XCTAssertNotNil(stale.sent)
-        XCTAssertNil(stale.windowSize)
+        XCTAssertEqual(stale.windowSize?.estimated, true, "a frame found for another rectangle is not used: estimated instead")
         XCTAssertTrue(stale.windowOutline.isEmpty)
-        // No frame found at all: the opening alone, as before
+        // No frame found at all: the opening, and the window estimated from a typical 1.75 cm frame (said to be an estimate)
         let alone = FreezeEditing(capture: two.capture, earlier: [], rect: two.opening)
-        XCTAssertNil(alone.windowSize)
+        XCTAssertEqual(alone.windowSize?.estimated, true)
+        XCTAssertEqual(alone.windowSize?.widthIn ?? 0, (alone.sent?.widthIn ?? 0) - 0.035 * inchesPerMetre, accuracy: 1e-9)
+        XCTAssertTrue(alone.windowSize.map(TwoSizes.windowLine)?.hasSuffix("(estimated)") ?? false)
         XCTAssertEqual(alone.sent?.widthIn, opening.widthIn)
     }
 
