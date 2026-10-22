@@ -1,5 +1,8 @@
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import pg from 'pg';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, inject, test, vi } from 'vitest';
@@ -22,7 +25,9 @@ import {
   type SolarBuilding,
 } from '@roofline/shared';
 import { HOMEOWNER_LIMITS, HOMEOWNER_UNKNOWN_REQUEST } from '../src/public/homeowner-auth.ts';
+import { DETECT_MAX_BYTES } from '../src/public/homeowner-detect.ts';
 import { UPLOAD_GUARD } from '../src/public/homeowner-upload.ts';
+import { DetectorError, type DetectedBox, type WindowDetector } from '../src/providers/window-detector.ts';
 import { systemCtx } from '../src/public/quote-access.ts';
 import { seedFootprintFixture } from '../src/scripts/footprint-fixture.ts';
 import { arCorners, boxCorners, cardScene, greyJpeg, sha256 } from './homeowner-fixture.ts';
@@ -1632,5 +1637,184 @@ describe('the browser measuring page (/q/:slug/measure)', () => {
     expect(call.status, JSON.stringify(call.body)).toBe(200);
     expect((call.body as HomeownerRequestView).booking).toEqual({ visit: null, callMe: true });
     expect((await send('delete', `/requests/${s.id}/windows/w-web-1`, undefined, { token: s.token, origin })).status).toBe(200);
+  });
+});
+
+
+describe('POST /requests/:id/detect-windows (the AI window finder)', () => {
+  const photo = () => Buffer.from(greyJpeg(1024, 768, null));
+  const post = (s: Started, body: Buffer | string = photo(), type = 'image/jpeg', extra: Record<string, string> = {}) => {
+    let req = request(t.app).post(`${base()}/requests/${s.id}/detect-windows`).set('X-Forwarded-For', extra['X-Forwarded-For'] ?? nextIp()).set('Authorization', `Bearer ${s.token}`).set('Content-Type', type);
+    for (const [k, v] of Object.entries(extra)) if (k !== 'X-Forwarded-For') req = req.set(k, v);
+    return req.send(body);
+  };
+  const detector = (detect: (jpeg: Uint8Array) => Promise<DetectedBox[]>): WindowDetector => ({ name: 'owlv2', configured: true, detect: async () => [], detectInterior: detect });
+
+  test('with no detector set up it is a 503 detector_unavailable, in the app\'s own words, and nothing is stored', async () => {
+    const s = await start();
+    const res = await post(s);
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({ error: expect.stringMatching(/mark the window yourself/), code: 'detector_unavailable' });
+    expect(await count('window_measurements', t.seed.a.companyId)).toBe(0);
+  });
+
+  test('the windows it sees, 0..1 of the photo, best first, with the photo\'s size; the photo is not kept', async () => {
+    let seen = 0;
+    t.deps.windowDetector = detector(async (jpeg) => {
+      seen = jpeg.length;
+      return [
+        { x: 0.271234567, y: 0.23, w: 0.4921, h: 0.5481, confidence: 0.292345 },
+        { x: 0.3, y: 0.3, w: 0.4, h: 0.2, confidence: 0.15 },
+      ];
+    });
+    const s = await start();
+    const bytes = photo();
+    const res = await post(s, bytes);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.headers['cache-control']).toBe('no-store');
+    expect(res.body).toEqual({
+      boxes: [
+        { x: 0.2712, y: 0.23, w: 0.4921, h: 0.5481, confidence: 0.2923 },
+        { x: 0.3, y: 0.3, w: 0.4, h: 0.2, confidence: 0.15 },
+      ],
+      widthPx: 1024,
+      heightPx: 768,
+      detector: 'owlv2',
+      ms: expect.any(Number),
+    });
+    expect(seen).toBe(bytes.length);
+    expect(await count('window_measurements', t.seed.a.companyId)).toBe(0);
+    expect(await view(s).then((v) => v.windows)).toEqual([]);
+  });
+
+  test('no windows in the photo is an empty list, not an error', async () => {
+    t.deps.windowDetector = detector(async () => []);
+    const res = await post(await start());
+    expect(res.status).toBe(200);
+    expect(res.body.boxes).toEqual([]);
+  });
+
+  test('it needs the request\'s token like every other call, and not an apartment (call-back) request', async () => {
+    t.deps.windowDetector = detector(async () => []);
+    const s = await start();
+    const none = await request(t.app).post(`${base()}/requests/${s.id}/detect-windows`).set('X-Forwarded-For', nextIp()).set('Content-Type', 'image/jpeg').send(photo());
+    expect(none.status).toBe(401);
+    expect(none.body.code).toBe('unauthorized');
+    const wrong = await post({ ...s, token: 'B'.repeat(43) });
+    expect(wrong.status).toBe(401);
+    const flat = await start({ address: FLAT, services: ['windows'] });
+    const res = await post(flat);
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('callback_only');
+  });
+
+  test('only a JPEG, and a small one: garbage and a PNG are 415, a photo over the limit is a 413 before it is read', async () => {
+    let calls = 0;
+    t.deps.windowDetector = detector(async () => {
+      calls += 1;
+      return [];
+    });
+    const s = await start();
+    const bad = await post(s, 'not a photo at all');
+    expect(bad.status).toBe(415);
+    expect(bad.body.code).toBe('unsupported_media');
+    const png = Buffer.from('89504e470d0a1a0a0000000d49484452000000100000001008060000001ff3ff61', 'hex');
+    expect((await post(s, png, 'image/png')).status).toBe(415);
+    const big = await post(s, Buffer.alloc(DETECT_MAX_BYTES + 10, 1));
+    expect(big.status).toBe(413);
+    expect(big.body.code).toBe('too_large');
+    expect(calls).toBe(0);
+  });
+
+  test('a detector that fails or times out is a 503 detector_failed that says nothing of why; the app marks the window itself', async () => {
+    const logged: string[] = [];
+    t.deps.logError = (_e: unknown, where?: string) => void logged.push(where ?? '');
+    t.deps.windowDetector = detector(async () => Promise.reject(new DetectorError('onnx exploded at /secret/path')));
+    const res = await post(await start());
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({ error: expect.not.stringContaining('secret'), code: 'detector_failed' });
+    expect(logged).toContain('homeowner-detect-windows');
+  });
+
+  test('few at once: a second photo of the same request while one is being looked at is a 429 with Retry-After, and a place is given back', async () => {
+    let release: (() => void) | undefined;
+    t.deps.windowDetector = detector(
+      () =>
+        new Promise<DetectedBox[]>((resolve) => {
+          release = () => resolve([]);
+        }),
+    );
+    const s = await start();
+    const first = post(s).then((r) => r);
+    for (let i = 0; i < 100 && release === undefined; i++) await new Promise((r) => setTimeout(r, 10));
+    expect(release).toBeDefined();
+    const second = await post(s);
+    expect(second.status).toBe(429);
+    expect(second.headers['retry-after']).toBe('2');
+    expect(second.body.code).toBe('rate_limited');
+    release?.();
+    expect((await first).status).toBe(200);
+    t.deps.windowDetector = detector(async () => []);
+    expect((await post(s)).status).toBe(200);
+  });
+
+  test('one address may ask only so often a minute', async () => {
+    t.deps.windowDetector = detector(async () => []);
+    const s = await start();
+    const ip = '203.0.113.77';
+    for (let i = 0; i < HOMEOWNER_LIMITS.detectPerIpPerMinute; i++) expect((await post(s, photo(), 'image/jpeg', { 'X-Forwarded-For': ip })).status, `call ${i}`).toBe(200);
+    const over = await post(s, photo(), 'image/jpeg', { 'X-Forwarded-For': ip });
+    expect(over.status).toBe(429);
+    expect(over.body.code).toBe('rate_limited');
+  });
+});
+
+describe('POST /requests/:id/debug-captures/:captureId/:file (tester builds: the capture dump)', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(path.join(tmpdir(), 'debug-captures-'));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const id = '3f1c2b7e-5d0a-4c1e-9a77-0b6d0f4e1a21';
+  const put = (s: Started, file: string, body: Buffer | string, captureId = id) =>
+    request(t.app).post(`${base()}/requests/${s.id}/debug-captures/${captureId}/${file}`).set('X-Forwarded-For', nextIp()).set('Authorization', `Bearer ${s.token}`).set('Content-Type', 'application/octet-stream').send(body);
+
+  test('off unless DEBUG_CAPTURES_DIR is set: a 404 debug_captures_off, nothing written', async () => {
+    const s = await start();
+    const res = await put(s, 'capture.json', '{}');
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe('debug_captures_off');
+    expect(readdirSync(dir)).toEqual([]);
+  });
+
+  test('on, it writes the files of one capture under its id, whole, and nothing else', async () => {
+    (t.deps.config as { DEBUG_CAPTURES_DIR?: string }).DEBUG_CAPTURES_DIR = dir;
+    const s = await start();
+    const depth = Buffer.alloc(256 * 192 * 4, 7);
+    expect((await put(s, 'capture.json', JSON.stringify({ version: 1 }))).status).toBe(201);
+    expect((await put(s, 'photo.jpg', Buffer.from(greyJpeg(300, 400)))).status).toBe(201);
+    expect((await put(s, 'depth.f32', depth)).status).toBe(201);
+    expect((await put(s, 'confidence.u8', Buffer.alloc(256 * 192, 2))).status).toBe(201);
+    const second = await put(s, 'result.json', JSON.stringify({ source: 'ai' }));
+    expect(second.status, JSON.stringify(second.body)).toBe(201);
+    expect(second.body).toMatchObject({ captureId: id, file: 'result.json' });
+    expect(readdirSync(dir)).toEqual([id]);
+    expect(readdirSync(path.join(dir, id)).sort()).toEqual(['capture.json', 'confidence.u8', 'depth.f32', 'photo.jpg', 'result.json']);
+    expect(readFileSync(path.join(dir, id, 'depth.f32')).equals(depth)).toBe(true);
+    expect(JSON.parse(readFileSync(path.join(dir, id, 'result.json'), 'utf8'))).toEqual({ source: 'ai' });
+  });
+
+  test('only the five files, a safe id, JSON that is JSON, and the token', async () => {
+    (t.deps.config as { DEBUG_CAPTURES_DIR?: string }).DEBUG_CAPTURES_DIR = dir;
+    const s = await start();
+    expect((await put(s, 'evil.sh', 'x')).status).toBe(400);
+    expect((await put(s, 'capture.json', 'x', '..%2F..%2Fetc')).status).toBe(400);
+    expect((await put(s, 'capture.json', 'x', 'short')).status).toBe(400);
+    expect((await put(s, 'capture.json', 'not json')).status).toBe(400);
+    const noToken = await request(t.app).post(`${base()}/requests/${s.id}/debug-captures/${id}/capture.json`).set('X-Forwarded-For', nextIp()).send('{}');
+    expect(noToken.status).toBe(401);
+    expect(readdirSync(dir)).toEqual([]);
   });
 });

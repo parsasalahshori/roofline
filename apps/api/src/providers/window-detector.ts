@@ -18,6 +18,14 @@ export interface WindowDetector {
   readonly name: 'owlv2' | null;
   readonly configured: boolean;
   detect(jpeg: Uint8Array, hints: DetectHints): Promise<DetectedBox[]>;
+  /**
+   * The windows in a photo taken INSIDE a home, looking at one (the homeowner phone app's frozen frame): every plausible
+   * window box with its confidence, best first, nested boxes (a sash inside its window) kept so the caller can choose.
+   * Absent on a detector that does not do it (the route then answers 503).
+   */
+  detectInterior?(jpeg: Uint8Array): Promise<DetectedBox[]>;
+  /** Loads the model ahead of the first call, so the first photo is not slow. */
+  warm?(): Promise<void>;
 }
 
 export class DetectorUnconfiguredError extends Error {}
@@ -101,6 +109,48 @@ function iou(a: DetectedBox, b: DetectedBox): number {
 /** A pipeline box with its label: `window` when it is the window query's. */
 export type LabelledBox = DetectedBox & { window: boolean };
 
+/*
+ * The same model for a photo taken INSIDE a home (the homeowner app's frozen frame). A window there fills a good part of the
+ * picture, so there is no size cap like the house front's; what it is mistaken for is a picture frame, a door, a mirror or a
+ * television, whose boxes take the window boxes they cover. Scores of this model are low in absolute terms (a clear window is
+ * 0.25 to 0.35), so the threshold is low and the caller chooses among the boxes. Tuned by eye on two drawn rooms only: a
+ * starting point, not a validated setting.
+ */
+export const OWLV2_INTERIOR_WINDOW_LABELS = ['a window', 'a window frame'] as const;
+export const OWLV2_INTERIOR_OTHER_LABELS = ['a picture frame', 'a door', 'a mirror', 'a television'] as const;
+export const OWLV2_INTERIOR_LABELS = [...OWLV2_INTERIOR_WINDOW_LABELS, ...OWLV2_INTERIOR_OTHER_LABELS] as const;
+/** What the pipeline returns (the window boxes below `INTERIOR_MIN_CONFIDENCE` are dropped afterwards; the others still count as suppressors). */
+export const OWLV2_INTERIOR_THRESHOLD = 0.06;
+export const INTERIOR_MIN_CONFIDENCE = 0.1;
+export const INTERIOR_MAX_BOXES = 8;
+/** A window box on (nearly) the same box as a picture frame / door / mirror / television that scored at least this share of its score is that. */
+const INTERIOR_OTHER_RATIO = 0.7;
+const INTERIOR_OTHER_IOU = 0.6;
+/** Two boxes this alike are one (the window and window-frame queries find the same box). */
+const SAME_BOX_IOU = 0.9;
+const INTERIOR_MIN_SIDE = 0.05;
+const INTERIOR_MAX_AREA = 0.92;
+
+/**
+ * The window boxes of an interior photo: window-labelled, big enough and not the whole picture, not taken for a picture frame,
+ * door, mirror or television, one per box (the better of two near-identical boxes), best first. A box inside a bigger one (a
+ * sash in its window) is kept: which of them is the window is the caller's to choose.
+ */
+export function keepInteriorWindows(raw: LabelledBox[]): DetectedBox[] {
+  const others = raw.filter((b) => !b.window);
+  const sorted = raw
+    .filter((b) => b.window && b.confidence >= INTERIOR_MIN_CONFIDENCE && b.w >= INTERIOR_MIN_SIDE && b.h >= INTERIOR_MIN_SIDE && b.w * b.h <= INTERIOR_MAX_AREA)
+    .filter((b) => !others.some((o) => o.confidence >= b.confidence * INTERIOR_OTHER_RATIO && iou(o, b) >= INTERIOR_OTHER_IOU))
+    .sort((a, b) => b.confidence - a.confidence);
+  const kept: DetectedBox[] = [];
+  for (const b of sorted) {
+    if (kept.some((k) => iou(k, b) >= SAME_BOX_IOU)) continue;
+    kept.push({ x: b.x, y: b.y, w: b.w, h: b.h, confidence: b.confidence });
+    if (kept.length >= INTERIOR_MAX_BOXES) break;
+  }
+  return kept;
+}
+
 /**
  * Keeps the window-shaped boxes on the front: a window label, centre in the wall's region, not wall-sized, not taken
  * for a door, garage door or shutter that scored higher, and one box per window (the best; boxes inside it go).
@@ -140,12 +190,17 @@ export class OwlV2Detector implements WindowDetector {
   }
 
   async detect(jpeg: Uint8Array, hints: DetectHints): Promise<DetectedBox[]> {
+    return this.guarded(() => this.run(jpeg, hints));
+  }
+
+  /** Runs `work` with the timeout; anything that goes wrong is a DetectorError, and the model is loaded afresh next time. */
+  private async guarded(work: () => Promise<DetectedBox[]>): Promise<DetectedBox[]> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const late = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new DetectorError('The window detector timed out.')), this.timeoutMs);
     });
     try {
-      return await Promise.race([this.run(jpeg, hints), late]);
+      return await Promise.race([work(), late]);
     } catch (err) {
       if (err instanceof DetectorError) throw err;
       this.loaded = null;
@@ -155,19 +210,37 @@ export class OwlV2Detector implements WindowDetector {
     }
   }
 
-  private async run(jpeg: Uint8Array, hints: DetectHints): Promise<DetectedBox[]> {
+  /** Loads the model now (a later call reuses it). Failures are left for the next call to report. */
+  async warm(): Promise<void> {
+    this.loaded ??= this.load(this.modelDir);
+    try {
+      await this.loaded;
+    } catch {
+      this.loaded = null;
+    }
+  }
+
+  async detectInterior(jpeg: Uint8Array): Promise<DetectedBox[]> {
+    return this.guarded(async () => keepInteriorWindows(await this.score(jpeg, OWLV2_INTERIOR_LABELS, OWLV2_INTERIOR_THRESHOLD, OWLV2_INTERIOR_WINDOW_LABELS[0], OWLV2_INTERIOR_WINDOW_LABELS[1])));
+  }
+
+  /** The pipeline's boxes for these labels, as 0..1 boxes; `window` is true for the labels in `windowLabels`. */
+  private async score(jpeg: Uint8Array, labels: readonly string[], threshold: number, ...windowLabels: string[]): Promise<LabelledBox[]> {
     this.loaded ??= this.load(this.modelDir);
     const { run, toImage } = await this.loaded;
-    const out = await run(await toImage(jpeg), [...OWLV2_LABELS], { threshold: OWLV2_THRESHOLD, percentage: true });
+    const out = await run(await toImage(jpeg), [...labels], { threshold, percentage: true });
     const clamp = (v: number) => Math.min(1, Math.max(0, v));
-    const raw = out
+    return out
       .filter((d) => [d.score, d.box.xmin, d.box.ymin, d.box.xmax, d.box.ymax].every(Number.isFinite))
       .map((d) => {
         const x0 = clamp(d.box.xmin);
         const y0 = clamp(d.box.ymin);
-        return { x: x0, y: y0, w: clamp(d.box.xmax) - x0, h: clamp(d.box.ymax) - y0, confidence: clamp(d.score), window: d.label === OWLV2_LABELS[0] };
+        return { x: x0, y: y0, w: clamp(d.box.xmax) - x0, h: clamp(d.box.ymax) - y0, confidence: clamp(d.score), window: windowLabels.includes(d.label) };
       });
-    return keepWindows(raw, hints.region);
+  }
+
+  private async run(jpeg: Uint8Array, hints: DetectHints): Promise<DetectedBox[]> {
+    return keepWindows(await this.score(jpeg, OWLV2_LABELS, OWLV2_THRESHOLD, OWLV2_LABELS[0]), hints.region);
   }
 }
 

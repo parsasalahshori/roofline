@@ -68,6 +68,9 @@ on our side. Please try again." }`). Decode `code` as optional, and for a code y
 | 422 | `window_unsizable` | The window cannot be sized from what was sent: corners that cross, are not a four-cornered shape or are degenerate; a card too small to tap (under 0.75% of the photo's long side) or bigger than half the window; a `card` that is not 85.6 x 53.98 mm; a size outside its range (AR and room scan: 6 to 200 in on either side; card: 3 to 400 in). `field` is `"scale"`; `error` says what to redo in plain words. Nothing is saved. |
 | 429 | `rate_limited` | Too many calls, or too many photos being received at once. `Retry-After` (seconds) is on every one: 3 for photos, 60 for the per-minute limits, 3600 for the hourly ones. It is the most you can be made to wait, not what is left. Nothing was stored. |
 | 503 | `storage_unavailable` | Photo storage is down. Retry later. |
+| 503 | `detector_unavailable` | `POST .../detect-windows` while the server's window detector is off or its model is not on that machine (`WINDOW_DETECTOR`, `WINDOW_MODEL_DIR`). Not an error to show: mark the window by hand. |
+| 503 | `detector_failed` | `POST .../detect-windows`: the detector failed or timed out on this photo. Same: mark the window by hand. |
+| 404 | `debug_captures_off` | `POST .../debug-captures/...` while the server has no `DEBUG_CAPTURES_DIR`. Tester builds only; stop sending. |
 | 503 | `unavailable` | The estimate could not be read back right now (rare). Retry. |
 
 A rare `409 conflict` (a clash while the address was being saved: try again) and the fallbacks `403 forbidden`,
@@ -85,6 +88,9 @@ A rare `409 conflict` (a clash while the address was being saved: try again) and
   `.../contact` an hour (counted once the form is valid, so a mistyped phone does not use one up); 20 `.../book` an hour;
   30 `.../slots` an hour. These count calls, including calls refused for another reason (a 409 or 422, an idempotent
   replay), except where said.
+- `POST .../detect-windows`: 120 an hour per request (token) and 30 a minute per IP address; one at a time per request and 2 in
+  all on a server (a detection takes about a second of the processor): a call over that is `429 rate_limited` with
+  `Retry-After: 2` at once. A photo over 4 MiB is a 413 before it is read.
 - Photos being received at once: 3 per request, 6 per IP address, 12 in all on one server (a photo is held in memory
   until it is stored). A call over that is `429 rate_limited` with `Retry-After: 3` at once: nothing is read, nothing is
   stored, and the hour's count of uploads is not used. A photo that sends nothing for 20 seconds, or is not whole after
@@ -393,6 +399,48 @@ that stops arriving for 20 seconds, or takes more than 3 minutes, is cut off.
 first, then send the window with this `uploadId`. An upload is **not** idempotent: a retried upload makes a second photo
 (harmless, but it counts toward the 90): keep the first `id` you were given and send the window with it, and retry only
 when you never got an answer. One photo may carry several windows (send each window with the same `uploadId`).
+
+## POST /requests/:id/detect-windows
+
+"Finding your window": where in one frozen photo the windows are, found by an AI detector (OWLv2, run on the server's own
+machine; nothing goes to a third party). Optional and best-effort: the app marks the window by hand when this answers
+anything but 200, and it never blocks on it for more than a few seconds (the app waits 6).
+
+Send ONE upright JPEG as the raw body (`Content-Type: image/jpeg`; no multipart). The app sends the frozen frame cut down to
+about 1024 px on its long side at JPEG quality 0.7 (150 to 300 KB); at most 4 MiB. It is not stored and not tied to a window,
+so it does not count toward the request's photos.
+
+`200`:
+
+```json
+{
+  "boxes": [
+    { "x": 0.2712, "y": 0.23, "w": 0.4921, "h": 0.5481, "confidence": 0.2923 },
+    { "x": 0.3, "y": 0.3, "w": 0.4, "h": 0.2, "confidence": 0.15 }
+  ],
+  "widthPx": 768, "heightPx": 1024, "detector": "owlv2", "ms": 910
+}
+```
+
+`x`, `y`, `w`, `h` are fractions (0 to 1) of the photo's width and height, from its top-left. `boxes` are best first, at most 8,
+and may be empty. A box inside another (a sash inside its window) is kept: choosing is the app's (it takes the box that holds
+the photo's middle, preferring the largest that scores within 70% of the best). `confidence` is the model's own score, low in
+absolute terms (a clear window is about 0.25 to 0.5); only compare it between boxes of one photo. Picture frames, doors,
+mirrors and televisions are asked for too, and a window box that one of them scores about as well on is dropped. `ms` is the
+server's time for the detection.
+
+`503 detector_unavailable` / `detector_failed`, `409 callback_only`, `413`, `415` (not a JPEG), `429` as in the tables above.
+Turn it on with `WINDOW_DETECTOR=owlv2` and `WINDOW_MODEL_DIR=<dir holding Xenova/owlv2-base-patch16-ensemble>`.
+
+## POST /requests/:id/debug-captures/:captureId/:file (tester builds only)
+
+The Debug and TestFlight builds of the app send each Capture's photo, depth map, camera and result here so a bad proposal can be
+replayed on a Mac (`apps/ios/Core`, `swift run RooflineReplay`). It exists only when the server has `DEBUG_CAPTURES_DIR`
+set (a folder; the files go to `<dir>/<captureId>/<file>`, no database); otherwise every call is `404 debug_captures_off`. The
+body is the file's raw bytes. `captureId` is 8 to 64 letters, digits or `-`; `file` is one of `capture.json`, `result.json`
+(JSON, up to 1 MiB), `photo.jpg` (up to 16 MiB), `depth.f32` (up to 2 MiB), `confidence.u8` (up to 1 MiB); `201` `{ ok, captureId,
+file, bytes }`. 600 files an hour per request. These are customers' photos when pointed at a live server: leave
+`DEBUG_CAPTURES_DIR` unset there.
 
 ## POST /requests/:id/windows
 

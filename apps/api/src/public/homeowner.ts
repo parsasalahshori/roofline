@@ -60,6 +60,7 @@ import { estimateForHomeowner } from '../quote/homeowner-estimate.ts';
 import { canonicalJson, HEIC_MESSAGE, readUpload } from '../routes/window-measurements.ts';
 import { assertKnownFields, emailField, noNul, parse } from '../validate.ts';
 import { authed, authenticate, HOMEOWNER_LIMITS, HOMEOWNER_UNKNOWN_REQUEST, newHomeownerToken, hashHomeownerToken, RateLimitedError, rateLimited } from './homeowner-auth.ts';
+import { registerDetectRoutes } from './homeowner-detect.ts';
 import { guardUpload, UPLOAD_GUARD, UploadGate } from './homeowner-upload.ts';
 import { buildRequestView, buildStatus, leadSummary, storedInput } from './homeowner-view.ts';
 import { policyUrls } from './policy-urls.ts';
@@ -73,6 +74,8 @@ import { originGuard, pageFor, route } from './quote-access.ts';
  *   GET    /:slug/requests/:id             the whole view: windows, rooms, quote, booking, status
  *   PATCH  /:slug/requests/:id             { estimatedTotalOverride } the homeowner's own window count
  *   POST   /:slug/requests/:id/uploads     one photo (raw JPEG/PNG bytes, or multipart "photo")
+ *   POST   /:slug/requests/:id/detect-windows   one JPEG (raw bytes) -> the windows the AI detector sees (homeowner-detect.ts)
+ *   POST   /:slug/requests/:id/debug-captures/:captureId/:file   tester builds' capture dump, only with DEBUG_CAPTURES_DIR
  *   POST   /:slug/requests/:id/windows     one measured window (idempotent on its id)
  *   DELETE /:slug/requests/:id/windows/:windowId
  *   POST   /:slug/requests/:id/contact     the homeowner's details and consent -> the lead is filed
@@ -356,7 +359,7 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
   // parser must not touch that route: a stream it has read cannot be read again, and the upload would wait for ever).
   const json = express.json({ limit: BODY_LIMIT });
   router.use((req, res, next) => {
-    if (/\/requests\/[^/]+\/uploads\/?$/i.test(req.path)) next();
+    if (/\/requests\/[^/]+\/(uploads|detect-windows)\/?$/i.test(req.path) || /\/requests\/[^/]+\/debug-captures\/[^/]+\/[^/]+$/i.test(req.path)) next();
     else json(req, res, next);
   });
 
@@ -440,6 +443,7 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
   );
 
   // Everything below needs the request's token.
+  router.use('/:slug/requests/:id/detect-windows', perIpLimit('detect', HOMEOWNER_LIMITS.detectPerIpPerMinute, MINUTE_MS));
   router.use('/:slug/requests/:id', auth.middleware);
 
   /** The request's view, read fresh. */
@@ -539,6 +543,9 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
       }
     }),
   );
+
+  // "Finding your window" (the AI detector) and the tester builds' capture dump: homeowner-detect.ts
+  registerDetectRoutes(router, { deps, budget: auth.budget });
 
   router.post(
     '/:slug/requests/:id/windows',

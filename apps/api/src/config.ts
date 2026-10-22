@@ -178,6 +178,16 @@ const ConfigSchema = z
       .transform((v) => path.resolve(REPO_ROOT, v))
       .optional(),
     /**
+     * The homeowner app's DEBUG capture dump (public/homeowner-debug.ts): a directory that tester builds of the phone app
+     * (Debug or TestFlight) write each Capture's photo, depth, camera and result into, so a bad proposal can be replayed on a
+     * Mac. Unset (default): the route does not exist (404 debug_captures_off). Resolved from the repository root. Holds
+     * customers' photos when pointed at a live server: leave it unset there.
+     */
+    DEBUG_CAPTURES_DIR: z
+      .string()
+      .transform((v) => path.resolve(REPO_ROOT, v))
+      .optional(),
+    /**
      * Measure windows' Street View tools: the front wall drawn on the photo and lined up with it, dragging its corners,
      * marking windows on the photo and the door ruler. Off by default (owner's decision, 2026-10-16: on 13 real houses
      * the line-up never confirmed a wall and window sizes swung 2x with the rep's input). Off, the street photo is only

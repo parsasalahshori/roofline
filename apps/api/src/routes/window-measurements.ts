@@ -164,16 +164,17 @@ const PhotoWindowsSchema = z
 
 /**
  * The photo in an upload request: multipart/form-data with the file in the field "photo" (other fields ignored), or
- * the raw image bytes as the body. At most MAX_UPLOAD_BYTES; a larger one is a 413 before more is read.
+ * the raw image bytes as the body. At most `maxBytes` (MAX_UPLOAD_BYTES unless a route asks for less or more); a larger one is
+ * a 413 before more is read.
  */
-export function readUpload(req: Request): Promise<Uint8Array> {
+export function readUpload(req: Request, maxBytes: number = MAX_UPLOAD_BYTES): Promise<Uint8Array> {
   const type = (req.headers['content-type'] ?? '').toLowerCase();
   const tooBig = () => new AppError(413, UPLOAD_TOO_BIG_MESSAGE, 'photo');
   if (type.startsWith('multipart/form-data')) {
     return new Promise((resolve, reject) => {
       let parser: busboy.Busboy;
       try {
-        parser = busboy({ headers: req.headers, limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 10, parts: 11 } });
+        parser = busboy({ headers: req.headers, limits: { fileSize: maxBytes, files: 1, fields: 10, parts: 11 } });
       } catch {
         reject(new AppError(400, UPLOAD_MISSING_MESSAGE, 'photo'));
         return;
@@ -210,7 +211,7 @@ export function readUpload(req: Request): Promise<Uint8Array> {
   }
   return new Promise((resolve, reject) => {
     const declared = Number(req.headers['content-length'] ?? '0');
-    if (declared > MAX_UPLOAD_BYTES) {
+    if (declared > maxBytes) {
       req.resume();
       reject(tooBig());
       return;
@@ -219,7 +220,7 @@ export function readUpload(req: Request): Promise<Uint8Array> {
     let total = 0;
     req.on('data', (d: Buffer) => {
       total += d.length;
-      if (total > MAX_UPLOAD_BYTES) {
+      if (total > maxBytes) {
         req.destroy();
         reject(tooBig());
         return;

@@ -37,6 +37,11 @@ export const HOMEOWNER_LIMITS = {
   contactPerTokenPerHour: 5,
   bookPerTokenPerHour: 20,
   slotsPerTokenPerHour: 30,
+  /** "Finding your window": one photo per Capture; a person measuring a whole house with retakes stays well inside. */
+  detectPerTokenPerHour: 120,
+  detectPerIpPerMinute: 30,
+  /** The tester-only capture dump: a handful of files per Capture. */
+  debugFilesPerTokenPerHour: 600,
 } as const;
 
 export const HOMEOWNER_TOO_MANY = "You're going a little fast. Please wait a moment and try again.";
@@ -113,7 +118,7 @@ export type Authed = { ctx: TenantContext; settings: InstantQuoteSettings; reque
 /** The request an authenticated call is about, set by `authenticate` for the handlers behind it. */
 export const authed = (res: { locals: Record<string, unknown> }): Authed => res.locals.homeowner as Authed;
 
-export type TokenBudget = (key: string, scope: 'minute' | 'uploads' | 'windows' | 'contact' | 'book' | 'slots') => Promise<void>;
+export type TokenBudget = (key: string, scope: 'minute' | 'uploads' | 'windows' | 'contact' | 'book' | 'slots' | 'detect' | 'debug') => Promise<void>;
 
 /**
  * The middleware for `/:slug/requests/:id/...`: the company by slug, the token against the request's stored hash, the
@@ -129,6 +134,8 @@ export function authenticate(deps: AppDeps): { middleware: RequestHandler; budge
     contact: createAllowance(HOUR_MS, HOMEOWNER_LIMITS.contactPerTokenPerHour),
     book: createAllowance(HOUR_MS, HOMEOWNER_LIMITS.bookPerTokenPerHour),
     slots: createAllowance(HOUR_MS, HOMEOWNER_LIMITS.slotsPerTokenPerHour),
+    detect: createAllowance(HOUR_MS, HOMEOWNER_LIMITS.detectPerTokenPerHour),
+    debug: createAllowance(HOUR_MS, HOMEOWNER_LIMITS.debugFilesPerTokenPerHour),
   };
   const unauthorized = () => new AppError(401, HOMEOWNER_UNKNOWN_REQUEST).coded('unauthorized');
 
