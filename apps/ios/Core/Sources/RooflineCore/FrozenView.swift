@@ -136,16 +136,32 @@ public struct FrozenView: Equatable, Sendable {
     public func framePlane(photoPx: [Vec2]) -> Plane {
         guard let depth = depth, photoPx.count == 4 else { return wall }
         var offsets: [Double] = []
+        var kept: [Vec3] = []
+        var cornersWithReadings = 0
         for p in photoPx {
             let pts = depth.points(aroundNative: nativePixel(fromPhoto: p), radiusM: Self.depthRadiusM, cameraTransform: cameraTransform, intrinsics: intrinsics)
+            var here = 0
             for q in pts {
                 let d = wall.signedDistance(q)
-                if abs(d) <= Self.frameOffsetLimitM { offsets.append(d) }
+                if abs(d) <= Self.frameOffsetLimitM { offsets.append(d); kept.append(q); here += 1 }
             }
+            if here >= 3 { cornersWithReadings += 1 }
         }
         guard offsets.count >= Self.minDepthPoints, let off = median(offsets) else { return wall }
-        return wall.offset(by: off)
+        let shifted = wall.offset(by: off)
+        // With readings at all four corners, the depth also says how the frame's face is TURNED (the wall ARKit found can be a degree
+        // or so off): fit a plane to the readings near the shifted one, and keep it when it stays close to the wall's direction.
+        guard cornersWithReadings == 4 else { return shifted }
+        let near = kept.filter { abs(shifted.signedDistance($0)) <= Self.fitBandM }
+        guard near.count >= Self.minDepthPoints, let fitted = Plane.fit(near)?.facing(viewer),
+              fitted.normal.dot(wall.normal) >= cos(Self.maxTurnDeg * .pi / 180) else { return shifted }
+        return fitted
     }
+
+    /// Readings this close to the frame's face (metres) count for its turn: the glass, the room and the casing's edge stay out.
+    public static let fitBandM = 0.015
+    /// The depth may turn the plane by at most this much from the wall ARKit found (degrees).
+    public static let maxTurnDeg = 4.0
 
     /// The four corners on the photo (TL, TR, BR, BL in any order) as points on the frame's plane, with that plane and each corner's
     /// own noise in metres. Nil when a ray misses the plane.
