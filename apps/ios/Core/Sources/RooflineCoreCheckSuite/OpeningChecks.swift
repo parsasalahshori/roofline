@@ -205,6 +205,24 @@ let openingChecks: [Check] = [
         if let c = c { ctx.expect(c.rect.top + c.rect.plane.point.y <= scene.opening.y1 + inchTol, "never above the true top") }
     },
 
+    Check("OpeningFinder: a valance sitting right on the frame's top: the opening is still found, its top where the valance starts") { ctx in
+        var scene = Scene.standard()
+        let o = scene.opening
+        // The owner's window: the valance box hangs over the top of the frame (3 cm over it, no wall or casing showing between), 12 cm proud
+        scene.ring = 0
+        scene.front = [scene.front[0], Patch(x0: o.x0 - 0.12, x1: o.x1 + 0.12, y0: o.y1 - 0.03, y1: o.y1 + 0.15, offset: 0.12)]
+        let found = OpeningFinder.find(view: view(scene), reticle: Vec2(photoW / 2, photoH / 2))
+        ctx.expect(found != nil, "found with three wall sides and the valance on top")
+        guard let r = found?.rect else { return }
+        let t = truth(scene), p = r.plane.point
+        ctx.near(r.left + p.x, t.left, 0.0075)
+        ctx.near(r.right + p.x, t.right, 0.0075)
+        ctx.near(r.bottom + p.y, t.bottom, 0.0075)
+        // The valance hides the top 3 cm (and a little more from a camera below it): never above the true top, at most about 2.5 in below it
+        ctx.expect(r.top + p.y <= t.top + 0.0075, "not above the true top")
+        ctx.expect(r.top + p.y >= t.top - 0.065, "top \(r.top + p.y) vs \(t.top)")
+    },
+
     Check("OpeningFinder: each side is set onto the edge in the photo within 3 cm, and left where the depth put it when the picture is not clear") { ctx in
         let scene = Scene.standard()
         let v = view(scene)

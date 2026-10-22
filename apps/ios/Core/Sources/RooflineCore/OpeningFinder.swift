@@ -123,7 +123,7 @@ public enum OpeningFinder {
         let pixelM = distance / max(k.fx, 1)
 
         // Each side: the middle of its boundary over bins along the side; a bin counts only where the boundary pixel borders the wall
-        func edges(along key: (Int) -> Double, across value: (Int) -> Double) -> (lo: [Double], hi: [Double]) {
+        func edges(along key: (Int) -> Double, across value: (Int) -> Double) -> (lo: [Double], hi: [Double], allLo: [Double], allHi: [Double]) {
             var bins: [Int: (lo: Double, loWall: Bool, hi: Double, hiWall: Bool)] = [:]
             for n in 0..<region.count {
                 let b = Int((key(n) / binM).rounded(.down)), v = value(n)
@@ -135,12 +135,20 @@ public enum OpeningFinder {
                     bins[b] = (v, bordersWall[n], v, bordersWall[n])
                 }
             }
-            return (bins.values.filter { $0.loWall }.map { $0.lo }, bins.values.filter { $0.hiWall }.map { $0.hi })
+            return (bins.values.filter { $0.loWall }.map { $0.lo }, bins.values.filter { $0.hiWall }.map { $0.hi },
+                    bins.values.map { $0.lo }, bins.values.map { $0.hi })
         }
         let sides = edges(along: { st[$0].t }, across: { st[$0].s })
         let ends = edges(along: { st[$0].s }, across: { st[$0].t })
-        guard sides.lo.count >= minBins, sides.hi.count >= minBins, ends.lo.count >= minBins, ends.hi.count >= minBins,
-              let left = median(sides.lo), let right = median(sides.hi), let bottom = median(ends.lo), let top = median(ends.hi) else { return nil }
+        // A side whose whole boundary is something in front of the wall (a valance or a blind's headrail sitting on the frame's top)
+        // is taken where the opening ends against that thing instead; only ONE such side, and the photo's edge refines it next.
+        let wallSides = [sides.lo, sides.hi, ends.lo, ends.hi]
+        let allSides = [sides.allLo, sides.allHi, ends.allLo, ends.allHi]
+        let short = (0..<4).filter { wallSides[$0].count < minBins }
+        guard short.count <= 1 else { return nil }
+        let use = (0..<4).map { short.contains($0) ? allSides[$0] : wallSides[$0] }
+        guard use.allSatisfy({ $0.count >= minBins }),
+              let left = median(use[0]), let right = median(use[1]), let bottom = median(use[2]), let top = median(use[3]) else { return nil }
         var rect = frame
         rect.left = left - pixelM / 2
         rect.right = right + pixelM / 2
