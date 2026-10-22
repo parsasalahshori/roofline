@@ -49,13 +49,13 @@ public struct MeasureCapabilities: Equatable, Sendable {
     /// Nothing the camera needs (the simulator).
     public static let none = MeasureCapabilities(deviceName: "iPhone", corners: false, depthSensor: false, roomScan: false, camera: false)
 
-    /// How many of the three methods this phone can use.
+    /// How many of the methods this phone can use (the room scan is two cards, the quick scan and the whole room).
     public var methodCount: Int { [corners, roomScan, camera].filter { $0 }.count }
 
-    /// "Your iPhone 15 Pro can use all three." (screen 06's subtitle)
+    /// "Your iPhone 15 Pro can use all four." (screen 06's subtitle)
     public var methodsSentence: String {
         switch methodCount {
-        case 3: return "Your \(deviceName) can use all three."
+        case 3: return "Your \(deviceName) can use all four."
         case 0: return "This device can't measure with a camera."
         case 1: return "Your \(deviceName) can use the \(corners ? "four corners" : (roomScan ? "room scan" : "bank card photo"))."
         default:

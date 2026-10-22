@@ -13,36 +13,106 @@ struct ScanReviewRow: Identifiable, Equatable {
     var confidence: RoomPlanConfidence
     /// The style the shape suggests ("double-hung").
     var styleKey: String?
+    /// The scan's photo of this window with its outline; nil when no kept photo saw all four corners.
+    var photo: ScanPhoto?
 
     var widthIn: Double { widthM * inchesPerMetre }
     var heightIn: Double { heightM * inchesPerMetre }
+
+    /// "35 3/8 × 47 1/4 in": inches to the eighth, like every other size in the app.
+    var sizeText: String { SizeWording.sizeText(widthIn: widthIn, heightIn: heightIn) }
+
+    /// The window as the store saves it. The size, the confidence and the corners are the scan's own, unchanged: what the person
+    /// saw in the review is what goes to the outbox. A name only when there are several ("Kitchen, window B").
+    func scannedWindow(multiple: Bool, photo shot: (jpeg: Data, widthPx: Int, heightPx: Int, corners: [Vec2])?) -> ScannedWindow {
+        ScannedWindow(name: multiple ? "\(room), window \(letter)" : "", widthM: widthM, heightM: heightM, confidence: confidence,
+                      jpeg: shot?.jpeg, imageWidthPx: shot?.widthPx ?? 0, imageHeightPx: shot?.heightPx ?? 0, corners: shot?.corners, room: room)
+    }
 }
 
-/// 07b Room scan result (ios-hw-07b): the room drawn from a corner or from above with each window lettered, the list of what
-/// was found with its size ("about ±1 in"), and one red button to add them to the room. A window can be left out (tap it) or
-/// moved to another room (touch and hold).
+/// What the review edits: which windows are kept, and which room they go in. Plain values, so the rules are tested without a screen.
+struct ScanReviewModel: Equatable {
+    var roomName: String
+    var rows: [ScanReviewRow]
+
+    var included: [ScanReviewRow] { rows.filter { $0.included } }
+
+    /// Leave a window out, or take it back in.
+    mutating func toggle(_ id: UUID) {
+        guard let i = rows.firstIndex(where: { $0.id == id }) else { return }
+        rows[i].included.toggle()
+    }
+
+    /// One window goes in another room (touch and hold).
+    mutating func move(_ id: UUID, to room: String) {
+        guard let name = RoomNames.clean(room), let i = rows.firstIndex(where: { $0.id == id }) else { return }
+        rows[i].room = name
+    }
+
+    /// The scan goes in another room (a name picked or typed). Windows that were still in the old room follow it; one that was
+    /// moved elsewhere stays where it was put. A blank name changes nothing.
+    @discardableResult
+    mutating func rename(to typed: String) -> Bool {
+        guard let name = RoomNames.clean(typed) else { return false }
+        let old = roomName
+        for i in rows.indices where rows[i].room.caseInsensitiveCompare(old) == .orderedSame { rows[i].room = name }
+        roomName = name
+        return true
+    }
+
+    /// "We found 2 windows".
+    var title: String { ScanWording.foundTitle(rows.count) }
+
+    var addTitle: String {
+        included.isEmpty ? "Add windows to \(roomName)" : "Add \(included.count) window\(included.count == 1 ? "" : "s") to \(roomName)"
+    }
+}
+
+/// 07b Room scan result (ios-hw-07b): each window the scan found with its photo and outline, its size to the eighth and how sure Apple is,
+/// and one red button to add them to the room. A window can be left out (tap it) or moved to another room (touch and hold), and the
+/// room can be named. The whole-room scan also draws the room from a corner or from above, each window lettered.
 struct RoomScanReview: View {
     @Environment(HomeownerStore.self) private var store
     @Environment(\.dynamicTypeSize) private var typeSize
-    let room: String
+    let mode: RoomScanMode
     let seconds: Int
     let plan: ScanPlan
-    @State var rows: [ScanReviewRow]
+    @State private var model: ScanReviewModel
     let onAdd: ([ScanReviewRow]) -> Void
     let onCorners: () -> Void
     let onCancel: () -> Void
-    @State private var mode = Mode.threeD
+    @State private var diagramMode = Mode.threeD
+    @State private var askRoom = false
+    @State private var typedRoom = ""
 
     enum Mode: String, CaseIterable { case threeD = "3D", plan = "Plan" }
 
-    private var included: [ScanReviewRow] { rows.filter { $0.included } }
+    init(mode: RoomScanMode = .wholeRoom, room: String, seconds: Int, plan: ScanPlan, rows: [ScanReviewRow],
+         onAdd: @escaping ([ScanReviewRow]) -> Void, onCorners: @escaping () -> Void, onCancel: @escaping () -> Void) {
+        self.mode = mode
+        self.seconds = seconds
+        self.plan = plan
+        _model = State(initialValue: ScanReviewModel(roomName: room, rows: rows))
+        self.onAdd = onAdd
+        self.onCorners = onCorners
+        self.onCancel = onCancel
+    }
+
+    private var rows: [ScanReviewRow] { model.rows }
+
+    /// The rooms to pick from: the one this scan is in, then the others.
+    private var roomChoices: [String] {
+        var seen = Set<String>(), out: [String] = []
+        for r in [model.roomName] + store.rooms where seen.insert(r.lowercased()).inserted { out.append(r) }
+        return out
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Button("Cancel", action: onCancel).wc(17, relativeTo: .body).foregroundStyle(Theme.blue).frame(minWidth: Theme.minTap, minHeight: Theme.minTap, alignment: .leading)
                 Spacer()
-                Text(room).wc(17, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink).accessibilityAddTraits(.isHeader)
+                Text(model.roomName).wc(17, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink).accessibilityAddTraits(.isHeader)
                     .lineLimit(1).minimumScaleFactor(0.7)
                 Spacer()
                 Color.clear.frame(width: 60, height: 1)
@@ -52,29 +122,23 @@ struct RoomScanReview: View {
             .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    diagramCard
-                    AdaptiveStack(alignment: .firstTextBaseline, spacing: 2) {
-                        Text(rows.isEmpty ? "We didn't find a window" : "We found \(rows.count) window\(rows.count == 1 ? "" : "s")")
-                            .wc(19, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink).accessibilityAddTraits(.isHeader)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        if let u = rows.map({ RoomPlanLimits.uncertaintyIn($0.confidence) }).max() {
-                            Text(SizeWording.plusMinusEach(u)).wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink3)
+                    if mode == .wholeRoom { diagramCard }
+                    Text(model.title)
+                        .wc(19, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink).accessibilityAddTraits(.isHeader)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, mode == .wholeRoom ? 18 : 10).padding(.horizontal, 6)
+                    Text(ScanWording.confirmLine).wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 2).padding(.horizontal, 6)
+                    roomRow.padding(.top, 12)
+                    GroupCard {
+                        ForEach(Array(rows.enumerated()), id: \.element.id) { i, row in
+                            foundRow(row, index: i)
+                            if i < rows.count - 1 { RowDivider(inset: 14) }
                         }
                     }
-                    .padding(.top, 18).padding(.horizontal, 6)
-                    if !rows.isEmpty {
-                        GroupCard {
-                            ForEach(Array(rows.enumerated()), id: \.element.id) { i, row in
-                                foundRow(row, index: i)
-                                if i < rows.count - 1 { RowDivider(inset: 56) }
-                            }
-                        }
-                        .padding(.top, 10)
-                    }
-                    if rows.count > 0 {
-                        SmallNote(text: "Tap a window to leave it out. Touch and hold to move it to another room.").padding(.top, 8).padding(.horizontal, 6)
-                    }
-                    InfoPanel(icon: .alert, text: "Good enough for your quote. Want it closer? Tap the 4 corners of each window (about 1/4 inch). Your rep checks every size anyway.", tint: Theme.infoTint, iconColor: Theme.info).padding(.top, 14)
+                    .padding(.top, 10)
+                    SmallNote(text: "Tap a window to leave it out. Touch and hold to move it to another room.").padding(.top, 8).padding(.horizontal, 6)
+                    InfoPanel(icon: .alert, text: "Good for your quote. We confirm the exact size at your visit. Want it closer now? Tap the 4 corners of each window.", tint: Theme.infoTint, iconColor: Theme.info).padding(.top, 14)
                     WCScrollFooter()
                 }
                 .padding(.horizontal, Theme.gutter)
@@ -84,16 +148,46 @@ struct RoomScanReview: View {
         }
         .background(Theme.ground.ignoresSafeArea())
         .wcFooter {
-            WCPrimaryButton(title: included.isEmpty ? "Add windows to \(room)" : "Add \(included.count) window\(included.count == 1 ? "" : "s") to \(room)", icon: .check, iconLeading: true, isEnabled: !included.isEmpty) { onAdd(included) }
+            WCPrimaryButton(title: model.addTitle, icon: .check, iconLeading: true, isEnabled: !model.included.isEmpty) { onAdd(model.included) }
             WCSecondaryButton(title: "Tap corners for each one", action: onCorners)
         }
+        .alert("Name this room", isPresented: $askRoom) {
+            TextField("Room name", text: $typedRoom)
+            Button("Save") { model.rename(to: typedRoom) }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    // MARK: Room
+
+    /// "Room · Bedroom 1": pick another of the home's rooms or type a new name.
+    private var roomRow: some View {
+        Menu {
+            ForEach(roomChoices, id: \.self) { r in
+                Button { model.rename(to: r) } label: { Label(r, systemImage: model.roomName.caseInsensitiveCompare(r) == .orderedSame ? "checkmark" : "door.left.hand.open") }
+            }
+            Divider()
+            Button { typedRoom = ""; askRoom = true } label: { Label("Another name…", systemImage: "pencil") }
+        } label: {
+            HStack(spacing: 10) {
+                Text("Room").wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink3)
+                Text(model.roomName).wc(17, .semibold, relativeTo: .body).foregroundStyle(Theme.ink).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                IconView(icon: .chevRight, size: 16, weight: 2).foregroundStyle(Theme.ink3)
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 52)
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel("Room, \(model.roomName)")
+        .accessibilityHint("Double tap to pick or name the room")
     }
 
     // MARK: Picture
 
     private var diagramCard: some View {
         ZStack(alignment: .top) {
-            RoomDiagram(plan: plan, mode: mode, letters: Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0.letter) }), included: Set(included.map { $0.id }))
+            RoomDiagram(plan: plan, mode: diagramMode, letters: Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0.letter) }), included: Set(model.included.map { $0.id }))
                 .padding(.top, 36).padding(.bottom, 8)
             HStack(alignment: .top) {
                 HStack(spacing: 6) {
@@ -104,7 +198,7 @@ struct RoomScanReview: View {
                 .padding(.horizontal, 10).padding(.vertical, 6)
                 .background(Theme.blueTint, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 Spacer()
-                Picker("View", selection: $mode) {
+                Picker("View", selection: $diagramMode) {
                     ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented)
@@ -123,21 +217,28 @@ struct RoomScanReview: View {
 
     private func foundRow(_ row: ScanReviewRow, index: Int) -> some View {
         Button {
-            rows[index].included.toggle()
+            model.toggle(row.id)
             Haptics.tap()
         } label: {
             HStack(alignment: typeSize.isAccessibilitySize ? .top : .center, spacing: 12) {
-                Text(row.letter).wcMono(16, .bold, relativeTo: .body).foregroundStyle(row.included ? Theme.blue : Theme.ink3)
-                    .frame(width: 30, height: 30).background(row.included ? Theme.blueTint : Theme.surface2, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .padding(.top, typeSize.isAccessibilitySize ? 4 : 0)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(row.name).wc(17, .semibold, relativeTo: .body).foregroundStyle(row.included ? Theme.ink : Theme.ink3).strikethrough(!row.included)
-                    Text(row.included ? looksLike(row) : "Left out. Tap to add it.").wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink3).lineLimit(typeSize.isAccessibilitySize ? nil : 2)
-                    // with large text the size goes under the name instead of beside it
-                    if typeSize.isAccessibilitySize { sizeBlock(row, alignment: .leading) }
+                ScanThumb(photo: row.photo, on: row.included)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 8) {
+                        Text(row.letter).wcMono(14, .bold, relativeTo: .footnote).foregroundStyle(row.included ? Theme.blue : Theme.ink3)
+                            .frame(width: 26, height: 26).background(row.included ? Theme.blueTint : Theme.surface2, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        Text(row.name).wc(17, .semibold, relativeTo: .body).foregroundStyle(row.included ? Theme.ink : Theme.ink3).strikethrough(!row.included)
+                    }
+                    SizeText(widthIn: row.widthIn, heightIn: row.heightIn, size: 20, weight: .bold, unit: true, color: row.included ? Theme.ink : Theme.ink3, relativeTo: .title3)
+                    if row.included {
+                        Text(looksLike(row)).wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink3).lineLimit(typeSize.isAccessibilitySize ? nil : 2)
+                        Text(ScanWording.sourceLine(row.confidence)).wc(14, row.confidence == .low ? .semibold : .regular, relativeTo: .subheadline)
+                            .foregroundStyle(row.confidence == .low ? Theme.warn : Theme.ink3)
+                    } else {
+                        Text("Left out. Tap to add it.").wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink3)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                if !typeSize.isAccessibilitySize { sizeBlock(row, alignment: .trailing) }
+                tick(row.included)
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
             .frame(minHeight: 64)
@@ -145,25 +246,29 @@ struct RoomScanReview: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            ForEach(store.rooms, id: \.self) { r in
-                Button { rows[index].room = r } label: { Label(r, systemImage: rows[index].room == r ? "checkmark" : "door.left.hand.open") }
+            ForEach(roomChoices, id: \.self) { r in
+                Button { model.move(row.id, to: r) } label: { Label(r, systemImage: row.room.caseInsensitiveCompare(r) == .orderedSame ? "checkmark" : "door.left.hand.open") }
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Window \(row.letter), \(row.name). \(SizeWording.spokenSize(widthIn: row.widthIn.rounded(), heightIn: row.heightIn.rounded())), \(SizeWording.spokenAccuracy(RoomPlanLimits.uncertaintyIn(row.confidence))). \(row.included ? "Will be added" : "Left out")")
+        .accessibilityLabel("Window \(row.letter), \(row.name). \(SizeWording.spokenSize(widthIn: row.widthIn, heightIn: row.heightIn)). \(ScanWording.sourceLine(row.confidence)). \(row.included ? "Will be added" : "Left out")")
         .accessibilityHint("Double tap to \(row.included ? "leave it out" : "add it")")
         .accessibilityAddTraits(.isButton)
     }
 
-    private func sizeBlock(_ row: ScanReviewRow, alignment: HorizontalAlignment) -> some View {
-        VStack(alignment: alignment, spacing: 1) {
-            SizeText(widthIn: row.widthIn.rounded(), heightIn: row.heightIn.rounded(), size: 20, weight: .bold, color: row.included ? Theme.ink : Theme.ink3, relativeTo: .title3)
-            Text(SizeWording.plusMinus(RoomPlanLimits.uncertaintyIn(row.confidence))).wc(14, relativeTo: .footnote).foregroundStyle(Theme.ink3)
+    /// The round tick at the end of a row: filled when the window will be added.
+    private func tick(_ on: Bool) -> some View {
+        ZStack {
+            Circle().fill(on ? Theme.blue : Color.clear)
+            Circle().stroke(on ? Theme.blue : Theme.line2, lineWidth: 1.5)
+            if on { IconView(icon: .check, size: 14, weight: 2.6).foregroundStyle(.white) }
         }
+        .frame(width: 26, height: 26)
+        .accessibilityHidden(true)
     }
 
     private func looksLike(_ row: ScanReviewRow) -> String {
-        let moved = row.room.caseInsensitiveCompare(room) == .orderedSame ? "" : " · goes in \(row.room)"
+        let moved = row.room.caseInsensitiveCompare(model.roomName) == .orderedSame ? "" : " · goes in \(row.room)"
         guard let key = row.styleKey else { return "Window" + moved }
         return "Looks like \(Self.description(key))" + moved
     }
@@ -179,6 +284,54 @@ struct RoomScanReview: View {
         case "arch": return "an arch window"
         case "circle": return "a round window"
         default: return key.replacingOccurrences(of: "-", with: " ")
+        }
+    }
+}
+
+// MARK: - The scan's photo of a window
+
+/// The photo that saw the window best, small, with the window's outline drawn on it; a plain tile when no kept photo saw all four corners.
+struct ScanThumb: View {
+    let photo: ScanPhoto?
+    let on: Bool
+    static let width: CGFloat = 76
+
+    var body: some View {
+        Group {
+            if let photo = photo {
+                Image(uiImage: photo.image)
+                    .resizable()
+                    .aspectRatio(photo.image.size, contentMode: .fit)
+                    .frame(width: Self.width)
+                    .overlay { ScanOutline(points: photo.outline).opacity(on ? 1 : 0.4) }
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .opacity(on ? 1 : 0.5)
+            } else {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.surface2)
+                    IconView(icon: .win, size: 28, weight: 1.5).foregroundStyle(Theme.ink3)
+                }
+                .frame(width: Self.width, height: Self.width * 4 / 3)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// The window's four corners (shares of the picture) as an outline, light with a dark edge so it shows on any wall.
+struct ScanOutline: View {
+    let points: [CGPoint]
+
+    var body: some View {
+        GeometryReader { geo in
+            let path = Path { p in
+                guard points.count == 4 else { return }
+                p.move(to: CGPoint(x: points[0].x * geo.size.width, y: points[0].y * geo.size.height))
+                for q in points.dropFirst() { p.addLine(to: CGPoint(x: q.x * geo.size.width, y: q.y * geo.size.height)) }
+                p.closeSubpath()
+            }
+            path.stroke(Color.black.opacity(0.55), style: StrokeStyle(lineWidth: 4, lineJoin: .round))
+            path.stroke(Theme.tape, style: StrokeStyle(lineWidth: 2.2, lineJoin: .round))
         }
     }
 }

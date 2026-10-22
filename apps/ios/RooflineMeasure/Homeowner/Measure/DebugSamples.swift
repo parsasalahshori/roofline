@@ -383,21 +383,57 @@ struct DebugCaptureSample: View {
 
 // MARK: - A scanned room
 
-/// 07b over a sample room: three windows, as the mockup lists them.
+/// 07b over a sample room: three windows, as the mockup lists them (`-debugOpen scan`); `quickscan` is the one-wall review with two
+/// windows of 35 3/8 x 47 1/4 and 23 5/8 x 35 7/16 in; `quickscan-live` is the scanning screen over the sample photo.
 struct DebugScanSample: View {
     @Environment(HomeownerStore.self) private var store
     let session: MeasureSession
 
+    /// The sample window photo, small, with the window's outline on it (the same one for every row).
+    private static let photo: ScanPhoto? = {
+        let scene = SampleScene.photo
+        let thumb = scene.image(withCard: false).preparingThumbnail(of: CGSize(width: 420, height: 420 * scene.size.height / scene.size.width))
+        guard let image = thumb else { return nil }
+        return ScanPhoto(image: image, outline: scene.frameCorners.map { CGPoint(x: $0.x / scene.size.width, y: $0.y / scene.size.height) })
+    }()
+
     var body: some View {
-        let plan = ScanPlan.sample
-        let windows = plan.openings.filter { !$0.isDoor }
-        let sizes: [(Double, Double)] = [(36, 60), (36, 59), (48, 36)]
-        let rows = windows.enumerated().map { i, o in
-            ScanReviewRow(id: o.id, letter: String(UnicodeScalar(UInt8(65 + i))), name: ["Front, left", "Front, right", "Side"][i], room: session.room, included: true,
-                          widthM: sizes[i].0 / inchesPerMetre, heightM: sizes[i].1 / inchesPerMetre, confidence: .high,
-                          styleKey: i < 2 ? "double-hung" : "slider-2")
+        switch store.debugOpen {
+        case "quickscan-live":
+            live
+        case "quickscan":
+            let rows = [
+                ScanReviewRow(id: UUID(), letter: "A", name: "Window A", room: session.room, included: true, widthM: 0.9, heightM: 1.2, confidence: .high, styleKey: "double-hung", photo: Self.photo),
+                ScanReviewRow(id: UUID(), letter: "B", name: "Window B", room: session.room, included: true, widthM: 0.6, heightM: 0.9, confidence: .medium, styleKey: "single-hung", photo: Self.photo),
+            ]
+            RoomScanReview(mode: .oneWall, room: session.room, seconds: 8, plan: ScanPlan.sample, rows: rows, onAdd: { _ in store.measureSession = nil }, onCorners: { store.measureSession = nil }, onCancel: { store.measureSession = nil })
+        default:
+            let plan = ScanPlan.sample
+            let windows = plan.openings.filter { !$0.isDoor }
+            let sizes: [(Double, Double)] = [(36, 60), (36, 59), (48, 36)]
+            let rows = windows.enumerated().map { i, o in
+                ScanReviewRow(id: o.id, letter: String(UnicodeScalar(UInt8(65 + i))), name: ["Front, left", "Front, right", "Side"][i], room: session.room, included: true,
+                              widthM: sizes[i].0 / inchesPerMetre, heightM: sizes[i].1 / inchesPerMetre, confidence: .high,
+                              styleKey: i < 2 ? "double-hung" : "slider-2", photo: i < 2 ? Self.photo : nil)
+            }
+            RoomScanReview(room: session.room, seconds: 41, plan: plan, rows: rows, onAdd: { _ in store.measureSession = nil }, onCorners: { store.measureSession = nil }, onCancel: { store.measureSession = nil })
         }
-        return RoomScanReview(room: session.room, seconds: 41, plan: plan, rows: rows, onAdd: { _ in store.measureSession = nil }, onCorners: { store.measureSession = nil }, onCancel: { store.measureSession = nil })
+    }
+
+    /// The scanning screen over a sample photo (the simulator has no RoomPlan camera view to put it on).
+    private var live: some View {
+        ZStack {
+            // The photo fills the screen without making the screen any wider than it is
+            Color.black.ignoresSafeArea().overlay {
+                Image(uiImage: SampleScene(size: CGSize(width: 1080, height: 1440), windowShare: 0.60).image(withCard: false))
+                    .resizable().scaledToFill()
+            }
+            .clipped()
+            ScanHud(room: session.room, progress: ScanProgress(mode: .oneWall, seconds: 6, windowsFound: 2),
+                    windows: [RoomScanner.LiveWindow(id: UUID(), letter: "A", widthIn: 35.625, heightIn: 59.625, confidence: .high),
+                              RoomScanner.LiveWindow(id: UUID(), letter: "B", widthIn: 23.6, heightIn: 35.4, confidence: .medium)],
+                    onCancel: { store.measureSession = nil }, onDone: { store.measureSession = nil })
+        }
     }
 }
 
@@ -432,6 +468,9 @@ extension HomeownerStore {
         case "scan", "scan-review":
             method = .roomScan
             measureSession = MeasureSession(method: .roomScan, room: room, number: 4)
+        case "quickscan", "quickscan-live":
+            method = .quickScan
+            measureSession = MeasureSession(method: .quickScan, room: room, number: 4)
         case "needs-iphone":
             method = .corners
             measureSession = MeasureSession(method: .corners, room: room, number: 4)

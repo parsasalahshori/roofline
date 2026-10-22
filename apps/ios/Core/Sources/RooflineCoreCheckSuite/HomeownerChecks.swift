@@ -91,7 +91,7 @@ private let wordingChecks: [Check] = [
         ctx.equal(DeviceNames.name(identifier: "iPhone18,1"), "iPhone 17 Pro")
         ctx.equal(DeviceNames.name(identifier: "iPhone99,9"), "iPhone", "an unknown model is just 'iPhone'")
         let pro = MeasureCapabilities.depthSensorPhone("iPhone 15 Pro")
-        ctx.equal(pro.methodsSentence, "Your iPhone 15 Pro can use all three.")
+        ctx.equal(pro.methodsSentence, "Your iPhone 15 Pro can use all four.")
         ctx.equal(pro.depthSentence, "Your iPhone 15 Pro has a depth sensor, so sizes come out accurate to about 1/4 inch.")
         let basic = MeasureCapabilities(deviceName: "iPhone 14", corners: true, depthSensor: false, roomScan: false, camera: true)
         ctx.equal(basic.methodsSentence, "Your iPhone 14 can use the four corners and the bank card photo.")

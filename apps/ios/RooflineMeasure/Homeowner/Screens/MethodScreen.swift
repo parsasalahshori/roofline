@@ -18,8 +18,15 @@ struct MethodScreen: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     WCHeadline(text: "How do you want to measure?", subtitle: store.capabilities.methodsSentence).padding(.bottom, 4)
+                    // Apple's room scan first on a phone with a depth sensor: the quickest way, one wall or the whole room
+                    if store.capabilities.roomScan {
+                        MethodCard(method: .quickScan, selected: store.method == .quickScan) { store.method = .quickScan }
+                        MethodCard(method: .roomScan, selected: store.method == .roomScan) { store.method = .roomScan }
+                    }
                     MethodCard(method: .corners, selected: store.method == .corners) { store.method = .corners }
-                    MethodCard(method: .roomScan, selected: store.method == .roomScan) { store.method = .roomScan }
+                    if !store.capabilities.roomScan {
+                        MethodCard(method: .roomScan, selected: store.method == .roomScan) { store.method = .roomScan }
+                    }
                     MethodCard(method: .card, selected: store.method == .card) { store.method = .card }
                     if store.capabilities.methodCount == 0 {
                         InfoPanel(icon: .alert, text: "Measuring needs an iPhone with a camera. Your request is saved. Open WinChoice on your iPhone to measure.", tint: Theme.warnTint, iconColor: Theme.warn)
@@ -52,6 +59,7 @@ private struct MethodCard: View {
         switch method {
         case .corners: return "Tap the 4 corners"
         case .roomScan: return "Scan the whole room"
+        case .quickScan: return "Quick scan (Apple)"
         case .card: return "Photo with a bank card"
         }
     }
@@ -60,6 +68,7 @@ private struct MethodCard: View {
         switch method {
         case .corners: return "Point your phone at the window and tap each corner of the frame."
         case .roomScan: return "Walk slowly around the room. We find every window in it."
+        case .quickScan: return "Point at the wall with the window and pan for a few seconds. We find the windows on it."
         case .card: return "Hold any bank card flat on the glass and take one photo. Works on any iPhone."
         }
     }
@@ -67,7 +76,7 @@ private struct MethodCard: View {
     private var unavailable: String {
         switch method {
         case .corners: return "Needs an iPhone with a camera."
-        case .roomScan: return "Needs an iPhone with a depth sensor (a Pro model)."
+        case .roomScan, .quickScan: return "Needs an iPhone with a depth sensor (a Pro model)."
         case .card: return "Needs an iPhone with a camera."
         }
     }
@@ -85,6 +94,7 @@ private struct MethodCard: View {
                     switch method {
                     case .corners: IconView(icon: .target, size: 26).foregroundStyle(Theme.blue)
                     case .roomScan: IconView(icon: .cube, size: 26).foregroundStyle(Theme.ink)
+                    case .quickScan: IconView(icon: .lidar, size: 26).foregroundStyle(Theme.blue)
                     case .card: BankCardGlyph(width: 32)
                     }
                 }
@@ -97,7 +107,10 @@ private struct MethodCard: View {
                         let tag = store.methodTag(method)
                         WCTag(text: tag.text, kind: tag.best ? .ok : .blue, radius: 5)
                             .padding(.top, 4)
-                        if tag.text != accuracy.text {
+                        if method.isRoomPlan {
+                            // Apple's scan gives a quote-grade size, not a number of inches: the visit settles the exact one
+                            Text("\(accuracy.text). We confirm the exact size at your visit.").wc(13, relativeTo: .footnote).foregroundStyle(Theme.ink3)
+                        } else if tag.text != accuracy.text {
                             Text("Accuracy: \(accuracy.text)").wc(13, relativeTo: .footnote).foregroundStyle(Theme.ink3)
                         }
                     } else {
@@ -114,7 +127,7 @@ private struct MethodCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title). \(detail) \(available ? store.methodTag(method).text + ". Accuracy: " + accuracy.text : unavailable)")
+        .accessibilityLabel("\(title). \(detail) \(available ? store.methodTag(method).text + (method.isRoomPlan ? ". " + accuracy.text + "." : ". Accuracy: " + accuracy.text) : unavailable)")
         .accessibilityValue(selected && available ? "Selected" : "")
         .accessibilityAddTraits(.isButton)
     }
