@@ -13,6 +13,7 @@ final class HomeownerStoreTests: XCTestCase {
         await h.store.loadCompany()
         h.store.selectedServices = [.windows, .roof]
         h.store.addressText = "305 Ridgeway Dr, Little Rock, AR 72205"
+        h.store.selectedServices = [.windows, .roof]
         h.store.continueFromWelcome()
         XCTAssertEqual(h.store.path.last, .step(.address))
         await h.store.confirmAddress()
@@ -50,6 +51,7 @@ final class HomeownerStoreTests: XCTestCase {
         let h = StoreHarness()
         await h.store.loadCompany()
         h.store.addressText = "305 Ridgeway Dr, Little Rock, AR 72205"
+        h.store.selectedServices = [.windows, .roof]
         h.store.continueFromWelcome()
         await h.store.confirmAddress()
         let first = h.store.session?.requestId
@@ -88,6 +90,7 @@ final class HomeownerStoreTests: XCTestCase {
         let h = StoreHarness(vault: RefusingVault())
         await h.store.loadCompany()
         h.store.addressText = "305 Ridgeway Dr, Little Rock, AR 72205"
+        h.store.selectedServices = [.windows, .roof]
         h.store.continueFromWelcome()
         await h.store.confirmAddress()
         XCTAssertNotNil(h.store.session)

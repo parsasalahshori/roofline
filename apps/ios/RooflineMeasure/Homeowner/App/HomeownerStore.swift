@@ -103,7 +103,8 @@ final class HomeownerStore {
 
     var root: RootScreen = .launching
     var path: [Route] = []
-    var selectedServices: Set<HomeownerService> = [.windows, .roof]
+    /// Nothing is picked until the homeowner taps a card: a pre-ticked card meant a tap on "Windows" unticked it.
+    var selectedServices: Set<HomeownerService> = []
     var addressText = ""
     var addressPlace: AddressPlace?
     var contactDraft = HomeownerContact()
