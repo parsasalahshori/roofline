@@ -92,6 +92,11 @@ struct LiveHomeownerAPI: HomeownerAPI {
         return try decode(WindowDetection.self, from: data)
     }
 
+    func postScan(_ s: HomeownerSession, body: Data) async throws -> WindowScanAnswer {
+        guard hasServer else { throw HomeownerAPIError(status: nil, message: Self.offlineMessage, code: "no_server") }
+        return try decode(WindowScanAnswer.self, from: try await send("POST", "requests/\(s.requestId)/scans", token: s.token, json: body, timeout: 60))
+    }
+
     func uploadDebugCapture(_ s: HomeownerSession, captureId: String, file: String, data: Data) async throws {
         guard hasServer else { throw HomeownerAPIError(status: nil, message: Self.offlineMessage, code: "no_server") }
         _ = try await sendOnce("POST", "requests/\(s.requestId)/debug-captures/\(captureId)/\(file)", token: s.token, json: nil, raw: data, contentType: "application/octet-stream", timeout: 120)

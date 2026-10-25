@@ -230,6 +230,10 @@ struct WindowListRow: View {
                     if let line = row.standardSizeLine {
                         Text(line).wc(13, relativeTo: .footnote).foregroundStyle(Theme.ink3).lineLimit(large ? nil : 2)
                     }
+                    if let scan = row.scanLabel {
+                        Label(scan, systemImage: row.scanState == "measured" ? "checkmark.seal.fill" : (row.scanState == "checking" ? "hourglass" : "ruler"))
+                            .wc(13, .medium, relativeTo: .footnote).foregroundStyle(row.scanState == "measured" ? Theme.ok : Theme.warn).lineLimit(large ? nil : 2)
+                    }
                     // With large text the size goes under the name instead of beside it
                     if large { sizeView }
                 }
@@ -243,7 +247,7 @@ struct WindowListRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Window \(row.number), \(row.title). \(row.spokenSize). \(row.flagged ? "Needs a look. \(row.lookReason). " : "")\(statusWords)\(row.spokenWindowSize.map { ". \($0)" } ?? "")\(row.standardSizeLine.map { ". \($0)" } ?? "")")
+        .accessibilityLabel("Window \(row.number), \(row.title). \(row.spokenSize). \(row.flagged ? "Needs a look. \(row.lookReason). " : "")\(statusWords)\(row.spokenWindowSize.map { ". \($0)" } ?? "")\(row.standardSizeLine.map { ". \($0)" } ?? "")\(row.scanLabel.map { ". \($0)" } ?? "")")
         .accessibilityHint("Opens options for this window")
         .accessibilityAddTraits(.isButton)
     }

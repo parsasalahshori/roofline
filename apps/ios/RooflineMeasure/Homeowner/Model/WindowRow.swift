@@ -32,6 +32,9 @@ struct WindowRow: Identifiable, Equatable {
     var send: Send
     /// The window's own frame just inside the opening above (photo measure; kept on this phone, never sent).
     var windowFrame: WindowFrameSize? = nil
+    /// Where the window's multi-frame scan is, in the server's words ("Being checked by WinChoice"); nil without a scan.
+    var scanLabel: String? = nil
+    var scanState: String? = nil
 
     /// "Living room", or the name the homeowner gave ("Bedroom 1, front").
     var title: String {
@@ -110,7 +113,8 @@ enum WindowRows {
             rows.append(WindowRow(
                 id: w.id, number: rows.count + 1, room: w.room, name: w.input.label, style: w.input.style,
                 widthIn: w.widthIn, heightIn: w.heightIn, uncertaintyIn: w.uncertaintyIn,
-                needsCheck: w.needsCheck, reasons: w.reasons, scale: w.input.scale, send: .sent
+                needsCheck: w.needsCheck, reasons: w.reasons, scale: w.input.scale, send: .sent,
+                scanLabel: w.scan?.label, scanState: w.scan?.state
             ))
         }
         for item in outbox.sorted(by: { $0.createdAt < $1.createdAt }) where !seen.contains(item.id) {

@@ -161,6 +161,19 @@ actor FakeHomeownerAPI: HomeownerAPI {
         return WindowPhotoUpload(id: id, widthPx: size.0, heightPx: size.1)
     }
 
+    /// The scans this fake was sent (the bodies, as the server would read them).
+    private(set) var scans: [Data] = []
+
+    func postScan(_ s: HomeownerSession, body: Data) async throws -> WindowScanAnswer {
+        try await enter("POST scans")
+        _ = try stored(s)
+        guard let payload = try? JSONDecoder().decode(WindowScanPayload.self, from: body) else {
+            throw HomeownerAPIError(status: 400, message: "That scan is not valid.", code: "invalid_request")
+        }
+        scans.append(body)
+        return WindowScanAnswer(scanId: payload.scanId, status: payload.result.status.rawValue, result: payload.result)
+    }
+
     func addWindow(_ s: HomeownerSession, window: PhotoWindowInput) async throws -> HomeownerRequestView {
         try await enter("POST windows \(window.id)")
         var r = try stored(s)

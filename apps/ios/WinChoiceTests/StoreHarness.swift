@@ -19,6 +19,12 @@ final class SwitchableAPI: HomeownerAPI, @unchecked Sendable {
     }
 
     var features: HomeownerFeatures { fake.features }
+    /// The server has no scans route yet (404).
+    var scansMissing: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return missing }
+        set { lock.lock(); missing = newValue; lock.unlock() }
+    }
+    private var missing = false
 
     private func gate() throws {
         // The live client turns every network failure into this one sentence
@@ -38,6 +44,11 @@ final class SwitchableAPI: HomeownerAPI, @unchecked Sendable {
     func status(_ s: HomeownerSession) async throws -> HomeownerStatus { try gate(); return try await fake.status(s) }
     func detectWindows(_ s: HomeownerSession, jpeg: Data, timeout: TimeInterval) async throws -> WindowDetection { try gate(); return try await fake.detectWindows(s, jpeg: jpeg, timeout: timeout) }
     func uploadDebugCapture(_ s: HomeownerSession, captureId: String, file: String, data: Data) async throws { try gate(); try await fake.uploadDebugCapture(s, captureId: captureId, file: file, data: data) }
+    func postScan(_ s: HomeownerSession, body: Data) async throws -> WindowScanAnswer {
+        try gate()
+        if scansMissing { throw serverError(404, "not_found", "We couldn't find that.") }
+        return try await fake.postScan(s, body: body)
+    }
 }
 
 /// A vault whose Keychain always refuses (an unsigned build, a full Keychain).

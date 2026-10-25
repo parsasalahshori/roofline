@@ -34,6 +34,17 @@ enum FrameCapture {
         return (data, Int(image.extent.width), Int(image.extent.height))
     }
 
+    /// The camera's own landscape image as a JPEG with no orientation tag: what a scan uploads (the server's frames are the native image).
+    static func nativeJPEG(_ pixelBuffer: CVPixelBuffer, quality: CGFloat = 0.85) -> (Data, Int, Int)? {
+        let image = CIImage(cvPixelBuffer: pixelBuffer)
+        let options: [CIImageRepresentationOption: Any] = [
+            CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): quality,
+        ]
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let data = context.jpegRepresentation(of: image, colorSpace: space, options: options) else { return nil }
+        return (data, Int(image.extent.width), Int(image.extent.height))
+    }
+
     /// The four world points in the upright JPEG's pixels.
     static func projectCorners(_ points: [Vec3], camera: ARCamera) -> (corners: [Vec2], allInView: Bool) {
         let native = camera.imageResolution // landscape, e.g. 1920 x 1440

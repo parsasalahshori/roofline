@@ -586,16 +586,19 @@ public struct HomeownerWindow: Decodable, Equatable, Sendable, Identifiable {
     public var sizeClass: String?
     /// The plain name of the window's style choice ("Opens up and down"), when the server gives it.
     public var styleLabel: String?
+    /// Present once the window has a multi-frame scan (docs/windows/scan-contract.md): where it is, in the server's words.
+    public var scan: HomeownerWindowScan?
 
     public var id: String { input.id }
     public var room: String { input.room ?? "" }
     public var needsCheck: Bool { quality == "check" }
 
-    private enum Keys: String, CodingKey { case widthIn, heightIn, uncertaintyIn, quality, reasons, sizeLabel, uncertaintyLabel, sizeClass, styleLabel }
+    private enum Keys: String, CodingKey { case widthIn, heightIn, uncertaintyIn, quality, reasons, sizeLabel, uncertaintyLabel, sizeClass, styleLabel, scan }
 
     public init(input: PhotoWindowInput, widthIn: Double, heightIn: Double, uncertaintyIn: Double?, quality: String = "good", reasons: [String] = [],
-                sizeLabel: String? = nil, uncertaintyLabel: String? = nil, sizeClass: String? = nil, styleLabel: String? = nil) {
+                sizeLabel: String? = nil, uncertaintyLabel: String? = nil, sizeClass: String? = nil, styleLabel: String? = nil, scan: HomeownerWindowScan? = nil) {
         self.input = input
+        self.scan = scan
         self.widthIn = widthIn
         self.heightIn = heightIn
         self.uncertaintyIn = uncertaintyIn
@@ -626,6 +629,21 @@ public struct HomeownerWindow: Decodable, Equatable, Sendable, Identifiable {
         uncertaintyLabel = c.soft(String.self, .uncertaintyLabel)
         sizeClass = c.soft(String.self, .sizeClass)
         styleLabel = c.soft(String.self, .styleLabel)
+        scan = c.soft(HomeownerWindowScan.self, .scan)
+    }
+}
+
+/// What the server says about a window's scan: `checking` ("Being checked by WinChoice"), `measured`, or `visit_required`.
+public struct HomeownerWindowScan: Codable, Equatable, Sendable {
+    public var scanId: String
+    public var state: String
+    /// "Being checked by WinChoice", "Measured" or "We will measure this one at your free visit".
+    public var label: String
+
+    public init(scanId: String, state: String, label: String) {
+        self.scanId = scanId
+        self.state = state
+        self.label = label
     }
 }
 

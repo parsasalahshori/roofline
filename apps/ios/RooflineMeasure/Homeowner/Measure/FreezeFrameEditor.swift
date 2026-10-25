@@ -18,6 +18,8 @@ struct FreezeFrameEditor: View {
     var start: (rect: FrozenRect?, stage: FreezeEditing.Stage)?
     /// How to reach the server's AI window finder and the testers' dump. `.none`: the depth sensor, then Vision, as before.
     var services: FreezeServices = .none
+    /// "Take another photo to double-check" is offered (the single-photo flow); the guided scan outlines the window with this editor and turns it off.
+    var allowAnother = true
     let onClose: () -> Void
     let onRetake: () -> Void
     let onAddAnother: (FrozenResult) -> Void
@@ -324,7 +326,7 @@ struct FreezeFrameEditor: View {
                 .accessibilityHint("Keeps this window and goes on to name it")
             }
             .padding(.horizontal, 16)
-            if photoNumber < ArCaptureModel.maxPhotos, let now = editing.sent {
+            if allowAnother, photoNumber < ArCaptureModel.maxPhotos, let now = editing.sent {
                 Button { onAddAnother(now) } label: {
                     Text("Take another photo to double-check").wc(15, .semibold, relativeTo: .subheadline).foregroundStyle(Theme.tape)
                         .frame(minHeight: 36)

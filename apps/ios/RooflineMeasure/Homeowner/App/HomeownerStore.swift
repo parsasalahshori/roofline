@@ -79,6 +79,9 @@ final class HomeownerStore {
     @ObservationIgnored let vault: SessionVault
     @ObservationIgnored let progressStore: ProgressStore
     @ObservationIgnored let outbox: Outbox
+    /// The multi-frame scans of windows (docs/windows/scan-contract.md): saved on the phone, sent after their window.
+    @ObservationIgnored let scanOutbox: ScanOutbox
+    @ObservationIgnored var scanStaging: Task<Void, Never>?
     @ObservationIgnored let pendingDisk: PendingDisk
     @ObservationIgnored let holder = SessionHolder()
     @ObservationIgnored private let monitor = NWPathMonitor()
@@ -102,6 +105,7 @@ final class HomeownerStore {
     /// The request whose "finding your home" reveal on the results screen has played (it plays once; not kept on disk).
     var revealedRequestId: String?
     var outboxItems: [OutboxItem] = []
+    var scanItems: [ScanItem] = []
     var slots: HomeownerSlots?
     var status: HomeownerStatus?
     /// The server could not be reached the last time we asked: what is shown comes from this phone.
@@ -152,7 +156,7 @@ final class HomeownerStore {
     // MARK: Init
 
     init(api: HomeownerAPI, vault: SessionVault, progressStore: ProgressStore, outboxDirectory: URL, brand: Brand = .current,
-         capabilities: MeasureCapabilities, transportOverride: OutboxTransport? = nil) {
+         capabilities: MeasureCapabilities, transportOverride: OutboxTransport? = nil, scanTransportOverride: ScanTransport? = nil) {
         self.api = api
         self.vault = vault
         self.progressStore = progressStore
@@ -171,6 +175,12 @@ final class HomeownerStore {
             onView: { sink.deliver($0) }
         )
         self.outbox = Outbox(directory: outboxDirectory, transport: transport)
+        let scanTransport = scanTransportOverride ?? HomeownerScanTransport(api: api, session: { [vault, holder] id in
+            if let s = holder.session(for: id) { return s }
+            guard let s = vault.load(), s.requestId == id else { return nil }
+            return s
+        })
+        self.scanOutbox = ScanOutbox(directory: outboxDirectory.appendingPathComponent("scans", isDirectory: true), transport: scanTransport)
         self.pendingDisk = PendingDisk(outboxDirectory: outboxDirectory)
         sink.store = self
     }
@@ -491,7 +501,7 @@ final class HomeownerStore {
         if let id = id {
             if !kept { pendingDisk.clear(requestId: id) }
             progressStore.clear(requestId: id)
-            if !kept { Task { try? await outbox.removeAll(measurementId: id) } }
+            if !kept { Task { try? await outbox.removeAll(measurementId: id); try? await scanOutbox.removeAll(measurementId: id) } }
         }
         setSession(nil)
         view = nil
@@ -529,12 +539,23 @@ final class HomeownerStore {
         try? await outbox.load()
         await outbox.setObserver { [weak self] items in Task { @MainActor in self?.outboxChanged(items) } }
         await outbox.syncAll()
+        try? await scanOutbox.load()
+        await scanOutbox.setWindowGate { [weak self] id in await MainActor.run { self?.windowIsOnServer(id) ?? false } }
+        await scanOutbox.setObserver { [weak self] items in Task { @MainActor in self?.scanItems = items } }
+        await scanOutbox.syncAll()
         scheduleRetryIfNeeded()
     }
 
     func outboxChanged(_ items: [OutboxItem]) {
         outboxItems = items
         scheduleRetryIfNeeded()
+        // A window that has just reached the server lets its scan go
+        if !scanItems.isEmpty { Task { await scanOutbox.syncAll() } }
+    }
+
+    /// The window is on the server (its scan names it), as far as this phone knows.
+    func windowIsOnServer(_ id: String) -> Bool {
+        outboxItems.contains { $0.id == id && $0.state == .done } || view?.windows.contains(where: { $0.id == id }) == true
     }
 
     /// Sends what can be sent, then asks the server how that changed the quote.

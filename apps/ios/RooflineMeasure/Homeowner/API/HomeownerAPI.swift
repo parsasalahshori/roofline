@@ -47,6 +47,9 @@ protocol HomeownerAPI: Sendable {
     func detectWindows(_ s: HomeownerSession, jpeg: Data, timeout: TimeInterval) async throws -> WindowDetection
     /// POST /requests/:id/debug-captures/:captureId/:file: a tester build's dump of one Capture (see DebugCapture). 404 when the server's dump is off.
     func uploadDebugCapture(_ s: HomeownerSession, captureId: String, file: String, data: Data) async throws
+    /// POST /requests/:id/scans (docs/windows/scan-contract.md): the multi-frame scan of a window already sent. `body` is `WindowScanPayload` as JSON.
+    /// Idempotent on the scan id. 404 while the server does not have the route yet.
+    func postScan(_ s: HomeownerSession, body: Data) async throws -> WindowScanAnswer
 }
 
 extension HomeownerAPI {
@@ -57,5 +60,10 @@ extension HomeownerAPI {
 
     func uploadDebugCapture(_ s: HomeownerSession, captureId: String, file: String, data: Data) async throws {
         throw HomeownerAPIError(status: 404, message: "We couldn't find that.", code: "debug_captures_off")
+    }
+
+    /// A server (or a test double) without the scans route: the scan stays queued on the phone.
+    func postScan(_ s: HomeownerSession, body: Data) async throws -> WindowScanAnswer {
+        throw HomeownerAPIError(status: 404, message: "We couldn't find that.", code: "not_found")
     }
 }

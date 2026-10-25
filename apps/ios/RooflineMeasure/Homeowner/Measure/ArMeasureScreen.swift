@@ -13,6 +13,9 @@ struct ArMeasureScreen: View {
     @State private var controller: ArMeasureController?
     @State private var access: CameraAccess.State?
     @State private var showHowTo = !HowToSeen.isSeen("ar")
+    /// The guided scan (a depth-sensor iPhone): the default; "Take one photo instead" falls back to the single frozen photo below.
+    @State private var useScan = DeviceCaps.hasLiDAR
+    @State private var showScanHowTo = !HowToSeen.isSeen("scan")
     /// The frozen photo being worked on, and the answers of the photos kept before it (from one tracking session).
     @State private var editing: FrozenCapture?
     @State private var kept: [FrozenResult] = []
@@ -22,7 +25,9 @@ struct ArMeasureScreen: View {
     var body: some View {
         Group {
             #if DEBUG
-            if let mode = store.debugOpen, mode.hasPrefix("hud") || mode.hasPrefix("label") || mode.hasPrefix("freeze") {
+            if let mode = store.debugOpen, mode.hasPrefix("guided") {
+                DebugGuidedSample(mode: mode, session: session)
+            } else if let mode = store.debugOpen, mode.hasPrefix("hud") || mode.hasPrefix("label") || mode.hasPrefix("freeze") {
                 DebugCaptureSample(mode: mode, session: session)
             } else {
                 live
@@ -44,7 +49,11 @@ struct ArMeasureScreen: View {
             ZStack {
                 // The camera keeps running under the photo, so another photo of the same window is in the same world
                 ArSceneContainer(view: controller.sceneView).ignoresSafeArea()
-                if let capture = editing {
+                if useScan {
+                    GuidedScanFlow(controller: controller, title: title, onClose: { store.measureSession = nil }, onSinglePhoto: { useScan = false },
+                                   onUse: { useScanResult($0, controller: controller) })
+                    if showScanHowTo { ScanHowTo { HowToSeen.markSeen("scan"); showScanHowTo = false } }
+                } else if let capture = editing {
                     FreezeFrameEditor(capture: capture, earlier: kept, title: title,
                                       services: FreezeServices(findWindow: { await store.findWindow(jpeg: $0) }, dumpCapture: { store.dumpCapture($0) }, dumpResult: { store.dumpResult($0) }),
                                       onClose: { store.measureSession = nil },
@@ -57,7 +66,7 @@ struct ArMeasureScreen: View {
                     ArCaptureHud(model: model(controller), onClose: { store.measureSession = nil }, onCapture: { controller.captureFrozen() },
                                  onHow: { showHowTo = true })
                 }
-                if showHowTo { ArHowTo { HowToSeen.markSeen("ar"); showHowTo = false } }
+                if showHowTo && !useScan { ArHowTo { HowToSeen.markSeen("ar"); showHowTo = false } }
             }
             .onChange(of: controller.frozen?.id) { _, id in
                 if id != nil, let f = controller.frozen { open(f) }
@@ -134,6 +143,28 @@ struct ArMeasureScreen: View {
         let scale = WindowPhotoScale.ar(ArScale(pointsM: r.windowPointsM, trackingLostCount: capture.trackingLostCount, device: capture.view.device, cornerSpreadM: r.windowSpreadM))
         // The opening goes to the server as before; the window's own frame inside it only rides along, to be shown next to it on this phone
         store.capture(scale: scale, corners: corners, jpeg: capture.jpeg, widthPx: capture.widthPx, heightPx: capture.heightPx, windowFrame: r.windowFrame, in: session)
+    }
+}
+
+extension ArMeasureScreen {
+    /// The guided scan's result becomes the window: the scan's rectangle as the window's size, the first photo as its picture, and the whole
+    /// scan (photos, marks, answer) saved next to it to go to the server after the window.
+    fileprivate func useScanResult(_ model: GuidedScanModel, controller: ArMeasureController) {
+        guard let f = model.finalWindow() else { return }
+        controller.pause()
+        let scale = WindowPhotoScale.ar(ArScale(pointsM: f.pointsM, trackingLostCount: 0, device: f.shot.view.device, cornerSpreadM: f.spreadM))
+        store.capture(scale: scale, corners: f.corners, jpeg: f.shot.uprightJPEG, widthPx: Int(f.shot.view.photoWidthPx), heightPx: Int(f.shot.view.photoHeightPx),
+                      windowFrame: f.windowFrame, windowId: model.windowId, scan: f.staged, in: session)
+    }
+}
+
+/// The scan's how-to (shown the first time): the three things to do.
+struct ScanHowTo: View {
+    static let steps = ["Stand 5 to 8 feet back, fit the whole window in view, and tap Start.", "Step slowly left and right while the phone takes photos.", "Move closer to each corner when it asks. Hold still for a second."]
+    let onDone: () -> Void
+
+    var body: some View {
+        HowToOverlay(title: "Scan a window", steps: Self.steps, art: .corners, onDone: onDone)
     }
 }
 
