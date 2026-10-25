@@ -105,6 +105,7 @@ export const backofficeDesigner = {
   splitColumns: 'Split into columns',
   splitRows: 'Split into rows',
   mergeSections: 'Merge sections',
+  optionNone: 'None',
   gridNone: 'No grid',
   gridPattern: (p: string) => p.replace('x', ' x ') + ' lites',
   notesPlaceholder: 'Anything the installer or factory should know',

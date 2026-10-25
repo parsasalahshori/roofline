@@ -1,4 +1,4 @@
-import { OPTION_GROUPS, temperedSuggestions, type DesignIssue, type Layout, type OptionGroup, type ProductCatalog, type SafetyAnswers, type Tier, type WindowDesign, type WindowStyle } from '@roofline/shared';
+import { OPTION_GROUPS, styleOfDesign, temperedSuggestions, type DesignIssue, type Layout, type OptionGroup, type ProductCatalog, type SafetyAnswers, type Tier, type WindowDesign } from '@roofline/shared';
 import { Banner, Button, Icon, Segmented } from '@roofline/ui';
 import { useState } from 'react';
 import { backofficeDesigner as copy } from '../../../copy/backofficeDesigner.ts';
@@ -51,10 +51,6 @@ function NumberRow({ label, value, onChange }: { label: string; value: number | 
   );
 }
 
-function styleFor(sections: number): WindowStyle {
-  return sections >= 3 ? 'slider-3' : sections === 2 ? 'slider-2' : 'picture';
-}
-
 /** The unit editor: a right-side inspector on a tablet or desktop, a bottom sheet on a phone (the page's CSS decides). */
 export function UnitInspector({ design, catalog, tier, issues, onChange, onDuplicate, onDelete, onClose }: Props) {
   const product = productOf(catalog, design.productId);
@@ -78,12 +74,14 @@ export function UnitInspector({ design, catalog, tier, issues, onChange, onDupli
     if (next !== design.layout) setLayout(next);
   };
 
-  const suggestions = temperedSuggestions({ safety: design.safety, style: styleFor(total) }, { widthIn: design.widthIn, heightIn: design.heightIn });
+  const suggestions = temperedSuggestions({ safety: design.safety, style: styleOfDesign(design, product) }, { widthIn: design.widthIn, heightIn: design.heightIn });
   const temperedChoices = choicesFor(catalog, 'tempered', design.productId);
-  const temperedPick = temperedChoices.find((c) => !c.isDefault);
-  const temperedOn = chosenOption(catalog, design, 'tempered')?.isDefault === false;
+  const temperedPick = temperedChoices[temperedChoices.length - 1];
+  const temperedOn = chosenOption(catalog, design, 'tempered') !== undefined;
   const safety = (patch: Partial<SafetyAnswers>) => set({ safety: { ...design.safety, ...patch } });
   const unitCents = unitPriceCents(catalog, design, tier);
+  // The safety-glass warning has its own block below, with the button
+  const shownIssues = issues.filter((i) => i.field !== 'safety');
   const frameColor = chosenOption(catalog, design, 'exterior-color')?.value;
   const productOptions = catalog.products.filter((p) => !p.archived || p.id === design.productId).map((p) => ({ value: p.id, label: p.archived ? copy.archivedProduct(p.name) : p.name }));
   const gridOptions = [...new Set([...GRID_PATTERNS, ...sections.flatMap((s) => s.grid.split('/'))])].map((p) => ({ value: p, label: p === '' ? copy.gridNone : copy.gridPattern(p) }));
@@ -104,9 +102,9 @@ export function UnitInspector({ design, catalog, tier, issues, onChange, onDupli
       </header>
 
       <div className={styles.body}>
-        {issues.length > 0 ? (
+        {shownIssues.length > 0 ? (
           <div className={styles.issues}>
-            {issues.map((issue) => (
+            {shownIssues.map((issue) => (
               <Banner key={`${issue.field}-${issue.message}`} tone={issue.level === 'error' ? 'danger' : 'warning'}>
                 {issue.message}
               </Banner>
@@ -175,7 +173,8 @@ export function UnitInspector({ design, catalog, tier, issues, onChange, onDupli
           {OPTION_GROUPS.map((group: OptionGroup) => {
             const choices = choicesFor(catalog, group, design.productId);
             if (choices.length === 0) return null;
-            return <SelectRow key={group} label={copy.optionGroups[group]} value={chosenOption(catalog, design, group)?.id ?? ''} options={choices.map((c) => ({ value: c.id, label: c.label }))} onChange={(id) => onChange(chooseOption(catalog, design, group, id))} />;
+            const none = choices.some((c) => c.isDefault) || group === 'grid' || group === 'screen' ? [] : [{ value: '', label: copy.optionNone }];
+            return <SelectRow key={group} label={copy.optionGroups[group]} value={chosenOption(catalog, design, group)?.id ?? ''} options={[...none, ...choices.map((c) => ({ value: c.id, label: c.label }))]} onChange={(id) => onChange(chooseOption(catalog, design, group, id))} />;
           })}
         </Group>
 

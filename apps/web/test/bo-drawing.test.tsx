@@ -64,12 +64,12 @@ describe('layout maths', () => {
   it('shrinks overflowing parts so the last keeps its minimum', () => {
     const sizes = partSizes([{ size: 50 }, { size: 50 }, { size: null }], 60);
     expect(sizes.reduce((a, b) => a + b, 0)).toBeCloseTo(60);
-    expect(sizes[2]).toBeGreaterThanOrEqual(6 - 1e-9);
+    expect(sizes[2]).toBeGreaterThanOrEqual(4 - 1e-9);
   });
 
   it('lists the dividers with how far they may move', () => {
     const d = placeDividers(three, 60, 48);
-    expect(d.map((x) => [x.index, x.pos, x.min, x.max])).toEqual([[0, 20, 6, 34], [1, 40, 26, 54]]);
+    expect(d.map((x) => [x.index, x.pos, x.min, x.max])).toEqual([[0, 20, 4, 36], [1, 40, 24, 56]]);
   });
 
   it('moves a divider snapped to 1/8 and the neighbour takes the difference', () => {
@@ -81,12 +81,12 @@ describe('layout maths', () => {
     expect(placeSections(fine, 60, 48)[0]!.rect.w).toBe(24.125);
   });
 
-  it('keeps both neighbours at least 6 in', () => {
+  it('keeps both neighbours at least 4 in', () => {
     const left = moveDivider(three, 'cols', 0, -10, 60, 48);
-    expect(placeSections(left, 60, 48)[0]!.rect.w).toBe(6);
+    expect(placeSections(left, 60, 48)[0]!.rect.w).toBe(4);
     const right = moveDivider(three, 'cols', 1, 100, 60, 48);
     const w = placeSections(right, 60, 48).map((p) => p.rect.w);
-    expect(w[2]).toBe(6);
+    expect(w[2]).toBe(4);
     expect(w[0]).toBe(20);
   });
 
@@ -107,10 +107,10 @@ describe('layout maths', () => {
     expect(placeSections(rows, 35.5, 48).map((p) => p.rect.h)).toEqual([24, 24]);
   });
 
-  it('will not split into parts under 6 in or with a count under 2', () => {
+  it('will not split into parts under 4 in or with a count under 2', () => {
     const base = section('one');
     expect(splitSection(base, 'one', 'columns', 1, 40, 40)).toBe(base);
-    expect(splitSection(base, 'one', 'columns', 9, 40, 40)).toBe(base);
+    expect(splitSection(base, 'one', 'columns', 11, 40, 40)).toBe(base);
     expect(splitSection(base, 'nope', 'columns', 2, 40, 40)).toBe(base);
   });
 

@@ -36,7 +36,6 @@ export const catalogFixture: ProductCatalog = {
     opt('gr-col', 'grid', 'Colonial grids', 'colonial', { per: 'lite', cents: 350 }),
     opt('s-half', 'screen', 'Half screen', 'half', { per: 'unit', cents: 0 }, true),
     opt('s-full', 'screen', 'Full screen', 'full', { per: 'unit', cents: 1800 }),
-    opt('t-std', 'tempered', 'Standard glass', 'standard', { per: 'unit', cents: 0 }, true),
     opt('t-temp', 'tempered', 'Tempered glass', 'tempered', { per: 'sq-ft', cents: 500 }),
   ],
   accessories: [

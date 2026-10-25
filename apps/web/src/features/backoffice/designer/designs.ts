@@ -2,7 +2,7 @@
 import { NO_SAFETY_ANSWERS, type GridType, type Layout, type OpeningKind, type OptionGroup, type Product, type ProductCatalog, type ScreenType, type WindowDesign } from '@roofline/shared';
 import { snapEighth } from '../drawing/inches.ts';
 import { newLayoutId } from '../drawing/layout.ts';
-import { chosenOption, choicesFor } from './pricing.ts';
+import { choicesFor } from './pricing.ts';
 
 export const GRID_TYPE_VALUES: readonly GridType[] = ['none', 'colonial', 'prairie', 'custom'];
 export const SCREEN_VALUES: readonly ScreenType[] = ['none', 'half', 'full'];
@@ -39,8 +39,8 @@ export function newDesign(catalog: ProductCatalog, label: string, makeId: () => 
     sizeSource: { kind: 'typed' },
     notes: '',
   };
-  const grid = chosenOption(catalog, draft, 'grid');
-  const screen = chosenOption(catalog, draft, 'screen');
+  const grid = choicesFor(catalog, 'grid', product.id).find((c) => c.isDefault);
+  const screen = choicesFor(catalog, 'screen', product.id).find((c) => c.isDefault);
   return { ...draft, gridType: asGrid(grid?.value) ?? 'none', screen: asScreen(screen?.value) ?? 'none' };
 }
 
@@ -60,10 +60,15 @@ export function duplicateDesign(design: WindowDesign, label: string, makeId: () 
 /** Choose an option; the grid and screen groups also set the design's own gridType / screen the factory reads. */
 export function chooseOption(catalog: ProductCatalog, design: WindowDesign, group: OptionGroup, choiceId: string): WindowDesign {
   const choice = choicesFor(catalog, group, design.productId).find((c) => c.id === choiceId);
-  const next: WindowDesign = { ...design, options: { ...design.options, [group]: choiceId } };
-  if (group === 'grid') next.gridType = asGrid(choice?.value) ?? design.gridType;
-  if (group === 'screen') next.screen = asScreen(choice?.value) ?? design.screen;
-  return next;
+  // Grid and screen are the unit's own fields (the factory values); every other group is the chosen option's id
+  if (group === 'grid') return { ...design, gridType: asGrid(choice?.value) ?? design.gridType };
+  if (group === 'screen') return { ...design, screen: asScreen(choice?.value) ?? design.screen };
+  if (choiceId === '') {
+    const rest = { ...design.options };
+    delete rest[group];
+    return { ...design, options: rest };
+  }
+  return { ...design, options: { ...design.options, [group]: choiceId } };
 }
 
 /**

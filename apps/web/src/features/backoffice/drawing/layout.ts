@@ -1,10 +1,10 @@
 // Pure maths for a unit's Layout: where each section and divider sits (in inches inside the outer frame), how a section
 // is split, and how a divider moves (snapped to 1/8 in). The drawing, the editor's hit areas and the tests all use this.
-import type { Layout, Section } from '@roofline/shared';
+import { MIN_SECTION_IN, type Layout, type Section } from '@roofline/shared';
 import { snapEighth } from './inches.ts';
 
-/** The smallest a part of a split may be, inches (a sash narrower than this cannot be built). */
-export const MIN_PART_IN = 6;
+/** The smallest a part of a split may be, inches (a sash narrower than this cannot be built): the server's own rule. */
+export const MIN_PART_IN = MIN_SECTION_IN;
 
 export type Rect = { x: number; y: number; w: number; h: number };
 export type Direction = 'columns' | 'rows';
