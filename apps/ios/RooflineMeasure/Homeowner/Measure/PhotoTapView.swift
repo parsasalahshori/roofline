@@ -242,9 +242,9 @@ struct PhotoTapView: View {
                             pan = .zero
                         }
                     } label: {
-                        Text("Show all").wc(14, .semibold, relativeTo: .footnote).foregroundStyle(.white)
-                            .padding(.horizontal, 12).frame(minHeight: 36)
-                            .background(Capsule().fill(Color(white: 0.12, opacity: 0.85)))
+                        Label("Show all", systemImage: "arrow.down.right.and.arrow.up.left").font(.footnote.weight(.semibold)).foregroundStyle(.white)
+                            .padding(.horizontal, 12).frame(minHeight: Theme.minTap)
+                            .hudCapsule()
                     }
                     .padding(8)
                 }

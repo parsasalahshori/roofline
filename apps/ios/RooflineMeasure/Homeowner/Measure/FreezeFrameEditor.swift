@@ -187,43 +187,39 @@ struct FreezeFrameEditor: View {
     private func topBar(_ editing: FreezeEditing) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Button(action: onClose) {
-                IconView(icon: .close, size: 20, weight: 2).foregroundStyle(.white)
-                    .frame(width: 44, height: 44).background(Circle().fill(Color(white: 0.12, opacity: 0.75)))
+                Image(systemName: WCIcon.close.symbol).font(.body.weight(.semibold)).foregroundStyle(.white).hudCircle()
             }
             .accessibilityLabel("Close")
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text(title).wcMono(14, .medium, relativeTo: .footnote).foregroundStyle(Color.white.opacity(0.7))
+                    Text(title).font(.footnote.weight(.medium)).monospacedDigit().foregroundStyle(Color.white.opacity(0.85))
                     Spacer()
-                    Text(photosLine).wc(14, .semibold, relativeTo: .footnote).foregroundStyle(Theme.tape)
+                    Text(photosLine).font(.footnote.weight(.semibold)).foregroundStyle(Theme.tape)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("Opening").wc(15, relativeTo: .subheadline).foregroundStyle(Color.white.opacity(0.7))
+                    Text("Opening").font(.subheadline).foregroundStyle(Color.white.opacity(0.85))
                     number(editing.widthIn)
-                    Text("×").wc(20, .medium, relativeTo: .title3).foregroundStyle(Color.white.opacity(0.7))
+                    Text("×").font(.title3.weight(.medium)).foregroundStyle(Color.white.opacity(0.85))
                     number(editing.heightIn)
-                    Text("in").wcMono(15, .semibold, relativeTo: .subheadline).foregroundStyle(.white)
+                    Text("in").font(.subheadline.weight(.semibold)).monospacedDigit().foregroundStyle(.white)
                 }
                 .lineLimit(1).minimumScaleFactor(0.7)
                 if let window = editing.windowSize {
-                    Text(window.line).wc(15, .semibold, relativeTo: .subheadline).foregroundStyle(Color.white.opacity(0.88))
+                    Text(window.line).font(.subheadline.weight(.semibold)).foregroundStyle(Color.white.opacity(0.92))
                         .lineLimit(1).minimumScaleFactor(0.75)
                 }
                 if let standard = editing.standardSize {
-                    Text(standard.sentence).wc(14, .medium, relativeTo: .footnote).foregroundStyle(Color.white.opacity(0.78))
+                    Text(standard.sentence).font(.footnote.weight(.medium)).foregroundStyle(Color.white.opacity(0.85))
                         .lineLimit(2).minimumScaleFactor(0.8)
                 }
                 if editing.needsCheck {
-                    HStack(spacing: 6) {
-                        IconView(icon: .alert, size: 14, weight: 2)
-                        Text("Needs a check: your photos differ").wc(14, .semibold, relativeTo: .footnote)
-                    }
-                    .foregroundStyle(Theme.tape)
+                    Label("Needs a check: your photos differ", systemImage: WCIcon.alert.symbol)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Theme.tape)
                 }
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
-            .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color(white: 0.14, opacity: 0.78)))
-            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+            .hudPanel(cornerRadius: 20)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(accessibilityReadout(editing))
         }
@@ -240,7 +236,7 @@ struct FreezeFrameEditor: View {
         if let v = inches {
             Text(SizeFormat.attributed(v, size: 30, weight: .medium, color: .white))
         } else {
-            Text("–").wcMono(30, .medium, relativeTo: .title).foregroundStyle(Color.white.opacity(0.4))
+            Text("–").font(.title.weight(.medium)).monospacedDigit().foregroundStyle(Color.white.opacity(0.5))
         }
     }
 
@@ -259,11 +255,10 @@ struct FreezeFrameEditor: View {
         VStack {
             HStack(spacing: 8) {
                 ProgressView().progressViewStyle(.circular).tint(.white).controlSize(.small)
-                Text("Finding your window…").wc(15, .semibold, relativeTo: .subheadline).foregroundStyle(.white)
+                Text("Finding your window…").font(.subheadline.weight(.semibold)).foregroundStyle(.white)
             }
             .padding(.horizontal, 14).padding(.vertical, 8)
-            .background(Capsule().fill(Color(white: 0.1, opacity: 0.82)))
-            .overlay(Capsule().strokeBorder(Color.white.opacity(0.1), lineWidth: 1))
+            .hudCapsule()
             .padding(.top, 10)
             Spacer()
         }
@@ -274,12 +269,12 @@ struct FreezeFrameEditor: View {
 
     private func hint(_ editing: FreezeEditing) -> some View {
         HStack(spacing: 10) {
-            IconView(icon: .target, size: 20).foregroundStyle(Theme.tape)
-            Text(editing.hint(stage)).wc(17, .medium, relativeTo: .body).foregroundStyle(.white)
+            Image(systemName: WCIcon.target.symbol).font(.title3).foregroundStyle(Theme.tape)
+            Text(editing.hint(stage)).font(.body.weight(.medium)).foregroundStyle(.white)
                 .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
-        .background(Capsule().fill(Color(white: 0.14, opacity: 0.78)))
+        .hudPanel()
         .padding(.horizontal, 16)
         .padding(.top, 8)
         .accessibilityElement(children: .combine)
@@ -287,18 +282,16 @@ struct FreezeFrameEditor: View {
     }
 
     private func controls(_ editing: FreezeEditing) -> some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 6) {
             HStack(spacing: 12) {
                 Button(action: onRetake) {
-                    HStack(spacing: 8) {
-                        IconView(icon: .refresh, size: 18, weight: 2)
-                        Text("Retake").wc(17, .semibold, relativeTo: .headline)
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 20)
-                    .frame(minHeight: 56)
-                    .background(Capsule().fill(Color(white: 0.2, opacity: 0.9)))
+                    Label("Retake", systemImage: WCIcon.refresh.symbol)
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .tint(.white)
                 .accessibilityLabel("Retake")
                 .accessibilityHint("Goes back to the camera to take this photo again")
                 Button {
@@ -309,16 +302,13 @@ struct FreezeFrameEditor: View {
                         onUse(r)
                     }
                 } label: {
-                    HStack(spacing: 8) {
-                        IconView(icon: .check, size: 20, weight: 2.2)
-                        Text("Use this size").wc(18, .bold, relativeTo: .headline)
-                    }
-                    .foregroundStyle(Theme.onRed)
-                    .frame(maxWidth: .infinity, minHeight: 56)
-                    .background(Capsule().fill(Theme.buttonFill))
-                    .overlay(Capsule().strokeBorder(Color.white, lineWidth: 3))
-                    .opacity(editing.canUse ? 1 : 0.45)
+                    Label("Use this size", systemImage: WCIcon.check.symbol)
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
                 }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(Theme.buttonFill)
                 .disabled(!editing.canUse)
                 .accessibilityLabel("Use this size")
                 .accessibilityHint("Keeps this window and goes on to name it")
@@ -326,13 +316,13 @@ struct FreezeFrameEditor: View {
             .padding(.horizontal, 16)
             if photoNumber < ArCaptureModel.maxPhotos, let now = editing.sent {
                 Button { onAddAnother(now) } label: {
-                    Text("Take another photo to double-check").wc(15, .semibold, relativeTo: .subheadline).foregroundStyle(Theme.tape)
-                        .frame(minHeight: 36)
+                    Text("Take another photo to double-check").font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                        .frame(minHeight: Theme.minTap)
                 }
                 .accessibilityHint("Keeps this photo and takes another of the same window, to check the size against")
             }
         }
         .padding(.top, 6)
-        .padding(.bottom, 8)
+        .padding(.bottom, 4)
     }
 }

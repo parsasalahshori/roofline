@@ -8,6 +8,7 @@ import UIKit
 /// and the corners are in its pixels; the server recomputes the size from the same data.
 struct CardPhotoFlow: View {
     @Environment(HomeownerStore.self) private var store
+    @Environment(\.dynamicTypeSize) private var typeSize
     let session: MeasureSession
 
     enum Step { case intro, card, window }
@@ -48,39 +49,56 @@ struct CardPhotoFlow: View {
     // MARK: Intro
 
     private var intro: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Button { store.measureSession = nil } label: {
-                    IconView(icon: .close, size: 20, weight: 2).foregroundStyle(Theme.ink).frame(width: 44, height: 44).background(Circle().fill(Theme.surface))
-                }
-                .accessibilityLabel("Close")
-                Spacer()
-            }
-            .padding(.horizontal, 12).padding(.top, 8)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    WCHeadline(text: "Photo with a bank card", subtitle: "One photo of the whole window, with a card on the glass.")
+        NavigationStack {
+            List {
+                Section {
                     CardTip(icon: .card, title: "1. Tape or hold a bank card flat on the glass", detail: "In the middle of the window, the whole card in view, no glare. A credit card, debit card or driver's license works.")
                     CardTip(icon: .back, title: "2. Stand about 4 feet back and take one photo", detail: "Straight in front of the window, with all of it in the photo and some room around it. Hold still.")
                     CardTip(icon: .light, title: "3. Tap the card's 4 corners, then the window's 4 corners", detail: "The magnifier helps you hit the very tip of the card's rounded corners, then the 4 inside corners of the frame.")
-                    if cameraDenied {
-                        InfoPanel(icon: .camera, text: "Camera access is off. Turn it on in Settings, then come back.", tint: Theme.warnTint, iconColor: Theme.warn)
-                    }
-                    if cameraRestricted {
-                        InfoPanel(icon: .camera, text: CameraAccess.restrictedText, tint: Theme.warnTint, iconColor: Theme.warn)
-                    }
-                    if let note = cameraNote { InfoPanel(icon: .info, text: note) }
-                    WCScrollFooter()
+                } header: {
+                    Text("One photo of the whole window, with a card on the glass.").font(.subheadline).foregroundStyle(Theme.ink2).textCase(nil)
+                        .padding(.bottom, 4)
                 }
-                .padding(.horizontal, Theme.gutter).padding(.bottom, 24)
+                if cameraDenied || cameraRestricted || cameraNote != nil {
+                    Section {
+                        if cameraDenied {
+                            notice(icon: .camera, "Camera access is off. Turn it on in Settings, then come back.", warn: true)
+                        }
+                        if cameraRestricted {
+                            notice(icon: .camera, CameraAccess.restrictedText, warn: true)
+                        }
+                        if let note = cameraNote { notice(icon: .info, note, warn: false) }
+                    }
+                }
+                if typeSize.isAccessibilitySize {
+                    Section { WCScrollFooter() }
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                }
+            }
+            .listStyle(.insetGrouped)
+            .wcFooter {
+                WCPrimaryButton(title: "Take the photo", icon: .camera, iconLeading: true) { Task { await openCamera() } }
+                #if DEBUG
+                if !DeviceCaps.cameraAvailable { WCSecondaryButton(title: "Use the sample photo (debug)") { useSample() } }
+                #endif
+            }
+            .navigationTitle("Photo with a bank card")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { store.measureSession = nil } label: { Image(systemName: WCIcon.close.symbol) }
+                        .accessibilityLabel("Close")
+                }
             }
         }
-        .background(Theme.ground.ignoresSafeArea())
-        .wcFooter {
-            WCPrimaryButton(title: "Take the photo", icon: .camera, iconLeading: true) { Task { await openCamera() } }
-            #if DEBUG
-            if !DeviceCaps.cameraAvailable { WCSecondaryButton(title: "Use the sample photo (debug)") { useSample() } }
-            #endif
+    }
+
+    private func notice(icon: WCIcon, _ text: String, warn: Bool) -> some View {
+        Label {
+            Text(text).font(.subheadline).foregroundStyle(Theme.ink)
+        } icon: {
+            Image(systemName: icon.symbol).foregroundStyle(warn ? Theme.warn : Theme.ink2)
         }
     }
 
@@ -205,15 +223,15 @@ struct CardPhotoFlow: View {
             Button {
                 if onCard { step = .intro } else { step = .card }
             } label: {
-                IconView(icon: .chevLeft, size: 20, weight: 2.2).foregroundStyle(.white).frame(width: 44, height: 44).background(Circle().fill(Color(white: 0.12, opacity: 0.8)))
+                Image(systemName: WCIcon.chevLeft.symbol).font(.body.weight(.semibold)).foregroundStyle(.white).hudCircle()
             }
             .accessibilityLabel("Back")
             Text(onCard ? "Step 1 of 2 · the card" : "Step 2 of 2 · the window")
-                .wc(17, .semibold, relativeTo: .headline).foregroundStyle(.white)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(white: 0.1, opacity: 0.85)))
+                .font(.headline).monospacedDigit().foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: Theme.minTap)
+                .hudCapsule()
             Button { store.measureSession = nil } label: {
-                IconView(icon: .close, size: 18, weight: 2).foregroundStyle(.white).frame(width: 44, height: 44).background(Circle().fill(Color(white: 0.12, opacity: 0.8)))
+                Image(systemName: WCIcon.close.symbol).font(.body.weight(.semibold)).foregroundStyle(.white).hudCircle()
             }
             .accessibilityLabel("Close")
         }
@@ -222,13 +240,13 @@ struct CardPhotoFlow: View {
 
     private func instruction(onCard: Bool) -> some View {
         HStack(spacing: 14) {
-            if onCard { BankCardGlyph(width: 44) } else { IconView(icon: .win, size: 30).foregroundStyle(Theme.tape).frame(width: 44) }
-            Text(instructionText(onCard: onCard)).wc(16, relativeTo: .subheadline).foregroundStyle(Color.white.opacity(0.92)).fixedSize(horizontal: false, vertical: true)
+            if onCard { BankCardGlyph(width: 44) } else { Image(systemName: WCIcon.win.symbol).font(.title).foregroundStyle(Theme.tape).frame(width: 44) }
+            Text(instructionText(onCard: onCard)).font(.subheadline).foregroundStyle(Color.white.opacity(0.95)).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
             HowButton { showHowTo = true }
         }
         .padding(14)
-        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(white: 0.16, opacity: 0.88)))
+        .hudPanel(cornerRadius: 18)
     }
 
     private func instructionText(onCard: Bool) -> AttributedString {
@@ -247,20 +265,20 @@ struct CardPhotoFlow: View {
 
     private func statusPanel(onCard: Bool, count: Int) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(Self.counter(onCard: onCard, count: count)).wcMono(20, .bold, relativeTo: .title3).foregroundStyle(.white)
+            Text(Self.counter(onCard: onCard, count: count)).font(.title3.weight(.bold)).monospacedDigit().foregroundStyle(.white)
             if onCard {
                 Text(count < 4 ? "Next, tap the 4 corners of the window frame. Then we show the size."
                      : (windowFound ? "Good. Next, check the window we found." : "Good. Next, tap the 4 corners of the window frame."))
-                    .wc(15, relativeTo: .subheadline).foregroundStyle(Color.white.opacity(0.8)).fixedSize(horizontal: false, vertical: true)
+                    .font(.subheadline).foregroundStyle(Color.white.opacity(0.88)).fixedSize(horizontal: false, vertical: true)
             } else if count == 4 {
                 sizeLine
             } else {
-                Text("Then we show the size.").wc(15, relativeTo: .subheadline).foregroundStyle(Color.white.opacity(0.8))
+                Text("Then we show the size.").font(.subheadline).foregroundStyle(Color.white.opacity(0.88))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(white: 0.16, opacity: 0.88)))
+        .hudPanel(cornerRadius: 18)
         .accessibilityElement(children: .combine)
     }
 
@@ -277,17 +295,17 @@ struct CardPhotoFlow: View {
                 Text(SizeFormat.pair(p.widthIn, p.heightIn, size: 24, weight: .bold, color: .white, unit: true))
                     .accessibilityLabel(SizeWording.spokenSize(widthIn: p.widthIn, heightIn: p.heightIn))
                 Text(p.needsCheck ? "\(SizeWording.plusMinus(p.uncertaintyIn ?? 1)). We confirm it at your free visit." : "Accurate to \(SizeWording.accuracy(p.uncertaintyIn ?? 0.25)).")
-                    .wc(14, relativeTo: .footnote).foregroundStyle(Color.white.opacity(0.8)).fixedSize(horizontal: false, vertical: true)
+                    .font(.footnote).foregroundStyle(Color.white.opacity(0.88)).fixedSize(horizontal: false, vertical: true)
             }
         } else if let problem = problem {
             // The server would refuse this photo: its sentence says what to change, and "Use this size" waits
             HStack(alignment: .top, spacing: 10) {
-                IconView(icon: .alert, size: 20).foregroundStyle(Theme.tape).padding(.top, 1)
-                Text(problem).wc(15, relativeTo: .subheadline).foregroundStyle(Color.white.opacity(0.92)).fixedSize(horizontal: false, vertical: true)
+                Image(systemName: WCIcon.alert.symbol).font(.title3).foregroundStyle(Theme.tape)
+                Text(problem).font(.subheadline).foregroundStyle(Color.white.opacity(0.95)).fixedSize(horizontal: false, vertical: true)
             }
         } else {
             Text(preview?.reasons.first ?? "The size comes after we upload your photo.")
-                .wc(15, relativeTo: .subheadline).foregroundStyle(Color.white.opacity(0.85)).fixedSize(horizontal: false, vertical: true)
+                .font(.subheadline).foregroundStyle(Color.white.opacity(0.9)).fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -331,18 +349,19 @@ struct CardPhotoFlow: View {
                     windowFound = false
                 }
             } label: {
-                Text(onCard ? "Retake" : "Start over").wc(17, .semibold, relativeTo: .headline).foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, minHeight: Theme.buttonHeight)
-                    .background(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).fill(Color(white: 0.3, opacity: 0.7)))
+                Text(onCard ? "Retake" : "Start over").fontWeight(.semibold).frame(maxWidth: .infinity)
             }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .tint(.white)
             Button {
                 if onCard { step = .window } else { finish() }
             } label: {
-                Text(onCard ? "Next: window corners" : "Use this size").wc(17, .semibold, relativeTo: .headline).foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, minHeight: Theme.buttonHeight)
-                    .background(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).fill(Theme.buttonFill))
-                    .opacity(count == 4 && (onCard || problem == nil) ? 1 : 0.45)
+                Text(onCard ? "Next: window corners" : "Use this size").fontWeight(.semibold).multilineTextAlignment(.center).frame(maxWidth: .infinity)
             }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .tint(Theme.buttonFill)
             .disabled(count != 4 || (!onCard && problem != nil))
         }
         .padding(.bottom, 8)
@@ -392,24 +411,23 @@ private struct CardTip: View {
     let detail: String
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(alignment: .top, spacing: 14) {
             Group {
                 switch icon {
-                case .card: BankCardGlyph(width: 36)
-                case .back: IconView(icon: .ruler, size: 26).foregroundStyle(Theme.ink)
-                case .light: IconView(icon: .target, size: 26).foregroundStyle(Theme.tape)
+                case .card: BankCardGlyph(width: 32)
+                case .back: Image(systemName: WCIcon.ruler.symbol).font(.title2).foregroundStyle(Theme.ink)
+                case .light: Image(systemName: WCIcon.target.symbol).font(.title2).foregroundStyle(Theme.ink)
                 }
             }
-            .frame(width: 64, height: 56)
+            .frame(width: 48, height: 48)
             .background(Theme.surface2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).wc(16, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
-                Text(detail).wc(13, relativeTo: .footnote).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
+                Text(title).font(.headline).foregroundStyle(Theme.ink)
+                Text(detail).font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(10)
-        .wcCard()
+        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
     }
 }

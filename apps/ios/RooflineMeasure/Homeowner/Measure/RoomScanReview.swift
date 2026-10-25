@@ -108,53 +108,57 @@ struct RoomScanReview: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Button("Cancel", action: onCancel).wc(17, relativeTo: .body).foregroundStyle(Theme.blue).frame(minWidth: Theme.minTap, minHeight: Theme.minTap, alignment: .leading)
-                Spacer()
-                Text(model.roomName).wc(17, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink).accessibilityAddTraits(.isHeader)
-                    .lineLimit(1).minimumScaleFactor(0.7)
-                Spacer()
-                Color.clear.frame(width: 60, height: 1)
-            }
-            .padding(.horizontal, Theme.gutter)
-            // the title row stops growing at the first accessibility size, like the system's bars
-            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    if mode == .wholeRoom { diagramCard }
-                    Text(model.title)
-                        .wc(19, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink).accessibilityAddTraits(.isHeader)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.top, mode == .wholeRoom ? 18 : 10).padding(.horizontal, 6)
-                    Text(ScanWording.confirmLine).wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 2).padding(.horizontal, 6)
-                    roomRow.padding(.top, 12)
-                    GroupCard {
-                        ForEach(Array(rows.enumerated()), id: \.element.id) { i, row in
-                            foundRow(row, index: i)
-                            if i < rows.count - 1 { RowDivider(inset: 14) }
-                        }
+        NavigationStack {
+            List {
+                if mode == .wholeRoom { Section { diagramCard } }
+                Section {
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { i, row in
+                        foundRow(row, index: i)
                     }
-                    .padding(.top, 10)
-                    SmallNote(text: "Tap a window to leave it out. Touch and hold to move it to another room.").padding(.top, 8).padding(.horizontal, 6)
-                    InfoPanel(icon: .alert, text: "Good for your quote. We confirm the exact size at your visit. Want it closer now? Tap the 4 corners of each window.", tint: Theme.infoTint, iconColor: Theme.info).padding(.top, 14)
-                    WCScrollFooter()
+                } header: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(model.title).font(.title3.weight(.semibold)).foregroundStyle(Theme.ink).accessibilityAddTraits(.isHeader)
+                        Text(ScanWording.confirmLine).font(.subheadline).foregroundStyle(Theme.ink2)
+                    }
+                    .textCase(nil)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.bottom, 4)
+                } footer: {
+                    Text("Tap a window to leave it out. Touch and hold to move it to another room.").foregroundStyle(Theme.ink2)
                 }
-                .padding(.horizontal, Theme.gutter)
-                .padding(.top, 8)
-                .padding(.bottom, 20)
+                Section { roomRow }
+                Section {
+                    Label {
+                        Text("Good for your quote. We confirm the exact size at your visit. Want it closer now? Tap the 4 corners of each window.")
+                            .font(.subheadline).foregroundStyle(Theme.ink2)
+                    } icon: {
+                        Image(systemName: WCIcon.info.symbol).foregroundStyle(Theme.ink2)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+                if typeSize.isAccessibilitySize {
+                    Section { WCScrollFooter() }
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                }
             }
-        }
-        .background(Theme.ground.ignoresSafeArea())
-        .wcFooter {
-            WCPrimaryButton(title: model.addTitle, icon: .check, iconLeading: true, isEnabled: !model.included.isEmpty) { onAdd(model.included) }
-            WCSecondaryButton(title: "Tap corners for each one", action: onCorners)
-        }
-        .alert("Name this room", isPresented: $askRoom) {
-            TextField("Room name", text: $typedRoom)
-            Button("Save") { model.rename(to: typedRoom) }
-            Button("Cancel", role: .cancel) {}
+            .listStyle(.insetGrouped)
+            .wcFooter {
+                WCPrimaryButton(title: model.addTitle, icon: .check, iconLeading: true, isEnabled: !model.included.isEmpty) { onAdd(model.included) }
+                WCSecondaryButton(title: "Tap corners for each one", action: onCorners)
+            }
+            .navigationTitle(model.roomName)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel", action: onCancel)
+                }
+            }
+            .alert("Name this room", isPresented: $askRoom) {
+                TextField("Room name", text: $typedRoom)
+                Button("Save") { model.rename(to: typedRoom) }
+                Button("Cancel", role: .cancel) {}
+            }
         }
     }
 
@@ -170,13 +174,11 @@ struct RoomScanReview: View {
             Button { typedRoom = ""; askRoom = true } label: { Label("Another name…", systemImage: "pencil") }
         } label: {
             HStack(spacing: 10) {
-                Text("Room").wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink3)
-                Text(model.roomName).wc(17, .semibold, relativeTo: .body).foregroundStyle(Theme.ink).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
-                IconView(icon: .chevRight, size: 16, weight: 2).foregroundStyle(Theme.ink3)
+                Text("Room").font(.body).foregroundStyle(Theme.ink)
+                Spacer(minLength: 8)
+                Text(model.roomName).font(.body).foregroundStyle(Theme.ink2).lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down").font(.footnote.weight(.semibold)).foregroundStyle(Theme.red)
             }
-            .padding(.horizontal, 14)
-            .frame(minHeight: 52)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .contentShape(Rectangle())
         }
         .accessibilityLabel("Room, \(model.roomName)")
@@ -186,17 +188,11 @@ struct RoomScanReview: View {
     // MARK: Picture
 
     private var diagramCard: some View {
-        ZStack(alignment: .top) {
-            RoomDiagram(plan: plan, mode: diagramMode, letters: Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0.letter) }), included: Set(model.included.map { $0.id }))
-                .padding(.top, 36).padding(.bottom, 8)
-            HStack(alignment: .top) {
-                HStack(spacing: 6) {
-                    IconView(icon: .cube, size: 16, weight: 1.9)
-                    Text("Scanned in \(seconds) seconds").wc(14, .semibold, relativeTo: .footnote).lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                }
-                .foregroundStyle(Theme.blue)
-                .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(Theme.blueTint, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        VStack(spacing: 8) {
+            HStack(alignment: .center) {
+                Label("Scanned in \(seconds) seconds", systemImage: WCIcon.cube.symbol)
+                    .font(.footnote.weight(.semibold)).foregroundStyle(Theme.ink2)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 Picker("View", selection: $diagramMode) {
                     ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
@@ -204,13 +200,12 @@ struct RoomScanReview: View {
                 .pickerStyle(.segmented)
                 .frame(width: 104)
             }
-            .padding(12)
             // the picture is a drawing of a fixed size: its labels stop at the largest ordinary size
             .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+            RoomDiagram(plan: plan, mode: diagramMode, letters: Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0.letter) }), included: Set(model.included.map { $0.id }))
+                .frame(height: 190)
         }
-        .frame(height: 205)
-        .frame(maxWidth: .infinity)
-        .wcCard(radius: 20)
+        .padding(.vertical, 4)
     }
 
     // MARK: Rows
@@ -224,24 +219,23 @@ struct RoomScanReview: View {
                 ScanThumb(photo: row.photo, on: row.included)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 8) {
-                        Text(row.letter).wcMono(14, .bold, relativeTo: .footnote).foregroundStyle(row.included ? Theme.blue : Theme.ink3)
-                            .frame(width: 26, height: 26).background(row.included ? Theme.blueTint : Theme.surface2, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                        Text(row.name).wc(17, .semibold, relativeTo: .body).foregroundStyle(row.included ? Theme.ink : Theme.ink3).strikethrough(!row.included)
+                        Text(row.letter).font(.footnote.weight(.bold)).monospacedDigit().foregroundStyle(row.included ? Theme.ink : Theme.ink2)
+                            .frame(width: 26, height: 26).background(Theme.surface2, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        Text(row.name).font(.headline).foregroundStyle(row.included ? Theme.ink : Theme.ink2).strikethrough(!row.included)
                     }
-                    SizeText(widthIn: row.widthIn, heightIn: row.heightIn, size: 20, weight: .bold, unit: true, color: row.included ? Theme.ink : Theme.ink3, relativeTo: .title3)
+                    SizeText(widthIn: row.widthIn, heightIn: row.heightIn, size: 20, weight: .bold, unit: true, color: row.included ? Theme.ink : Theme.ink2, relativeTo: .title3)
                     if row.included {
-                        Text(looksLike(row)).wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink3).lineLimit(typeSize.isAccessibilitySize ? nil : 2)
-                        Text(ScanWording.sourceLine(row.confidence)).wc(14, row.confidence == .low ? .semibold : .regular, relativeTo: .subheadline)
-                            .foregroundStyle(row.confidence == .low ? Theme.warnText : Theme.ink3)
+                        Text(looksLike(row)).font(.subheadline).foregroundStyle(Theme.ink2).lineLimit(typeSize.isAccessibilitySize ? nil : 2)
+                        Text(ScanWording.sourceLine(row.confidence)).font(.subheadline.weight(row.confidence == .low ? .semibold : .regular))
+                            .foregroundStyle(row.confidence == .low ? Theme.warnText : Theme.ink2)
                     } else {
-                        Text("Left out. Tap to add it.").wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink3)
+                        Text("Left out. Tap to add it.").font(.subheadline).foregroundStyle(Theme.ink2)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 tick(row.included)
             }
-            .padding(.horizontal, 14).padding(.vertical, 10)
-            .frame(minHeight: 64)
+            .padding(.vertical, 4)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -256,15 +250,13 @@ struct RoomScanReview: View {
         .accessibilityAddTraits(.isButton)
     }
 
-    /// The round tick at the end of a row: filled when the window will be added.
+    /// The round tick at the end of a row: the accent checkmark when the window will be added, an empty circle when it is left out.
     private func tick(_ on: Bool) -> some View {
-        ZStack {
-            Circle().fill(on ? Theme.blue : Color.clear)
-            Circle().stroke(on ? Theme.blue : Theme.line2, lineWidth: 1.5)
-            if on { IconView(icon: .check, size: 14, weight: 2.6).foregroundStyle(.white) }
-        }
-        .frame(width: 26, height: 26)
-        .accessibilityHidden(true)
+        Image(systemName: on ? "checkmark.circle.fill" : "circle")
+            .font(.title2)
+            .foregroundStyle(on ? Theme.red : Theme.decor)
+            .frame(width: 28, height: 28)
+            .accessibilityHidden(true)
     }
 
     private func looksLike(_ row: ScanReviewRow) -> String {
@@ -309,7 +301,7 @@ struct ScanThumb: View {
             } else {
                 ZStack {
                     RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.surface2)
-                    IconView(icon: .win, size: 28, weight: 1.5).foregroundStyle(Theme.ink3)
+                    Image(systemName: WCIcon.win.symbol).font(.title).foregroundStyle(Theme.ink2)
                 }
                 .frame(width: Self.width, height: Self.width * 4 / 3)
             }
@@ -379,7 +371,7 @@ struct RoomDiagram: View {
 
     private func badge(_ ctx: inout GraphicsContext, _ letter: String, at p: CGPoint, on: Bool) {
         let r = CGRect(x: p.x - 13, y: p.y - 11, width: 26, height: 22)
-        ctx.fill(Path(roundedRect: r, cornerRadius: 6), with: .color(on ? Theme.blue : Theme.ink3))
+        ctx.fill(Path(roundedRect: r, cornerRadius: 6), with: .color(on ? Theme.red : Theme.ink2))
         ctx.draw(Text(letter).font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundColor(.white), at: p)
     }
 
@@ -412,7 +404,7 @@ struct RoomDiagram: View {
             var p = Path()
             p.move(to: pt(o.segment.ax, o.segment.ay)); p.addLine(to: pt(o.segment.bx, o.segment.by))
             let on = o.isDoor || included.contains(o.id)
-            ctx.stroke(p, with: .color(o.isDoor ? Theme.surface : (on ? Theme.blue : Theme.ink3)), style: StrokeStyle(lineWidth: o.isDoor ? 6 : 6, lineCap: .butt))
+            ctx.stroke(p, with: .color(o.isDoor ? Theme.surface : (on ? Theme.red : Theme.ink2)), style: StrokeStyle(lineWidth: o.isDoor ? 6 : 6, lineCap: .butt))
             if !o.isDoor, let letter = letters[o.id] {
                 let m = o.segment.mid
                 // The badge sits on the inside of the room
@@ -426,7 +418,7 @@ struct RoomDiagram: View {
         }
         // The two sides, labelled
         let e = plan.extent
-        ctx.draw(Text("\(FeetInches.text(metres: e.y)) × \(FeetInches.text(metres: e.x))").font(.system(size: 12, design: .monospaced)).foregroundColor(Theme.ink3), at: CGPoint(x: size.width / 2, y: size.height - 16))
+        ctx.draw(Text("\(FeetInches.text(metres: e.y)) × \(FeetInches.text(metres: e.x))").font(.system(size: 12, design: .monospaced)).foregroundColor(Theme.ink2), at: CGPoint(x: size.width / 2, y: size.height - 16))
     }
 
     // MARK: 3D (isometric)
@@ -481,8 +473,8 @@ struct RoomDiagram: View {
                 q.move(to: pt(o.segment.ax, o.segment.ay, o.sill)); q.addLine(to: pt(o.segment.bx, o.segment.by, o.sill))
                 q.addLine(to: pt(o.segment.bx, o.segment.by, o.head)); q.addLine(to: pt(o.segment.ax, o.segment.ay, o.head)); q.closeSubpath()
                 let on = o.isDoor || included.contains(o.id)
-                ctx.fill(q, with: .color(o.isDoor ? Theme.surface : Theme.blueTint))
-                ctx.stroke(q, with: .color(o.isDoor ? Theme.ink3 : (on ? Theme.blue : Theme.ink3)), lineWidth: o.isDoor ? 1.5 : 2.2)
+                ctx.fill(q, with: .color(o.isDoor ? Theme.surface : Theme.redTint))
+                ctx.stroke(q, with: .color(o.isDoor ? Theme.ink2 : (on ? Theme.red : Theme.ink2)), lineWidth: o.isDoor ? 1.5 : 2.2)
                 if !o.isDoor, let letter = letters[o.id] {
                     let m = o.segment.mid
                     badge(&ctx, letter, at: CGPoint(x: pt(m.x, m.y, o.sill).x, y: pt(m.x, m.y, o.sill).y + 16), on: on)
@@ -491,8 +483,8 @@ struct RoomDiagram: View {
         }
         let e = plan.extent
         // The left wall runs along y, the right one along x
-        ctx.draw(Text(FeetInches.text(metres: e.y)).font(.system(size: 12, design: .monospaced)).foregroundColor(Theme.ink3), at: CGPoint(x: size.width * 0.28, y: size.height - 26))
-        ctx.draw(Text(FeetInches.text(metres: e.x)).font(.system(size: 12, design: .monospaced)).foregroundColor(Theme.ink3), at: CGPoint(x: size.width * 0.74, y: size.height - 26))
+        ctx.draw(Text(FeetInches.text(metres: e.y)).font(.system(size: 12, design: .monospaced)).foregroundColor(Theme.ink2), at: CGPoint(x: size.width * 0.28, y: size.height - 26))
+        ctx.draw(Text(FeetInches.text(metres: e.x)).font(.system(size: 12, design: .monospaced)).foregroundColor(Theme.ink2), at: CGPoint(x: size.width * 0.74, y: size.height - 26))
         // A window on a wall the picture does not draw: its letter on the floor line
         for o in plan.openings where !o.isDoor && !plan.onBackWall(o) {
             guard let letter = letters[o.id] else { continue }

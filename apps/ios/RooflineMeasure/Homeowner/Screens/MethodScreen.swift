@@ -3,8 +3,10 @@ import SwiftUI
 
 /// 06 Method (ios-hw-06): how do you want to measure this window? Three ways, each with how exact it is, in the phone's own
 /// words (no "LiDAR", no "ID-1"). A method this phone cannot do is greyed out and says why.
+/// A native grouped list of rows (a symbol, the way, how it works, how exact it is), one chosen with a checkmark.
 struct MethodScreen: View {
     @Environment(HomeownerStore.self) private var store
+    @Environment(\.dynamicTypeSize) private var typeSize
     let room: String
 
     private var windowNumberInRoom: Int {
@@ -12,43 +14,50 @@ struct MethodScreen: View {
     }
 
     var body: some View {
-        @Bindable var store = store
-        VStack(spacing: 0) {
-            WCNavBar(title: "\(room) · window \(windowNumberInRoom)", onBack: { store.pop() })
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    WCHeadline(text: "How do you want to measure?", subtitle: store.capabilities.methodsSentence).padding(.bottom, 4)
-                    // Apple's room scan first on a phone with a depth sensor: the quickest way, one wall or the whole room
-                    if store.capabilities.roomScan {
-                        MethodCard(method: .quickScan, selected: store.method == .quickScan) { store.method = .quickScan }
-                        MethodCard(method: .roomScan, selected: store.method == .roomScan) { store.method = .roomScan }
-                    }
-                    MethodCard(method: .corners, selected: store.method == .corners) { store.method = .corners }
-                    if !store.capabilities.roomScan {
-                        MethodCard(method: .roomScan, selected: store.method == .roomScan) { store.method = .roomScan }
-                    }
-                    MethodCard(method: .card, selected: store.method == .card) { store.method = .card }
-                    if store.capabilities.methodCount == 0 {
-                        InfoPanel(icon: .alert, text: "Measuring needs an iPhone with a camera. Your request is saved. Open WinChoice on your iPhone to measure.", tint: Theme.warnTint, iconColor: Theme.warn)
-                    }
-                    WCScrollFooter()
+        List {
+            Section {
+                // Apple's room scan first on a phone with a depth sensor: the quickest way, one wall or the whole room
+                if store.capabilities.roomScan {
+                    MethodRow(method: .quickScan, selected: store.method == .quickScan) { store.method = .quickScan }
+                    MethodRow(method: .roomScan, selected: store.method == .roomScan) { store.method = .roomScan }
                 }
-                .padding(.horizontal, Theme.gutter)
-                .padding(.bottom, 24)
+                MethodRow(method: .corners, selected: store.method == .corners) { store.method = .corners }
+                if !store.capabilities.roomScan {
+                    MethodRow(method: .roomScan, selected: store.method == .roomScan) { store.method = .roomScan }
+                }
+                MethodRow(method: .card, selected: store.method == .card) { store.method = .card }
+            } header: {
+                HiListHeading(title: "How do you want to measure?", subtitle: store.capabilities.methodsSentence)
+            }
+            if store.capabilities.methodCount == 0 {
+                Section {
+                    Label {
+                        Text("Measuring needs an iPhone with a camera. Your request is saved. Open WinChoice on your iPhone to measure.").font(.subheadline).foregroundStyle(Theme.ink)
+                    } icon: {
+                        Image(systemName: WCIcon.alert.symbol).foregroundStyle(Theme.warn)
+                    }
+                }
+            }
+            if typeSize.isAccessibilitySize {
+                Section { WCScrollFooter() }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
         }
+        .listStyle(.insetGrouped)
         .wcFooter {
             WCPrimaryButton(title: "Start", isEnabled: store.isAvailable(store.method)) { store.startMeasuring(room: room) }
         }
-        .wcScreenChrome()
+        .hiNav(title: "\(room) · window \(windowNumberInRoom)")
         .onAppear {
             if !store.isAvailable(store.method) { store.method = store.defaultMethod }
         }
     }
 }
 
-private struct MethodCard: View {
+private struct MethodRow: View {
     @Environment(HomeownerStore.self) private var store
+    @Environment(\.dynamicTypeSize) private var typeSize
     let method: MeasureMethod
     let selected: Bool
     let action: () -> Void
@@ -81,6 +90,22 @@ private struct MethodCard: View {
         }
     }
 
+    /// The row's symbol, in a quiet tile like a Settings row's.
+    @ViewBuilder private var glyph: some View {
+        Group {
+            switch method {
+            case .corners: Image(systemName: WCIcon.target.symbol).font(.title3).foregroundStyle(Theme.ink)
+            case .roomScan: Image(systemName: WCIcon.cube.symbol).font(.title3).foregroundStyle(Theme.ink)
+            case .quickScan: Image(systemName: WCIcon.lidar.symbol).font(.title3).foregroundStyle(Theme.ink)
+            case .card: BankCardGlyph(width: 28)
+            }
+        }
+        .symbolRenderingMode(.hierarchical)
+        .frame(width: 40, height: 40)
+        .background(Theme.surface2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .accessibilityHidden(true)
+    }
+
     var body: some View {
         let accuracy = store.methodAccuracy(method)
         Button(action: {
@@ -89,39 +114,34 @@ private struct MethodCard: View {
                 action()
             }
         }) {
-            HStack(alignment: .center, spacing: 14) {
-                Group {
-                    switch method {
-                    case .corners: IconView(icon: .target, size: 26).foregroundStyle(Theme.blue)
-                    case .roomScan: IconView(icon: .cube, size: 26).foregroundStyle(Theme.ink)
-                    case .quickScan: IconView(icon: .lidar, size: 26).foregroundStyle(Theme.blue)
-                    case .card: BankCardGlyph(width: 32)
-                    }
-                }
-                .frame(width: 48, height: 48)
-                .background(selected ? Theme.surface : Theme.surface2, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            HStack(alignment: .top, spacing: 12) {
+                if !typeSize.isAccessibilitySize { glyph }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(title).wc(19, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
-                    Text(detail).wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
+                    Text(title).font(.headline).foregroundStyle(Theme.ink)
+                    Text(detail).font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
                     if available {
                         let tag = store.methodTag(method)
-                        WCTag(text: tag.text, kind: tag.best ? .ok : .blue, radius: 5)
-                            .padding(.top, 4)
+                        CapsuleLabel(text: tag.text, kind: tag.best ? .ok : .plain).padding(.top, 2)
                         if method.isRoomPlan {
                             // Apple's scan gives a quote-grade size, not a number of inches: the visit settles the exact one
-                            Text("\(accuracy.text). We confirm the exact size at your visit.").wc(13, relativeTo: .footnote).foregroundStyle(Theme.ink3)
+                            Text("\(accuracy.text). We confirm the exact size at your visit.").font(.footnote).foregroundStyle(Theme.ink2)
                         } else if tag.text != accuracy.text {
-                            Text("Accuracy: \(accuracy.text)").wc(13, relativeTo: .footnote).foregroundStyle(Theme.ink3)
+                            Text("Accuracy: \(accuracy.text)").font(.footnote).foregroundStyle(Theme.ink2)
                         }
                     } else {
-                        Text(unavailable).wc(13, .medium, relativeTo: .footnote).foregroundStyle(Theme.warnText).padding(.top, 4)
+                        Text(unavailable).font(.footnote.weight(.medium)).foregroundStyle(Theme.warnText).padding(.top, 2)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                WCRadio(isOn: selected && available, size: 24)
+                Image(systemName: "checkmark")
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Theme.red)
+                    .opacity(selected && available ? 1 : 0)
+                    .frame(width: 22, alignment: .trailing)
+                    .padding(.top, 2)
+                    .accessibilityHidden(true)
             }
-            .padding(14)
-            .wcCard(selected: selected && available, radius: 16)
+            .padding(.vertical, 4)
             .opacity(available ? 1 : 0.55)
             .contentShape(Rectangle())
         }
