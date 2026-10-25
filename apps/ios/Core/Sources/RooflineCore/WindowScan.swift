@@ -28,8 +28,8 @@ public enum ScanLimits {
     public static let minCloseups = 2
     /// The 3x3 normal matrix must have its smallest eigenvalue at least this times the number of rays.
     public static let conditionPerRay = 1e-6
-    /// A mark that cannot be projected (the corner is behind its camera) counts as this many pixels.
-    public static let unprojectablePx = 1e6
+    /// A mark that cannot be projected (the corner is behind its camera) counts as this many pixels (the server's cap too).
+    public static let unprojectablePx = 9999.0
 }
 
 public enum ScanGate: String, Codable, CaseIterable, Sendable {
@@ -55,6 +55,19 @@ public enum MarkSource: String, Codable, Sendable {
     case snap
     case projected
     case user
+}
+
+/// How sure the scan is about one corner.
+public enum ScanConfidence: String, Sendable {
+    case sure, fair, check
+
+    public var word: String {
+        switch self {
+        case .sure: return "Sure"
+        case .fair: return "Fairly sure"
+        case .check: return "Needs a check"
+        }
+    }
 }
 
 public enum ScanStatus: String, Codable, Sendable {
@@ -125,7 +138,7 @@ public struct ScanQuality: Codable, Equatable, Sendable {
     public var scaleDiff: Double
     /// Close-up frames that contributed marks.
     public var closeups: Int
-    /// Gate codes that failed. `no_closeups` (warning only) is listed here when it applies; it does not make the scan `needs_review`.
+    /// Gate codes that failed. A warning (`no_closeups`) never appears here: the server's `failed` leaves it out, and `closeups` says it.
     public var failed: [String]
 
     public init(framesPerCorner: [Int], reprojRmsPx: Double, reprojMaxPx: Double, minBaselineDeg: Double, symRatioDiff: Double, planeMaxCm: Double,
@@ -143,7 +156,8 @@ public struct ScanQuality: Codable, Equatable, Sendable {
 
     /// The gates that failed, without the warning-only ones.
     public var hardFailures: [ScanGate] { failed.compactMap(ScanGate.init(rawValue:)).filter { !$0.isWarningOnly } }
-    public var hasWarning: Bool { failed.contains(ScanGate.noCloseups.rawValue) }
+    /// Fewer than two close-ups were used (`no_closeups`, a warning only).
+    public var hasWarning: Bool { closeups < ScanLimits.minCloseups }
 }
 
 /// What a solve gives: the triangulated corners, the level rectangle, the gates, and each mark's error.
@@ -163,7 +177,7 @@ public struct ScanSolution: Equatable, Sendable {
     public var markErrors: [MarkError]
     public var quality: ScanQuality
 
-    public var status: ScanStatus { quality.hardFailures.isEmpty && fit != nil ? .measured : .needsReview }
+    public var status: ScanStatus { quality.failed.isEmpty ? .measured : .needsReview }
     public var widthIn: Double? { fit?.widthIn }
     public var heightIn: Double? { fit?.heightIn }
     /// The opening: the rectangle's corners TL, TR, BR, BL.
@@ -172,6 +186,18 @@ public struct ScanSolution: Equatable, Sendable {
     public static func == (a: ScanSolution, b: ScanSolution) -> Bool {
         a.triangulatedM == b.triangulatedM && a.fit == b.fit && a.markErrors == b.markErrors && a.quality == b.quality
             && a.singleFrameIn?.width == b.singleFrameIn?.width && a.singleFrameIn?.height == b.singleFrameIn?.height
+    }
+
+    /// How sure the scan is about a corner: seen in at least four photos and within 1.5 px of where they agree is sure; three photos and
+    /// within the gate's 3 px is fair; anything else, or a corner that could not be triangulated, needs a check.
+    public func confidence(corner c: Int) -> ScanConfidence {
+        guard (0..<4).contains(c), triangulatedM.indices.contains(c), triangulatedM[c] != nil, quality.framesPerCorner.indices.contains(c) else { return .check }
+        let errs = markErrors.filter { $0.corner == c }.map { $0.px }
+        let rms = errs.isEmpty ? 0 : (errs.reduce(0) { $0 + $1 * $1 } / Double(errs.count)).squareRoot()
+        let n = quality.framesPerCorner[c]
+        if n >= 4 && rms <= 1.5 && (errs.max() ?? 0) <= ScanLimits.reprojMaxPx { return .sure }
+        if n >= ScanLimits.minMarksPerCorner && rms <= ScanLimits.reprojRmsPx && (errs.max() ?? 0) <= ScanLimits.reprojMaxPx { return .fair }
+        return .check
     }
 
     /// How far each mark is from where the solution says its corner is, for one frame (nil: no mark there).
@@ -183,13 +209,10 @@ public struct ScanSolution: Equatable, Sendable {
 // MARK: - The solver
 
 public enum WindowScanSolver {
-    /// A mark's pixel in the intrinsics' own pixels: the contract scales image points by `imageWidth / intrinsics.width` (and the same for
-    /// the height) when the JPEG is not the size the lens numbers are for. The phone always uploads at the lens' size, so this is 1.
-    public static func intrinsicsPixel(_ x: Double, _ y: Double, in f: ScanFrame) -> Vec2 {
-        let sx = f.imageWidth > 0 && f.intrinsics.width > 0 ? Double(f.imageWidth) / f.intrinsics.width : 1
-        let sy = f.imageHeight > 0 && f.intrinsics.height > 0 ? Double(f.imageHeight) / f.intrinsics.height : 1
-        return Vec2(x * sx, y * sy)
-    }
+    /// A mark's pixel is in the native image the lens numbers describe (the contract's convention, which the server follows: the uploaded JPEG
+    /// may be a resized copy, drawn at `imageWidth / intrinsics.width` of the native pixels, but the marks stay in native ones). The phone
+    /// uploads the native image itself, so the two are the same.
+    public static func intrinsicsPixel(_ x: Double, _ y: Double, in f: ScanFrame) -> Vec2 { Vec2(x, y) }
 
     /// The ray through an image point: origin the camera, direction a unit vector in the world.
     /// camera-space direction = normalize(((x - cx) / fx, -(y - cy) / fy, -1)), rotated by the transform's 3x3.
@@ -320,74 +343,71 @@ public enum WindowScanSolver {
 
         // The viewer: the mean position of the cameras (each counted once) that have at least one mark used
         let seenIds = Set(rays.flatMap { $0 }.map { $0.mark.frameId })
-        let viewer = Vec3.mean(frames.filter { seenIds.contains($0.frameId) }.map { $0.cameraTransform.translation })
+        let viewer = Vec3.mean(frames.filter { seenIds.contains($0.frameId) }.map { $0.cameraTransform.translation }) ?? .zero
 
-        // The rectangle through the four triangulated corners
+        // The rectangle through the four triangulated corners, on their least-squares plane
+        let all4 = triangulated.allSatisfy { $0 != nil }
         var fit: RectangleFit?
-        var symDiff = 0.0, planeMaxM = 0.0
-        var corners: [Vec3] = []
-        if triangulated.allSatisfy({ $0 != nil }) {
-            corners = triangulated.compactMap { $0 }
-            if let plane = Plane.fit(corners), let v = viewer {
-                fit = RectangleFit.fit(ordered: corners, plane: plane, viewer: v)
+        var planeOK = true
+        var symDiffIn = 0.0, symDiff = 0.0, planeMaxM = 0.0
+        if all4 {
+            let corners = triangulated.compactMap { $0 }
+            if let plane = Plane.fit(corners) {
                 planeMaxM = corners.map { plane.distance($0) }.max() ?? 0
-            }
-        }
-        var symFails = false
-        if let f = fit {
-            func rel(_ x: Double, _ y: Double) -> Double { abs(x - y) / max((x + y) / 2, 1e-9) }
-            symDiff = max(rel(f.topIn, f.bottomIn), rel(f.leftIn, f.rightIn))
-            func differs(_ x: Double, _ y: Double) -> Bool { abs(x - y) > ScanLimits.symDiffIn || rel(x, y) > ScanLimits.symDiffShare }
-            symFails = differs(f.topIn, f.bottomIn) || differs(f.leftIn, f.rightIn)
-        }
-
-        // The single-frame estimate: the first regular frame (in the order given) with all four marks, its rays met with the wall plane
-        var single: (width: Double, height: Double)?
-        if let wall = wall {
-            single = singleFrameEstimate(frames: frames, marks: used, wall: wall)
-        }
-        var scaleDiff = 0.0
-        if let f = fit {
-            if let s = single, s.width > 0, s.height > 0 {
-                scaleDiff = max(abs(f.widthIn - s.width) / s.width, abs(f.heightIn - s.height) / s.height)
+                fit = RectangleFit.fit(ordered: corners.map { plane.project($0) }, plane: plane, viewer: viewer)
+                if fit == nil { planeOK = false }
             } else {
-                // Nothing to check the scale against: it cannot pass
-                scaleDiff = 1
+                planeOK = false
+            }
+            // Opposite sides of the triangulated quad (3-D lengths)
+            func side(_ a: Int, _ b: Int) -> Double { corners[a].distance(to: corners[b]) * inchesPerMetre }
+            for (x, y) in [(side(0, 1), side(3, 2)), (side(0, 3), side(1, 2))] {
+                symDiffIn = max(symDiffIn, abs(x - y))
+                symDiff = max(symDiff, abs(x - y) / max((x + y) / 2, 1e-9))
             }
         }
 
-        // The gates, in the contract's order
+        // The single-frame estimate: the size each frame that marks all four corners gives against the wall plane, the median of them.
+        // Without a wall (or when no frame gives one) the scale gate is skipped, and passes.
+        var single: (width: Double, height: Double)?
+        if fit != nil, let wall = wall { single = singleFrameEstimate(frames: frames, marks: used, wall: wall, viewer: viewer) }
+        var scaleDiff = 0.0
+        if let f = fit, let s = single { scaleDiff = max(abs(f.widthIn - s.width) / s.width, abs(f.heightIn - s.height) / s.height) }
+        let closeupIds = Set(used.compactMap { m in byId[m.frameId]?.kind == .closeup ? m.frameId : nil })
+
+        // The gates, in the contract's order (no_closeups is a warning: it is never in `failed`)
         var failed: [ScanGate] = []
         if counts.contains(where: { $0 < ScanLimits.minMarksPerCorner }) { failed.append(.tooFewFrames) }
-        if rms > ScanLimits.reprojRmsPx || worst > ScanLimits.reprojMaxPx { failed.append(.reprojection) }
-        if baselines.contains(where: { $0 < ScanLimits.minBaselineDeg }) { failed.append(.baseline) }
-        if symFails { failed.append(.symRatio) }
-        if planeMaxM > ScanLimits.planeMaxM { failed.append(.plane) }
-        if fit != nil, scaleDiff > ScanLimits.scaleShare { failed.append(.scale) }
-        // Corners that could not be triangulated at all leave no rectangle: the scan is a review case even if no gate above caught it
-        let closeupIds = Set(used.compactMap { m in byId[m.frameId]?.kind == .closeup ? m.frameId : nil })
-        if closeupIds.count < ScanLimits.minCloseups { failed.append(.noCloseups) }
+        if !(!errors.isEmpty && rms <= ScanLimits.reprojRmsPx && worst <= ScanLimits.reprojMaxPx) { failed.append(.reprojection) }
+        if !((baselines.min() ?? 0) >= ScanLimits.minBaselineDeg && all4) { failed.append(.baseline) }
+        if !(all4 && symDiffIn <= ScanLimits.symDiffIn && symDiff <= ScanLimits.symDiffShare) { failed.append(.symRatio) }
+        if !(all4 && planeOK && planeMaxM * 100 <= ScanLimits.planeMaxM * 100) { failed.append(.plane) }
+        if !(scaleDiff <= ScanLimits.scaleShare) { failed.append(.scale) }
 
         let quality = ScanQuality(framesPerCorner: counts, reprojRmsPx: rms, reprojMaxPx: worst, minBaselineDeg: baselines.min() ?? 0, symRatioDiff: symDiff,
                                   planeMaxCm: planeMaxM * 100, scaleDiff: scaleDiff, closeups: closeupIds.count, failed: failed.map { $0.rawValue })
         return ScanSolution(triangulatedM: triangulated, fit: fit, singleFrameIn: single, markErrors: errors, quality: quality)
     }
 
-    /// The window's size from ONE regular frame: the first one (in `frames` order) with a mark on every corner, each mark's ray met with `wall`
-    /// (turned to face that camera), then the level rectangle through the four points. The phone puts the frame its first estimate was made
-    /// on first.
-    public static func singleFrameEstimate(frames: [ScanFrame], marks: [ScanMark], wall: Plane) -> (width: Double, height: Double)? {
-        for f in frames where f.kind == .regular {
+    /// The size each frame that marks all four corners gives on its own: its four rays met with `wall`, the level rectangle fitted to the four
+    /// points as seen from `viewer`; the median over those frames (regular or close-up). Nil without a wall plane or when no frame gives one.
+    public static func singleFrameEstimate(frames: [ScanFrame], marks: [ScanMark], wall: Plane, viewer: Vec3? = nil) -> (width: Double, height: Double)? {
+        var widths: [Double] = [], heights: [Double] = []
+        let seen = Set(marks.map { $0.frameId })
+        let eye = viewer ?? Vec3.mean(frames.filter { seen.contains($0.frameId) }.map { $0.cameraTransform.translation }) ?? .zero
+        for f in frames {
             var pts: [Vec3] = []
             for c in 0..<4 {
                 guard let m = marks.last(where: { $0.frameId == f.frameId && $0.corner == c }), let r = ray(frame: f, x: m.x, y: m.y),
-                      let hit = wall.facing(r.origin).intersect(rayOrigin: r.origin, direction: r.direction) else { break }
+                      let hit = wall.intersect(rayOrigin: r.origin, direction: r.direction) else { break }
                 pts.append(hit)
             }
-            guard pts.count == 4 else { continue }
-            if let fit = RectangleFit.fit(ordered: pts, plane: wall, viewer: f.cameraTransform.translation) { return (fit.widthIn, fit.heightIn) }
+            guard pts.count == 4, let fit = RectangleFit.fit(ordered: pts, plane: wall, viewer: eye) else { continue }
+            widths.append(fit.widthIn)
+            heights.append(fit.heightIn)
         }
-        return nil
+        guard let w = median(widths), let h = median(heights) else { return nil }
+        return (w, h)
     }
 }
 
@@ -431,6 +451,11 @@ public struct ScanFramePayload: Codable, Equatable, Sendable {
         self.imageHeight = imageHeight
         self.cameraTransform = cameraTransform
         self.intrinsics = intrinsics
+    }
+
+    /// The frame as the maths reads it.
+    public var frame: ScanFrame {
+        ScanFrame(frameId: frameId, kind: kind, corner: corner, imageWidth: imageWidth, imageHeight: imageHeight, cameraTransform: Mat4(cameraTransform), intrinsics: intrinsics)
     }
 
     /// `corner` is written as an explicit null for a regular frame.

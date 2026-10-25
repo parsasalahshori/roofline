@@ -14,7 +14,7 @@ import RooflineCore
 ///                               -debugE2EPause <seconds> holds each main screen for a screenshot; run it with `xcrun simctl launch --console`)
 ///   -debugGo <step>             show a step of the saved request after opening (welcome address results coaching rooms list styles quote contact book booked status)
 ///   -debugCaptureDir <path>     write each Capture's debug dump (photo, depth, camera, result) into this folder instead of sending it to the server
-///   -debugOpen <name>           open a measuring screen over the scenario's: hud, hud-howto, freeze, freeze-clutter, freeze-off, freeze-two, freeze-ai, freeze-ai-wall, freeze-frame, label, label-frame, scan, quickscan, quickscan-live, needs-iphone, needs-pro,
+///   -debugOpen <name>           open a measuring screen over the scenario's: hud, hud-howto, freeze, freeze-clutter, freeze-off, freeze-two, freeze-ai, freeze-ai-wall, freeze-frame, guided-aim, guided-hud, guided-closeup, guided-working, guided-result, guided-result-check, label, label-frame, scan, quickscan, quickscan-live, needs-iphone, needs-pro,
 ///                               card, card3, card4, window2, window4, windowdart (use with -debugScenario method)
 enum HomeownerDebug {
     struct Options {

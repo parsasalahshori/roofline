@@ -226,6 +226,33 @@ xcrun simctl launch --console booted com.premjeetech.winchoice.measure -debugSer
 
 (the server allows 10 new requests an hour per address; a Google-backed look-up is made for each).
 
+### Guided scan (multi-frame, like Medida)
+
+On a depth-sensor iPhone the **Measure** step opens the guided scan first (`Measure/GuidedScanFlow.swift`; "Take one photo instead" on its first screen
+goes to the single frozen photo above, which also stays the path on iPhones without LiDAR). The contract it implements is
+`docs/windows/scan-contract.md`; the server re-runs the same maths and its answer wins.
+
+1. **Aim and Start.** Apple's `ARCoachingOverlayView` finds the wall; Start locks it. 2. **Step slowly left and right** (`ScanGuide`, Core): the phone keeps 5 to 8
+regular photos by itself, each at least 15 cm from every other, steady (speed and turn from the pose), sharp (variance of the Laplacian against the sharpest lately),
+neither dark nor bright, and with the whole window in view once it is known. 3. **Move closer to each corner** (TL, TR, BR, BL): an arrow (or a ring when the
+corner is on the screen) points to the corner; when it is centred, 0.4 to 0.8 m away, steady and sharp for a third of a second, the close-up is taken. Coaching
+for each thing that can go wrong; a manual shutter, Redo, Skip, Stop. `AR/ScanRecorder.swift` runs on the AR engine's queue and keeps, per photo, the NATIVE
+landscape JPEG (uploaded), an upright JPEG (what the corner finders and screens use), the pose, the lens, the wall and, for regular photos, the depth.
+4. **Marks** (`Measure/ScanProcessing.swift`, Core `ScanMarkMaker`): the window's first estimate comes from the first regular photo (depth opening at once, the AI
+finder after; if neither finds it the person outlines it on that photo with the single-photo editor); its four corners are projected into every photo and found
+again there with `CornerSnap` (nearest ring first: 1.5, 3, 4.5 cm; close-ups wider). A corner the photo does not confirm stays a hollow projection that the maths
+ignores; outliers are pruned leave-one-out; after the first solve the rectangle is projected again with a smaller search and kept when it is better.
+5. **Result** (`GuidedScanResult.swift`): the best photo with the rectangle, Measured (green) or "We'll have WinChoice check this one" (amber, never a block), the
+opening and window sizes, "Measured from N photos", each corner's confidence, a strip of every photo; a photo opens a sheet where a mark can be dragged
+(the answer is worked out again). 6. **Upload** (`Core/ScanOutbox.swift`, `HomeownerScanTransport`): the scan is saved on disk when the result is used, armed when the
+window is saved, each photo goes up the uploads route, then `POST .../scans` once the window itself is on the server; a 404 (route not deployed) keeps it queued
+without a word. The server's per-window `scan.label` ("Being checked by WinChoice") shows on the window's row.
+
+`Core/WindowScan.swift` is the contract's maths and JSON (closed-form triangulation, the level rectangle through `RectangleFit`, the seven gates);
+`RooflineMeasureTests/Fixtures/window-scan/*.json` are the server's fixtures, which the Core checks run (`ScanParityChecks`). DEBUG: `-debugOpen guided-aim |
+guided-hud | guided-closeup | guided-working | guided-result | guided-result-check` over a drawn window (`Measure/DebugScanSamples.swift`; the result runs the
+real marks pipeline on the drawn photos).
+
 ### Tests
 
 ```sh

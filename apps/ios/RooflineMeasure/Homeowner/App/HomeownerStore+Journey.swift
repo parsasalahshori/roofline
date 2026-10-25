@@ -46,7 +46,10 @@ extension HomeownerStore {
         let items = await outbox.items
         let olds = Set(items.map { $0.measurementId }).subtracting([s.requestId])
         var moved = 0
-        for old in olds { moved += (try? await outbox.reassign(from: old, to: s.requestId, address: s.address)) ?? 0 }
+        for old in olds {
+            moved += (try? await outbox.reassign(from: old, to: s.requestId, address: s.address)) ?? 0
+            _ = try? await scanOutbox.reassign(from: old, to: s.requestId)
+        }
         pendingDisk.adopt(into: s.requestId)
         guard moved > 0 || pendingDisk.load(requestId: s.requestId) != nil else { return }
         for item in await outbox.items where item.measurementId == s.requestId { _ = addRoom(item.window.room ?? "") }
@@ -107,7 +110,7 @@ extension HomeownerStore {
             }
             if let old = session, old.requestId != saved.requestId {
                 progressStore.clear(requestId: old.requestId)
-                Task { try? await outbox.removeAll(measurementId: old.requestId) }
+                Task { try? await outbox.removeAll(measurementId: old.requestId); try? await scanOutbox.removeAll(measurementId: old.requestId) }
             }
             setSession(saved)
             selectedServices = Set(saved.services)

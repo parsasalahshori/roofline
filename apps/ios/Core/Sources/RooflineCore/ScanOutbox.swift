@@ -162,12 +162,14 @@ public actor ScanOutbox {
         if changed { try persist() }
     }
 
-    /// The window was left out: its scan (not yet sent) goes with it, photos and all.
-    public func discard(windowId: String) throws {
-        let gone = items.filter { $0.windowId == windowId && $0.state != .done }
+    /// The window was left out: its scan (not yet sent) goes with it, photos and all. Only a scan still waiting for its window to be saved,
+    /// unless `includeArmed` (the window was deleted later).
+    public func discard(windowId: String, includeArmed: Bool = false) throws {
+        let gone = items.filter { $0.windowId == windowId && $0.state != .done && (includeArmed || !$0.armed) }
         guard !gone.isEmpty else { return }
         removeFiles(of: gone)
-        items.removeAll { $0.windowId == windowId && $0.state != .done }
+        let ids = Set(gone.map { $0.id })
+        items.removeAll { ids.contains($0.id) }
         try persist()
     }
 

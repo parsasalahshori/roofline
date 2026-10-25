@@ -116,14 +116,14 @@ let scanChecks: [Check] = [
             ctx.expect(sol.quality.reprojRmsPx < 1.5, "rms \(sol.quality.reprojRmsPx)")
         }
     },
-    Check("Scan: regular frames alone (no close-ups) also reach 1/16 in at 2 m, and the scan says no_closeups without failing") { ctx in
+    Check("Scan: regular frames alone (no close-ups) also reach 1/16 in at 2 m; the missing close-ups are a warning, not a failure") { ctx in
         let s = ScanScene()
         let frames = s.regularFrames(7)
         let sol = solve(s, frames: frames, marks: s.marks(frames, sigmaPx: 0.8, seed: 5))
         ctx.near(sol.widthIn, 36, sixteenth)
         ctx.near(sol.heightIn, 60, sixteenth)
-        ctx.equal(sol.quality.failed, ["no_closeups"])
-        ctx.equal(sol.quality.hardFailures, [])
+        ctx.equal(sol.quality.failed, [], "no_closeups is never in the failed list (the server leaves it out too)")
+        ctx.expect(sol.quality.hasWarning)
         ctx.equal(sol.status, .measured, "a warning does not fail a scan")
         ctx.equal(sol.quality.closeups, 0)
     },
@@ -224,18 +224,19 @@ let scanChecks: [Check] = [
         let little = s.corners.map { $0 + Vec3(0, 0, 0.015) }
         sol = solve(s, frames: frames, marks: s.marks(frames, corners: little))
         ctx.expect(!sol.quality.failed.contains("scale"), "\(sol.quality)")
-        // no wall to check against: the scale cannot pass
-        sol = WindowScanSolver.solve(frames: frames, marks: s.marks(frames), wall: nil)
-        ctx.expect(sol.quality.failed.contains("scale"))
+        // no wall to check against: the scale gate is skipped, and passes (as the server's does)
+        sol = WindowScanSolver.solve(frames: frames, marks: s.marks(frames, corners: proud), wall: nil)
+        ctx.expect(!sol.quality.failed.contains("scale"))
+        ctx.near(sol.quality.scaleDiff, 0)
     },
-    Check("Scan: the single-frame estimate uses the first regular frame that has all four marks, so the key frame goes first") { ctx in
+    Check("Scan: the single-frame estimate is the median over the frames that mark all four corners") { ctx in
         let s = ScanScene()
         let frames = s.regularFrames(4)
         let marks = s.marks(frames).filter { !($0.frameId == "r1" && $0.corner == 3) }
         let est = WindowScanSolver.singleFrameEstimate(frames: frames, marks: marks, wall: s.wall)
         ctx.near(est?.width, 36, 1e-6)
         ctx.near(est?.height, 60, 1e-6)
-        // reordered so r2 leads: still the same window
+        // the order of the frames does not matter
         let est2 = WindowScanSolver.singleFrameEstimate(frames: Array(frames.reversed()), marks: marks, wall: s.wall)
         ctx.near(est2?.width, 36, 1e-6)
         // the wall is a different distance: the plane estimate scales
@@ -399,6 +400,18 @@ let scanChecks: [Check] = [
         let many = (0..<201).map { ScanMark(frameId: "r1", corner: $0 % 4, x: 1, y: 1, source: .snap) }
         ctx.expect(payload(3, marks: many).problem != nil)
         ctx.expect(payload(3, marks: [ScanMark(frameId: "nope", corner: 0, x: 1, y: 1, source: .snap)]).problem != nil)
+    },
+    Check("Scan: the server's per-window scan state reads, and a mark dragged off the photo stays on its edge") { ctx in
+        let w = try JSONDecoder().decode(HomeownerWindowScan.self, from: Data(#"{"scanId":"s","state":"checking","label":"Being checked by WinChoice"}"#.utf8))
+        ctx.equal(w.label, "Being checked by WinChoice")
+        ctx.equal(w.state, "checking")
+        let s = ScanScene()
+        let frames = s.regularFrames(3)
+        let d = ScanDraft(scanId: "s", windowId: "w", frames: frames, allMarks: s.marks(frames), wall: s.wall).placing(frameId: "r1", corner: 0, at: Vec2(-50, 5000))
+        let m = d.allMarks.last { $0.frameId == "r1" && $0.corner == 0 }
+        ctx.near(m?.x, 0)
+        ctx.near(m?.y, 1440)
+        ctx.equal(m?.source, .user)
     },
     Check("Scan JSON: the server's answer reads whether or not its result does") { ctx in
         let ok = Data(#"{"scanId":"s1","status":"needs_review","result":{"cornersM":null,"widthIn":null,"heightIn":null,"windowFrame":null,"quality":{"framesPerCorner":[3,3,3,3],"reprojRmsPx":1.0,"reprojMaxPx":2.0,"minBaselineDeg":5.0,"symRatioDiff":0.01,"planeMaxCm":0.2,"scaleDiff":0.01,"closeups":0,"failed":["no_closeups"]},"status":"measured"}}"#.utf8)

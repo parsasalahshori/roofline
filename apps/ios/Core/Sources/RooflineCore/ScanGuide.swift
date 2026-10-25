@@ -107,6 +107,14 @@ public struct ScanTarget: Equatable, Sendable {
     public var centred: Bool
     /// Near enough and far enough for a close-up.
     public var rightDistance: Bool
+
+    public init(corner: Int, offsetPortrait: Vec2?, distanceM: Double?, centred: Bool, rightDistance: Bool) {
+        self.corner = corner
+        self.offsetPortrait = offsetPortrait
+        self.distanceM = distanceM
+        self.centred = centred
+        self.rightDistance = rightDistance
+    }
 }
 
 public struct ScanCoach: Equatable, Sendable {
@@ -158,6 +166,19 @@ public enum ScanCopy {
         }
     }
 
+    /// What a failed gate means to the person, in a few plain words.
+    public static func reason(_ gate: ScanGate) -> String {
+        switch gate {
+        case .tooFewFrames: return "A corner was seen in too few photos"
+        case .reprojection: return "The corners don't line up between photos"
+        case .baseline: return "The photos were taken too close together"
+        case .symRatio: return "Opposite sides came out different lengths"
+        case .plane: return "The corners don't sit flat on one wall"
+        case .scale: return "The size doesn't match the depth sensor"
+        case .noCloseups: return "No close-ups of the corners"
+        }
+    }
+
     /// The progress line: "Photo 3 of 6" while sweeping, "Corner 2 of 4" while taking close-ups.
     public static func progress(_ s: ScanStep, targetRegular: Int) -> String {
         switch s.phase {
@@ -192,6 +213,22 @@ public struct ScanStep: Equatable, Sendable {
     public var phaseSeconds: Double
     /// The close-ups have been asked for and the window is still unknown for this long: the phone should ask the person to outline it.
     public var needsWindowHelp: Bool
+
+    public init(phase: Phase, coach: ScanCoach, keep: ScanKeep? = nil, regularKept: Int, closeupsKept: [Bool], closeupsDone: Int, target: ScanTarget? = nil, holdProgress: Double = 0,
+                canFinishSweep: Bool = false, offerSkip: Bool = false, phaseSeconds: Double = 0, needsWindowHelp: Bool = false) {
+        self.phase = phase
+        self.coach = coach
+        self.keep = keep
+        self.regularKept = regularKept
+        self.closeupsKept = closeupsKept
+        self.closeupsDone = closeupsDone
+        self.target = target
+        self.holdProgress = holdProgress
+        self.canFinishSweep = canFinishSweep
+        self.offerSkip = offerSkip
+        self.phaseSeconds = phaseSeconds
+        self.needsWindowHelp = needsWindowHelp
+    }
 }
 
 public struct ScanGuide: Sendable {

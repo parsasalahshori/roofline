@@ -18,9 +18,13 @@ public enum ScanMarkMaker {
     public static let firstCloseupRadiusM = 0.045
     public static let secondRadiusM = 0.015
     public static let secondCloseupRadiusM = 0.025
+    /// A corner is looked for in rings: first close to where it should be (half the radius), then the radius, then half as far again. The
+    /// nearest ring where the picture is clear about a corner wins: a wide search sees look-alike edges (casing, sill, the window's own frame)
+    /// that make a clear corner look unclear, so it is only widened when the narrow one finds nothing.
+    public static let radiusLadder = [0.5, 1.0, 1.5]
     /// The search radius in native pixels is kept between these.
     public static let minRadiusPx = 5.0
-    public static let maxRadiusPx = 90.0
+    public static let maxRadiusPx = 130.0
     /// A corner counts as in the photo when it is this share of the photo's size inside every edge.
     public static let edgeMarginShare = 0.02
 
@@ -50,8 +54,15 @@ public enum ScanMarkMaker {
             for c in 0..<4 {
                 if f.kind == .closeup, f.corner != c { continue }
                 guard let e = expected(corners[c], in: f) else { continue }
-                let r = radiusPx(radiusM: f.kind == .closeup ? closeupRadiusM : radiusM, depthM: e.depthM, fx: f.intrinsics.fx)
-                if let s = snapper(f, c, e.px, r) {
+                let base = f.kind == .closeup ? closeupRadiusM : radiusM
+                var found: Vec2?
+                for k in radiusLadder {
+                    if let s = snapper(f, c, e.px, radiusPx(radiusM: base * k, depthM: e.depthM, fx: f.intrinsics.fx)) {
+                        found = s
+                        break
+                    }
+                }
+                if let s = found {
                     out.append(ScanMark(frameId: f.frameId, corner: c, x: s.x, y: s.y, source: .snap))
                 } else {
                     out.append(ScanMark(frameId: f.frameId, corner: c, x: e.px.x, y: e.px.y, source: f.frameId == keyFrameId ? keySource : .projected))
@@ -156,7 +167,10 @@ public struct ScanDraft: Codable, Equatable, Sendable {
     public func placing(frameId: String, corner: Int, at p: Vec2) -> ScanDraft {
         var d = self
         d.allMarks.removeAll { $0.frameId == frameId && $0.corner == corner }
-        d.allMarks.append(ScanMark(frameId: frameId, corner: corner, x: p.x, y: p.y, source: .user))
+        // (the server refuses a mark outside its photo: a mark dragged off the picture stays on its edge)
+        let k = frames.first { $0.frameId == frameId }?.intrinsics
+        let x = min(max(p.x, 0), k?.width ?? p.x), y = min(max(p.y, 0), k?.height ?? p.y)
+        d.allMarks.append(ScanMark(frameId: frameId, corner: corner, x: x, y: y, source: .user))
         return d
     }
 

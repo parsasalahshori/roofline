@@ -59,6 +59,9 @@ final class ArMeasureController {
     @ObservationIgnored private var lastFrozenSeq = 0
     /// Has ARKit locked the wall plane the window is on?
     private(set) var wallLocked = false
+    /// The guided scan (homeowner app): what the camera screen shows, and every photo kept so far.
+    private(set) var scanUi = ScanUiState()
+    private(set) var scanShots: [ScanShot] = []
     /// The corners placed so far, as screen points of the AR view (for the homeowner app's dots and size plates).
     private(set) var cornerDots: [CGPoint] = []
     /// A length plate for each side drawn so far, at its midpoint on screen.
@@ -108,6 +111,9 @@ final class ArMeasureController {
         let hasLidar = lidar
         engine.rerun = { session in
             session.run(ArMeasureController.makeConfiguration(lidar: hasLidar), options: [.resetTracking, .removeExistingAnchors])
+        }
+        engine.scan.wake = { [weak self] in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.drainScan() } }
         }
         sceneView.session.delegateQueue = engine.queue
         sceneView.session.delegate = engine
@@ -188,6 +194,58 @@ final class ArMeasureController {
             overlay.update(corners: s.overlay.corners, aim: s.overlay.aim, wallNormal: s.overlay.wallNormal, closed: s.overlay.closed)
         }
     }
+
+    // MARK: The guided scan
+
+    /// Apple's coaching overlay for finding the wall (before Start); it is taken off for the scan itself, which has its own coaching.
+    @ObservationIgnored private var coaching: ARCoachingOverlayView?
+
+    func installCoaching() {
+        guard coaching == nil else { return }
+        let c = ARCoachingOverlayView(frame: sceneView.bounds)
+        c.session = sceneView.session
+        c.goal = .verticalPlane
+        c.activatesAutomatically = true
+        c.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        sceneView.addSubview(c)
+        coaching = c
+    }
+
+    func removeCoaching() {
+        coaching?.activatesAutomatically = false
+        coaching?.setActive(false, animated: false)
+        coaching?.removeFromSuperview()
+        coaching = nil
+    }
+
+    private func drainScan() {
+        let (state, shots) = engine.scan.box.take()
+        if scanUi != state { scanUi = state }
+        if !shots.isEmpty { scanShots.append(contentsOf: shots) }
+    }
+
+    /// Begin the guided scan: needs the wall locked.
+    func startScan() {
+        guard wallLocked else { return }
+        scanShots = []
+        scanUi = ScanUiState(running: true, step: nil, shotCount: 0, interrupted: false, haveWall: true)
+        engine.startScan()
+    }
+
+    func stopScan() {
+        engine.stopScan()
+        scanUi.running = false
+    }
+
+    /// The window as far as the phone knows it (TL, TR, BR, BL in the world): the scan asks for close-ups of these corners and checks the whole window is in view.
+    func scanSetWindow(_ corners: [Vec3]?) {
+        let e = engine!
+        e.queue.async { e.scan.setWindow(corners) }
+    }
+
+    func scanManualShutter() { let e = engine!; e.queue.async { e.scan.requestManual() } }
+    func scanFinishSweep() { let e = engine!; e.queue.async { e.scan.requestFinishSweep() } }
+    func scanSkipCorner() { let e = engine!; e.queue.async { e.scan.requestSkip() } }
 
     // MARK: Actions
 

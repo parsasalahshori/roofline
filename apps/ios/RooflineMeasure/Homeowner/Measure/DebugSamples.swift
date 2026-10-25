@@ -532,6 +532,9 @@ extension HomeownerStore {
         case "hud", "hud-howto", "freeze", "freeze-clutter", "freeze-off", "freeze-two", "freeze-ai", "freeze-ai-wall", "freeze-frame":
             method = .corners
             measureSession = MeasureSession(method: .corners, room: room, number: 4)
+        case "guided-hud", "guided-closeup", "guided-result", "guided-result-check", "guided-aim", "guided-working":
+            method = .corners
+            measureSession = MeasureSession(method: .corners, room: room, number: 4)
         case "label", "label-frame":
             method = .corners
             measureSession = MeasureSession(method: .corners, room: room, number: 4)

@@ -71,6 +71,8 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
     private var haptics: [UINotificationFeedbackGenerator.FeedbackType] = []
     /// While set, the next still frame (or the first one after this time) is frozen.
     private var freezeDeadline: Date?
+    /// The homeowner app's guided scan: gets every frame while it runs (see ScanRecorder).
+    let scan = ScanRecorder()
 
     /// Seconds a corner may take to sample before it is placed from what it has (or refused with < minSamples samples).
     static let samplingTimeout: TimeInterval = 4
@@ -120,6 +122,18 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
         }
     }
 
+    /// Start the guided scan: the wall stays where it is from now on, and every frame goes to the recorder.
+    func startScan() {
+        queue.async {
+            self.scan.start(epoch: self.snap.epoch)
+            self.scan.setWindow(nil)
+        }
+    }
+
+    func stopScan() {
+        queue.async { self.scan.stop() }
+    }
+
     func undo() {
         queue.async {
             self.cancelSampling()
@@ -160,7 +174,7 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
         // reticle again. With corners placed the plane stays as it was (the world has not moved) and is just no longer refined.
         guard let id = wallAnchorId, anchors.contains(where: { $0.identifier == id }) else { return }
         wallAnchorId = nil
-        if snap.capture.corners.isEmpty && !sampling { snap.capture.setWallPlane(nil, viewer: lastViewer) }
+        if snap.capture.corners.isEmpty && !sampling && !scan.isRunning { snap.capture.setWallPlane(nil, viewer: lastViewer) }
     }
 
     func sessionWasInterrupted(_ session: ARSession) {
@@ -220,6 +234,7 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
         let cam = frame.camera
         let viewer = Vec3(cam.transform.translation)
         lastViewer = viewer
+        if scan.isRunning { scan.process(frame: frame, wall: snap.capture.wallPlane, epoch: snap.epoch, lidar: lidar) }
 
         // Tracking: a real loss restarts the window; poor tracking only blocks placing. Before tracking has been normal
         // once, "initializing" is just the camera warming up: it says "searching", never "Tracking was lost".
@@ -279,7 +294,7 @@ final class ArFrameEngine: NSObject, ARSessionDelegate {
 
         // The wall: the vertical plane under the reticle, used as an infinite plane. It follows the reticle until the FIRST corner
         // is tapped (sampling starts then) and is frozen from that tap on; undo to zero or start over lets it go again.
-        if snap.capture.corners.isEmpty && !sampling {
+        if snap.capture.corners.isEmpty && !sampling && !scan.isRunning {
             let q = frame.raycastQuery(from: imageCenter, allowing: .existingPlaneInfinite, alignment: .vertical)
             if let hit = session.raycast(q).first, let anchor = hit.anchor as? ARPlaneAnchor, anchor.alignment == .vertical,
                let plane = Plane(anchor: anchor) {

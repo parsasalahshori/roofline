@@ -30,4 +30,5 @@ final class ServerSwitchAPI: HomeownerAPI, @unchecked Sendable {
     func status(_ s: HomeownerSession) async throws -> HomeownerStatus { try await current.status(s) }
     func detectWindows(_ s: HomeownerSession, jpeg: Data, timeout: TimeInterval) async throws -> WindowDetection { try await current.detectWindows(s, jpeg: jpeg, timeout: timeout) }
     func uploadDebugCapture(_ s: HomeownerSession, captureId: String, file: String, data: Data) async throws { try await current.uploadDebugCapture(s, captureId: captureId, file: file, data: data) }
+    func postScan(_ s: HomeownerSession, body: Data) async throws -> WindowScanAnswer { try await current.postScan(s, body: body) }
 }

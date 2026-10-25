@@ -103,9 +103,17 @@ extension HomeownerStore {
 
     // MARK: A measured window (08)
 
+    /// A guided scan finished and ready to be saved with its window.
+    struct StagedScan {
+        var draft: ScanDraft
+        /// The native JPEG of each photo, by frame id.
+        var jpegs: [String: Data]
+    }
+
     /// A finished measure becomes a pending window with its size from the phone's own math; the label sheet takes it from there.
-    func capture(scale: WindowPhotoScale, corners: [Vec2]?, jpeg: Data?, widthPx: Int, heightPx: Int, focal35mm: Double? = nil, windowFrame: WindowFrameSize? = nil, in session: MeasureSession) {
-        let window = PhotoWindowInput(id: WindowIds.new(), uploadId: nil, label: nil, windowKey: nil, corners: corners, scale: scale, room: session.room, style: nil)
+    func capture(scale: WindowPhotoScale, corners: [Vec2]?, jpeg: Data?, widthPx: Int, heightPx: Int, focal35mm: Double? = nil, windowFrame: WindowFrameSize? = nil,
+                 windowId: String? = nil, scan: StagedScan? = nil, in session: MeasureSession) {
+        let window = PhotoWindowInput(id: windowId ?? WindowIds.new(), uploadId: nil, label: nil, windowKey: nil, corners: corners, scale: scale, room: session.room, style: nil)
         let preview = LocalWindowPreview.of(window, imageWidthPx: widthPx, imageHeightPx: heightPx, focal35mm: focal35mm)
         let made = PendingWindow(id: window.id, scale: scale, corners: corners, jpeg: jpeg, imageWidthPx: widthPx, imageHeightPx: heightPx, preview: preview,
                                  room: session.room, name: "", number: session.number, replacing: session.replacing, focal35mm: focal35mm, method: session.method, windowFrame: windowFrame)
@@ -113,6 +121,13 @@ extension HomeownerStore {
         pendingRestored = false
         // On disk at once: nothing measured is lost by closing the app before "Save"
         if let id = requestId { pendingDisk.save(made, requestId: id) }
+        // A guided scan's photos and marks too: they wait (not sent) until the window is saved
+        if let scan = scan, let s = self.session {
+            let box = scanOutbox
+            scanStaging = Task {
+                _ = try? await box.stage(draft: scan.draft, measurementId: s.requestId, jpegs: scan.jpegs, app: Self.appVersionLine, device: DeviceCaps.modelIdentifier)
+            }
+        }
     }
 
     /// The pending window of a closed app comes back: the label sheet opens for it, with no camera behind.
@@ -130,12 +145,24 @@ extension HomeownerStore {
 
     /// The label sheet's "Discard": the measured window is dropped (a window it was to replace stays).
     func discardPending() {
+        dropStagedScan()
         clearPending()
         measureSession = nil
     }
 
+    /// The window was left out before it was saved: its scan (not armed) goes with it.
+    func dropStagedScan() {
+        guard let p = pending else { return }
+        let box = scanOutbox, id = p.id, staging = scanStaging
+        Task {
+            await staging?.value
+            try? await box.discard(windowId: id)
+        }
+    }
+
     /// "Measure it again" on the label sheet: the camera starts over for this one.
     func clearPending() {
+        dropStagedScan()
         if let id = requestId { pendingDisk.clear(requestId: id) }
         pending = nil
         pendingRestored = false
@@ -160,6 +187,9 @@ extension HomeownerStore {
             return
         }
         _ = addRoom(cleanRoom)
+        // The window's scan (if it has one) may go once the window does
+        await scanStaging?.value
+        try? await scanOutbox.arm(windowId: p.id)
         pendingDisk.clear(requestId: s.requestId)
         // "Measure again": the old window goes only now that the new one is safely on the phone
         if let old = p.replacing { await deleteEverywhere(old) }
@@ -213,6 +243,7 @@ extension HomeownerStore {
     /// The window is on the server (delete it there), on this phone (drop it), or both.
     private func deleteEverywhere(_ id: String) async {
         try? await outbox.remove(id: id)
+        try? await scanOutbox.discard(windowId: id, includeArmed: true)
         if progress.windowFrames[id] != nil {
             progress.windowFrames[id] = nil
             saveProgress()
