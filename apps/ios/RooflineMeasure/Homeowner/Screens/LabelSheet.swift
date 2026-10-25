@@ -18,7 +18,7 @@ struct LabelSheet: View {
     @State private var frostedTouched = false
     @State private var saving = false
     @State private var confirmDiscard = false
-    @State private var detent: PresentationDetent = .fraction(0.8)
+    @State private var detent: PresentationDetent = .fraction(0.9)
     @FocusState private var nameFocused: Bool
 
     init(pending: PendingWindow, onAgain: @escaping () -> Void) {
@@ -72,7 +72,7 @@ struct LabelSheet: View {
             .navigationTitle("Check the size, then save")
             .navigationBarTitleDisplayMode(.inline)
         }
-        .presentationDetents([.fraction(0.8), .large], selection: $detent)
+        .presentationDetents([.fraction(0.9), .large], selection: $detent)
         .onChange(of: nameFocused) { _, focused in
             if focused { detent = .large }
         }

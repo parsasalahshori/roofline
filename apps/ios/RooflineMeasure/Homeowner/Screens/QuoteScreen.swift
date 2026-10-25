@@ -80,8 +80,6 @@ struct QuoteScreen: View {
             ForEach(q.tiers) { tier in
                 TierRow(tier: tier, windowCount: q.windowCount, selected: store.selectedTier == tier.key) { store.selectTier(tier.key) }
             }
-        } header: {
-            Text("Choose one").foregroundStyle(Theme.ink2)
         } footer: {
             if q.atVisitCount > 0 {
                 Text("\(q.atVisitCount) window\(q.atVisitCount == 1 ? " is a bay, bow or odd shape, so it isn't" : "s are bays, bows or odd shapes, so they aren't") in these prices. We price \(q.atVisitCount == 1 ? "it" : "them") at your visit.")
@@ -161,6 +159,8 @@ struct QuoteScreen: View {
                     .accessibilityIdentifier("trust-strip")
                 }
             }
+            // room before the levels, so a screen height never leaves just their top edge showing above the pinned button
+            .listSectionSpacing(.custom(50))
         }
     }
 

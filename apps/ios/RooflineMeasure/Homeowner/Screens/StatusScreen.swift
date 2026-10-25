@@ -65,13 +65,11 @@ private struct OrderTab: View {
                 }
                 .padding(.vertical, 4)
                 if let eta = store.status?.eta.flatMap(VisitTimes.parse) {
-                    HStack(alignment: .firstTextBaseline, spacing: 12) {
-                        Image(systemName: WCIcon.truck.symbol).foregroundStyle(Theme.red).accessibilityHidden(true)
-                        Text("Expected to ship \(VisitTimes.monthDay(eta, zone))").foregroundStyle(Theme.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 0)
-                    }
-                    .accessibilityElement(children: .combine)
+                    // one piece of text with the symbol inline, so symbol and words scale together
+                    (Text(Image(systemName: WCIcon.truck.symbol)).foregroundColor(Theme.red)
+                        + Text("  Expected to ship \(VisitTimes.monthDay(eta, zone))").foregroundColor(Theme.ink))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel("Expected to ship \(VisitTimes.monthDay(eta, zone))")
                 }
             } header: {
                 VStack(alignment: .leading, spacing: 2) {
@@ -86,9 +84,9 @@ private struct OrderTab: View {
             }
             Section {
                 ForEach(steps) { step in TimelineRow(step: step, zone: zone) }
-            } header: {
-                Text("Progress").foregroundStyle(Theme.ink2)
             }
+            // room before the last row, so no screen height leaves it half under the tab bar (text cut through cannot grow with the type size)
+            .listSectionSpacing(.custom(64))
             Section {
                 if let sms = store.companyPhone.flatMap({ URL(string: "sms:\($0.filter { $0.isNumber || $0 == "+" })") }) {
                     Link(destination: sms) { questionsRow(icon: .message, title: "Questions? Text the office") }
