@@ -13,6 +13,7 @@ export type AppKey =
   | 'agents'
   | 'storm'
   | 'orders'
+  | 'scans'
   | 'settings';
 
 export type WindowKey = AppKey | 'notFound';
@@ -50,6 +51,7 @@ export const RAIL_LAYOUT: readonly RailLayout[] = [
     apps: [
       { key: 'storm', href: '/storm', icon: 'storm' },
       { key: 'orders', href: '/estimator/windows', icon: 'factory' },
+      { key: 'scans', href: '/scans', icon: 'camera' },
     ],
   },
   { key: 'end', end: true, apps: [{ key: 'settings', href: '/settings', icon: 'gear' }] },
@@ -77,6 +79,8 @@ export function currentApp(pathname: string): AppKey | null {
     case 'storm':
     case 'settings':
       return first;
+    case 'scans':
+      return 'scans';
     case 'estimator':
       return 'estimator';
     default:

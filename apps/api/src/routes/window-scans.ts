@@ -36,7 +36,7 @@ import { noNul, parse, UUID } from '../validate.ts';
 /*
  * `/api/window-scans`: the staff review of the homeowner app's multi-frame window scans (docs/windows/scan-contract.md,
  * "Scan review" in docs/windows/homeowner-api.md). Session auth, every call company-scoped (RLS).
- *   GET   /?status=open|done|all|<status>   the queue, expedited first, then by SLA, with the count in each status
+ *   GET   /?status=open|done|all|<status>[,<status>...]   the queue, expedited first, then by SLA, with the count in each status
  *   GET   /:id                              one scan: frames (image URLs), marks, the server's result, history
  *   GET   /:id/frames/:frameId/image        a frame's picture (the request's upload, proxied from the object store)
  *   PATCH /:id/marks                        { marks } the reviewer's marks; the result is worked out again
@@ -79,12 +79,14 @@ function idParam(raw: unknown): string {
 
 const fullName = (f: string | null, l: string | null): string | null => (f === null ? null : `${f} ${l ?? ''}`.trim());
 
+/** `status`: open (needs a person), done, all, one status, or several statuses separated by commas. */
 function statusesFor(raw: unknown): readonly ScanStatus[] {
   const v = typeof raw === 'string' && raw !== '' ? raw : 'open';
   if (v === 'open') return OPEN;
   if (v === 'done') return DONE;
   if (v === 'all') return SCAN_STATUSES;
-  if ((SCAN_STATUSES as readonly string[]).includes(v)) return [v as ScanStatus];
+  const list = v.split(',');
+  if (list.length > 0 && list.every((s) => (SCAN_STATUSES as readonly string[]).includes(s))) return [...new Set(list)] as ScanStatus[];
   throw new AppError(400, MESSAGES.checkField, 'status');
 }
 
@@ -122,6 +124,7 @@ export function windowScanRoutes(deps: AppDeps): Router {
         address: r.address,
         homeowner: fullName(r.firstName, r.lastName),
         frameCount: r.frameCount,
+        thumbUrl: r.firstFrameId === null ? null : `/api/window-scans/${r.id}/frames/${encodeURIComponent(r.firstFrameId)}/image`,
         widthIn: r.serverResult.widthIn,
         heightIn: r.serverResult.heightIn,
         failed: r.serverResult.quality.failed,

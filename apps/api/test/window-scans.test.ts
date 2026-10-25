@@ -143,7 +143,7 @@ type Fixture = { input: { frames: ScanFrame[]; marks: ScanMark[]; wall: unknown 
 const fixture = (name: string): Fixture => JSON.parse(readFileSync(new URL(`../../../packages/shared/test/fixtures/window-scan/${name}.json`, import.meta.url), 'utf8')) as Fixture;
 
 /** The body a phone would send for a fixture: its frames uploaded for real, its own result as the phone's. */
-async function scanBody(s: Started, fx: Fixture, over: Record<string, unknown> = {}, slug = ACME): Promise<Record<string, any>> {
+async function scanBody(s: Started, fx: Fixture, over: Record<string, unknown> = {}, slug = ACME): Promise<ScanBodyJson> {
   const frames = [];
   for (const f of fx.input.frames) frames.push({ ...f, uploadId: await upload(s, slug) });
   const e = fx.expected;
@@ -159,9 +159,11 @@ async function scanBody(s: Started, fx: Fixture, over: Record<string, unknown> =
     ...over,
   };
 }
+/** A scan body as sent: loosely typed on purpose (the tests bend it). */
+type ScanBodyJson = Record<string, unknown> & { frames: ScanFrame[]; marks: ScanMark[]; result: { quality: ScanResult['quality'] } & Record<string, unknown> };
 const postScan = (s: Started, body: unknown) => send('post', s, `/requests/${s.id}/scans`, body);
 
-async function scanned(fx: string, over: Record<string, unknown> = {}): Promise<{ s: Started; body: Record<string, any>; res: request.Response }> {
+async function scanned(fx: string, over: Record<string, unknown> = {}): Promise<{ s: Started; body: ScanBodyJson; res: request.Response }> {
   const s = await start();
   await addWindow(s);
   const body = await scanBody(s, fixture(fx), over);

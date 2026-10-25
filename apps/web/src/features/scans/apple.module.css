@@ -1,0 +1,212 @@
+/*
+ * The look of the scan screens: Apple's iOS design language in a browser (clarity, hierarchy, depth). The system font,
+ * the system grays, inset grouped lists with hairline separators, capsule chips, 44 px rows and targets, a translucent
+ * material for the inspector, light and dark. Everything is a custom property on .root, so the screens inside it use
+ * var(--ap-*) and the kit's own controls (which read --f-ui) pick the system font up too. The company's brand colour stays
+ * the tint (the primary button, the selected segment), as an iOS app's tint does.
+ */
+.root {
+  --ap-bg: #f2f2f7;
+  --ap-card: #ffffff;
+  --ap-card-hover: #f7f7fa;
+  --ap-label: #1c1c1e;
+  --ap-label-2: #5f5f64;
+  --ap-label-3: #8e8e93;
+  --ap-sep: rgba(60, 60, 67, 0.2);
+  --ap-fill: rgba(118, 118, 128, 0.12);
+  --ap-fill-2: rgba(118, 118, 128, 0.2);
+  --ap-material: rgba(250, 250, 252, 0.78);
+  --ap-blue: #007aff;
+  --ap-blue-text: #0060d0;
+  --ap-blue-tint: rgba(0, 122, 255, 0.12);
+  --ap-green: #34c759;
+  --ap-green-text: #1f7a38;
+  --ap-green-tint: rgba(52, 199, 89, 0.16);
+  --ap-orange: #ff9500;
+  --ap-orange-text: #a65a00;
+  --ap-orange-tint: rgba(255, 149, 0, 0.16);
+  --ap-red: #ff3b30;
+  --ap-red-text: #c4281c;
+  --ap-red-tint: rgba(255, 59, 48, 0.13);
+  --ap-indigo: #5856d6;
+  --ap-indigo-text: #4543b8;
+  --ap-indigo-tint: rgba(88, 86, 214, 0.13);
+  --ap-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 8px 30px rgba(0, 0, 0, 0.08);
+  --ap-font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', system-ui, 'Helvetica Neue', Arial, sans-serif;
+  --ap-font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro', system-ui, 'Helvetica Neue', Arial, sans-serif;
+
+  /* The kit's controls inside the screen speak the same font */
+  --f-ui: var(--ap-font);
+  --f-display: var(--ap-font-display);
+
+  /* Full bleed: the page around it pads its content, and these screens run to the edges of the column and take its height */
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  margin: -20px -24px -20px;
+  background: var(--ap-bg);
+  color: var(--ap-label);
+  font-family: var(--ap-font);
+  font-size: 17px;
+  line-height: 1.29;
+  letter-spacing: -0.012em;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme='light'])) .root {
+    --ap-bg: #000000;
+    --ap-card: #1c1c1e;
+    --ap-card-hover: #262629;
+    --ap-label: #f5f5f7;
+    --ap-label-2: #a1a1a6;
+    --ap-label-3: #6e6e73;
+    --ap-sep: rgba(84, 84, 88, 0.6);
+    --ap-fill: rgba(120, 120, 128, 0.24);
+    --ap-fill-2: rgba(120, 120, 128, 0.36);
+    --ap-material: rgba(28, 28, 30, 0.74);
+    --ap-blue: #0a84ff;
+    --ap-blue-text: #64b0ff;
+    --ap-blue-tint: rgba(10, 132, 255, 0.2);
+    --ap-green: #30d158;
+    --ap-green-text: #4cd964;
+    --ap-green-tint: rgba(48, 209, 88, 0.2);
+    --ap-orange: #ff9f0a;
+    --ap-orange-text: #ffb340;
+    --ap-orange-tint: rgba(255, 159, 10, 0.2);
+    --ap-red: #ff453a;
+    --ap-red-text: #ff6961;
+    --ap-red-tint: rgba(255, 69, 58, 0.2);
+    --ap-indigo: #5e5ce6;
+    --ap-indigo-text: #9f9dff;
+    --ap-indigo-tint: rgba(94, 92, 230, 0.26);
+    --ap-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.08), 0 8px 30px rgba(0, 0, 0, 0.5);
+  }
+}
+
+:global(:root[data-theme='dark']) .root {
+  --ap-bg: #000000;
+  --ap-card: #1c1c1e;
+  --ap-card-hover: #262629;
+  --ap-label: #f5f5f7;
+  --ap-label-2: #a1a1a6;
+  --ap-label-3: #6e6e73;
+  --ap-sep: rgba(84, 84, 88, 0.6);
+  --ap-fill: rgba(120, 120, 128, 0.24);
+  --ap-fill-2: rgba(120, 120, 128, 0.36);
+  --ap-material: rgba(28, 28, 30, 0.74);
+  --ap-blue: #0a84ff;
+  --ap-blue-text: #64b0ff;
+  --ap-blue-tint: rgba(10, 132, 255, 0.2);
+  --ap-green: #30d158;
+  --ap-green-text: #4cd964;
+  --ap-green-tint: rgba(48, 209, 88, 0.2);
+  --ap-orange: #ff9f0a;
+  --ap-orange-text: #ffb340;
+  --ap-orange-tint: rgba(255, 159, 10, 0.2);
+  --ap-red: #ff453a;
+  --ap-red-text: #ff6961;
+  --ap-red-tint: rgba(255, 69, 58, 0.2);
+  --ap-indigo: #5e5ce6;
+  --ap-indigo-text: #9f9dff;
+  --ap-indigo-tint: rgba(94, 92, 230, 0.26);
+  --ap-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.08), 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+
+/* A heading above a list: footnote size, upper case, secondary label */
+.groupTitle {
+  margin: 0 16px 6px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.38;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ap-label-2);
+}
+
+/* An inset grouped list: one rounded card, rows separated by a hairline that starts inside the left edge */
+.group {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--ap-card);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.group > li {
+  position: relative;
+}
+
+.group > li + li::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 16px;
+  right: 0;
+  height: 0.5px;
+  background: var(--ap-sep);
+}
+
+.footnote {
+  margin: 6px 16px 0;
+  font-size: 13px;
+  line-height: 1.38;
+  color: var(--ap-label-2);
+}
+
+/* A capsule: an icon, a word and a tint (a status is never a colour alone) */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 2px 9px 2px 7px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  background: var(--ap-fill);
+  color: var(--ap-label-2);
+}
+
+.chip[data-tone='orange'] {
+  background: var(--ap-orange-tint);
+  color: var(--ap-orange-text);
+}
+.chip[data-tone='blue'] {
+  background: var(--ap-blue-tint);
+  color: var(--ap-blue-text);
+}
+.chip[data-tone='indigo'] {
+  background: var(--ap-indigo-tint);
+  color: var(--ap-indigo-text);
+}
+.chip[data-tone='green'] {
+  background: var(--ap-green-tint);
+  color: var(--ap-green-text);
+}
+.chip[data-tone='red'] {
+  background: var(--ap-red-tint);
+  color: var(--ap-red-text);
+}
+.chip[data-tone='gray'] {
+  background: var(--ap-fill);
+  color: var(--ap-label-2);
+}
+
+@media (max-width: 767.98px) {
+  .root {
+    margin: -16px -16px -24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root * {
+    scroll-behavior: auto !important;
+  }
+}

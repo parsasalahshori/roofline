@@ -746,6 +746,8 @@ export type ScanQueueItem = {
   /** The homeowner's name once they have filed their contact details. */
   homeowner: string | null;
   frameCount: number;
+  /** The scan's first frame, for the row's picture (a same-origin URL, session auth). */
+  thumbUrl: string | null;
   widthIn: number | null;
   heightIn: number | null;
   failed: ScanGateCode[];

@@ -19,6 +19,7 @@ const MORE_LINKS: readonly MoreLink[] = [
   { key: 'storm', href: '/storm', icon: 'storm' },
   { key: 'storm', href: '/storm/routes', icon: 'route', label: doors.myRoutesLink },
   { key: 'orders', href: '/estimator/windows', icon: 'factory' },
+  { key: 'scans', href: '/scans', icon: 'camera' },
   { key: 'settings', href: '/settings', icon: 'gear' },
 ];
 

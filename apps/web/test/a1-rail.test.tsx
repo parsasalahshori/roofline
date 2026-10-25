@@ -79,6 +79,7 @@ describe('A1 rail', () => {
       agents: '/agents',
       storm: '/storm',
       orders: '/estimator/windows',
+      scans: '/scans',
       settings: '/settings',
     });
   });
@@ -90,7 +91,7 @@ describe('A1 rail', () => {
     const ai = screen.getByRole('group', { name: rail.groupAi });
     expect(within(ai).getAllByRole('link').map((link) => link.getAttribute('data-app'))).toEqual(['approvals', 'front-desk', 'agents']);
     const field = screen.getByRole('group', { name: rail.groupField });
-    expect(within(field).getAllByRole('link').map((link) => link.getAttribute('data-app'))).toEqual(['storm', 'orders']);
+    expect(within(field).getAllByRole('link').map((link) => link.getAttribute('data-app'))).toEqual(['storm', 'orders', 'scans']);
   });
 
   it('marks the current app, and Factory orders only on an order sheet', () => {
@@ -99,6 +100,8 @@ describe('A1 rail', () => {
     expect(currentApp('/estimator/windows/w1')).toBe('estimator');
     expect(currentApp('/estimator/windows/w1/order')).toBe('orders');
     expect(currentApp('/storm/routes')).toBe('storm');
+    expect(currentApp('/scans')).toBe('scans');
+    expect(currentApp('/scans/s1')).toBe('scans');
     expect(currentApp('/nowhere')).toBeNull();
   });
 });

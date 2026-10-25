@@ -103,6 +103,8 @@ export type WindowScanListRow = {
   seniorUserId: string | null;
   serverResult: WindowScanRow['serverResult'];
   frameCount: number;
+  /** The first frame's id: the scan's picture in the queue. */
+  firstFrameId: string | null;
   address: string;
   firstName: string | null;
   lastName: string | null;
@@ -130,6 +132,7 @@ export async function listWindowScans(tx: Tx, ctx: TenantContext, opts: { status
       seniorUserId: windowScans.seniorUserId,
       serverResult: windowScans.serverResult,
       frameCount: sql<number>`jsonb_array_length(${windowScans.frames})`.mapWith(Number),
+      firstFrameId: sql<string | null>`${windowScans.frames}->0->>'frameId'`,
       address: homeownerRequests.address,
       firstName: quoteRequests.firstName,
       lastName: quoteRequests.lastName,

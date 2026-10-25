@@ -84,7 +84,8 @@ A rare `409 conflict` (a clash while the address was being saved: try again) and
   unknown request id; an expired token does not count). Past that, every `/requests/:id/...` call from that address is a
   429 (`Retry-After: 3600`) until the hour is over, even with a right token. `GET /company` and `POST /requests` are not
   affected.
-- Per request (token): 120 calls a minute; 60 photo uploads an hour; 120 window saves or deletes an hour; 5
+- Per request (token): 120 calls a minute; 60 photo uploads an hour; 120 window saves or deletes an hour; 120 scans an
+  hour; 5
   `.../contact` an hour (counted once the form is valid, so a mistyped phone does not use one up); 20 `.../book` an hour;
   30 `.../slots` an hour. These count calls, including calls refused for another reason (a 409 or 422, an idempotent
   replay), except where said.
@@ -106,6 +107,7 @@ A rare `409 conflict` (a clash while the address was being saved: try again) and
 1. `GET /company` -> brand, services, booking, consent words, window styles.
 2. `POST /requests` -> `requestId` + `token`, the home, the estimates.
 3. Windows: `POST .../uploads` (a photo), `POST .../windows` (a measured window), repeat. `GET .../requests/:id` any time.
+   A window can then get a multi-frame scan: `POST .../uploads` for each frame, then `POST .../scans` (see below).
 4. `PATCH .../requests/:id` if the homeowner says how many windows they have.
 5. `POST .../contact` -> the lead exists on the company's side (the consent is stored here).
 6. `GET .../slots`, then `POST .../book` with `slotStart` or `callMe`.
@@ -512,6 +514,61 @@ w-bedroom-1  ar        30 x 48      about ±1/2 in    good    standard
 w-living-1   roomplan  70 7/8 x 47 1/4  about ±1 1/2 in  check  large   "A room scan gives a rough size. We measure again at your free visit."
 ```
 
+## POST /requests/:id/scans
+
+A window's **multi-frame scan**: the frames' camera poses and the corner marks of a window the app already sent with
+`POST .../windows` (same `windowId`). The contract, with the coordinates, the triangulation maths, the quality gates and
+the review that follows, is `docs/windows/scan-contract.md`; the math is `packages/shared/src/window-scan.ts` (the iPhone's
+RooflineCore checks the same JSON fixtures, `packages/shared/test/fixtures/window-scan/`); the route is
+`apps/api/src/public/homeowner-scans.ts`; the tests are `apps/api/test/window-scans.test.ts`.
+
+1. Upload every frame's JPEG first with `POST .../uploads` (one `uploadId` per frame; depth is not sent).
+2. Send the scan (JSON, at most **1 MB**, every body key strict):
+
+```json
+{
+  "scanId": "5c0d7a52-1d3c-4a53-9d4e-0a6a5e0f1a01",
+  "windowId": "w-kitchen-1",
+  "app": "0.1.0 (2610251200)", "device": "iPhone17,2",
+  "wall": { "point": [0, 1.4, -3], "normal": [0, 0, 1] },
+  "frames": [
+    { "frameId": "f1", "kind": "regular", "corner": null, "uploadId": "33d44c23-...", "imageWidth": 1920, "imageHeight": 1440,
+      "cameraTransform": [16 numbers, column-major], "intrinsics": { "fx": 1500, "fy": 1500, "cx": 960, "cy": 720, "width": 1920, "height": 1440 } }
+  ],
+  "marks": [ { "frameId": "f1", "corner": 0, "x": 812.5, "y": 410, "source": "ai" } ],
+  "result": { "cornersM": [[x, y, z], [x, y, z], [x, y, z], [x, y, z]], "widthIn": 34.625, "heightIn": 55.75, "windowFrame": null,
+              "quality": { "framesPerCorner": [4, 4, 3, 5], "reprojRmsPx": 1.4, "reprojMaxPx": 3.1, "minBaselineDeg": 7.5,
+                           "symRatioDiff": 0.004, "planeMaxCm": 0.3, "scaleDiff": 0.01, "closeups": 4, "failed": [] },
+              "status": "measured" }
+}
+```
+
+- 3 to 24 frames (distinct `frameId`s and `uploadId`s), at most 200 marks; each mark is on a frame of the scan and inside its
+  image (native pixels: the image the intrinsics describe; the uploaded JPEG may be a resized copy); every
+  `cameraTransform` must be a rigid 4x4 (orthonormal rotation, bottom row 0 0 0 1). Every `uploadId` must be a photo of this
+  request (`400`, field `frames`); `windowId` must be a window of this request that the app sent (`409 window_unknown`).
+- **Idempotent on `scanId`** (per request): the same scan sent again is `200` with the stored answer; a new one is `201`.
+- The server **recomputes** the triangulation, the level rectangle and the seven gates from the frames and marks; its
+  result is the answer and the one that counts. The phone's `result` is kept for comparison only (a phone that says
+  `measured` for a scan the server fails is still sent to review).
+- Answer `{ "scanId", "status", "result" }`: `result` has the same shape as the request's (`cornersM`, `widthIn`,
+  `heightIn`, `windowFrame` as the phone sent it, `quality`, `status`), plus `triangulatedM` (the four corners as
+  triangulated, before the rectangle fit). `status` is `measured` when no gate fails (accepted at once), else `needs_review`.
+- When `measured`, **the window's size becomes the scan's opening**: the window row's `scale` becomes an AR scale on the four
+  `cornersM` (so `widthIn`/`heightIn` are exactly the scan's, `quality: "good"`), and the next `GET /requests/:id` shows it.
+  Re-sending the window afterwards with its original body is still a `200` (no `window_id_taken`). When `needs_review` the
+  window keeps its size until a person finishes the review.
+- On the next `GET /requests/:id` (and every answer that carries the view) a window with a scan has an additive field:
+
+```json
+"scan": { "scanId": "5c0d7a52-...", "state": "checking", "label": "Being checked by WinChoice" }
+```
+
+  `state` is `checking` (needs review, or being reviewed), `measured` ("Measured") or `visit_required` ("We will measure this
+  one at your free visit"; the window is then `quality: "check"` with that sentence as its reason).
+- Errors: `400 invalid_request` (shape, a mark outside its photo, a frame that is not rigid), `409 window_unknown`,
+  `409 callback_only`, `413 too_large` (over 1 MB), `401`/`429` as everywhere. Nothing is stored by a refused call.
+
 ## DELETE /requests/:id/windows/:windowId
 
 `200` with the view without the window. A window that is not there is also `200` (a retried delete is harmless), also on a
@@ -638,6 +695,16 @@ Coaching text for the card screen:
   are quote-grade: on a factory order they are quote-only lines until the rep measures them again. Windows from a
   request the homeowner never sent in (no contact form) are not copied; the homeowner's own copy is never the address's
   "newest measurement" for staff (it has no walls or street photos and would hide the company's own earlier one).
+
+### Scan review (staff)
+
+A scan that fails a gate lands in the company's **Scan review** queue (`/scans` in the web app; "Field" in the rail): a first
+("junior") reviewer, any member, moves or adds or removes marks on the frames, with the size and each gate recomputed live,
+then submits; a senior reviewer (the owner or the office: whoever may mark window factory orders ready, capability
+`approve_factory_order`) finalises it **Measured** (every gate must pass, or the senior writes a reason to override) or
+**Visit required** (a reason is needed). A scan is due 24 hours after it arrives; an expedited scan goes to the top and out of
+that deadline. The staff API (`/api/window-scans`) and the statuses are in `docs/windows/scan-contract.md` ("Review") and its
+"Implementation notes".
 
 ## The instant quote page and the app
 

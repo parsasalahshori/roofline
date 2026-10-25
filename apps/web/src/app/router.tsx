@@ -35,6 +35,8 @@ import { RoutesWindow } from '../features/storm/routes/RoutesWindow.tsx';
 import { RouteDetail } from '../features/storm/routes/RouteDetail.tsx';
 import { TodayPage } from '../features/today/Today.tsx';
 import { TextingSetup } from '../features/texting/TextingSetup.tsx';
+import { ScanQueue } from '../features/scans/ScanQueue.tsx';
+import { ScanReview } from '../features/scans/ScanReview.tsx';
 import { AppPage } from '../shell/AppPage.tsx';
 import { HomeRoute } from '../shell/HomeRoute.tsx';
 import { NotFoundWindow } from '../shell/NotFoundWindow.tsx';
@@ -83,6 +85,8 @@ const routes: RouteObject[] = [
           { path: 'estimator/windows/:windowMeasurementId', element: <WindowsWindow /> },
           { path: 'estimator/windows/:windowMeasurementId/order', element: <OrderWindow /> },
           { path: 'estimator/proposals/:proposalId', element: <ProposalWindow /> },
+          { path: 'scans', element: <ScanQueue /> },
+          { path: 'scans/:scanId', element: <ScanReview /> },
           { path: 'agents', element: <AppPage app="agents"><AgentsWindow /></AppPage> },
           { path: 'agents/feed', element: <AppPage app="agents"><FeedWindow /></AppPage> },
           { path: 'agents/waiting', element: <AppPage app="agents"><WaitingWindow /></AppPage> },

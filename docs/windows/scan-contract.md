@@ -106,3 +106,38 @@ On `measured` the window's size is updated as above; the homeowner app sees it o
 
 Shared math lives in `packages/shared/src/window-scan.ts` (triangulate, rectangle fit, gates) with fixtures in
 `packages/shared/test/fixtures/window-scan/*.json` that the iOS Core checks also run (parity).
+
+## Implementation notes (server and staff web, v1)
+
+What was decided where the contract is silent, and where the code lives:
+
+- **Code**: math `packages/shared/src/window-scan.ts` (+ tests `packages/shared/test/window-scan.test.ts`, synthetic scenes
+  `packages/shared/test/fixtures/window-scan-scene.ts`, parity fixtures `fixtures/window-scan/*.json` written by
+  `generate.ts` there); table `window_scans` (migration 0046); public route `apps/api/src/public/homeowner-scans.ts`; applying a
+  scan to its window `apps/api/src/estimator/window-scan-apply.ts`; staff API `apps/api/src/routes/window-scans.ts`; staff
+  screens `apps/web/src/features/scans/`; demo data `scripts/seed-window-scans.ts`.
+- **Marks are in the native image's pixels** (the image `intrinsics` describe). The uploaded JPEG may be a resized copy of it;
+  the staff screen draws the picture stretched to the native size, so marks line up whatever the JPEG's size. (Send the
+  native size to avoid any doubt.)
+- **Triangulation**: one mark per (frame, corner) (the last wins); a corner needs >= 2 rays; the four corners are projected
+  onto their least-squares plane before the level fit (like the Swift caller of `RectangleFit.fit`). `cornersM` in a result is
+  the **fitted rectangle's** corners; `triangulatedM` (additive) is the corners before the fit. The `scale` gate uses the
+  median, over the frames that mark all four corners, of the size the wall plane alone gives (rays met with the phone's
+  `wall`); without a wall (or such a frame) it is not checked and passes (`scaleDiff` 0). `no_closeups` is a warning: it
+  shows in the gate list but never in `quality.failed`. Numbers that cannot be worked out are 0 in `quality` (so every
+  field stays a number); `cornersM`/`widthIn`/`heightIn` are null.
+- **Fixtures**: compare numbers within `expected.tolerance` (0.01 in, 0.0005 m, 0.05 px).
+- **A scan the window cannot take** (size outside 6 to 200 in) is not auto-accepted: it goes to review like a failing scan.
+- **Statuses and roles**: `needs_review` -> `in_review` (the first mark edit; that member is the junior) -> `junior_done`
+  (Submit) -> `measured` | `visit_required` (Finalise). Any member (owner, office, rep) may edit marks and submit. **Senior =
+  the capability `approve_factory_order` (owner and office)**: only they finalise, and only they may move marks after the
+  first review has submitted. Finalising needs the first review done (`409 needs_first_review`); the same person may do both
+  steps in a one-person company. `measured` needs a size and every gate passing, or `override: true` with a written reason
+  (>= 3 characters, `422 gates_failed`); `visit_required` needs a reason (`422 reason_needed`). Marks are replaced whole by
+  `PATCH .../marks`; the phone's original marks are kept (`marksOriginal`). Every step is on the scan's history and the audit log.
+- **Expedite** is a flag any member can set or clear on an open scan; it is out of the 24 hour SLA (`secondsLeft: null`).
+- **Homeowner view**: a window with a scan carries `scan: { scanId, state, label }`; `visit_required` also marks the window
+  `check` with "We will measure this one at your free visit."
+- **Staff API additions**: `GET /api/window-scans?status=` takes `open` (default), `done`, `all`, one status, or several
+  separated by commas, and answers `{ scans, counts }` (each scan has a `thumbUrl`); `GET /:id/frames/:frameId/image` serves a
+  frame's picture (the request's upload, behind the session, like window photos).
