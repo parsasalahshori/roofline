@@ -58,3 +58,4 @@ export * from './window-photo-card.ts';
 export * from './homeowner.ts';
 // Google content retention (docs/compliance/google-data-retention.md)
 export * from './google-retention.ts';
+export * from './backoffice.ts';
