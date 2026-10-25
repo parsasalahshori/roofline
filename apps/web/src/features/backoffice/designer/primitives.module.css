@@ -144,3 +144,14 @@
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
+
+/* A segmented control on its own line takes the whole width, its segments equal */
+.row[data-stacked="true"] [role="radiogroup"] {
+  display: flex;
+  width: 100%;
+}
+
+.row[data-stacked="true"] [role="radio"] {
+  flex: 1 1 0;
+  justify-content: center;
+}

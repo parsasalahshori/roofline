@@ -9,7 +9,7 @@
 .toolbar {
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: 9;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -239,7 +239,7 @@
   .scrim {
     position: fixed;
     inset: 0;
-    z-index: 19;
+    z-index: 40;
     display: block;
     background: rgba(0, 0, 0, 0.35);
   }
@@ -247,7 +247,7 @@
   .inspector {
     position: fixed;
     inset: auto 0 0;
-    z-index: 20;
+    z-index: 41;
     height: auto;
     max-height: 90dvh;
     border-left: 0;

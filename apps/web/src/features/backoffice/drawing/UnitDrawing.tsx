@@ -36,6 +36,8 @@ const SYMBOL = 'var(--dr-symbol, #2050e6)';
 const SELECTED = 'var(--dr-select, rgba(32, 80, 230, 0.22))';
 const DEFAULT_GLASS = 'var(--dr-glass, #dcebf3)';
 
+/** A rectangle as SVG attributes. */
+const box = (r: Rect) => ({ x: r.x, y: r.y, width: r.w, height: r.h });
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
 const archRise = (w: number, h: number) => Math.min(w / 2, h * 0.45);
 
@@ -199,13 +201,13 @@ function SectionDrawing({ placed, unitW, unitH, gridType, frameColor, glass, sym
     const arrowSymbol = openingSymbol('hung-sash', bottom);
     return (
       <g data-role="section" {...common}>
-        <rect data-role="glass" data-sash="top" {...top} fill={glass} stroke={INK} strokeWidth={1} vectorEffect="non-scaling-stroke" />
-        <rect data-role="glass" data-sash="bottom" {...bottom} fill={glass} stroke={INK} strokeWidth={1} vectorEffect="non-scaling-stroke" />
+        <rect data-role="glass" data-sash="top" {...box(top)} fill={glass} stroke={INK} strokeWidth={1} vectorEffect="non-scaling-stroke" />
+        <rect data-role="glass" data-sash="bottom" {...box(bottom)} fill={glass} stroke={INK} strokeWidth={1} vectorEffect="non-scaling-stroke" />
         <rect data-role="meeting-rail" x={g.x} y={mid - rail / 2} width={g.w} height={rail} fill={frameColor} stroke={INK} strokeWidth={1} vectorEffect="non-scaling-stroke" />
         <GridBars area={top} pattern={patterns.top} type={gridType} thickness={bar} color={frameColor} />
         <GridBars area={bottom} pattern={patterns.bottom} type={gridType} thickness={bar} color={frameColor} />
         {symbols && arrowSymbol ? <SymbolPath symbol={arrowSymbol} /> : null}
-        {selected ? <rect data-role="selection" {...g} fill={SELECTED} /> : null}
+        {selected ? <rect data-role="selection" {...box(g)} fill={SELECTED} /> : null}
       </g>
     );
   }
@@ -213,10 +215,10 @@ function SectionDrawing({ placed, unitW, unitH, gridType, frameColor, glass, sym
   const symbol = openingSymbol(opening, g);
   return (
     <g data-role="section" {...common}>
-      <rect data-role="glass" {...g} fill={glass} stroke={INK} strokeWidth={1} vectorEffect="non-scaling-stroke" />
+      <rect data-role="glass" {...box(g)} fill={glass} stroke={INK} strokeWidth={1} vectorEffect="non-scaling-stroke" />
       <GridBars area={g} pattern={sashPatterns(grid).top} type={gridType} thickness={bar} color={frameColor} />
       {symbols && symbol ? <SymbolPath symbol={symbol} /> : null}
-      {selected ? <rect data-role="selection" {...g} fill={SELECTED} /> : null}
+      {selected ? <rect data-role="selection" {...box(g)} fill={SELECTED} /> : null}
     </g>
   );
 }
@@ -228,7 +230,7 @@ function Dimensions({ w, h, m }: { w: number; h: number; m: ReturnType<typeof ma
   const xLine = w + gap;
   const stroke = { stroke: INK, strokeWidth: 1, vectorEffect: 'non-scaling-stroke' as const };
   return (
-    <g data-role="dimensions" fontSize={m.fontIn} fill={INK} fontFamily="ui-monospace, Menlo, monospace" textAnchor="middle">
+    <g data-role="dimensions" fontSize={m.fontIn} fill={INK} fontFamily="-apple-system, BlinkMacSystemFont, system-ui, sans-serif" textAnchor="middle">
       <g data-role="dimension" data-axis="width">
         <line x1={0} y1={yLine} x2={w} y2={yLine} {...stroke} />
         <line x1={0} y1={yLine - tick} x2={0} y2={yLine + tick} {...stroke} />

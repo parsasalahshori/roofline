@@ -241,6 +241,18 @@ describe('UnitDrawing structure', () => {
     expect(vb.w).toBeGreaterThan(unitViewBox(35.5, 59.5, false).w);
   });
 
+  it('gives every glass pane and the selection a real size (width and height attributes)', () => {
+    const hung = draw(section('s', 'hung-sash'), {}, { selectedSectionId: 's' });
+    const panes = [...q(hung, '[data-role=glass]'), ...q(hung, '[data-role=selection]')];
+    expect(panes).toHaveLength(3);
+    for (const pane of panes) {
+      expect(Number(pane.getAttribute('width'))).toBeGreaterThan(0);
+      expect(Number(pane.getAttribute('height'))).toBeGreaterThan(0);
+    }
+    const plain = draw(section('s', 'fixed'));
+    expect(Number(plain.querySelector('[data-role=glass]')!.getAttribute('width'))).toBeGreaterThan(40);
+  });
+
   it('marks the selected section and takes the frame colour', () => {
     const layout = splitSection(section('a'), 'a', 'columns', 2, 60, 48, ids());
     const svg = draw(layout, {}, { selectedSectionId: 'n1', frameColor: frameColorHex('bronze') });
