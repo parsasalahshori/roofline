@@ -1,0 +1,461 @@
+/*
+ * The back office look: Apple's Human Interface Guidelines. Everything under .bo-apple reads these tokens, and the
+ * design kit's own variables are pointed at them inside the scope, so the kit's buttons, fields and tables take the
+ * same look. Nothing outside .bo-apple changes. Light and dark: under the system setting (unless the page says
+ * data-theme="light") and when the page says data-theme="dark". The accent is WinChoice red and only that:
+ * primary buttons, the picked segment, links and the focus ring.
+ *
+ * Type scale (system font): .bo-large 34, .bo-title 22, .bo-headline 17 semibold, .bo-body 17, .bo-sub 15, .bo-foot 13.
+ * Shared pieces: .bo-group (an inset grouped list), .bo-row (44px row), .bo-chev (the chevron), .bo-seg (a segmented
+ * control made of links), .bo-grouphead (the small heading over a group), .bo-card (a board card).
+ */
+.bo-apple {
+  /* Apple system colours, light */
+  --bo-ground: #f2f2f7;
+  --bo-surface: #ffffff;
+  --bo-surface-2: #f9f9fb;
+  --bo-fill: rgba(118, 118, 128, 0.12);
+  --bo-label: #1c1c1e;
+  --bo-label-2: #48484a;
+  --bo-label-3: #6c6c70;
+  --bo-separator: rgba(60, 60, 67, 0.2);
+  --bo-chevron: #c4c4c7;
+  --bo-tint: #ed3a2b;
+  --bo-tint-hover: #d62e20;
+  --bo-tint-text: #c42a1c;
+  --bo-tint-fill: rgba(237, 58, 43, 0.12);
+  --bo-green: #248a3d;
+  --bo-orange: #b25000;
+  --bo-orange-fill: rgba(255, 149, 0, 0.18);
+  --bo-red: #d70015;
+  --bo-blue: #0066cc;
+  --bo-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+  --bo-scrim: rgba(0, 0, 0, 0.35);
+  --bo-font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --bo-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* The kit's variables, pointed at the Apple ones inside this scope */
+  --ground: var(--bo-ground);
+  --surface: var(--bo-surface);
+  --surface-2: var(--bo-surface-2);
+  --sunken: var(--bo-fill);
+  --raised: var(--bo-surface);
+  --ink: var(--bo-label);
+  --ink-2: var(--bo-label-2);
+  --ink-3: var(--bo-label-3);
+  --line: var(--bo-separator);
+  --line-2: var(--bo-separator);
+  --line-ctl: rgba(60, 60, 67, 0.3);
+  --brand: var(--bo-tint);
+  --brand-hover: var(--bo-tint-hover);
+  --brand-ink: #ffffff;
+  --brand-tint: var(--bo-tint-fill);
+  --brand-line: rgba(237, 58, 43, 0.4);
+  --brand-text: var(--bo-tint-text);
+  --ring: var(--bo-tint);
+  --ok: #34c759;
+  --ok-text: var(--bo-green);
+  --ok-tint: rgba(52, 199, 89, 0.16);
+  --warn: #ff9500;
+  --warn-text: var(--bo-orange);
+  --warn-tint: var(--bo-orange-fill);
+  --bad: #ff3b30;
+  --bad-text: var(--bo-red);
+  --bad-tint: rgba(255, 59, 48, 0.12);
+  --info: #007aff;
+  --info-text: var(--bo-blue);
+  --info-tint: rgba(0, 122, 255, 0.12);
+  --r-1: 6px;
+  --r-2: 10px;
+  --r-3: 12px;
+  --r-4: 14px;
+  --f-ui: var(--bo-font);
+  --f-display: var(--bo-font);
+  --e-1: var(--bo-shadow);
+  --e-2: 0 8px 30px rgba(0, 0, 0, 0.12);
+  --e-3: 0 16px 48px rgba(0, 0, 0, 0.2);
+
+  box-sizing: border-box;
+  min-height: calc(100dvh - 104px);
+  border-radius: 16px;
+  padding: 24px 28px 48px;
+  background: var(--bo-ground);
+  color: var(--bo-label);
+  font-family: var(--bo-font);
+  font-size: 17px;
+  line-height: 22px;
+  letter-spacing: -0.2px;
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .bo-apple {
+    --bo-ground: #000000;
+    --bo-surface: #1c1c1e;
+    --bo-surface-2: #2c2c2e;
+    --bo-fill: rgba(118, 118, 128, 0.24);
+    --bo-label: #ffffff;
+    --bo-label-2: #d1d1d6;
+    --bo-label-3: #98989f;
+    --bo-separator: rgba(84, 84, 88, 0.6);
+    --bo-chevron: #5c5c61;
+    --bo-tint: #ff5446;
+    --bo-tint-hover: #ff6a5e;
+    --bo-tint-text: #ff6a5e;
+    --bo-tint-fill: rgba(255, 84, 70, 0.2);
+    --bo-green: #30d158;
+    --bo-orange: #ff9f0a;
+    --bo-orange-fill: rgba(255, 159, 10, 0.22);
+    --bo-red: #ff6961;
+    --bo-blue: #0a84ff;
+    --bo-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+    --bo-scrim: rgba(0, 0, 0, 0.6);
+    --brand-ink: #ffffff;
+    --brand-line: rgba(255, 84, 70, 0.5);
+    --line-ctl: rgba(235, 235, 245, 0.3);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] .bo-apple {
+  --bo-ground: #000000;
+  --bo-surface: #1c1c1e;
+  --bo-surface-2: #2c2c2e;
+  --bo-fill: rgba(118, 118, 128, 0.24);
+  --bo-label: #ffffff;
+  --bo-label-2: #d1d1d6;
+  --bo-label-3: #98989f;
+  --bo-separator: rgba(84, 84, 88, 0.6);
+  --bo-chevron: #5c5c61;
+  --bo-tint: #ff5446;
+  --bo-tint-hover: #ff6a5e;
+  --bo-tint-text: #ff6a5e;
+  --bo-tint-fill: rgba(255, 84, 70, 0.2);
+  --bo-green: #30d158;
+  --bo-orange: #ff9f0a;
+  --bo-orange-fill: rgba(255, 159, 10, 0.22);
+  --bo-red: #ff6961;
+  --bo-blue: #0a84ff;
+  --bo-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+  --bo-scrim: rgba(0, 0, 0, 0.6);
+  --brand-ink: #ffffff;
+  --brand-line: rgba(255, 84, 70, 0.5);
+  --line-ctl: rgba(235, 235, 245, 0.3);
+  color-scheme: dark;
+}
+
+/* Hit targets of 44 points for everything you press or type into (switches and tick boxes keep their own size) */
+.bo-apple button:not([role='switch']),
+.bo-apple a[role='button'],
+.bo-apple select,
+.bo-apple input:not([type='checkbox']):not([type='radio']),
+.bo-apple textarea {
+  min-height: 44px;
+}
+.bo-apple button,
+.bo-apple input,
+.bo-apple select,
+.bo-apple textarea {
+  font-family: var(--bo-font);
+  font-size: 17px;
+}
+
+/* Type */
+.bo-large {
+  margin: 0;
+  font-size: 34px;
+  line-height: 41px;
+  font-weight: 700;
+  letter-spacing: 0.37px;
+}
+.bo-title {
+  margin: 0;
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 600;
+  letter-spacing: 0.35px;
+}
+.bo-headline {
+  margin: 0;
+  font-size: 17px;
+  line-height: 22px;
+  font-weight: 600;
+}
+.bo-sub {
+  font-size: 15px;
+  line-height: 20px;
+}
+.bo-foot {
+  margin: 0;
+  color: var(--bo-label-3);
+  font-size: 13px;
+  line-height: 18px;
+  letter-spacing: -0.08px;
+  text-wrap: pretty;
+}
+
+/* The head: large title at the left, toolbar actions at the right */
+.bo-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 16px;
+}
+.bo-head > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.bo-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* A segmented control made of links (the section switch) */
+.bo-seg {
+  display: inline-flex;
+  max-width: 100%;
+  margin: 0 0 20px;
+  padding: 2px;
+  gap: 2px;
+  border-radius: 10px;
+  background: var(--bo-fill);
+  overflow-x: auto;
+}
+.bo-seg a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 8px;
+  color: var(--bo-label);
+  font-size: 15px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.bo-seg a[aria-current='page'] {
+  background: var(--bo-surface);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12), 0 3px 1px rgba(0, 0, 0, 0.04);
+  font-weight: 600;
+}
+.bo-seg a:focus-visible {
+  outline: 2px solid var(--bo-tint);
+  outline-offset: -2px;
+}
+
+/* Inset grouped list */
+.bo-grouphead {
+  margin: 20px 16px 6px;
+  color: var(--bo-label-3);
+  font-size: 13px;
+  line-height: 18px;
+  text-transform: uppercase;
+  letter-spacing: 0.2px;
+}
+.bo-groupfoot {
+  margin: 6px 16px 0;
+}
+.bo-group {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-radius: 12px;
+  background: var(--bo-surface);
+  overflow: hidden;
+}
+.bo-group + .bo-group {
+  margin-top: 16px;
+}
+.bo-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 10px 16px;
+  color: inherit;
+  text-decoration: none;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+}
+.bo-row + .bo-row::before,
+li + li > .bo-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 16px;
+  right: 0;
+  height: 0.5px;
+  background: var(--bo-separator);
+}
+a.bo-row:hover,
+button.bo-row:hover {
+  background: var(--bo-surface-2);
+  cursor: pointer;
+}
+a.bo-row:active,
+button.bo-row:active {
+  background: var(--bo-fill);
+}
+a.bo-row:focus-visible,
+button.bo-row:focus-visible {
+  outline: 2px solid var(--bo-tint);
+  outline-offset: -2px;
+}
+.bo-row-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.bo-row-main b {
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bo-row-value {
+  flex: none;
+  color: var(--bo-label-3);
+  font-size: 17px;
+}
+.bo-chev {
+  flex: none;
+  color: var(--bo-chevron);
+}
+
+/* A board card */
+.bo-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--bo-surface);
+  box-shadow: var(--bo-shadow);
+  color: inherit;
+  text-decoration: none;
+  min-width: 0;
+}
+a.bo-card:hover {
+  background: var(--bo-surface-2);
+}
+a.bo-card:focus-visible {
+  outline: 2px solid var(--bo-tint);
+  outline-offset: 2px;
+}
+
+/* Sheets: a scrim, and a panel that is a centred sheet on a desktop, an inspector at the right, a bottom sheet on a phone */
+.bo-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bo-scrim);
+}
+.bo-scrim[data-variant='inspector'] {
+  justify-content: flex-end;
+  align-items: stretch;
+  padding: 0;
+}
+.bo-sheet {
+  display: flex;
+  flex-direction: column;
+  width: min(520px, 100%);
+  max-height: min(760px, 100%);
+  border-radius: 14px;
+  background: var(--bo-ground);
+  color: var(--bo-label);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+.bo-scrim[data-variant='inspector'] .bo-sheet {
+  width: min(560px, 100%);
+  max-height: none;
+  border-radius: 14px 0 0 14px;
+}
+.bo-sheet-bar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bo-surface);
+  border-bottom: 0.5px solid var(--bo-separator);
+}
+.bo-sheet-bar h2 {
+  grid-column: 2;
+  margin: 0;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 17px;
+  font-weight: 600;
+}
+.bo-sheet-bar > :last-child {
+  justify-self: end;
+}
+.bo-sheet-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 16px;
+}
+.bo-sheet-foot {
+  padding: 12px 16px;
+  background: var(--bo-surface);
+  border-top: 0.5px solid var(--bo-separator);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+@media (max-width: 640px) {
+  .bo-scrim,
+  .bo-scrim[data-variant='inspector'] {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .bo-sheet,
+  .bo-scrim[data-variant='inspector'] .bo-sheet {
+    width: 100%;
+    max-height: 92%;
+    border-radius: 14px 14px 0 0;
+  }
+}
+@media (max-width: 640px) {
+  .bo-apple {
+    padding: 16px 16px 40px;
+  }
+}
+
+/* A text button in a bar (Done, Close): the accent colour, no box */
+.bo-textbtn {
+  min-width: 44px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--bo-tint-text);
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 8px;
+}
+.bo-textbtn:hover {
+  background: var(--bo-tint-fill);
+}
+.bo-textbtn:focus-visible {
+  outline: 2px solid var(--bo-tint);
+}

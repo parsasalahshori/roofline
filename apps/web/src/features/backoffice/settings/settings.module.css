@@ -1,0 +1,96 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.days {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px 16px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--bo-surface);
+}
+
+.placeholders {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 16px;
+  margin: 0 16px;
+  color: var(--bo-label-3);
+  font-size: 13px;
+}
+
+.placeholders dt {
+  font-weight: 600;
+}
+
+.placeholders dd {
+  margin: 0;
+}
+
+.placeholders code {
+  font-family: var(--bo-mono);
+  color: var(--bo-label);
+}
+
+.card {
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--bo-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+}
+
+.cols {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 20px;
+}
+
+@media (max-width: 860px) {
+  .cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--bo-ground);
+  align-self: start;
+}
+
+.bubble {
+  align-self: flex-start;
+  margin: 0;
+  max-width: 100%;
+  padding: 8px 12px;
+  border-radius: 16px;
+  background: var(--bo-fill);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  line-height: 20px;
+}

@@ -14,6 +14,7 @@ export type AppKey =
   | 'storm'
   | 'orders'
   | 'scans'
+  | 'backoffice'
   | 'settings';
 
 export type WindowKey = AppKey | 'notFound';
@@ -24,6 +25,9 @@ export type RailApp = { key: AppKey; href: string; icon: IconName };
 export type RailLayout = { key: string; heading?: 'groupAi' | 'groupField'; end?: boolean; apps: readonly RailApp[] };
 
 /** The rail, top to bottom: the core pages, the AI team, the field, then Settings at the foot. */
+/** The Back office entry: it joins the Field group when the company has the back office on and the role may use it (ShellRail). */
+export const BACKOFFICE_RAIL_APP: RailApp = { key: 'backoffice', href: '/backoffice', icon: 'layers' };
+
 export const RAIL_LAYOUT: readonly RailLayout[] = [
   {
     key: 'core',
@@ -81,6 +85,8 @@ export function currentApp(pathname: string): AppKey | null {
       return first;
     case 'scans':
       return 'scans';
+    case 'backoffice':
+      return 'backoffice';
     case 'estimator':
       return 'estimator';
     default:

@@ -27,6 +27,7 @@ export const WINDOW_COPY: Record<WindowKey, { title: string; description: string
   estimator: { title: 'Measure', description: 'Roof measurements and proposals in seconds' },
   orders: { title: 'Factory orders', description: 'Window orders going to the factory' },
   scans: { title: 'Scan review', description: 'Window scans from the homeowner app, checked by a person' },
+  backoffice: { title: 'Back office', description: 'Products, pricing, quotes and orders' },
   jobs: { title: 'Jobs', description: 'Every job from lead to paid' },
   calendar: { title: 'Calendar', description: 'Inspections and installs' },
   agents: { title: 'Agents', description: 'What your agents did today' },

@@ -29,6 +29,8 @@ export type Account = {
   company: CompanySummary;
   role: Role;
   companies: { id: string; name: string }[];
+  /** On for companies with the WinChoice back office (products and pricing, designer, orders). */
+  backofficeEnabled?: boolean;
 };
 
 export type StepView = {
