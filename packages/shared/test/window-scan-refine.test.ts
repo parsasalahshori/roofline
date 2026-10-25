@@ -114,12 +114,14 @@ describe('the AI quad in the scan’s corner order', () => {
 });
 
 describe('candidate marks', () => {
-  test('an AI mark within 8 px of the phone’s replaces it; further off, both stay as candidates; a reviewer’s mark stands alone', () => {
+  test('an AI mark within 8 px confirms a snapped phone mark (kept) and replaces a merely projected one; further off, both stay as candidates; a reviewer’s mark stands alone', () => {
     const base = [mark('a', 0, 100, 100), mark('a', 1, 200, 100), mark('a', 2, 200, 200, 'user'), mark('b', 0, 50, 50)];
     const ai = [mark('a', 0, 104, 103, 'ai'), mark('a', 1, 230, 100, 'ai'), mark('a', 2, 300, 300, 'ai'), mark('c', 3, 10, 10, 'ai')];
     const m = mergeScanMarks(base, ai);
     const get = (f: string, c: number) => m.marks.find((x) => x.frameId === f && x.corner === c);
-    expect(get('a', 0)).toMatchObject({ x: 104, y: 103, source: 'ai' });
+    expect(get('a', 0)).toMatchObject({ x: 100, y: 100, source: 'snap' });
+    // a projected (not snapped) phone mark is replaced by the agreeing AI mark
+    expect(mergeScanMarks([mark('a', 0, 100, 100, 'projected')], [mark('a', 0, 104, 103, 'ai')]).marks[0]).toMatchObject({ x: 104, y: 103, source: 'ai' });
     expect(get('a', 1)).toMatchObject({ x: 200, source: 'snap' });
     expect(m.alternatives).toEqual([mark('a', 1, 230, 100, 'ai')]);
     expect(get('a', 2)).toMatchObject({ x: 200, y: 200, source: 'user' });

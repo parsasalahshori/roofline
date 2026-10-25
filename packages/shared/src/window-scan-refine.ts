@@ -182,8 +182,10 @@ const keyOf = (m: Pick<ScanMark, 'frameId' | 'corner'>): string => `${m.frameId}
 
 /**
  * Combines the marks a scan already has (the phone's, and a reviewer's own) with the AI's. Per frame and corner: a reviewer's
- * mark stands alone; an AI mark that agrees with the phone's (within `agreePx`) replaces it; when they disagree both go on as
- * candidates (`alternatives` holds the second) and the robust triangulation picks; alone, either stands.
+ * mark stands alone; an AI mark that agrees with the phone's (within `agreePx`) CONFIRMS it: a snapped phone mark (an edge in
+ * the photo, ~1 px) is kept, and only a merely projected one is replaced by the AI's (masks are 1-5 px off; replacing snapped
+ * marks made the refined size worse in the synthetic bench, 0.08 vs 0.03 in); when they disagree both go on as candidates
+ * (`alternatives` holds the second) and the robust triangulation picks; alone, either stands.
  */
 export function mergeScanMarks(base: readonly ScanMark[], ai: readonly ScanMark[], agreePx: number = SCAN_REFINE_LIMITS.agreePx): { marks: ScanMark[]; alternatives: ScanMark[] } {
   const baseBy = new Map<string, ScanMark>();
@@ -198,7 +200,7 @@ export function mergeScanMarks(base: readonly ScanMark[], ai: readonly ScanMark[
     if (b !== undefined && (a === undefined || b.source === 'user')) marks.push(b);
     else if (b === undefined && a !== undefined) marks.push({ ...a, source: 'ai' });
     else if (b !== undefined && a !== undefined) {
-      if (Math.hypot(a.x - b.x, a.y - b.y) <= agreePx) marks.push({ ...a, source: 'ai' });
+      if (Math.hypot(a.x - b.x, a.y - b.y) <= agreePx) marks.push(b.source === 'projected' ? { ...a, source: 'ai' } : b);
       else {
         marks.push(b);
         alternatives.push({ ...a, source: 'ai' });
