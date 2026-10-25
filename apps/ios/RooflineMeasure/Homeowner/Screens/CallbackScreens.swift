@@ -16,12 +16,12 @@ struct CallbackScreen: View {
         @Bindable var store = store
         Form {
             Section {
-                HStack(alignment: .top, spacing: 14) {
+                AdaptiveStack(alignment: .top, spacing: 14) {
                     Image(systemName: WCIcon.home.symbol)
                         .symbolRenderingMode(.hierarchical)
                         .font(.title2)
                         .foregroundStyle(Theme.ink2)
-                        .frame(width: 32)
+                        .frame(minWidth: 32, alignment: .leading)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(reason.lead).font(.headline).foregroundStyle(Theme.ink)
