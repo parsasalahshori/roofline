@@ -1,0 +1,116 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--ap-grouped);
+  box-shadow: var(--ap-shadow);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+}
+
+.card:active {
+  transform: scale(0.985);
+}
+
+.card[data-selected="true"] {
+  box-shadow: 0 0 0 2px var(--ap-tint), var(--ap-shadow);
+}
+
+.card:focus-visible {
+  box-shadow: var(--focus);
+}
+
+.drawing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 132px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--ap-bg);
+}
+
+.drawing svg {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.text {
+  min-width: 0;
+}
+
+.room {
+  margin: 0;
+  overflow: hidden;
+  font-family: var(--ap-font-display);
+  font-size: var(--font-size-bo-headline);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.size,
+.product {
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: var(--ap-label-2);
+  font-size: var(--font-size-bo-footnote);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qty {
+  margin-left: 6px;
+  color: var(--ap-label);
+  font-weight: 600;
+}
+
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: auto;
+}
+
+.price {
+  font-size: var(--font-size-bo-body);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px 2px 6px;
+  border-radius: 999px;
+  font-size: var(--font-size-bo-caption);
+  font-weight: 600;
+}
+
+.badge[data-tone="error"] {
+  background: var(--bad-tint);
+  color: var(--bad-text);
+}
+
+.badge[data-tone="warning"] {
+  background: var(--ap-orange-fill);
+  color: var(--warn-text);
+}
+
+.badge[data-tone="info"] {
+  background: var(--ap-fill);
+  color: var(--ap-label-2);
+}
