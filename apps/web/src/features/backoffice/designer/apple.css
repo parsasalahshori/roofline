@@ -1,0 +1,281 @@
+/*
+ * The back office follows Apple's Human Interface Guidelines (owner direction). This is the "apple" token set, scoped to
+ * .bo-apple so nothing outside the back office changes. WinChoice red is only the accent (primary buttons, selection).
+ *
+ * The kit's components read the Chalk Line tokens (--surface, --ink, --brand...). Inside .bo-apple those tokens are
+ * redefined to Apple's system colours, so every kit control (buttons, segmented, toggles) takes the look without a fork.
+ * Light by default; dark follows the system (prefers-color-scheme) unless the page says data-theme="light", and
+ * data-theme="dark" forces it.
+ */
+.bo-apple {
+  /* Apple system colours */
+  --ap-bg: #f2f2f7;
+  --ap-grouped: #ffffff;
+  --ap-elevated: #ffffff;
+  --ap-fill: rgba(120, 120, 128, 0.12);
+  --ap-fill-2: rgba(120, 120, 128, 0.08);
+  --ap-sep: rgba(60, 60, 67, 0.2);
+  --ap-label: #000000;
+  --ap-label-2: rgba(60, 60, 67, 0.62);
+  --ap-label-3: rgba(60, 60, 67, 0.36);
+  --ap-tint: #ed3a2b;
+  --ap-tint-text: #c4271a;
+  --ap-tint-fill: rgba(237, 58, 43, 0.1);
+  --ap-green: #248a3d;
+  --ap-orange: #b25000;
+  --ap-orange-fill: rgba(255, 149, 0, 0.16);
+  --ap-red: #d70015;
+  --ap-material: rgba(249, 249, 249, 0.8);
+  --ap-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.1);
+  --ap-shadow-lift: 0 0 0 0.5px rgba(0, 0, 0, 0.08), 0 10px 30px rgba(0, 0, 0, 0.16);
+  /* the technical drawing */
+  --dr-ink: #3a3a3c;
+  --dr-glass: #d6e6f0;
+  --dr-symbol: #48484a;
+  --dr-select: rgba(237, 58, 43, 0.2);
+  --dr-paper: #ffffff;
+
+  /* type: Apple's hierarchy on the system stack */
+  --ap-font: -apple-system, "SF Pro Text", BlinkMacSystemFont, system-ui, "Helvetica Neue", Arial, sans-serif;
+  --ap-font-display: -apple-system, "SF Pro Display", BlinkMacSystemFont, system-ui, "Helvetica Neue", Arial, sans-serif;
+  --ap-font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --font-size-bo-large-title: 30px;
+  --font-size-bo-title: 22px;
+  --font-size-bo-headline: 17px;
+  --font-size-bo-body: 16px;
+  --font-size-bo-footnote: 13px;
+  --font-size-bo-caption: 12px;
+
+  /* the kit's tokens, redefined */
+  --ground: var(--ap-bg);
+  --surface: var(--ap-grouped);
+  --surface-2: var(--ap-bg);
+  --sunken: var(--ap-fill);
+  --raised: var(--ap-elevated);
+  --ink: var(--ap-label);
+  --ink-2: var(--ap-label-2);
+  --ink-3: var(--ap-label-2);
+  --ink-inv: #ffffff;
+  --line: var(--ap-sep);
+  --line-2: var(--ap-sep);
+  --line-ctl: var(--ap-label-3);
+  --brand: var(--ap-tint);
+  --brand-hover: #d92f20;
+  --brand-ink: #ffffff;
+  --brand-tint: var(--ap-tint-fill);
+  --brand-line: rgba(237, 58, 43, 0.4);
+  --brand-text: var(--ap-tint-text);
+  --ring: var(--ap-tint);
+  --focus: 0 0 0 3px rgba(237, 58, 43, 0.45);
+  --ok: #248a3d;
+  --ok-tint: rgba(52, 199, 89, 0.16);
+  --warn: #b25000;
+  --warn-tint: var(--ap-orange-fill);
+  --bad: #d70015;
+  --bad-tint: rgba(255, 59, 48, 0.12);
+  --ok-text: #1d7733;
+  --warn-text: #8a4300;
+  --bad-text: #c2000f;
+  --e-1: var(--ap-shadow);
+  --e-2: var(--ap-shadow-lift);
+  --r-1: 7px;
+  --r-2: 10px;
+  --r-3: 12px;
+  --r-4: 16px;
+  --f-ui: var(--ap-font);
+  --f-display: var(--ap-font-display);
+  --f-mono: var(--ap-font-mono);
+  --font-size-body: 16px;
+
+  background: var(--ap-bg);
+  color: var(--ap-label);
+  font-family: var(--ap-font);
+  font-size: var(--font-size-bo-body);
+  line-height: 1.35;
+  -webkit-font-smoothing: antialiased;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .bo-apple {
+    --ap-bg: #000000;
+    --ap-grouped: #1c1c1e;
+    --ap-elevated: #2c2c2e;
+    --ap-fill: rgba(120, 120, 128, 0.36);
+    --ap-fill-2: rgba(120, 120, 128, 0.24);
+    --ap-sep: rgba(84, 84, 88, 0.65);
+    --ap-label: #ffffff;
+    --ap-label-2: rgba(235, 235, 245, 0.62);
+    --ap-label-3: rgba(235, 235, 245, 0.3);
+    --ap-tint: #ff5a4c;
+    --ap-tint-text: #ff6f63;
+    --ap-tint-fill: rgba(255, 90, 76, 0.18);
+    --ap-green: #30d158;
+    --ap-orange: #ff9f0a;
+    --ap-orange-fill: rgba(255, 159, 10, 0.2);
+    --ap-red: #ff453a;
+    --ap-material: rgba(30, 30, 32, 0.78);
+    --ap-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+    --ap-shadow-lift: 0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 14px 40px rgba(0, 0, 0, 0.7);
+    --dr-ink: #c7c7cc;
+    --dr-glass: #1f3442;
+    --dr-symbol: #d1d1d6;
+    --dr-select: rgba(255, 90, 76, 0.28);
+    --dr-paper: #1c1c1e;
+    --ink-inv: #000000;
+    --brand-hover: #ff6f63;
+    --brand-ink: #1a0300;
+    --ok: #30d158;
+    --ok-tint: rgba(48, 209, 88, 0.2);
+    --warn: #ff9f0a;
+    --bad: #ff453a;
+    --bad-tint: rgba(255, 69, 58, 0.2);
+    --ok-text: #4cd964;
+    --warn-text: #ffb340;
+    --bad-text: #ff6961;
+    --brand-line: rgba(255, 90, 76, 0.5);
+    --focus: 0 0 0 3px rgba(255, 90, 76, 0.55);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] .bo-apple {
+  --ap-bg: #000000;
+  --ap-grouped: #1c1c1e;
+  --ap-elevated: #2c2c2e;
+  --ap-fill: rgba(120, 120, 128, 0.36);
+  --ap-fill-2: rgba(120, 120, 128, 0.24);
+  --ap-sep: rgba(84, 84, 88, 0.65);
+  --ap-label: #ffffff;
+  --ap-label-2: rgba(235, 235, 245, 0.62);
+  --ap-label-3: rgba(235, 235, 245, 0.3);
+  --ap-tint: #ff5a4c;
+  --ap-tint-text: #ff6f63;
+  --ap-tint-fill: rgba(255, 90, 76, 0.18);
+  --ap-green: #30d158;
+  --ap-orange: #ff9f0a;
+  --ap-orange-fill: rgba(255, 159, 10, 0.2);
+  --ap-red: #ff453a;
+  --ap-material: rgba(30, 30, 32, 0.78);
+  --ap-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+  --ap-shadow-lift: 0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 14px 40px rgba(0, 0, 0, 0.7);
+  --dr-ink: #c7c7cc;
+  --dr-glass: #1f3442;
+  --dr-symbol: #d1d1d6;
+  --dr-select: rgba(255, 90, 76, 0.28);
+  --dr-paper: #1c1c1e;
+  --ink-inv: #000000;
+  --brand-hover: #ff6f63;
+  --brand-ink: #1a0300;
+  --ok: #30d158;
+  --ok-tint: rgba(48, 209, 88, 0.2);
+  --warn: #ff9f0a;
+  --bad: #ff453a;
+  --bad-tint: rgba(255, 69, 58, 0.2);
+  --ok-text: #4cd964;
+  --warn-text: #ffb340;
+  --bad-text: #ff6961;
+  --brand-line: rgba(255, 90, 76, 0.5);
+  --focus: 0 0 0 3px rgba(255, 90, 76, 0.55);
+  color-scheme: dark;
+}
+
+/* ---- kit controls, iOS-shaped (selectors by attribute: the kit's class names are hashed) ---- */
+
+/* Buttons: 44 pt, rounded, filled in the accent for the main action, gray tint for the rest, plain tinted text for quiet ones */
+.bo-apple button[data-variant],
+.bo-apple a[data-variant] {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 12px;
+  font-family: var(--ap-font);
+  font-size: var(--font-size-bo-body);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.bo-apple [data-variant="default"] {
+  background: var(--ap-fill);
+  color: var(--ap-tint-text);
+  box-shadow: none;
+}
+
+.bo-apple [data-variant="default"]:hover {
+  background: var(--ap-fill);
+  filter: brightness(0.96);
+}
+
+.bo-apple [data-variant="quiet"],
+.bo-apple [data-variant="ghost"] {
+  background: transparent;
+  color: var(--ap-tint-text);
+}
+
+.bo-apple [data-variant="quiet"]:hover,
+.bo-apple [data-variant="ghost"]:hover {
+  background: var(--ap-fill-2);
+}
+
+.bo-apple [data-variant="danger"] {
+  background: transparent;
+  color: var(--ap-red);
+}
+
+.bo-apple [data-variant="danger"]:hover {
+  background: var(--bad-tint);
+}
+
+.bo-apple [data-variant="primary"] {
+  background: var(--ap-tint);
+  color: var(--brand-ink);
+}
+
+.bo-apple [data-variant]:disabled:not([aria-busy="true"]),
+.bo-apple [data-variant][aria-disabled="true"]:not([aria-busy="true"]) {
+  background: var(--ap-fill-2);
+  color: var(--ap-label-3);
+  border: 0;
+}
+
+.bo-apple [data-variant][data-size="sm"] {
+  min-height: 44px;
+  padding: 0 12px;
+  font-size: var(--font-size-bo-footnote);
+}
+
+/* Segmented control: a gray capsule track with a raised white thumb */
+.bo-apple [role="radiogroup"] {
+  gap: 0;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--ap-fill);
+  box-shadow: none;
+}
+
+.bo-apple [role="radiogroup"] [role="radio"] {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 8px;
+  color: var(--ap-label);
+  font-family: var(--ap-font);
+  font-size: var(--font-size-bo-footnote);
+  font-weight: 500;
+}
+
+.bo-apple [role="radiogroup"] [role="radio"][data-on="true"] {
+  background: var(--ap-elevated);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12), 0 3px 1px rgba(0, 0, 0, 0.04);
+  font-weight: 600;
+}
+
+/* The switch */
+.bo-apple [role="switch"][aria-checked="true"] {
+  background: var(--ap-tint);
+}
+
+/* Focus: one clear ring everywhere */
+.bo-apple :focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+}

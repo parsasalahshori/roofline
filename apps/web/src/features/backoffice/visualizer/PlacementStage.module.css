@@ -1,0 +1,94 @@
+.stage {
+  position: relative;
+  margin: 0 auto;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--ap-fill);
+  box-shadow: var(--ap-shadow);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.photo {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  -webkit-user-drag: none;
+}
+
+.warp {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.unit {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+.unitSvg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.outline {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* Corners sit above everything. 44 px hit area; touch-action: none so dragging one never pans the page. */
+.handle {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
+  touch-action: none;
+  cursor: grab;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.handle:active {
+  cursor: grabbing;
+}
+
+.dot {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  background: rgba(60, 60, 67, 0.75);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  transition: transform var(--t-fast) var(--ease);
+}
+
+.handle[data-active="true"] .dot {
+  background: var(--ap-tint);
+}
+
+.handle:active .dot {
+  transform: scale(1.25);
+}
+
+.handle:focus-visible {
+  box-shadow: none;
+}
+
+.handle:focus-visible .dot {
+  box-shadow: 0 0 0 4px rgba(237, 58, 43, 0.5);
+}
