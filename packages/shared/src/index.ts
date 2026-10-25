@@ -59,3 +59,5 @@ export * from './homeowner.ts';
 // Google content retention (docs/compliance/google-data-retention.md)
 export * from './google-retention.ts';
 export * from './backoffice.ts';
+export * from './backoffice-price.ts';
+export * from './backoffice-defaults.ts';

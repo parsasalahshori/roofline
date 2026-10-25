@@ -13,7 +13,7 @@
 // Money is in cents; sizes in inches; photo positions in 0..1 of the photo.
 import type { HomeownerStage } from './homeowner.ts';
 import type { Tier } from './proposals.ts';
-import type { GridType, SafetyAnswers, ScreenType } from './window-order.ts';
+import type { GridType, SafetyAnswers, ScreenType, WindowStyle } from './window-order.ts';
 
 // ---------------------------------------------------------------------------------------------------------------
 // Products & pricing
@@ -64,6 +64,11 @@ export type Product = {
   /** Most sections one unit may be split into (e.g. 3 for a 3-lite slider). */
   maxSections: number;
   price: PriceRule;
+  /**
+   * The factory order style this product is built as (additive to the contract): imports from the factory order map a
+   * measured window's style to a product by it, and the safety-glass suggestions use it. A patio door has none.
+   */
+  factoryStyle?: WindowStyle;
   /** Added per section beyond the first (mullions/extra sashes), by tier. */
   perExtraSectionCents: Record<Tier, number>;
   /** Product off the price sheet and the designer (kept for old quotes). */
@@ -194,8 +199,40 @@ export type BackofficeQuote = {
   issues: DesignIssue[];
   /** A discount over the rep's limit waits for an office approval. */
   discountNeedsApproval: boolean;
+  /** The order this quote became when it was accepted (additive to the contract); null before. */
+  orderId?: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+/** One row of GET /api/backoffice/quotes (additive to the contract). Totals are for the quote's chosen tier. */
+export type BackofficeQuoteSummary = {
+  id: string;
+  jobId: string;
+  customerName: string;
+  address: string;
+  status: BackofficeQuoteStatus;
+  tier: Tier;
+  units: number;
+  totalCents: number;
+  orderId: string | null;
+  updatedAt: string;
+};
+
+/**
+ * POST /api/backoffice/quotes (additive to the contract): a new draft quote for a job. With `importMeasured`, the
+ * designs start from the job's address's window measurement (`windowMeasurementId`, else its newest): the factory order's
+ * lines when it has an order, else the photo windows, each as a design with sizeSource 'measured'.
+ */
+export type CreateBackofficeQuote = { jobId: string; tier?: Tier; importMeasured?: boolean; windowMeasurementId?: string };
+
+/** PUT /api/backoffice/quotes/:id (additive to the contract). The server recomputes everything else. 'accepted' only comes from POST /:id/accept. */
+export type UpdateBackofficeQuote = {
+  status?: Exclude<BackofficeQuoteStatus, 'accepted'>;
+  tier: Tier;
+  designs: WindowDesign[];
+  accessories: { accessoryId: string; quantity: number }[];
+  discountPercent: number;
 };
 
 /** The documents one quote makes: GET /api/backoffice/quotes/:id/documents/:kind (PDF). */
