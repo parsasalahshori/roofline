@@ -38,11 +38,12 @@ function Form({ order, initialStage, onClose }: MoveSheetProps) {
   const hasMessage = template?.enabled === true;
   const [notifyChoice, setNotifyChoice] = useState(true);
   const notify = hasMessage && notifyChoice;
-  const needsDate = STAGES_WITH_DATE.includes(stage);
+  // Ask for a date on the stages that tell one, and on any stage whose message mentions {date}.
+  const needsDate = STAGES_WITH_DATE.includes(stage) || (template !== undefined && [template.sms, template.emailSubject, template.emailBody].some((x) => x.includes('{date}')));
 
   const values = {
     first: firstName(order.customerName),
-    date: needsDate && plannedFor !== '' ? formatDay(plannedFor) : t.datePlaceholder,
+    date: needsDate && plannedFor !== '' ? formatDay(plannedFor) : null,
     company: me.data?.company.name ?? '',
   };
   const error = move.error instanceof ApiError ? move.error.message : move.isError ? t.moveFailed : null;

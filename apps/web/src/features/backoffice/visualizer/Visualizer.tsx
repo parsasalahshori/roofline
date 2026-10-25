@@ -6,6 +6,7 @@ import { ApiError } from '../../../api/client.ts';
 import { backofficeDesigner as copy } from '../../../copy/backofficeDesigner.ts';
 import { preparePhoto } from '../../measure/windows/preparePhoto.ts';
 import { useBackofficeCatalog, useBackofficeQuote } from '../designer/api.ts';
+import '../apple.css';
 import '../designer/apple.css';
 import { chosenOption } from '../designer/pricing.ts';
 import { Group } from '../designer/primitives.tsx';

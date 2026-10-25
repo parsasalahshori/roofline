@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router';
 import { backofficeDesigner as copy } from '../../../copy/backofficeDesigner.ts';
 import { documentHref, pickDraft, quoteKey, useBackofficeCatalog, useBackofficeQuote, usePutQuote } from './api.ts';
+import '../apple.css';
 import './apple.css';
 import { duplicateDesign, newDesign } from './designs.ts';
 import { dollars, previewQuote, type QuoteDraft } from './pricing.ts';

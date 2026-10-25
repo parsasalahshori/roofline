@@ -3,182 +3,72 @@
  * .bo-apple so nothing outside the back office changes. WinChoice red is only the accent (primary buttons, selection).
  *
  * The kit's components read the Chalk Line tokens (--surface, --ink, --brand...). Inside .bo-apple those tokens are
- * redefined to Apple's system colours, so every kit control (buttons, segmented, toggles) takes the look without a fork.
+ * redefined to Apple's system colours in ../apple.css (the shell's, the one source), so every kit control (buttons, segmented, toggles) takes the look without a fork.
  * Light by default; dark follows the system (prefers-color-scheme) unless the page says data-theme="light", and
  * data-theme="dark" forces it.
  */
 .bo-apple {
-  /* Apple system colours */
-  --ap-bg: #f2f2f7;
-  --ap-grouped: #ffffff;
-  --ap-elevated: #ffffff;
-  --ap-fill: rgba(120, 120, 128, 0.12);
+  /* The designer's names for the shell's Apple tokens (../apple.css): one palette for the whole back office. */
+  --ap-bg: var(--bo-ground);
+  --ap-grouped: var(--bo-surface);
+  --ap-elevated: var(--bo-surface-2);
+  --ap-fill: var(--bo-fill);
+  --ap-sep: var(--bo-separator);
+  --ap-label: var(--bo-label);
+  --ap-label-2: var(--bo-label-2);
+  --ap-label-3: var(--bo-label-3);
+  --ap-tint: var(--bo-tint);
+  --ap-tint-text: var(--bo-tint-text);
+  --ap-tint-fill: var(--bo-tint-fill);
+  --ap-green: var(--bo-green);
+  --ap-orange: var(--bo-orange);
+  --ap-orange-fill: var(--bo-orange-fill);
+  --ap-red: var(--bo-red);
+  --ap-shadow: var(--bo-shadow);
+  --ap-font: var(--bo-font);
+  --ap-font-mono: var(--bo-mono);
+  /* Designer-only tokens. */
   --ap-fill-2: rgba(120, 120, 128, 0.08);
-  --ap-sep: rgba(60, 60, 67, 0.2);
-  --ap-label: #000000;
-  --ap-label-2: rgba(60, 60, 67, 0.62);
-  --ap-label-3: rgba(60, 60, 67, 0.36);
-  --ap-tint: #ed3a2b;
-  --ap-tint-text: #c4271a;
-  --ap-tint-fill: rgba(237, 58, 43, 0.1);
-  --ap-green: #248a3d;
-  --ap-orange: #b25000;
-  --ap-orange-fill: rgba(255, 149, 0, 0.16);
-  --ap-red: #d70015;
   --ap-material: rgba(249, 249, 249, 0.8);
-  --ap-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.1);
   --ap-shadow-lift: 0 0 0 0.5px rgba(0, 0, 0, 0.08), 0 10px 30px rgba(0, 0, 0, 0.16);
-  /* the technical drawing */
   --dr-ink: #3a3a3c;
   --dr-glass: #d6e6f0;
   --dr-symbol: #48484a;
   --dr-select: rgba(237, 58, 43, 0.2);
   --dr-paper: #ffffff;
-
-  /* type: Apple's hierarchy on the system stack */
-  --ap-font: -apple-system, "SF Pro Text", BlinkMacSystemFont, system-ui, "Helvetica Neue", Arial, sans-serif;
   --ap-font-display: -apple-system, "SF Pro Display", BlinkMacSystemFont, system-ui, "Helvetica Neue", Arial, sans-serif;
-  --ap-font-mono: ui-monospace, "SF Mono", Menlo, monospace;
   --font-size-bo-large-title: 30px;
   --font-size-bo-title: 22px;
   --font-size-bo-headline: 17px;
   --font-size-bo-body: 16px;
   --font-size-bo-footnote: 13px;
   --font-size-bo-caption: 12px;
-
-  /* the kit's tokens, redefined */
-  --ground: var(--ap-bg);
-  --surface: var(--ap-grouped);
-  --surface-2: var(--ap-bg);
-  --sunken: var(--ap-fill);
-  --raised: var(--ap-elevated);
-  --ink: var(--ap-label);
-  --ink-2: var(--ap-label-2);
-  --ink-3: var(--ap-label-2);
-  --ink-inv: #ffffff;
-  --line: var(--ap-sep);
-  --line-2: var(--ap-sep);
-  --line-ctl: var(--ap-label-3);
-  --brand: var(--ap-tint);
-  --brand-hover: #d92f20;
-  --brand-ink: #ffffff;
-  --brand-tint: var(--ap-tint-fill);
-  --brand-line: rgba(237, 58, 43, 0.4);
-  --brand-text: var(--ap-tint-text);
-  --ring: var(--ap-tint);
-  --focus: 0 0 0 3px rgba(237, 58, 43, 0.45);
-  --ok: #248a3d;
-  --ok-tint: rgba(52, 199, 89, 0.16);
-  --warn: #b25000;
-  --warn-tint: var(--ap-orange-fill);
-  --bad: #d70015;
-  --bad-tint: rgba(255, 59, 48, 0.12);
-  --ok-text: #1d7733;
-  --warn-text: #8a4300;
-  --bad-text: #c2000f;
-  --e-1: var(--ap-shadow);
-  --e-2: var(--ap-shadow-lift);
-  --r-1: 7px;
-  --r-2: 10px;
-  --r-3: 12px;
-  --r-4: 16px;
-  --f-ui: var(--ap-font);
-  --f-display: var(--ap-font-display);
-  --f-mono: var(--ap-font-mono);
-  --font-size-body: 16px;
-
-  background: var(--ap-bg);
-  color: var(--ap-label);
-  font-family: var(--ap-font);
-  font-size: var(--font-size-bo-body);
-  line-height: 1.35;
-  -webkit-font-smoothing: antialiased;
-  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .bo-apple {
-    --ap-bg: #000000;
-    --ap-grouped: #1c1c1e;
-    --ap-elevated: #2c2c2e;
-    --ap-fill: rgba(120, 120, 128, 0.36);
     --ap-fill-2: rgba(120, 120, 128, 0.24);
-    --ap-sep: rgba(84, 84, 88, 0.65);
-    --ap-label: #ffffff;
-    --ap-label-2: rgba(235, 235, 245, 0.62);
-    --ap-label-3: rgba(235, 235, 245, 0.3);
-    --ap-tint: #ff5a4c;
-    --ap-tint-text: #ff6f63;
-    --ap-tint-fill: rgba(255, 90, 76, 0.18);
-    --ap-green: #30d158;
-    --ap-orange: #ff9f0a;
-    --ap-orange-fill: rgba(255, 159, 10, 0.2);
-    --ap-red: #ff453a;
     --ap-material: rgba(30, 30, 32, 0.78);
-    --ap-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.08);
     --ap-shadow-lift: 0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 14px 40px rgba(0, 0, 0, 0.7);
     --dr-ink: #c7c7cc;
     --dr-glass: #1f3442;
     --dr-symbol: #d1d1d6;
     --dr-select: rgba(255, 90, 76, 0.28);
     --dr-paper: #1c1c1e;
-    --ink-inv: #000000;
-    --brand-hover: #ff6f63;
-    --brand-ink: #1a0300;
-    --ok: #30d158;
-    --ok-tint: rgba(48, 209, 88, 0.2);
-    --warn: #ff9f0a;
-    --bad: #ff453a;
-    --bad-tint: rgba(255, 69, 58, 0.2);
-    --ok-text: #4cd964;
-    --warn-text: #ffb340;
-    --bad-text: #ff6961;
-    --brand-line: rgba(255, 90, 76, 0.5);
-    --focus: 0 0 0 3px rgba(255, 90, 76, 0.55);
-    color-scheme: dark;
   }
 }
 
 :root[data-theme="dark"] .bo-apple {
-  --ap-bg: #000000;
-  --ap-grouped: #1c1c1e;
-  --ap-elevated: #2c2c2e;
-  --ap-fill: rgba(120, 120, 128, 0.36);
   --ap-fill-2: rgba(120, 120, 128, 0.24);
-  --ap-sep: rgba(84, 84, 88, 0.65);
-  --ap-label: #ffffff;
-  --ap-label-2: rgba(235, 235, 245, 0.62);
-  --ap-label-3: rgba(235, 235, 245, 0.3);
-  --ap-tint: #ff5a4c;
-  --ap-tint-text: #ff6f63;
-  --ap-tint-fill: rgba(255, 90, 76, 0.18);
-  --ap-green: #30d158;
-  --ap-orange: #ff9f0a;
-  --ap-orange-fill: rgba(255, 159, 10, 0.2);
-  --ap-red: #ff453a;
   --ap-material: rgba(30, 30, 32, 0.78);
-  --ap-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.08);
   --ap-shadow-lift: 0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 14px 40px rgba(0, 0, 0, 0.7);
   --dr-ink: #c7c7cc;
   --dr-glass: #1f3442;
   --dr-symbol: #d1d1d6;
   --dr-select: rgba(255, 90, 76, 0.28);
   --dr-paper: #1c1c1e;
-  --ink-inv: #000000;
-  --brand-hover: #ff6f63;
-  --brand-ink: #1a0300;
-  --ok: #30d158;
-  --ok-tint: rgba(48, 209, 88, 0.2);
-  --warn: #ff9f0a;
-  --bad: #ff453a;
-  --bad-tint: rgba(255, 69, 58, 0.2);
-  --ok-text: #4cd964;
-  --warn-text: #ffb340;
-  --bad-text: #ff6961;
-  --brand-line: rgba(255, 90, 76, 0.5);
-  --focus: 0 0 0 3px rgba(255, 90, 76, 0.55);
-  color-scheme: dark;
 }
+
 
 /* ---- kit controls, iOS-shaped (selectors by attribute: the kit's class names are hashed) ---- */
 

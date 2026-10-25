@@ -340,7 +340,6 @@ export const backoffice = {
     moved: (stage: string) => `Moved to ${stage}`,
     moveFailed: 'That move did not go through. The order was not changed.',
     notAllowed: 'Only the owner and the office can move an order.',
-    datePlaceholder: 'a date to be set',
   },
 
   // ---------------------------------------------------------------- Settings

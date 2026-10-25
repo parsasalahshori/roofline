@@ -1,10 +1,13 @@
-import type { OrderStage } from '@roofline/shared';
+import { renderStageText, type OrderStage } from '@roofline/shared';
 
-export type MessageValues = { first: string; date: string; company: string };
+export type MessageValues = { first: string; date: string | null; company: string };
 
-/** Fills {first}, {date} and {company} in a stage message. Anything else in braces is left as written. */
+/**
+ * Fills {first}, {date} and {company} in a stage message with the server's own code (renderStageText), so the preview
+ * reads exactly like the text the customer gets, including its wording when no date is set yet.
+ */
 export function fillTemplate(text: string, values: MessageValues): string {
-  return text.replace(/\{(first|date|company)\}/g, (_match, name: keyof MessageValues) => values[name]);
+  return renderStageText(text, values);
 }
 
 /** The customer's first name from the name on the order. */

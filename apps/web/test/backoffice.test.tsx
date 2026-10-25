@@ -283,6 +283,9 @@ describe('back office home', () => {
     signedIn(ON, {
       'GET /api/jobs/board': () => ({ body: { columns: [{ stage: 'lead', count: 1, totalCents: null, jobs: [{ id: 'j1', customerName: 'Jordan Reyes', addressLine: '12 Oak St' }] }], lost: { count: 0 } } }),
       'POST /api/backoffice/quotes': () => ({ body: { id: 'q9' } }),
+      // The new quote opens in the designer, which loads it; this test only follows the navigation.
+      'GET /api/backoffice/quotes/q9': () => ({ status: 404, body: { error: 'Not found' } }),
+      'GET /api/backoffice/catalog': () => ({ status: 404, body: { error: 'Not found' } }),
     });
     const { user, router } = renderApp('/backoffice');
     await user.click(await screen.findByRole('button', { name: copy.home.newQuote }));
