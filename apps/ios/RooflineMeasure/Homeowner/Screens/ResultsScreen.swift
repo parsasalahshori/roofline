@@ -29,13 +29,17 @@ struct ResultsScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            WCNavBar(title: store.brand.wordmark, wordmark: true, onBack: { store.pop() }) { StepDots(filled: 2) }
+            WCNavBar(title: store.brand.wordmark, wordmark: true, onBack: { store.pop() }) { StepDots(filled: 3) }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     WCHeadline(text: "Here's your home").padding(.bottom, 4)
                     if let g = heroGeometry { heroCard(g) } else { homeCard }
                     if store.services.contains(.windows) { windowsCard.revealed(cardsVisible, order: 0, reduceMotion: reduceMotion) }
                     if store.services.contains(.roof) { roofCard.revealed(cardsVisible, order: store.services.contains(.windows) ? 1 : 0, reduceMotion: reduceMotion) }
+                    // Roof only: this is the result page (windows get theirs on the quote, after measuring)
+                    if !includesWindows, store.services.contains(.roof) {
+                        EstimateCallCard(service: .roof).revealed(cardsVisible, order: 1, reduceMotion: reduceMotion)
+                    }
                     if store.offline {
                         InfoPanel(icon: .info, text: "You're offline. We'll refresh this when you're back.", tint: Theme.warnTint, iconColor: Theme.warn)
                     }

@@ -7,7 +7,7 @@ struct CoachingScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            WCNavBar(title: "How to measure", onBack: { store.pop() }) { StepDots(filled: 2) }
+            WCNavBar(title: "How to measure", onBack: { store.pop() }) { StepDots(filled: 3) }
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     WCHeadline(text: "Four tips for a good size").padding(.bottom, 6)

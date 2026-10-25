@@ -18,6 +18,19 @@ extension HomeownerStore {
         if selectedServices.contains(service) { selectedServices.remove(service) } else { selectedServices.insert(service) }
     }
 
+    /// Welcome -> Measure: what to measure comes next.
+    func startMeasuring() {
+        push(.service)
+        if !companyLoaded { Task { await loadCompany() } }
+    }
+
+    /// Windows or roof: one service per request, then the address.
+    func chooseService(_ service: HomeownerService) {
+        selectedServices = [service]
+        continueFromWelcome()
+    }
+
+    /// On to the address with the services picked (the windows-or-roof screen; tests set several at once).
     func continueFromWelcome() {
         guard !selectedServices.isEmpty else { return }
         // Only what the company offers goes on

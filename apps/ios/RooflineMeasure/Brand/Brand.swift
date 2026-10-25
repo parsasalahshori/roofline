@@ -47,6 +47,17 @@ struct Brand: Decodable, Equatable {
     var tiers: [String: Tier]
     var windowColors: [WindowColor]
     var quoteFootnote: String
+    /// The company's phone, as shown: the result screens say the price is an estimate and offer a call for an exact
+    /// measurement. Nil hides the call button.
+    var phone: String?
+
+    /// The phone as a tel: link (digits only, US numbers get +1). Nil when there is no usable number.
+    var phoneURL: URL? {
+        guard let phone else { return nil }
+        let digits = phone.filter(\.isNumber)
+        let e164 = digits.count == 10 ? "+1" + digits : (digits.count == 11 && digits.hasPrefix("1") ? "+" + digits : nil)
+        return e164.flatMap { URL(string: "tel:\($0)") }
+    }
 
     /// The server for this build configuration (Debug: the local demo; Release: set in the JSON, or entered on the phone in
     /// a TestFlight build). Nil when there is none.
@@ -89,7 +100,8 @@ struct Brand: Decodable, Equatable {
             WindowColor(key: "sandstone", label: "Sandstone", hex: "#CDBB9C"), WindowColor(key: "earthtone", label: "Earthtone", hex: "#7A6650"),
             WindowColor(key: "bronze", label: "Bronze", hex: "#4E3B2C"), WindowColor(key: "black", label: "Black", hex: "#1D1F22"),
         ],
-        quoteFootnote: "No payment today."
+        quoteFootnote: "No payment today.",
+        phone: "(855) 988-7283"
     )
 }
 

@@ -1,8 +1,8 @@
 import RooflineCore
 import SwiftUI
 
-/// 01 Welcome: what are you looking for (ios-hw-01-welcome). A navy hero with the WinChoice wordmark, then one card per
-/// service. Continue is the screen's one red button.
+/// 01 Welcome: the WinChoice hero, what the app does in three lines, and one red Measure button. What to measure (windows
+/// or roof) is the next screen.
 struct WelcomeScreen: View {
     @Environment(HomeownerStore.self) private var store
     @State private var showServerSetting = false
@@ -13,14 +13,12 @@ struct WelcomeScreen: View {
             VStack(spacing: 0) {
                 hero
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("What are you looking for? Pick one or more.")
-                        .wc(15, .semibold, relativeTo: .subheadline)
-                        .foregroundStyle(Theme.ink2)
-                        .padding(.horizontal, 2)
-                        .accessibilityAddTraits(.isHeader)
-                    ForEach(store.offeredServices, id: \.self) { service in
-                        ServiceOption(service: service, isOn: store.selectedServices.contains(service)) { store.toggle(service) }
-                    }
+                    WelcomePoint(icon: .lidar, title: "Your iPhone does the measuring",
+                                 line: "Point it at a window and it finds the size in about a minute.")
+                    WelcomePoint(icon: .roof, title: "Roofs measured from above",
+                                 line: "Type your address and we size your roof from satellite pictures.")
+                    WelcomePoint(icon: .clock, title: "A price range right away",
+                                 line: "Good, Better and Best, before anyone comes to your home.")
                 }
                 .padding(Theme.gutter)
                 WCScrollFooter().padding(.horizontal, Theme.gutter)
@@ -32,7 +30,7 @@ struct WelcomeScreen: View {
         .background(Theme.ground.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
         .wcFooter {
-            WCPrimaryButton(title: "Continue", icon: .arrow, isEnabled: !store.selectedServices.isEmpty) { store.continueFromWelcome() }
+            WCPrimaryButton(title: "Measure", icon: .arrow) { store.startMeasuring() }
             HStack(spacing: 8) {
                 IconView(icon: .factory, size: 16)
                 Text(store.brand.madeIn).wc(12, .medium, relativeTo: .caption)
@@ -55,25 +53,31 @@ struct WelcomeScreen: View {
                 .wcHeading(20, .heavy, relativeTo: .title3)
                 .foregroundStyle(.white)
                 .padding(.top, 10)
-                .padding(.bottom, 26)
+                .padding(.bottom, 30)
                 .accessibilityAddTraits(.isHeader)
-            Text("Measure your windows. Get your price tonight.")
-                .wcHeading(30, .heavy, relativeTo: .largeTitle)
+            HStack(spacing: 10) {
+                HeroBadge(icon: .win)
+                HeroBadge(icon: .roof)
+            }
+            .padding(.bottom, 18)
+            .accessibilityHidden(true)
+            Text("Measure your home from your phone.")
+                .wcHeading(32, .heavy, relativeTo: .largeTitle)
                 .foregroundStyle(.white)
                 .lineSpacing(-1)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: 330, alignment: .leading)
                 .accessibilityAddTraits(.isHeader)
-            Text("Your iPhone measures each window in about a minute. A WinChoice rep checks every size before anything is built.")
+            Text("Windows or roof: see your price in minutes. A \(store.brand.name) expert confirms every size before anything is built.")
                 .wc(15, relativeTo: .subheadline)
                 .foregroundStyle(Theme.heroText)
                 .lineSpacing(3)
-                .padding(.top, 10)
+                .padding(.top, 12)
                 .frame(maxWidth: 340, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 20)
-        .padding(.bottom, 22)
+        .padding(.bottom, 28)
         .padding(.top, StatusBar.height)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.navy)
@@ -88,62 +92,35 @@ struct WelcomeScreen: View {
     }
 }
 
-/// One service card: icon tile, title, one line, a checkbox. Selected: blue ring and tint (the mockup's `.selc`).
-struct ServiceOption: View {
-    let service: HomeownerService
-    let isOn: Bool
-    let action: () -> Void
-
-    private var icon: WCIcon {
-        switch service {
-        case .windows: return .win
-        case .roof: return .roof
-        case .gutters: return .gutter // never listed: gutters are not offered to homeowners
-        }
-    }
-
-    private var title: String {
-        switch service {
-        case .windows: return "Windows"
-        case .roof: return "Roof"
-        case .gutters: return "Gutters"
-        }
-    }
-
-    private var line: String {
-        switch service {
-        case .windows: return "Measure with this app, instant quote"
-        case .roof: return "Price range from above, then a free visit"
-        case .gutters: return "Priced at your free visit"
-        }
-    }
+/// A white icon on a translucent tile, in the navy hero.
+private struct HeroBadge: View {
+    let icon: WCIcon
 
     var body: some View {
-        Button(action: {
-            Haptics.tap()
-            action()
-        }) {
-            HStack(spacing: 12) {
-                IconTile(icon: icon, size: 44, iconSize: 22, selected: isOn, tint: isOn ? Color.clear : nil)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).wc(17, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
-                    Text(line).wc(13, relativeTo: .footnote).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                WCCheckbox(isOn: isOn)
+        IconView(icon: icon, size: 26, weight: 1.8)
+            .foregroundStyle(.white)
+            .frame(width: 52, height: 52)
+            .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+/// One line of what the app does: an icon tile, a title and a sentence.
+private struct WelcomePoint: View {
+    let icon: WCIcon
+    let title: String
+    let line: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            IconTile(icon: icon, size: 40, iconSize: 20)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).wc(16, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
+                Text(line).wc(13, relativeTo: .footnote).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .frame(minHeight: 68)
-            .wcCard(selected: isOn)
-            .contentShape(Rectangle())
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title). \(line)")
-        .accessibilityValue(isOn ? "Selected" : "Not selected")
-        .accessibilityAddTraits(.isButton)
-        .accessibilityHint("Double tap to \(isOn ? "unselect" : "select")")
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
     }
 }
 

@@ -407,6 +407,44 @@ struct WCTag: View {
 }
 
 /// The blue "why" and note panels: an icon, a sentence (a bold lead optional).
+/// On a result screen (the window price, the roof's price range): the price is an estimate, and a call to the company gets
+/// an exact measurement, done in person. The call button shows only when the brand has a phone.
+struct EstimateCallCard: View {
+    @Environment(HomeownerStore.self) private var store
+    @Environment(\.openURL) private var openURL
+    let service: HomeownerService
+
+    private var line: String {
+        let name = store.brand.name
+        switch service {
+        case .roof: return "For a foolproof measurement, call us. A \(name) expert measures your roof in person, for free."
+        case .windows, .gutters: return "For a foolproof measurement, call us. A \(name) expert measures every window in person, for free, before anything is built."
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                IconView(icon: .info, size: 20, weight: 2).foregroundStyle(Theme.blue).padding(.top, 1)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("This is an estimate").wc(17, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(line).wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if let url = store.brand.phoneURL, let phone = store.brand.phone {
+                WCSecondaryButton(title: "Call \(phone)", icon: .phone) { openURL(url) }
+                    .accessibilityLabel("Call \(store.brand.name) at \(phone)")
+                    .accessibilityIdentifier("estimate.call")
+            }
+        }
+        .padding(14)
+        .wcCard(fill: Theme.blueTint)
+        .accessibilityElement(children: .contain)
+    }
+}
+
 struct InfoPanel: View {
     var icon: WCIcon = .info
     var lead: String?

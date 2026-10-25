@@ -24,6 +24,7 @@ struct QuoteScreen: View {
                         WCHeadline(text: "\(q.windowCount) window\(q.windowCount == 1 ? "" : "s"), your price",
                                    subtitle: "\(q.measuredCount) measured by you · \(q.estimatedCount) estimated. Installed, old windows hauled away.")
                             .padding(.bottom, 4)
+                        EstimateCallCard(service: .windows)
                         if let offer = store.company.catalog.offer { offerPanel(offer) }
                         trustStrip
                         ForEach(q.tiers) { tier in

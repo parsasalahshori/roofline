@@ -50,6 +50,7 @@ private struct RouteScreen: View {
         case .step(let step):
             switch step {
             case .welcome: WelcomeScreen()
+            case .service: ServiceScreen()
             case .address: AddressScreen()
             case .results: ResultsScreen()
             case .callback: CallbackScreen()

@@ -35,5 +35,6 @@
     { "key": "bronze", "label": "Bronze", "hex": "#4E3B2C" },
     { "key": "black", "label": "Black", "hex": "#1D1F22" }
   ],
-  "quoteFootnote": "No payment today."
+  "quoteFootnote": "No payment today.",
+  "phone": "(855) 988-7283"
 }

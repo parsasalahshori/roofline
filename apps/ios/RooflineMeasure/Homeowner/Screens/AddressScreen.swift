@@ -18,10 +18,14 @@ struct AddressScreen: View {
     var body: some View {
         @Bindable var store = store
         VStack(spacing: 0) {
-            WCNavBar(title: store.brand.wordmark, wordmark: true, onBack: { store.pop() }) { StepDots(filled: 1) }
+            WCNavBar(title: store.brand.wordmark, wordmark: true, onBack: { store.pop() }) { StepDots(filled: 2) }
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    WCHeadline(text: "Where are the windows?", subtitle: "So we send the right local rep and check what your home's windows usually look like.")
+                    if store.services.contains(.windows) {
+                        WCHeadline(text: "Where are the windows?", subtitle: "So we send the right local rep and check what your home's windows usually look like.")
+                    } else {
+                        WCHeadline(text: "Where's your home?", subtitle: "So we can measure your roof from above and send the right local rep.")
+                    }
                     field.padding(.top, 20)
                     if let error = store.addressError {
                         Text(error).wc(13, .medium, relativeTo: .footnote).foregroundStyle(Theme.bad).padding(.top, 8).padding(.horizontal, 4)
