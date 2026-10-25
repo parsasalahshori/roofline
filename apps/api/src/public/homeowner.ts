@@ -16,6 +16,7 @@ import {
   getWindowMeasurement,
   linkHomeownerLead,
   markHomeownerCallMe,
+  scansForRequest,
   quoteCompany,
   setHomeownerWindowCount,
   type StoredWindowUpload,
@@ -61,6 +62,7 @@ import { canonicalJson, HEIC_MESSAGE, readUpload } from '../routes/window-measur
 import { assertKnownFields, emailField, noNul, parse } from '../validate.ts';
 import { authed, authenticate, HOMEOWNER_LIMITS, HOMEOWNER_UNKNOWN_REQUEST, newHomeownerToken, hashHomeownerToken, RateLimitedError, rateLimited } from './homeowner-auth.ts';
 import { registerDetectRoutes } from './homeowner-detect.ts';
+import { registerScanRoutes } from './homeowner-scans.ts';
 import { guardUpload, UPLOAD_GUARD, UploadGate } from './homeowner-upload.ts';
 import { buildRequestView, buildStatus, leadSummary, storedInput } from './homeowner-view.ts';
 import { policyUrls } from './policy-urls.ts';
@@ -77,6 +79,7 @@ import { originGuard, pageFor, route } from './quote-access.ts';
  *   POST   /:slug/requests/:id/detect-windows   one JPEG (raw bytes) -> the windows the AI detector sees (homeowner-detect.ts)
  *   POST   /:slug/requests/:id/debug-captures/:captureId/:file   tester builds' capture dump, only with DEBUG_CAPTURES_DIR
  *   POST   /:slug/requests/:id/windows     one measured window (idempotent on its id)
+ *   POST   /:slug/requests/:id/scans       a window's multi-frame scan (idempotent on its scanId; <= 1 MB; homeowner-scans.ts)
  *   DELETE /:slug/requests/:id/windows/:windowId
  *   POST   /:slug/requests/:id/contact     the homeowner's details and consent -> the lead is filed
  *   GET    /:slug/requests/:id/slots       the next open visit times
@@ -359,7 +362,8 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
   // parser must not touch that route: a stream it has read cannot be read again, and the upload would wait for ever).
   const json = express.json({ limit: BODY_LIMIT });
   router.use((req, res, next) => {
-    if (/\/requests\/[^/]+\/(uploads|detect-windows)\/?$/i.test(req.path) || /\/requests\/[^/]+\/debug-captures\/[^/]+\/[^/]+$/i.test(req.path)) next();
+    // A scan carries its frames' poses and marks: its own route reads it with a bigger limit (homeowner-scans.ts)
+    if (/\/requests\/[^/]+\/(uploads|detect-windows|scans)\/?$/i.test(req.path) || /\/requests\/[^/]+\/debug-captures\/[^/]+\/[^/]+$/i.test(req.path)) next();
     else json(req, res, next);
   });
 
@@ -546,6 +550,8 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
 
   // "Finding your window" (the AI detector) and the tester builds' capture dump: homeowner-detect.ts
   registerDetectRoutes(router, { deps, budget: auth.budget });
+  // A window's multi-frame scan: homeowner-scans.ts
+  registerScanRoutes(router, { deps, budget: auth.budget, requireWindows });
 
   router.post(
     '/:slug/requests/:id/windows',
@@ -567,7 +573,10 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
         // The request row as it is now: the first window or photo has just made its measurement.
         const current = (await getHomeownerRequest(tx, ctx, request.id)) ?? locked;
         if (same !== undefined) {
-          if (canonicalJson(same) !== canonicalJson(input)) throw new AppError(409, 'A different window with this id is already saved. Give the new window its own id.', 'id').coded('window_id_taken');
+          // A window whose size an accepted scan set (scale, and the photo corners of a room-scan window) is compared without those
+          const scanned = (await scansForRequest(tx, ctx, request.id)).some((s) => s.windowId === input.id && s.status === 'measured');
+          const bare = (w: PhotoWindowInput) => (scanned ? { ...w, scale: null, uploadId: null, corners: null } : w);
+          if (canonicalJson(bare(same)) !== canonicalJson(bare(input))) throw new AppError(409, 'A different window with this id is already saved. Give the new window its own id.', 'id').coded('window_id_taken');
           return { created: false, view: await buildRequestView(tx, ctx, current) };
         }
         if (list.filter((x) => x.source === HOMEOWNER_APP_SOURCE).length >= HOMEOWNER_MAX_WINDOWS) {

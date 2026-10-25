@@ -220,6 +220,18 @@ describe('schema', () => {
     expect(cols).toHaveLength(1);
   });
 
+  test('window_scans is a tenant table with RLS forced, one scan per request and scan id, a same-company request link, and a reason for visit_required', async () => {
+    expect([...TENANT_TABLES]).toContain('window_scans');
+    const [cls] = await ownerQuery<{ relrowsecurity: boolean; relforcerowsecurity: boolean }>(`select relrowsecurity, relforcerowsecurity from pg_class where oid = 'public.window_scans'::regclass`);
+    expect(cls).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
+    const policies = await ownerQuery<{ policyname: string }>(`select policyname from pg_policies where schemaname = 'public' and tablename = 'window_scans'`);
+    expect(policies.map((p) => p.policyname)).toContain('tenant_isolation');
+    const cons = await ownerQuery<{ conname: string }>(`select conname from pg_constraint where conrelid = 'public.window_scans'::regclass`);
+    expect(cons.map((c) => c.conname)).toEqual(
+      expect.arrayContaining(['window_scans_request_scan_uniq', 'window_scans_company_request_fk', 'window_scans_status_check', 'window_scans_outcome_check', 'window_scans_visit_reason_check']),
+    );
+  });
+
   test("homeowner_requests is a tenant table with RLS forced, a unique token hash, same-company links, and jobs may have source 'app'", async () => {
     expect([...TENANT_TABLES]).toContain('homeowner_requests');
     const [cls] = await ownerQuery<{ relrowsecurity: boolean; relforcerowsecurity: boolean }>(

@@ -1,0 +1,576 @@
+{
+ "name": "skewed corner",
+ "description": "The bottom right corner is 2 in lower than a rectangle would put it: opposite sides differ (sym_ratio) while every mark agrees with its triangulated corner.",
+ "convention": "cameraTransform is column-major (translation = elements 12, 13, 14); marks are native image pixels; corners are 0 TL, 1 TR, 2 BR, 3 BL. Compare numbers within expected.tolerance.",
+ "truth": {
+  "widthIn": 34.625,
+  "heightIn": 55.75
+ },
+ "input": {
+  "frames": [
+   {
+    "frameId": "r1",
+    "kind": "regular",
+    "corner": null,
+    "uploadId": "00000000-0000-4000-8000-000000000064",
+    "imageWidth": 1920,
+    "imageHeight": 1440,
+    "cameraTransform": [
+     0.90618314,
+     0,
+     0.422885465,
+     0,
+     -0.025500953,
+     0.998180162,
+     0.054644899,
+     0,
+     -0.422115882,
+     -0.060302269,
+     0.904534034,
+     0,
+     -1.4,
+     1.2,
+     0,
+     1
+    ],
+    "intrinsics": {
+     "fx": 1500,
+     "fy": 1500,
+     "cx": 960,
+     "cy": 720,
+     "width": 1920,
+     "height": 1440
+    }
+   },
+   {
+    "frameId": "r2",
+    "kind": "regular",
+    "corner": null,
+    "uploadId": "00000000-0000-4000-8000-000000000065",
+    "imageWidth": 1920,
+    "imageHeight": 1440,
+    "cameraTransform": [
+     0.976900017,
+     0,
+     0.213696879,
+     0,
+     0.009775404,
+     0.998953184,
+     -0.044687561,
+     0,
+     -0.213473177,
+     0.045744252,
+     0.975877383,
+     0,
+     -0.7,
+     1.55,
+     0.2,
+     1
+    ],
+    "intrinsics": {
+     "fx": 1500,
+     "fy": 1500,
+     "cx": 960,
+     "cy": 720,
+     "width": 1920,
+     "height": 1440
+    }
+   },
+   {
+    "frameId": "r3",
+    "kind": "regular",
+    "corner": null,
+    "uploadId": "00000000-0000-4000-8000-000000000066",
+    "imageWidth": 1920,
+    "imageHeight": 1440,
+    "cameraTransform": [
+     1,
+     0,
+     0,
+     0,
+     0,
+     0.999444907,
+     0.03331483,
+     0,
+     0,
+     -0.03331483,
+     0.999444907,
+     0,
+     0,
+     1.3,
+     0,
+     1
+    ],
+    "intrinsics": {
+     "fx": 1500,
+     "fy": 1500,
+     "cx": 960,
+     "cy": 720,
+     "width": 1920,
+     "height": 1440
+    }
+   },
+   {
+    "frameId": "r4",
+    "kind": "regular",
+    "corner": null,
+    "uploadId": "00000000-0000-4000-8000-000000000067",
+    "imageWidth": 1920,
+    "imageHeight": 1440,
+    "cameraTransform": [
+     0.968277324,
+     0,
+     -0.249878019,
+     0,
+     -0.019452977,
+     0.996965092,
+     -0.075380287,
+     0,
+     0.249119662,
+     0.077849894,
+     0.965338691,
+     0,
+     0.8,
+     1.65,
+     0.1,
+     1
+    ],
+    "intrinsics": {
+     "fx": 1500,
+     "fy": 1500,
+     "cx": 960,
+     "cy": 720,
+     "width": 1920,
+     "height": 1440
+    }
+   },
+   {
+    "frameId": "r5",
+    "kind": "regular",
+    "corner": null,
+    "uploadId": "00000000-0000-4000-8000-000000000068",
+    "imageWidth": 1920,
+    "imageHeight": 1440,
+    "cameraTransform": [
+     0.894427191,
+     0,
+     -0.447213595,
+     0,
+     0.026619385,
+     0.998226949,
+     0.053238771,
+     0,
+     0.446420663,
+     -0.059522755,
+     0.892841326,
+     0,
+     1.5,
+     1.2,
+     0,
+     1
+    ],
+    "intrinsics": {
+     "fx": 1500,
+     "fy": 1500,
+     "cx": 960,
+     "cy": 720,
+     "width": 1920,
+     "height": 1440
+    }
+   },
+   {
+    "frameId": "c1",
+    "kind": "closeup",
+    "corner": 0,
+    "uploadId": "00000000-0000-4000-8000-0000000000c8",
+    "imageWidth": 1920,
+    "imageHeight": 1440,
+    "cameraTransform": [
+     0.957826285,
+     0,
+     0.287347886,
+     0,
+     0.05406283,
+     0.982141421,
+     -0.180209435,
+     0,
+     -0.282216261,
+     0.188144174,
+     0.940720868,
+     0,
+     -0.6197375,
+     2.228025,
+     -2.4,
+     1
+    ],
+    "intrinsics": {
+     "fx": 1500,
+     "fy": 1500,
+     "cx": 960,
+     "cy": 720,
+     "width": 1920,
+     "height": 1440
+    }
+   },
+   {
+    "frameId": "c2",
+    "kind": "closeup",
+    "corner": 1,
+    "uploadId": "00000000-0000-4000-8000-0000000000c9",
+    "imageWidth": 1920,
+    "imageHeight": 1440,
+    "cameraTransform": [
+     0.957826285,
+     0,
+     -0.287347886,
+     0,
+     -0.05406283,
+     0.982141421,
+     -0.180209435,
+     0,
+     0.282216261,
+     0.188144174,
+     0.940720868,
+     0,
+     0.6197375,
+     2.228025,
+     -2.4,
+     1
+    ],
+    "intrinsics": {
+     "fx": 1500,
+     "fy": 1500,
+     "cx": 960,
+     "cy": 720,
+     "width": 1920,
+     "height": 1440
+    }
+   },
+   {
+    "frameId": "c3",
+    "kind": "closeup",
+    "corner": 2,
+    "uploadId": "00000000-0000-4000-8000-0000000000ca",
+    "imageWidth": 1920,
+    "imageHeight": 1440,
+    "cameraTransform": [
+     0.957826285,
+     0,
+     -0.287347886,
+     0,
+     0.05406283,
+     0.982141421,
+     0.180209435,
+     0,
+     0.282216261,
+     -0.188144174,
+     0.940720868,
+     0,
+     0.6197375,
+     0.571975,
+     -2.4,
+     1
+    ],
+    "intrinsics": {
+     "fx": 1500,
+     "fy": 1500,
+     "cx": 960,
+     "cy": 720,
+     "width": 1920,
+     "height": 1440
+    }
+   },
+   {
+    "frameId": "c4",
+    "kind": "closeup",
+    "corner": 3,
+    "uploadId": "00000000-0000-4000-8000-0000000000cb",
+    "imageWidth": 1920,
+    "imageHeight": 1440,
+    "cameraTransform": [
+     0.957826285,
+     0,
+     0.287347886,
+     0,
+     -0.05406283,
+     0.982141421,
+     0.180209435,
+     0,
+     -0.282216261,
+     -0.188144174,
+     0.940720868,
+     0,
+     -0.6197375,
+     0.571975,
+     -2.4,
+     1
+    ],
+    "intrinsics": {
+     "fx": 1500,
+     "fy": 1500,
+     "cx": 960,
+     "cy": 720,
+     "width": 1920,
+     "height": 1440
+    }
+   }
+  ],
+  "marks": [
+   {
+    "frameId": "r1",
+    "corner": 0,
+    "x": 771.69,
+    "y": 380.17,
+    "source": "ai"
+   },
+   {
+    "frameId": "r1",
+    "corner": 1,
+    "x": 1128.78,
+    "y": 425.4,
+    "source": "ai"
+   },
+   {
+    "frameId": "r1",
+    "corner": 2,
+    "x": 1132.97,
+    "y": 1053.14,
+    "source": "ai"
+   },
+   {
+    "frameId": "r1",
+    "corner": 3,
+    "x": 765.96,
+    "y": 1058.24,
+    "source": "ai"
+   },
+   {
+    "frameId": "r2",
+    "corner": 0,
+    "x": 756.09,
+    "y": 385.26,
+    "source": "ai"
+   },
+   {
+    "frameId": "r2",
+    "corner": 1,
+    "x": 1153.33,
+    "y": 400.37,
+    "source": "ai"
+   },
+   {
+    "frameId": "r2",
+    "corner": 2,
+    "x": 1148.62,
+    "y": 1051.33,
+    "source": "ai"
+   },
+   {
+    "frameId": "r2",
+    "corner": 3,
+    "x": 759.69,
+    "y": 1052.01,
+    "source": "ai"
+   },
+   {
+    "frameId": "r3",
+    "corner": 0,
+    "x": 742.1,
+    "y": 369.12,
+    "source": "ai"
+   },
+   {
+    "frameId": "r3",
+    "corner": 1,
+    "x": 1177.94,
+    "y": 368.84,
+    "source": "ai"
+   },
+   {
+    "frameId": "r3",
+    "corner": 2,
+    "x": 1182.1,
+    "y": 1102.66,
+    "source": "ai"
+   },
+   {
+    "frameId": "r3",
+    "corner": 3,
+    "x": 738.28,
+    "y": 1076.87,
+    "source": "ai"
+   },
+   {
+    "frameId": "r4",
+    "corner": 0,
+    "x": 764.78,
+    "y": 392.34,
+    "source": "ai"
+   },
+   {
+    "frameId": "r4",
+    "corner": 1,
+    "x": 1169.83,
+    "y": 377.12,
+    "source": "ai"
+   },
+   {
+    "frameId": "r4",
+    "corner": 2,
+    "x": 1162.52,
+    "y": 1083.52,
+    "source": "ai"
+   },
+   {
+    "frameId": "r4",
+    "corner": 3,
+    "x": 770.53,
+    "y": 1029.88,
+    "source": "ai"
+   },
+   {
+    "frameId": "r5",
+    "corner": 0,
+    "x": 795.76,
+    "y": 430.06,
+    "source": "ai"
+   },
+   {
+    "frameId": "r5",
+    "corner": 1,
+    "x": 1143.74,
+    "y": 384.17,
+    "source": "ai"
+   },
+   {
+    "frameId": "r5",
+    "corner": 2,
+    "x": 1149.08,
+    "y": 1078.79,
+    "source": "ai"
+   },
+   {
+    "frameId": "r5",
+    "corner": 3,
+    "x": 792.2,
+    "y": 1027.06,
+    "source": "ai"
+   },
+   {
+    "frameId": "c1",
+    "corner": 0,
+    "x": 960.07,
+    "y": 720.38,
+    "source": "snap"
+   },
+   {
+    "frameId": "c2",
+    "corner": 1,
+    "x": 960.21,
+    "y": 720.07,
+    "source": "snap"
+   },
+   {
+    "frameId": "c3",
+    "corner": 2,
+    "x": 959.77,
+    "y": 839.48,
+    "source": "snap"
+   },
+   {
+    "frameId": "c4",
+    "corner": 3,
+    "x": 960.31,
+    "y": 719.7,
+    "source": "snap"
+   }
+  ],
+  "wall": {
+   "point": [
+    0,
+    1.4,
+    -3
+   ],
+   "normal": [
+    0,
+    0,
+    1
+   ]
+  }
+ },
+ "expected": {
+  "status": "needs_review",
+  "failed": [
+   "sym_ratio"
+  ],
+  "widthIn": 34.6318,
+  "heightIn": 56.7601,
+  "cornersM": [
+   [
+    -0.439772,
+    2.107984,
+    -2.999245
+   ],
+   [
+    0.439876,
+    2.107984,
+    -2.999211
+   ],
+   [
+    0.439876,
+    0.666278,
+    -3.000084
+   ],
+   [
+    -0.439772,
+    0.666278,
+    -3.000119
+   ]
+  ],
+  "triangulatedM": [
+   [
+    -0.439458,
+    2.108085,
+    -2.999342
+   ],
+   [
+    0.439845,
+    2.107883,
+    -2.999118
+   ],
+   [
+    0.439906,
+    0.641127,
+    -3.000193
+   ],
+   [
+    -0.440086,
+    0.691428,
+    -3.000007
+   ]
+  ],
+  "quality": {
+   "framesPerCorner": [
+    6,
+    6,
+    6,
+    6
+   ],
+   "reprojRmsPx": 0.619,
+   "reprojMaxPx": 1.878,
+   "minBaselineDeg": 50.44,
+   "symRatioDiff": 0.03475,
+   "planeMaxCm": 0.01,
+   "scaleDiff": 0.00035,
+   "closeups": 4,
+   "failed": [
+    "sym_ratio"
+   ]
+  },
+  "tolerance": {
+   "inches": 0.01,
+   "metres": 0.0005,
+   "pixels": 0.05
+  }
+ }
+}

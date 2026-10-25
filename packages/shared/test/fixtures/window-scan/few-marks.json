@@ -1,0 +1,260 @@
+{
+ "name": "few marks",
+ "description": "The same window from 3 regular frames and no close-ups, but the third frame has no marks: every corner has only 2 marks (too_few_frames), so the scan needs review; no_closeups is a warning only.",
+ "convention": "cameraTransform is column-major (translation = elements 12, 13, 14); marks are native image pixels; corners are 0 TL, 1 TR, 2 BR, 3 BL. Compare numbers within expected.tolerance.",
+ "truth": {
+  "widthIn": 34.625,
+  "heightIn": 55.75
+ },
+ "input": {
+  "frames": [
+   {
+    "frameId": "r1",
+    "kind": "regular",
+    "corner": null,
+    "uploadId": "00000000-0000-4000-8000-000000000064",
+    "imageWidth": 1920,
+    "imageHeight": 1440,
+    "cameraTransform": [
+     0.90618314,
+     0,
+     0.422885465,
+     0,
+     -0.025500953,
+     0.998180162,
+     0.054644899,
+     0,
+     -0.422115882,
+     -0.060302269,
+     0.904534034,
+     0,
+     -1.4,
+     1.2,
+     0,
+     1
+    ],
+    "intrinsics": {
+     "fx": 1500,
+     "fy": 1500,
+     "cx": 960,
+     "cy": 720,
+     "width": 1920,
+     "height": 1440
+    }
+   },
+   {
+    "frameId": "r2",
+    "kind": "regular",
+    "corner": null,
+    "uploadId": "00000000-0000-4000-8000-000000000065",
+    "imageWidth": 1920,
+    "imageHeight": 1440,
+    "cameraTransform": [
+     0.90618314,
+     0,
+     -0.422885465,
+     0,
+     0.025500953,
+     0.998180162,
+     0.054644899,
+     0,
+     0.422115882,
+     -0.060302269,
+     0.904534034,
+     0,
+     1.4,
+     1.2,
+     0,
+     1
+    ],
+    "intrinsics": {
+     "fx": 1500,
+     "fy": 1500,
+     "cx": 960,
+     "cy": 720,
+     "width": 1920,
+     "height": 1440
+    }
+   },
+   {
+    "frameId": "r3",
+    "kind": "regular",
+    "corner": null,
+    "uploadId": "00000000-0000-4000-8000-000000000066",
+    "imageWidth": 1920,
+    "imageHeight": 1440,
+    "cameraTransform": [
+     1,
+     0,
+     0,
+     0,
+     0,
+     0.999444907,
+     0.03331483,
+     0,
+     0,
+     -0.03331483,
+     0.999444907,
+     0,
+     0,
+     1.3,
+     0,
+     1
+    ],
+    "intrinsics": {
+     "fx": 1500,
+     "fy": 1500,
+     "cx": 960,
+     "cy": 720,
+     "width": 1920,
+     "height": 1440
+    }
+   }
+  ],
+  "marks": [
+   {
+    "frameId": "r1",
+    "corner": 0,
+    "x": 772.13,
+    "y": 380.32,
+    "source": "ai"
+   },
+   {
+    "frameId": "r1",
+    "corner": 1,
+    "x": 1128.18,
+    "y": 425.77,
+    "source": "ai"
+   },
+   {
+    "frameId": "r1",
+    "corner": 2,
+    "x": 1133.53,
+    "y": 1031.55,
+    "source": "ai"
+   },
+   {
+    "frameId": "r1",
+    "corner": 3,
+    "x": 766.45,
+    "y": 1057.53,
+    "source": "ai"
+   },
+   {
+    "frameId": "r2",
+    "corner": 0,
+    "x": 791.95,
+    "y": 424.93,
+    "source": "ai"
+   },
+   {
+    "frameId": "r2",
+    "corner": 1,
+    "x": 1148.91,
+    "y": 380.08,
+    "source": "ai"
+   },
+   {
+    "frameId": "r2",
+    "corner": 2,
+    "x": 1153.39,
+    "y": 1058.49,
+    "source": "ai"
+   },
+   {
+    "frameId": "r2",
+    "corner": 3,
+    "x": 787.39,
+    "y": 1030.57,
+    "source": "ai"
+   }
+  ],
+  "wall": {
+   "point": [
+    0,
+    1.4,
+    -3
+   ],
+   "normal": [
+    0,
+    0,
+    1
+   ]
+  }
+ },
+ "expected": {
+  "status": "needs_review",
+  "failed": [
+   "too_few_frames"
+  ],
+  "widthIn": 34.6183,
+  "heightIn": 55.7936,
+  "cornersM": [
+   [
+    -0.439065,
+    2.109346,
+    -3.001836
+   ],
+   [
+    0.44024,
+    2.109346,
+    -3.001334
+   ],
+   [
+    0.440238,
+    0.69219,
+    -2.998699
+   ],
+   [
+    -0.439066,
+    0.69219,
+    -2.9992
+   ]
+  ],
+  "triangulatedM": [
+   [
+    -0.438492,
+    2.109479,
+    -3.000585
+   ],
+   [
+    0.440248,
+    2.109213,
+    -3.002584
+   ],
+   [
+    0.440231,
+    0.691353,
+    -2.997449
+   ],
+   [
+    -0.439639,
+    0.693027,
+    -3.000452
+   ]
+  ],
+  "quality": {
+   "framesPerCorner": [
+    2,
+    2,
+    2,
+    2
+   ],
+   "reprojRmsPx": 0.232,
+   "reprojMaxPx": 0.328,
+   "minBaselineDeg": 47.41,
+   "symRatioDiff": 0.00129,
+   "planeMaxCm": 0.125,
+   "scaleDiff": 0.00021,
+   "closeups": 0,
+   "failed": [
+    "too_few_frames"
+   ]
+  },
+  "tolerance": {
+   "inches": 0.01,
+   "metres": 0.0005,
+   "pixels": 0.05
+  }
+ }
+}

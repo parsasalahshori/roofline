@@ -1,4 +1,4 @@
-import { getHomeownerMeasurement, getQuoteEstimate, getWindowCatalog, homeownerProgress, type HomeownerProgress, type HomeownerRequestRow, type QuoteEstimateRow, type StoredWindowUpload, type TenantContext, type Tx } from '@roofline/db';
+import { getHomeownerMeasurement, getQuoteEstimate, scansForRequest, getWindowCatalog, homeownerProgress, type HomeownerProgress, type HomeownerRequestRow, type QuoteEstimateRow, type StoredWindowUpload, type TenantContext, type Tx } from '@roofline/db';
 import {
   buildHomeownerQuote,
   HOMEOWNER_APP_SOURCE,
@@ -11,6 +11,9 @@ import {
   type HomeownerStage,
   type HomeownerStatus,
   type HomeownerWindow,
+  HOMEOWNER_SCAN_TEXT,
+  homeownerScanState,
+  type HomeownerWindowScan,
   type HomeownerWindowInput,
   isTimeZone,
   type PhotoWindow,
@@ -96,8 +99,22 @@ export function reasonsOf(w: PhotoWindow): string[] {
   return [UNSURE];
 }
 
-/** A stored, sized window as the homeowner sees it. */
-export function windowView(w: PhotoWindow, tiles: readonly StyleTile[]): HomeownerWindow {
+/** Each window's newest scan, as the homeowner is told about it (windows with no scan are not in the map). */
+export function scanStates(scans: readonly { id: string; windowId: string; status: Parameters<typeof homeownerScanState>[0] }[]): Map<string, HomeownerWindowScan> {
+  const out = new Map<string, HomeownerWindowScan>();
+  // Newest first (scansForRequest orders them so): the first one seen for a window is its newest
+  for (const s of scans) {
+    if (out.has(s.windowId)) continue;
+    const state = homeownerScanState(s.status);
+    out.set(s.windowId, { scanId: s.id, state, label: HOMEOWNER_SCAN_TEXT[state] });
+  }
+  return out;
+}
+
+const VISIT_REQUIRED = 'We will measure this one at your free visit.';
+
+/** A stored, sized window as the homeowner sees it. `scan`: where its multi-frame scan is, when it has one. */
+export function windowView(w: PhotoWindow, tiles: readonly StyleTile[], scan?: HomeownerWindowScan): HomeownerWindow {
   const style = w.style ?? 'double-hung';
   const uncertaintyIn = w.uncertaintyIn ?? { width: 0.5, height: 0.5 };
   const scale = w.scale as HomeownerWindowInput['scale'];
@@ -114,11 +131,13 @@ export function windowView(w: PhotoWindow, tiles: readonly StyleTile[]): Homeown
     heightIn: w.heightIn,
     sizeClass: w.sizeClass,
     uncertaintyIn,
-    quality: w.quality,
-    reasons: reasonsOf(w),
+    // A window the scan could not settle is measured at the visit: the size shown is only a guess
+    quality: scan?.state === 'visit_required' ? 'check' : w.quality,
+    reasons: scan?.state === 'visit_required' ? [VISIT_REQUIRED] : reasonsOf(w),
     sizeLabel: windowSizeLabel(w.widthIn, w.heightIn),
     uncertaintyLabel: windowUncertaintyLabel(uncertaintyIn),
     styleLabel: tileOfStyle(tiles, style).label,
+    ...(scan !== undefined && { scan }),
   };
 }
 
@@ -182,7 +201,8 @@ export async function buildRequestView(tx: Tx, ctx: TenantContext, request: Home
     createdAt: request.createdAt.toISOString(),
     expiresAt: request.expiresAt.toISOString(),
   };
-  const views = windows.map((w) => windowView(w, catalog.styleTiles));
+  const scans = scanStates(await scansForRequest(tx, ctx, request.id));
+  const views = windows.map((w) => windowView(w, catalog.styleTiles, scans.get(w.id)));
   const rooms = [...new Set(views.map((w) => w.room).filter((r) => r !== ''))];
   const view: HomeownerRequestView = { request: summary, windows: views, rooms, quote: quoteOf(request, estimate, windows, catalog) };
   if (request.quoteRequestId !== null) {

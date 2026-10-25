@@ -58,3 +58,5 @@ export * from './window-photo-card.ts';
 export * from './homeowner.ts';
 // Google content retention (docs/compliance/google-data-retention.md)
 export * from './google-retention.ts';
+// Multi-frame window scan: triangulation, level rectangle, quality gates (docs/windows/scan-contract.md)
+export * from './window-scan.ts';

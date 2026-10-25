@@ -56,6 +56,13 @@ import {
   type GutterAdjustments,
   WINDOW_ORDER_STATUSES,
   HOMEOWNER_CALLBACK_REASONS,
+  SCAN_OUTCOMES,
+  SCAN_STATUSES,
+  type ScanFrame,
+  type ScanMark,
+  type ScanResult,
+  type ScanWall,
+  type ScanHistoryEvent,
   type WindowOrderLine,
   type WindowOrderSettings,
   type WindowCatalog,
@@ -179,6 +186,7 @@ export const TENANT_TABLES = [
   'quote_requests',
   'window_orders',
   'homeowner_requests',
+  'window_scans',
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];
@@ -2411,5 +2419,64 @@ export const homeownerRequests = pgTable(
     check('homeowner_requests_callback_pair_check', sql`(${t.status} = 'callback') = (${t.callbackReason} is not null)`),
     check('homeowner_requests_services_check', sql`cardinality(${t.services}) between 1 and 3 and ${t.services} <@ array['windows','roof','gutters']::text[]`),
     check('homeowner_requests_window_count_check', sql`${t.windowCountOverride} is null or ${t.windowCountOverride} between 1 and 80`),
+  ],
+);
+
+/**
+ * A multi-frame window scan from the homeowner app (docs/windows/scan-contract.md): the frames (camera poses and the
+ * uploads they are pictures of), the corner marks, what the phone computed and what the server computed from the same
+ * frames and marks, and the review that follows when a quality gate fails (a junior reviewer, then a senior one). The
+ * window itself stays in the request's window measurement (adjustments.photoWindows); a scan that ends 'measured' is the
+ * size shown for it.
+ */
+export const windowScans = pgTable(
+  'window_scans',
+  {
+    id: pk(),
+    companyId: companyId(),
+    homeownerRequestId: uuid('homeowner_request_id').notNull(),
+    /** The phone's scan id (a UUID): the same scan sent twice is one scan. */
+    scanId: text('scan_id').notNull(),
+    /** The window's id in the request's photoWindows. */
+    windowId: text('window_id').notNull(),
+    app: text('app'),
+    device: text('device'),
+    wall: jsonb('wall').$type<ScanWall | null>(),
+    frames: jsonb('frames').$type<ScanFrame[]>().notNull(),
+    /** The marks now (the reviewers' edits included). */
+    marks: jsonb('marks').$type<ScanMark[]>().notNull(),
+    /** The marks as the phone sent them. */
+    marksOriginal: jsonb('marks_original').$type<ScanMark[]>().notNull(),
+    phoneResult: jsonb('phone_result').$type<ScanResult | null>(),
+    /** The server's result for `marks` (the one that counts). */
+    serverResult: jsonb('server_result').$type<ScanResult>().notNull(),
+    status: text('status', { enum: SCAN_STATUSES }).notNull(),
+    expedite: boolean('expedite').notNull().default(false),
+    slaDueAt: tstz('sla_due_at').notNull(),
+    juniorUserId: userRef('junior_user_id'),
+    juniorAt: tstz('junior_at'),
+    seniorUserId: userRef('senior_user_id'),
+    seniorAt: tstz('senior_at'),
+    /** How a reviewed scan ended: 'measured' or 'visit_required' (null while open and for an auto-accepted scan). */
+    outcome: text('outcome', { enum: SCAN_OUTCOMES }),
+    outcomeReason: text('outcome_reason'),
+    /** A senior reviewer finalised 'measured' although a gate failed. */
+    overrode: boolean('overrode').notNull().default(false),
+    history: jsonb('history').$type<ScanHistoryEvent[]>().notNull().default(sql`'[]'::jsonb`),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('window_scans_company_id_id_uniq').on(t.companyId, t.id),
+    unique('window_scans_request_scan_uniq').on(t.companyId, t.homeownerRequestId, t.scanId),
+    foreignKey({
+      name: 'window_scans_company_request_fk',
+      columns: [t.companyId, t.homeownerRequestId],
+      foreignColumns: [homeownerRequests.companyId, homeownerRequests.id],
+    }),
+    index('window_scans_company_status_idx').on(t.companyId, t.status, t.createdAt),
+    index('window_scans_window_idx').on(t.companyId, t.homeownerRequestId, t.windowId),
+    enumCheck('window_scans', 'status', t.status, SCAN_STATUSES),
+    enumCheck('window_scans', 'outcome', t.outcome, SCAN_OUTCOMES),
+    check('window_scans_visit_reason_check', sql`${t.status} <> 'visit_required' or (${t.outcomeReason} is not null and length(btrim(${t.outcomeReason})) > 0)`),
   ],
 );

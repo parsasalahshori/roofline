@@ -676,6 +676,11 @@ describe('grants', () => {
     expect(await tablePrivileges('app_system', ['homeowner_requests'])).toEqual([privs('homeowner_requests', false, false, false, false)]);
   });
 
+  test('window scans: app_tenant has SELECT, INSERT and UPDATE on window_scans, no DELETE; app_system nothing', async () => {
+    expect(await tablePrivileges('app_tenant', ['window_scans'])).toEqual([privs('window_scans', true, true, true, false)]);
+    expect(await tablePrivileges('app_system', ['window_scans'])).toEqual([privs('window_scans', false, false, false, false)]);
+  });
+
   test('app_tenant has SELECT, INSERT and UPDATE on each S1 tenant table, and DELETE only on door_exclusions and storm_photos', async () => {
     expect(await tablePrivileges('app_tenant', S1_TENANT_TABLES)).toEqual(
       S1_TENANT_TABLES.map((t) => privs(t, true, true, true, t === 'door_exclusions' || t === 'storm_photos')),

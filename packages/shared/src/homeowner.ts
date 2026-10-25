@@ -204,6 +204,16 @@ export type HomeownerWindow = HomeownerWindowInput & {
   uncertaintyLabel: string;
   /** The plain name of the window's style choice ("Opens up and down"). */
   styleLabel: string;
+  /** Present once the window has a multi-frame scan (POST .../scans): where the scan is, in words to show. */
+  scan?: HomeownerWindowScan;
+};
+
+/** What the homeowner is told about a window's scan (docs/windows/scan-contract.md): checking, measured, or visit_required. */
+export type HomeownerWindowScan = {
+  scanId: string;
+  state: 'checking' | 'measured' | 'visit_required';
+  /** "Being checked by WinChoice", "Measured" or "We will measure this one at your free visit". */
+  label: string;
 };
 
 export type HomeownerQuoteTier = {

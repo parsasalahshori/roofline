@@ -34,6 +34,8 @@ export const HOMEOWNER_LIMITS = {
   tokenPerMinute: 120,
   uploadsPerTokenPerHour: 60,
   windowsPerTokenPerHour: 120,
+  /** A scan is a few per window; a person measuring a whole house with retakes stays well inside. */
+  scansPerTokenPerHour: 120,
   contactPerTokenPerHour: 5,
   bookPerTokenPerHour: 20,
   slotsPerTokenPerHour: 30,
@@ -118,7 +120,7 @@ export type Authed = { ctx: TenantContext; settings: InstantQuoteSettings; reque
 /** The request an authenticated call is about, set by `authenticate` for the handlers behind it. */
 export const authed = (res: { locals: Record<string, unknown> }): Authed => res.locals.homeowner as Authed;
 
-export type TokenBudget = (key: string, scope: 'minute' | 'uploads' | 'windows' | 'contact' | 'book' | 'slots' | 'detect' | 'debug') => Promise<void>;
+export type TokenBudget = (key: string, scope: 'minute' | 'uploads' | 'windows' | 'scans' | 'contact' | 'book' | 'slots' | 'detect' | 'debug') => Promise<void>;
 
 /**
  * The middleware for `/:slug/requests/:id/...`: the company by slug, the token against the request's stored hash, the
@@ -131,6 +133,7 @@ export function authenticate(deps: AppDeps): { middleware: RequestHandler; budge
   const budgets = {
     uploads: createAllowance(HOUR_MS, HOMEOWNER_LIMITS.uploadsPerTokenPerHour),
     windows: createAllowance(HOUR_MS, HOMEOWNER_LIMITS.windowsPerTokenPerHour),
+    scans: createAllowance(HOUR_MS, HOMEOWNER_LIMITS.scansPerTokenPerHour),
     contact: createAllowance(HOUR_MS, HOMEOWNER_LIMITS.contactPerTokenPerHour),
     book: createAllowance(HOUR_MS, HOMEOWNER_LIMITS.bookPerTokenPerHour),
     slots: createAllowance(HOUR_MS, HOMEOWNER_LIMITS.slotsPerTokenPerHour),
