@@ -60,3 +60,6 @@ export * from './homeowner.ts';
 export * from './google-retention.ts';
 // Multi-frame window scan: triangulation, level rectangle, quality gates (docs/windows/scan-contract.md)
 export * from './window-scan.ts';
+export * from './backoffice.ts';
+export * from './backoffice-price.ts';
+export * from './backoffice-defaults.ts';

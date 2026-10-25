@@ -83,7 +83,7 @@ const APP_TENANT_DELETE_TABLES = [
  * Tenant tables app_tenant may only select from and insert into: no UPDATE and no DELETE. conversation_turns is
  * updated by column only (see the column test below).
  */
-const SELECT_INSERT_ONLY = new Set<string>(['audit_log', 'agent_task_events', 'time_recounts', 'conversation_turns']);
+const SELECT_INSERT_ONLY = new Set<string>(['audit_log', 'agent_task_events', 'time_recounts', 'conversation_turns', 'backoffice_order_events']);
 const COMPANY_PROFILE_COLUMNS = [
   'name',
   'legal_name',
@@ -679,6 +679,17 @@ describe('grants', () => {
   test('window scans: app_tenant has SELECT, INSERT and UPDATE on window_scans, no DELETE; app_system nothing', async () => {
     expect(await tablePrivileges('app_tenant', ['window_scans'])).toEqual([privs('window_scans', true, true, true, false)]);
     expect(await tablePrivileges('app_system', ['window_scans'])).toEqual([privs('window_scans', false, false, false, false)]);
+  });
+
+  test('back office: app_tenant has SELECT, INSERT and UPDATE on quotes and orders, SELECT and INSERT on order events (and UPDATE of only their notified column), no DELETE; app_system nothing', async () => {
+    const tables = ['backoffice_quotes', 'backoffice_orders', 'backoffice_order_events'];
+    expect(await tablePrivileges('app_tenant', tables)).toEqual([privs('backoffice_quotes', true, true, true, false), privs('backoffice_orders', true, true, true, false), privs('backoffice_order_events', true, true, false, false)]);
+    expect(await tablePrivileges('app_system', tables)).toEqual(tables.map((t) => privs(t, false, false, false, false)));
+    const cols = await ownerQuery<{ column_name: string }>(
+      `select column_name from information_schema.columns
+        where table_schema = 'public' and table_name = 'backoffice_order_events' and has_column_privilege('app_tenant', 'public.backoffice_order_events', column_name, 'UPDATE') order by 1`,
+    );
+    expect(cols.map((c) => c.column_name)).toEqual(['notified']);
   });
 
   test('app_tenant has SELECT, INSERT and UPDATE on each S1 tenant table, and DELETE only on door_exclusions and storm_photos', async () => {

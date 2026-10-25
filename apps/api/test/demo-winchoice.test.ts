@@ -12,6 +12,7 @@ import {
   WINCHOICE_JOBS,
   seedWinChoiceWorld,
 } from '../src/scripts/demo-winchoice.ts';
+import { WINCHOICE_BACKOFFICE_ORDERS } from '../src/scripts/demo-winchoice-backoffice.ts';
 import { makeTestApp, TEST_ENCRYPTION_KEY, type TestApp } from './helpers.ts';
 
 let t: TestApp;
@@ -63,10 +64,14 @@ describe('the WinChoice demo company', () => {
 
     const c = first.counts;
     expect(c.members).toBe(4);
-    // A customer for each job, and two more: the callers Front Desk booked, who are new and have no job yet
-    expect(c.customers).toBe(WINCHOICE_JOBS.length + 2);
-    expect(c.jobs).toBe(WINCHOICE_JOBS.length);
-    expect([c['jobs.lead'], c['jobs.inspection'], c['jobs.proposal'], c['jobs.won'], c['jobs.installed'], c['jobs.lost']]).toEqual([3, 2, 3, 2, 1, 1]);
+    // A customer for each job, and two more: the callers Front Desk booked, who are new and have no job yet. The back office adds
+    // seven more won jobs (the orders that are not on the twelve).
+    const newOrderJobs = WINCHOICE_BACKOFFICE_ORDERS.filter((o) => o.newJob !== undefined);
+    const newInstalled = newOrderJobs.filter((o) => o.stage === 'installed' || o.stage === 'complete').length;
+    expect(newOrderJobs).toHaveLength(7);
+    expect(c.customers).toBe(WINCHOICE_JOBS.length + 2 + newOrderJobs.length);
+    expect(c.jobs).toBe(WINCHOICE_JOBS.length + newOrderJobs.length);
+    expect([c['jobs.lead'], c['jobs.inspection'], c['jobs.proposal'], c['jobs.won'], c['jobs.installed'], c['jobs.lost']]).toEqual([3, 2, 3, 2 + newOrderJobs.length - newInstalled, 1 + newInstalled, 1]);
     expect(c.appointments).toBe(3);
     expect(c.calls).toBe(2);
     expect(c.conversations).toBe(4);
@@ -123,6 +128,25 @@ describe('the WinChoice demo company', () => {
     // The photos are stored, so the order sheet's thumbnails load.
     const photo = await winchoice.get(`/api/window-measurements/${measurementId}/uploads/${order.lines[1].uploadId}`);
     expect(photo.status).toBe(200);
+
+    // The back office is on for WinChoice (and off for Summit Ridge), with quotes of drawn units and one order in each stage.
+    expect((await winchoice.get('/api/auth/me')).body.company.backofficeEnabled).toBe(true);
+    expect((await summitOwner.get('/api/auth/me')).body.company.backofficeEnabled).toBe(false);
+    expect((await summitOwner.get('/api/backoffice/orders')).status).toBe(404);
+    expect(c.backofficeQuotes).toBe(3 + WINCHOICE_BACKOFFICE_ORDERS.length);
+    expect(c.backofficeOrders).toBe(10);
+    const board = (await winchoice.get('/api/backoffice/orders')).body as { stage: string; daysInStage: number; events: { stage: string }[]; units: number; totalCents: number }[];
+    expect(new Set(board.map((o) => o.stage)).size).toBe(10);
+    expect(board.every((o) => o.totalCents > 0 && o.units > 0 && o.events.length >= 1)).toBe(true);
+    const quotes = (await winchoice.get('/api/backoffice/quotes')).body as { status: string; units: number }[];
+    expect(quotes.filter((x) => x.status === 'draft')).toHaveLength(2);
+    expect(quotes.filter((x) => x.status === 'presented')).toHaveLength(1);
+    expect(quotes.every((x) => x.units > 0)).toBe(true);
+    // The first quote starts from the measured Ridgeway windows.
+    const ridgeway = (await winchoice.get('/api/backoffice/quotes?jobId=' + (await owner.query(`select id from jobs where company_id = $1 and property_id in (select id from properties where address_line = '305 Ridgeway Dr')`, [first.companyId])).rows[0].id)).body as { id: string }[];
+    const fromMeasured = (await winchoice.get(`/api/backoffice/quotes/${ridgeway[0]!.id}`)).body;
+    expect(fromMeasured.designs.length).toBeGreaterThan(0);
+    expect(fromMeasured.designs.every((d: { sizeSource: { kind: string } }) => d.sizeSource.kind === 'measured')).toBe(true);
 
     const second = await seedWinChoiceWorld(t.deps.pools, ownerUrl, now, opts);
     expect(second).toEqual({ created: false, companyId: first.companyId, counts: first.counts });

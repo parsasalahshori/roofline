@@ -242,7 +242,7 @@ describe('sign-up', () => {
     expect(me.status).toBe(200);
     expect(me.body).toEqual({
       user: { id: res.body.user.id, email: 'owner@example.com', name: 'Olive Owner', emailVerified: false },
-      company: { id: res.body.company.id, name: 'Summit Roofing', slug: 'summit-roofing', status: 'trial' },
+      company: { backofficeEnabled: false, id: res.body.company.id, name: 'Summit Roofing', slug: 'summit-roofing', status: 'trial' },
       role: 'owner',
       companies: [{ id: res.body.company.id, name: 'Summit Roofing' }],
     });

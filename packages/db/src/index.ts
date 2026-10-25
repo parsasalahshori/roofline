@@ -106,6 +106,7 @@ export { type CompanyLocation, companyLocation } from './repos/location.ts';
 export {
   getStepText,
   insertStepText,
+  insertDirectText,
   isOptedOut,
   lockNextDueText,
   lockRecipient,
@@ -291,3 +292,4 @@ export * from './repos/web-lead.ts';
 export * from './repos/instant-quote.ts';
 export * from './repos/homeowner.ts';
 export * from './repos/window-scans.ts';
+export * from './repos/backoffice.ts';

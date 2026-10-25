@@ -2,6 +2,7 @@ import { getHomeownerMeasurement, getQuoteEstimate, scansForRequest, getWindowCa
 import {
   buildHomeownerQuote,
   HOMEOWNER_APP_SOURCE,
+  HOMEOWNER_STAGE_FOR,
   type HomeownerBooking,
   type HomeownerEstimate,
   type HomeownerHome,
@@ -170,14 +171,17 @@ export function statusOf(request: HomeownerRequestRow, progress: HomeownerProgre
   if (ordered) stage = 'ordered';
   const installed = progress?.jobStage === 'installed';
   if (installed) stage = 'installed';
+  // A back office order, when the job has one, says where the job is (the office moves it through its stages).
+  const bo = progress?.backoffice ?? null;
+  if (bo !== null) stage = HOMEOWNER_STAGE_FOR[bo.stage];
   return {
     stage,
     dates: {
       requestedAt: request.createdAt.toISOString(),
       visit: iso(progress?.visit?.startsAt),
-      measuredAt: iso(progress?.repMeasuredAt),
-      orderedAt: ordered ? iso(order.sentAt ?? order.readyAt) : null,
-      installedAt: installed ? iso(progress?.jobUpdatedAt) : null,
+      measuredAt: iso(bo !== null ? bo.measuredAt : progress?.repMeasuredAt),
+      orderedAt: bo !== null ? iso(bo.orderedAt) : ordered ? iso(order.sentAt ?? order.readyAt) : null,
+      installedAt: bo !== null ? iso(bo.installedAt) : installed ? iso(progress?.jobUpdatedAt) : null,
     },
     ...(progress?.repName != null && progress.repName !== '' && { rep: { name: firstName(progress.repName) } }),
     timeZone,

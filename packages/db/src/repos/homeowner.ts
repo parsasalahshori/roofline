@@ -1,5 +1,5 @@
 import { and, desc, eq, gt, inArray, isNotNull, isNull, ne } from 'drizzle-orm';
-import { type HomeownerCallbackReason, HOMEOWNER_APP_SOURCE, type QuoteProduct, type WindowAdjustments } from '@roofline/shared';
+import { type HomeownerCallbackReason, HOMEOWNER_APP_SOURCE, type OrderStage, type QuoteProduct, type WindowAdjustments } from '@roofline/shared';
 import {
   appointments,
   homeownerRequests,
@@ -12,6 +12,7 @@ import type { TenantContext, Tx } from '../tenant.ts';
 import { addActivity } from './activities.ts';
 import { audit } from './audit.ts';
 import { memberNames } from './appointments.ts';
+import { jobOrderProgress } from './backoffice.ts';
 import { getProperty } from './properties.ts';
 import { createWindowMeasurement, notHomeownerMeasurement, type WindowMeasurementRow } from './window-measurements.ts';
 import { US_MAP_CENTER } from './measurements.ts';
@@ -242,6 +243,11 @@ export type HomeownerProgress = {
   repMeasuredAt: Date | null;
   /** A factory order made since the request was sent for the address's windows: 'draft' | 'ready' | 'sent', and when it became ready / was sent. */
   order: { status: string; readyAt: Date | null; sentAt: Date | null } | null;
+  /**
+   * The back office order for the job (WinChoice): its stage and the times it first reached measured, ordered and installed. When
+   * it exists it is the authority for what the homeowner sees (HOMEOWNER_STAGE_FOR); null for a company without the back office.
+   */
+  backoffice: { stage: OrderStage; measuredAt: Date | null; orderedAt: Date | null; installedAt: Date | null } | null;
 };
 
 /** The newest few of the company's own window measurements of the address that the progress looks at. */
@@ -318,5 +324,6 @@ export async function homeownerProgress(tx: Tx, ctx: TenantContext, request: Hom
     repName,
     repMeasuredAt,
     order,
+    backoffice: filed.jobId === null ? null : await jobOrderProgress(tx, ctx, filed.jobId),
   };
 }

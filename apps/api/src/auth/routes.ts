@@ -1,7 +1,7 @@
 import { type ErrorRequestHandler, type Request, type Response, Router } from 'express';
 import { toE164 } from '@roofline/shared';
 import { z } from 'zod';
-import { audit, insertDefaultSettings, setCompanyLocation, type TenantContext, withTenant } from '@roofline/db';
+import { audit, getBackofficeEnabled, insertDefaultSettings, setCompanyLocation, type TenantContext, withTenant } from '@roofline/db';
 import {
   type AuthCompany,
   type AuthUser,
@@ -703,13 +703,19 @@ export function authRoutes(deps: AppDeps, logError: (err: unknown, path: string)
     res.json({ ok: true });
   });
 
+  /** Whether the company has the WinChoice back office on (the web shell shows its nav from this). */
+  const backofficeOn = (companyId: string): Promise<boolean> => {
+    const ctx: TenantContext = { companyId, userId: null, role: 'system', canApproveSpend: false };
+    return withTenant(pools, ctx, (tx) => getBackofficeEnabled(tx, ctx));
+  };
+
   /** What `/me`, accepting an invite and switching company all answer: who, where, in which role, and every company they can switch to. */
   async function accountBody(userId: string, companyId: string) {
     const summary = await getAccountSummary(system, userId, companyId);
     if (!summary) throw new AppError(401, MESSAGES.signIn);
     return {
       user: userBody(summary.user),
-      company: companyBody(summary.company),
+      company: { ...companyBody(summary.company), backofficeEnabled: await backofficeOn(companyId) },
       role: summary.role,
       companies: summary.companies,
     };

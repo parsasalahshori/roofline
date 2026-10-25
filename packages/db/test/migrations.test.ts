@@ -261,6 +261,44 @@ describe('schema', () => {
     expect(jobs!.def).toContain("'front_desk'");
   });
 
+  test('the back office tables are tenant tables with RLS forced and same-company links, and company_settings has its switch, price book and settings', async () => {
+    const tables = ['backoffice_quotes', 'backoffice_orders', 'backoffice_order_events'] as const;
+    expect([...TENANT_TABLES]).toEqual(expect.arrayContaining([...tables]));
+    for (const table of tables) {
+      const [cls] = await ownerQuery<{ relrowsecurity: boolean; relforcerowsecurity: boolean }>(`select relrowsecurity, relforcerowsecurity from pg_class where oid = $1::regclass`, [`public.${table}`]);
+      expect(cls, table).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
+      const policies = await ownerQuery<{ policyname: string }>(`select policyname from pg_policies where schemaname = 'public' and tablename = $1`, [table]);
+      expect(policies.map((p) => p.policyname), table).toContain('tenant_isolation');
+    }
+    const cons = await ownerQuery<{ conname: string }>(
+      `select conname from pg_constraint where conrelid in ('public.backoffice_quotes'::regclass, 'public.backoffice_orders'::regclass, 'public.backoffice_order_events'::regclass)`,
+    );
+    expect(cons.map((c) => c.conname)).toEqual(
+      expect.arrayContaining([
+        'backoffice_quotes_company_job_fk',
+        'backoffice_quotes_status_check',
+        'backoffice_quotes_tier_check',
+        'backoffice_quotes_discount_check',
+        'backoffice_orders_company_job_fk',
+        'backoffice_orders_company_quote_fk',
+        'backoffice_orders_company_quote_uniq',
+        'backoffice_orders_company_window_order_fk',
+        'backoffice_orders_stage_check',
+        'backoffice_order_events_company_order_fk',
+        'backoffice_order_events_stage_check',
+      ]),
+    );
+    const cols = await ownerQuery<{ column_name: string; column_default: string | null; is_nullable: string }>(
+      `select column_name, column_default, is_nullable from information_schema.columns
+        where table_schema = 'public' and table_name = 'company_settings' and column_name in ('backoffice_enabled', 'product_catalog', 'backoffice') order by 1`,
+    );
+    expect(cols).toEqual([
+      { column_name: 'backoffice', column_default: null, is_nullable: 'YES' },
+      { column_name: 'backoffice_enabled', column_default: 'false', is_nullable: 'NO' },
+      { column_name: 'product_catalog', column_default: null, is_nullable: 'YES' },
+    ]);
+  });
+
   test('D1 tables are tenant tables with RLS forced', async () => {
     const d1Tables = ['conversations', 'calls', 'conversation_turns', 'claim_intakes', 'blocked_numbers'] as const;
     expect([...TENANT_TABLES]).toEqual(expect.arrayContaining([...d1Tables]));

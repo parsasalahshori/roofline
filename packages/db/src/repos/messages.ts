@@ -500,3 +500,34 @@ export async function stepTextCounts(tx: Tx, ctx: TenantContext, stepId: string)
   }
   return counts;
 }
+
+/**
+ * Records one informational text to a customer that belongs to no step and no Front Desk conversation (an order update
+ * from the back office). The caller has asked the gate (buildGateRequest + textStateFor) and passes its answer; the row
+ * is then sent by sendQueuedText when `queued`, or by the dispatcher when `scheduled`. Returns the new row's id.
+ */
+export async function insertDirectText(
+  tx: Tx,
+  ctx: TenantContext,
+  i: { customerId: string; body: string; toE164: string | null; dedupeKey: string },
+  state: TextState,
+  now: Date,
+): Promise<string> {
+  const [row] = await tx
+    .insert(messages)
+    .values({
+      companyId: ctx.companyId,
+      customerId: i.customerId,
+      channel: 'sms',
+      direction: 'out',
+      purpose: 'informational',
+      body: i.body,
+      toE164: i.toE164,
+      dedupeKey: i.dedupeKey,
+      ...stateColumns(state),
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning({ id: messages.id });
+  return row!.id;
+}
