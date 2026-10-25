@@ -6,6 +6,7 @@ import { FeedWindow } from '../features/agents/FeedWindow.tsx';
 import { WaitingWindow } from '../features/agents/WaitingWindow.tsx';
 import { ApprovalsList } from '../features/approvals/ApprovalsList.tsx';
 import { AppointmentWindow } from '../features/appointments/AppointmentWindow.tsx';
+import { backofficeRoutes } from '../features/backoffice/routes.tsx';
 import { CalendarWindow } from '../features/calendar/CalendarWindow.tsx';
 import { ReviewRoute } from '../features/approvals/Review.tsx';
 import { AcceptInvite } from '../features/auth/AcceptInvite.tsx';
@@ -104,6 +105,7 @@ const routes: RouteObject[] = [
           { path: 'settings/setup/texting', element: <Settings subpage={<TextingSetup />} subpageKey="texting" /> },
           { path: 'settings/:tab', element: <Settings /> },
           { path: 'today', element: <TodayPage /> },
+          ...backofficeRoutes,
           // Anything else
           { path: '*', element: <NotFoundWindow /> },
             ],
