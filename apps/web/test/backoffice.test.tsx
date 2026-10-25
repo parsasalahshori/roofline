@@ -102,7 +102,7 @@ function renderApp(path: string) {
   return { router, user: userEvent.setup() };
 }
 
-const ON = { ...ACCOUNT, backofficeEnabled: true };
+const ON = { ...ACCOUNT, company: { ...ACCOUNT.company, backofficeEnabled: true } };
 
 describe('back office navigation', () => {
   it('shows the Back office entry when the company has it and the role may use it', async () => {
@@ -117,7 +117,7 @@ describe('back office navigation', () => {
     renderApp('/');
     expect(await within(await screen.findByRole('navigation', { name: rail.label })).findByRole('link', { name: copy.nav })).toBeInTheDocument();
     cleanup();
-    signedIn({ ...ACCOUNT, backofficeEnabled: false });
+    signedIn({ ...ACCOUNT, company: { ...ACCOUNT.company, backofficeEnabled: false } });
     renderApp('/');
     const nav = await screen.findByRole('navigation', { name: rail.label });
     await within(nav).findByRole('link', { name: 'Jobs' });
@@ -125,7 +125,7 @@ describe('back office navigation', () => {
   });
 
   it('sends a person home from the back office when it is off, and a rep away from Settings', async () => {
-    signedIn({ ...ACCOUNT, backofficeEnabled: false });
+    signedIn({ ...ACCOUNT, company: { ...ACCOUNT.company, backofficeEnabled: false } });
     const { router } = renderApp('/backoffice/products');
     await waitFor(() => expect(router.state.location.pathname).toBe('/'));
     cleanup();

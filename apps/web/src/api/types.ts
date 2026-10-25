@@ -18,7 +18,14 @@ import type {
  */
 
 export type User = { id: string; email: string; name: string; emailVerified: boolean };
-export type CompanySummary = { id: string; name: string; slug: string; status: CompanyStatus };
+export type CompanySummary = {
+  id: string;
+  name: string;
+  slug: string;
+  status: CompanyStatus;
+  /** From /me only: on for companies with the WinChoice back office (products and pricing, designer, orders). */
+  backofficeEnabled?: boolean;
+};
 
 /** What signing in answers. `Account` (from /me) adds the role and the companies to switch between. */
 export type SignInResult = { user: User; company: CompanySummary };
@@ -29,8 +36,6 @@ export type Account = {
   company: CompanySummary;
   role: Role;
   companies: { id: string; name: string }[];
-  /** On for companies with the WinChoice back office (products and pricing, designer, orders). */
-  backofficeEnabled?: boolean;
 };
 
 export type StepView = {
