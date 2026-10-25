@@ -8,6 +8,7 @@ import { applyMeasuredScan, scanSizeProblem } from '../../estimator/window-scan-
 import { describeErrorForLog } from '../../errors.ts';
 import type { JobMeta } from '../../jobs/queue.ts';
 import { systemContext } from '../../permissions.ts';
+import { UUID } from '../../validate.ts';
 import { type AiOutcome, runAiFrames } from './ai.ts';
 import { type ColmapOutput } from './colmap.ts';
 import { combineRefinement } from './combine.ts';
@@ -96,6 +97,8 @@ type Work = {
  * could not be done, and that is recorded and falls back to the first result.
  */
 export async function runScanRefine(deps: AppDeps, companyId: string, scanRowId: string, meta: JobMeta): Promise<void> {
+  // A job that names no scan has nothing to do (and nothing a retry could fix)
+  if (typeof scanRowId !== 'string' || !UUID.test(scanRowId)) return;
   const ctx = systemContext(companyId);
   const claimed = await claim(deps, ctx, scanRowId, meta);
   if (claimed === null) return;

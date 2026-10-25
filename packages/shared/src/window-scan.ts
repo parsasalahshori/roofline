@@ -816,8 +816,8 @@ export type ScanDetailView = {
 export type ScanPoseSource = 'arkit' | 'colmap';
 export const SCAN_REFINE_STATES = ['queued', 'running', 'done', 'failed'] as const;
 export type ScanRefineState = (typeof SCAN_REFINE_STATES)[number];
-/** What happened to the AI on one frame. `ok`: a mask and a believable quad. */
-export const SCAN_AI_STATES = ['ok', 'low_quality', 'no_quad', 'no_estimate', 'not_visible', 'error'] as const;
+/** What happened to the AI on one frame. `ok`: a mask and a believable quad (with marks near where the window is). */
+export const SCAN_AI_STATES = ['ok', 'low_quality', 'off_target', 'no_quad', 'no_estimate', 'not_visible', 'error'] as const;
 export type ScanAiState = (typeof SCAN_AI_STATES)[number];
 
 /** A frame's AI result as stored: the box SAM was asked about, the mask it gave, how good the quad fitted to it is. */
@@ -833,7 +833,7 @@ export type ScanFrameAi = {
   prompt: 'projected' | 'owlv2' | null;
   /** Object store key of the mask PNG (tinted, transparent elsewhere), null when there is none. */
   maskKey: string | null;
-  /** Marks this frame gave (0 or 4). */
+  /** Marks this frame gave (0 to 4: a corner the AI finds far from where the window is expected is left out). */
   marks: number;
   ms: number;
   note: string | null;

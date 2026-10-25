@@ -301,7 +301,7 @@ describe('Scan review screen: the server\u2019s refinement', () => {
     expect(screen.queryByRole('region', { name: scanReview.cloudTitle })).toBeNull();
   });
 
-  it('the grid shows the AI masks on the frames, with a switch for all of them, and the 3D rebuild as two scatters', async () => {
+  it('the grid shows the AI masks on the frames, with a switch for all of them, and the 3D rebuild as three scatters', async () => {
     const view = refined('needs_review', refinement());
     const { user } = render_('/scans/s1', { 'GET /api/window-scans/s1': () => ({ body: view }), 'GET /api/window-scans/s1/refinement/cloud': () => ({ body: CLOUD }) });
     const toggle = await screen.findByRole('switch', { name: scanReview.maskLabelAll });
@@ -311,7 +311,8 @@ describe('Scan review screen: the server\u2019s refinement', () => {
     const cloud = await screen.findByRole('region', { name: scanReview.cloudTitle });
     expect(await within(cloud).findByRole('img', { name: scanReview.cloudLabel(scanReview.cloudTop) })).toBeTruthy();
     expect(within(cloud).getByRole('img', { name: scanReview.cloudLabel(scanReview.cloudSide) })).toBeTruthy();
-    // 3 points in each, a diamond for each of the four corners, a square for each of the nine cameras
+    expect(within(cloud).getByRole('img', { name: scanReview.cloudLabel(scanReview.cloudFront) })).toBeTruthy();
+    // 3 points in each, a square for each of the nine cameras
     const top = within(cloud).getByRole('img', { name: scanReview.cloudLabel(scanReview.cloudTop) });
     expect(top.querySelectorAll('circle')).toHaveLength(3);
     expect(top.querySelectorAll('rect')).toHaveLength(9);

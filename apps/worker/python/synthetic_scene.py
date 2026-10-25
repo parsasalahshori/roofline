@@ -8,7 +8,10 @@ World = ARKit's: metres, +Y up, the wall is the plane z = 0 facing +z, cameras s
 Images are drawn at half the native size (960 x 720 for 1920 x 1440 intrinsics) on purpose: that exercises the
 "scale the intrinsics to the picture" rule of docs/windows/scan-contract.md.
 
-    python synthetic_scene.py --out DIR [--seed 7] [--no-noise]
+    python synthetic_scene.py --out DIR [--seed 7] [--no-noise] [--skew 0.05]
+
+`--skew` moves the bottom-right corner of the opening by that many metres (right and up), so the window really is not a rectangle:
+a scan that no amount of refining can make pass (the reviewer's screen needs one that stays open).
 """
 
 from __future__ import annotations
@@ -24,7 +27,7 @@ from PIL import Image
 
 M_PER_IN = 0.0254
 NATIVE = {"fx": 1500.0, "fy": 1500.0, "cx": 960.0, "cy": 720.0, "width": 1920, "height": 1440}
-IMG_W, IMG_H = 960, 720
+IMG_W, IMG_H = 960, 720  # the default picture size; `--full` draws the native 1920 x 1440 instead
 
 
 def look_at(eye, target):
@@ -103,8 +106,9 @@ def wood_texture(x, y):
 
 
 class Scene:
-    def __init__(self, width_in=34.625, height_in=55.75, center=(0.0, 1.45), recess=0.10):
+    def __init__(self, width_in=34.625, height_in=55.75, center=(0.0, 1.45), recess=0.10, skew=0.0):
         self.width_in, self.height_in = width_in, height_in
+        self.skew = skew
         self.w, self.h = width_in * M_PER_IN, height_in * M_PER_IN
         self.cx, self.cy = center
         self.recess = recess
@@ -115,14 +119,24 @@ class Scene:
 
     @property
     def corners(self):
-        """TL, TR, BR, BL of the opening in the wall plane (z = 0)."""
-        return np.array([[self.x0, self.y1, 0.0], [self.x1, self.y1, 0.0], [self.x1, self.y0, 0.0], [self.x0, self.y0, 0.0]])
+        """TL, TR, BR, BL of the opening in the wall plane (z = 0); `skew` moves the bottom right one right and up."""
+        return np.array([[self.x0, self.y1, 0.0], [self.x1, self.y1, 0.0], [self.x1 + self.skew, self.y0 + self.skew, 0.0], [self.x0, self.y0, 0.0]])
 
-    def render(self, cam_to_world, ss=2):
-        """RGB uint8 (IMG_H, IMG_W, 3) of the scene from the camera, ss x ss supersampled."""
+    def inside(self, x, y):
+        """Whether (x, y) on the wall is inside the opening (a convex quad: every edge has the point on its right)."""
+        c = self.corners
+        ok = np.ones(np.shape(x), bool)
+        for i in range(4):
+            a, b = c[i], c[(i + 1) % 4]
+            ok &= ((b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0])) <= 0
+        return ok
+
+    def render(self, cam_to_world, ss=2, size=(IMG_W, IMG_H)):
+        """RGB uint8 (h, w, 3) of the scene from the camera, ss x ss supersampled."""
         k = NATIVE
-        sx, sy = k["width"] / IMG_W, k["height"] / IMG_H
-        n = IMG_W * ss, IMG_H * ss
+        img_w, img_h = size
+        sx, sy = k["width"] / img_w, k["height"] / img_h
+        n = img_w * ss, img_h * ss
         px = (np.arange(n[0]) + 0.5) / ss
         py = (np.arange(n[1]) + 0.5) / ss
         gx, gy = np.meshgrid(px * sx, py * sy)
@@ -136,7 +150,7 @@ class Scene:
         with np.errstate(divide="ignore", invalid="ignore"):
             t_wall = np.where(dz < 0, (0.0 - o[2]) / dz, np.inf)
         hx, hy = o[0] + d[..., 0] * t_wall, o[1] + d[..., 1] * t_wall
-        in_open = (hx > self.x0) & (hx < self.x1) & (hy > self.y0) & (hy < self.y1)
+        in_open = self.inside(hx, hy)
         # wall
         wall = ~in_open & np.isfinite(t_wall) & (t_wall > 0)
         img[wall] = brick_texture(hx[wall], hy[wall])
@@ -145,7 +159,7 @@ class Scene:
         with np.errstate(divide="ignore", invalid="ignore"):
             t_pane = np.where(dz < 0, (-self.recess - o[2]) / dz, np.inf)
         qx, qy = o[0] + d[..., 0] * t_pane, o[1] + d[..., 1] * t_pane
-        pane_ok = in_open & (t_pane > 0) & (qx > self.x0) & (qx < self.x1) & (qy > self.y0) & (qy < self.y1)
+        pane_ok = in_open & (t_pane > 0) & self.inside(qx, qy)
         img[pane_ok] = pane_texture(qx[pane_ok], qy[pane_ok])
         tbest[pane_ok] = t_pane[pane_ok]
         reveal = in_open & ~pane_ok & (t_wall > 0)
@@ -168,7 +182,7 @@ class Scene:
         # a soft light fall-off so the exposure is not flat
         img *= (0.92 + 0.08 * fbm(hx * 1.3, hy * 1.3, 77)[..., None])
         # box downsample
-        img = img.reshape(IMG_H, ss, IMG_W, ss, 3).mean(axis=(1, 3))
+        img = img.reshape(img_h, ss, img_w, ss, 3).mean(axis=(1, 3))
         return np.clip(img, 0, 255).astype(np.uint8)
 
 
@@ -195,15 +209,16 @@ def default_cameras(scene: Scene):
     return cams
 
 
-def build(out_dir: Path, seed=7, noise=True, width_in=34.625, height_in=55.75):
+def build(out_dir: Path, seed=7, noise=True, width_in=34.625, height_in=55.75, skew=0.0, full=False):
     rng = np.random.default_rng(seed)
-    scene = Scene(width_in, height_in)
+    scene = Scene(width_in, height_in, skew=skew)
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "images").mkdir(exist_ok=True)
+    size, ss = ((NATIVE["width"], NATIVE["height"]), 1) if full else ((IMG_W, IMG_H), 2)
     frames, marks, truth_frames = [], [], {}
     for frame_id, kind, corner, eye, target in default_cameras(scene):
         true_pose = look_at(eye, target)
-        Image.fromarray(scene.render(true_pose)).save(out_dir / "images" / f"{frame_id}.jpg", quality=92)
+        Image.fromarray(scene.render(true_pose, ss=ss, size=size)).save(out_dir / "images" / f"{frame_id}.jpg", quality=92)
         # What the phone reports: the true pose with tracking noise (3 mm, 0.05 degrees)
         reported = true_pose.copy()
         if noise:
@@ -216,8 +231,8 @@ def build(out_dir: Path, seed=7, noise=True, width_in=34.625, height_in=55.75):
                 "kind": kind,
                 "corner": corner,
                 "path": f"images/{frame_id}.jpg",
-                "imageWidth": IMG_W,
-                "imageHeight": IMG_H,
+                "imageWidth": size[0],
+                "imageHeight": size[1],
                 "cameraTransform": to_column_major(reported),
                 "intrinsics": dict(NATIVE),
             }
@@ -255,6 +270,8 @@ if __name__ == "__main__":
     ap.add_argument("--out", required=True)
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--no-noise", action="store_true")
+    ap.add_argument("--skew", type=float, default=0.0)
+    ap.add_argument("--full", action="store_true", help="draw the pictures at the native 1920 x 1440 (the default is half that)")
     a = ap.parse_args()
-    d = build(Path(a.out), seed=a.seed, noise=not a.no_noise)
+    d = build(Path(a.out), seed=a.seed, noise=not a.no_noise, skew=a.skew, full=a.full)
     print(f"wrote {len(d['frames'])} frames, {len(d['marks'])} marks to {os.path.abspath(a.out)}")

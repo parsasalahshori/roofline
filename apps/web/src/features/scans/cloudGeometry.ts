@@ -2,14 +2,14 @@ import type { ScanVec3 } from '@roofline/shared';
 
 /*
  * The reviewer's look at the refinement's 3D: the aligned COLMAP points, the triangulated window corners and the cameras, drawn as a
- * plain top and side scatter (no 3D library); the server thins the points to a few thousand. World space is ARKit's: metres, +Y up. Seen from above the window wall runs along
+ * plain scatter from the front (facing the wall), from above and from the side (no 3D library); the server thins the points to a few thousand. World space is ARKit's: metres, +Y up. Seen from above the window wall runs along
  * the horizontal (x) and depth (z) is down the page, so the wall is on top and the cameras below it; seen from the side (from +x)
  * depth runs right to left and height up.
  */
 
 export type CloudPoint = { x: number; y: number; z: number; r: number; g: number; b: number };
-export type CloudView = 'top' | 'side';
-export const CLOUD_VIEWS: readonly CloudView[] = ['top', 'side'];
+export type CloudView = 'front' | 'top' | 'side';
+export const CLOUD_VIEWS: readonly CloudView[] = ['front', 'top', 'side'];
 
 /** The server's points ([x, y, z, r, g, b] each) as points. */
 export const cloudPoints = (rows: readonly (readonly number[])[]): CloudPoint[] =>
@@ -17,6 +17,7 @@ export const cloudPoints = (rows: readonly (readonly number[])[]): CloudPoint[] 
 
 /** A world point on the page, metres: u to the right, v down. */
 export function cloudUv(view: CloudView, p: readonly [number, number, number]): [number, number] {
+  if (view === 'front') return [p[0], -p[1]];
   return view === 'top' ? [p[0], p[2]] : [-p[2], -p[1]];
 }
 

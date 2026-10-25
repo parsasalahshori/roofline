@@ -208,6 +208,25 @@ const PLANS: Plan[] = [
 
 const uuid = (n: number) => `5eed0000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`;
 
+/** Waits for a scan the server is refining; null when it is not (the refinement is off). */
+async function waitForRefinement(staff: (method: string, path: string) => Promise<{ status: number; body: Json }>): Promise<{ status: string; ms: number; line: string } | null> {
+  const t0 = Date.now();
+  let seenRefinement = false;
+  for (;;) {
+    const d = must(await staff('GET', ''), [200], 'detail').body;
+    if (d.refinement) seenRefinement = true;
+    if (d.status !== 'processing') {
+      if (!seenRefinement) return null;
+      const r = d.refinement as { poseSource: string | null; frames: { state: string }[]; timings: { aiMs: number; colmapMs: number } | null; colmap: { registered: number; total: number; alignmentRmsCm: number | null } | null };
+      const ok = r.frames.filter((f) => f.state === 'ok').length;
+      const line = `${r.poseSource ?? 'no'} poses${r.colmap ? ` ${r.colmap.registered}/${r.colmap.total} frames ${r.colmap.alignmentRmsCm ?? '-'} cm` : ''}, AI ${ok}/${r.frames.length} frames${r.timings ? `, AI ${(r.timings.aiMs / 1000).toFixed(1)} s, COLMAP ${(r.timings.colmapMs / 1000).toFixed(1)} s` : ''}`;
+      return { status: d.status as string, ms: Date.now() - t0, line };
+    }
+    if (Date.now() - t0 > 600_000) throw new Error('the scan is still processing after 10 minutes');
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+}
+
 async function main(): Promise<void> {
   const login = must(await call('POST', '/api/auth/login', { body: LOGIN }), [200], 'sign in');
   const cookie = login.cookie!;
@@ -288,6 +307,13 @@ async function main(): Promise<void> {
       }
       const [{ id }] = (await db.query('select id from window_scans where scan_id = $1', [scanId])).rows as [{ id: string }];
       const staff = (method: string, path: string, body?: unknown) => call(method, `/api/window-scans/${id}${path}`, { cookie, body });
+      // With the server's refinement on (SCAN_REFINE=on) the scan waits as `processing` until the worker is done with it
+      const waited = await waitForRefinement(staff);
+      if (waited !== null) log(`${plan.room} · ${plan.label}: refined in ${(waited.ms / 1000).toFixed(1)} s -> ${waited.status}${waited.line ? ` (${waited.line})` : ''}`);
+      if (waited !== null && !['needs_review', 'in_review'].includes(waited.status)) {
+        log(`${plan.room} · ${plan.label}: the refinement decided it (${waited.status}); the "${plan.stage}" stage is skipped.`);
+        continue;
+      }
       if (plan.expedite) must(await staff('POST', '/expedite', {}), [200], 'expedite');
       if (plan.stage === 'in_review') {
         // A junior reviewer nudged a mark: the scan is theirs now

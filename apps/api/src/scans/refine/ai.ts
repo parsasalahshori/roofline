@@ -83,6 +83,7 @@ export async function runAiFrames(inputs: readonly AiFrameInput[], o: AiOptions)
       let point: [number, number] | null = null;
       let prompt: ScanFrameAi['prompt'] = null;
       let projected: [number, number][] | null = null;
+      let tolerancePx = Infinity;
       if (o.estimateM !== null) {
         const pb = scanProjectedBox(o.estimateM, frame, SCAN_REFINE_LIMITS.boxPad);
         if (pb === null) {
@@ -93,6 +94,8 @@ export async function runAiFrames(inputs: readonly AiFrameInput[], o: AiOptions)
         point = pb.point;
         projected = pb.corners;
         prompt = 'projected';
+        // A corner the AI finds this far from where the window is expected is not that corner (a mask that took in the wall next to it)
+        tolerancePx = Math.max(SCAN_REFINE_LIMITS.minCornerTolPx, SCAN_REFINE_LIMITS.cornerTolShare * Math.min(Math.max(...pb.corners.map((c) => c[0])) - Math.min(...pb.corners.map((c) => c[0])), Math.max(...pb.corners.map((c) => c[1])) - Math.min(...pb.corners.map((c) => c[1]))));
       } else if (o.detector.configured && o.detector.detectInterior !== undefined) {
         const found = pickWindowBox(await o.detector.detectInterior(jpeg), { x: 0.5, y: 0.5 });
         if (found !== null) {
@@ -125,23 +128,29 @@ export async function runAiFrames(inputs: readonly AiFrameInput[], o: AiOptions)
       // 3. The quad, in the scan's corner order, in native pixels
       const quadPx = seg.quad.corners.map((c) => [c[0] * W, c[1] * H] as [number, number]);
       const ordered = scanOrderQuad(quadPx, frame, projected);
-      const good = seg.quad.quality >= SCAN_REFINE_LIMITS.minAiQuality;
-      const rec: ScanFrameAi = {
+      const fitOk = seg.quad.quality >= SCAN_REFINE_LIMITS.minAiQuality;
+      const marks: ScanMark[] = [];
+      if (fitOk) {
+        ordered.forEach((p, i) => {
+          const inPicture = p[0] >= -2 && p[1] >= -2 && p[0] <= W + 2 && p[1] <= H + 2;
+          const near = projected === null || Math.hypot(p[0] - projected[i]![0], p[1] - projected[i]![1]) <= tolerancePx;
+          if (inPicture && near) marks.push({ frameId: frame.frameId, corner: i as 0 | 1 | 2 | 3, x: round(p[0], 2), y: round(p[1], 2), source: 'ai' });
+        });
+      }
+      const state: ScanFrameAi['state'] = !fitOk ? 'low_quality' : marks.length === 0 ? 'off_target' : 'ok';
+      done({
         frameId: frame.frameId,
-        state: good ? 'ok' : 'low_quality',
+        state,
         quality: round(seg.quad.quality, 3),
         maskScore: round(seg.quad.maskScore, 3),
         box: boxOut,
         prompt,
         maskKey,
-        marks: good ? 4 : 0,
+        marks: marks.length,
         ms: now() - t0,
-        note: good ? null : `The fit to the mask is weak (${round(seg.quad.quality, 2)}); its corners are not used.`,
-      };
-      if (good) {
-        ordered.forEach((p, i) => out.marks.push({ frameId: frame.frameId, corner: i as 0 | 1 | 2 | 3, x: round(p[0], 2), y: round(p[1], 2), source: 'ai' }));
-      }
-      done(rec);
+        note: !fitOk ? `The fit to the mask is weak (${round(seg.quad.quality, 2)}); its corners are not used.` : marks.length === 0 ? 'The mask is not where the window should be; its corners are not used.' : marks.length < 4 ? `${4 - marks.length} corner${marks.length === 3 ? '' : 's'} of the mask are not where the window should be and are not used.` : null,
+      });
+      out.marks.push(...marks);
     } catch (err) {
       done(failed(frame.frameId, 'error', err instanceof Error ? err.message.slice(0, 200) : 'The AI failed on this frame.', now() - t0));
     }

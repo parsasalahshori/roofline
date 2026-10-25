@@ -522,6 +522,11 @@ the review that follows, is `docs/windows/scan-contract.md`; the math is `packag
 RooflineCore checks the same JSON fixtures, `packages/shared/test/fixtures/window-scan/`); the route is
 `apps/api/src/public/homeowner-scans.ts`; the tests are `apps/api/test/window-scans.test.ts`.
 
+> With `SCAN_REFINE=on` the server refines every scan after it is stored (COLMAP poses and SAM 2 on every frame,
+> `docs/windows/scan-contract.md` "Refinement"): the answer's `status` is then `processing` and its `result` is the first
+> server result; the window shows "Being checked by WinChoice" until the job has accepted the scan or sent it to review. The
+> phone handles it like `needs_review` (its `serverStatus` is a free string).
+
 1. Upload every frame's JPEG first with `POST .../uploads` (one `uploadId` per frame; depth is not sent).
 2. Send the scan (JSON, at most **1 MB**, every body key strict):
 
@@ -704,7 +709,9 @@ then submits; a senior reviewer (the owner or the office: whoever may mark windo
 `approve_factory_order`) finalises it **Measured** (every gate must pass, or the senior writes a reason to override) or
 **Visit required** (a reason is needed). A scan is due 24 hours after it arrives; an expedited scan goes to the top and out of
 that deadline. The staff API (`/api/window-scans`) and the statuses are in `docs/windows/scan-contract.md` ("Review") and its
-"Implementation notes".
+"Implementation notes". When the server refines scans (`SCAN_REFINE=on`), the reviewer's screen also shows how: the AI's mask on
+every frame, the AI's marks next to the phone's, the COLMAP result (frames registered, how closely it lines up with the phone), a
+top and side view of the 3D points with the window's corners, and a "Re-run refinement" button ("Refinement" in the contract).
 
 ## The instant quote page and the app
 

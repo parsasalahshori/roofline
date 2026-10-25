@@ -157,6 +157,7 @@ export const scanReview = {
   aiState: {
     ok: 'AI found the window',
     low_quality: 'AI mask is a weak fit',
+    off_target: 'AI mask is not on the window',
     no_quad: 'AI mask has no four sides here',
     no_estimate: 'Nothing to prompt the AI with',
     not_visible: 'Window not in this picture',
@@ -172,6 +173,7 @@ export const scanReview = {
   maskAlt: (frame: string) => `AI mask of ${frame}`,
   cloudTitle: '3D rebuild',
   cloudBody: (n: number) => `${n.toLocaleString('en-US')} COLMAP points in the phone’s world, metres`,
+  cloudFront: 'Facing the wall',
   cloudTop: 'From above',
   cloudSide: 'From the side',
   cloudNone: 'No points: COLMAP did not give a model for this scan.',

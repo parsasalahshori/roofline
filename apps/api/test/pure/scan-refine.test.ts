@@ -144,6 +144,22 @@ describe('the AI on every frame', () => {
     expect(out.masks.has('r1')).toBe(true);
   });
 
+  test('corners the AI finds far from where the window is are not marks: a mask on the wrong thing gives none, a sill in the mask costs only the corners it moves', async () => {
+    const f = scene.frames[0]!;
+    const right = quadOf(f)!;
+    const shift = (dx: number, dy: number, which: number[]) => right.map((c, i) => (which.includes(i) ? [c[0] + dx / f.intrinsics.width, c[1] + dy / f.intrinsics.height] : c)) as NonNullable<SegmentAnswer>['corners'];
+    const off = await runAiFrames(jpegs([f]), { segmenter: new FakeWindowSegmenter(() => ({ corners: shift(400, 300, [0, 1, 2, 3]) })), detector: new NoDetector(), estimateM: truth, maskKey: keyOf });
+    expect(off.frames[0]).toMatchObject({ state: 'off_target', marks: 0, maskKey: 'k/r1' });
+    expect(off.marks).toEqual([]);
+    // two bottom corners 25 px low (a sill in the mask) are still near: all four are marks (the robust step decides about them)
+    const sill = await runAiFrames(jpegs([f]), { segmenter: new FakeWindowSegmenter(() => ({ corners: shift(0, 25, [2, 3]) })), detector: new NoDetector(), estimateM: truth, maskKey: keyOf });
+    expect(sill.frames[0]).toMatchObject({ state: 'ok', marks: 4 });
+    // two bottom corners 300 px low are not
+    const part = await runAiFrames(jpegs([f]), { segmenter: new FakeWindowSegmenter(() => ({ corners: shift(0, 300, [2, 3]) })), detector: new NoDetector(), estimateM: truth, maskKey: keyOf });
+    expect(part.frames[0]).toMatchObject({ state: 'ok', marks: 2 });
+    expect(part.marks.map((m) => m.corner)).toEqual([0, 1]);
+  });
+
   test('a phone held upright (the picture is on its side): the quad is put in gravity order by the projected window', async () => {
     const base = scene.frames[2]!;
     const c = Math.cos(Math.PI / 2);

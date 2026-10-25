@@ -39,6 +39,9 @@ export const SCAN_REFINE_LIMITS = {
   minAiQuality: 0.6,
   /** A prompt box less than this share inside the picture is a close-up of a corner, not a view of the window. */
   minVisibleShare: 0.5,
+  /** An AI corner further than max(`minCornerTolPx`, `cornerTolShare` x the window's smaller side on that frame) from where the current window puts it is not used. */
+  minCornerTolPx: 30,
+  cornerTolShare: 0.2,
 } as const;
 
 /* ------------------------------------------------------------------------------------------------------------------ */

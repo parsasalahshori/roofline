@@ -274,7 +274,7 @@ function Body({ scan }: { scan: ScanDetailView }) {
         {frame === null ? (
           <>
             {hasMasks ? (
-              <ul className={apple.group}>
+              <ul className={`${apple.group} ${styles.maskSwitch}`}>
                 <li className={styles.toggleRow}>
                   <Toggle label={scanReview.maskLabelAll} checked={showMask} onChange={setShowMask} />
                 </li>

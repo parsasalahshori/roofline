@@ -141,3 +141,95 @@ What was decided where the contract is silent, and where the code lives:
 - **Staff API additions**: `GET /api/window-scans?status=` takes `open` (default), `done`, `all`, one status, or several
   separated by commas, and answers `{ scans, counts }` (each scan has a `thumbUrl`); `GET /:id/frames/:frameId/image` serves a
   frame's picture (the request's upload, behind the session, like window photos).
+
+## Refinement (server, after every scan upload)
+
+Medida rebuilds the scene in 3D from the photos with COLMAP and runs a segmentation mask on every frame. The server does both as a
+REFINEMENT that runs after the phone's scan is stored. Nothing changes on the phone: the contract above is unchanged, every new
+field is additive, and the phone's own result (and the server's first result) stays available to compare.
+
+Switched on with `SCAN_REFINE=on` (default off) and useful only with an AI model (`WINDOW_SEGMENTER=sam2`, models in
+`WINDOW_MODEL_DIR`/`SAM_MODEL_DIR`) and/or COLMAP (`SCAN_COLMAP_PYTHON` = a python with pycolmap, numpy and pillow; optional
+`SCAN_COLMAP_SCRIPT`, `SCAN_COLMAP_TIMEOUT_S`, default 900). With neither on the machine a scan is accepted or sent to review at once, as before.
+
+### Flow
+
+1. `POST .../scans` stores the scan as `processing` (the homeowner still reads "Being checked by WinChoice"; the window keeps its
+   size) and answers the phone with the FIRST server result (`status: 'processing'`, `result` = the triangulation of the phone's
+   marks). It queues the pg-boss job `scan-refine` (`{ companyId, scanRowId }`, one waiting per scan). If the queue is not
+   reachable the scan falls back at once to what the first result says.
+2. The job (apps/api/src/scans/refine/run.ts) runs, side by side: **the AI on every frame** and **COLMAP** (below).
+3. It merges, triangulates again and works out the result with the unchanged level fit and seven gates. A scan that was
+   `processing` is then `measured` (every gate passes and the size is one a window can have: the window takes it) or
+   `needs_review`. A scan a person is already working on (`needs_review`, `in_review`, `junior_done`; a reviewer pressed
+   "Re-run refinement") keeps its status. `server_result` is the refined result from then on (the effective one): the first
+   one is kept in `refinement.firstResult`.
+4. A refinement that cannot be done never strands a scan: it records why (`refinement.state = 'failed'`) and a `processing`
+   scan takes the decision the first result gave. Only a database error is retried (pg-boss, 5 attempts).
+
+### The AI on every frame (SAM 2)
+
+For each frame the current triangulated window rectangle (`server_result.cornersM`) is projected into it with that frame's pose
+(`scanProject`), the bounding box is padded 8% and sent to SAM 2 as the box, with the box's centre as a positive point. OWLv2
+is asked for a box only where there is no estimate yet. The mask is fitted with the window quad (`providers/window-quad.ts`);
+a believable quad (fit quality >= 0.6) becomes four marks with source `ai`, put in the scan's corner order (the picture is the
+native landscape image, so a phone held upright shows the window on its side: the quad's corners are matched to the projected
+window, or to gravity when there is none). The mask goes to the object store as a small tinted PNG (at most 640 px wide) at
+`<companyId>/window-scans/<scan>/masks/<frameId>.png`; a close-up of a corner usually has a mask and no quad (the window runs
+off the picture), which is recorded as `no_quad`.
+
+Per corner and frame the marks are combined: a reviewer's mark (source `user`) stands alone; an AI mark within 8 px of the
+phone's replaces it; further off, both stay as candidates and the robust triangulation chooses.
+
+### COLMAP (apps/worker/python/colmap_refine.py)
+
+SIFT features and exhaustive matching on the frames' JPEGs, then incremental mapping, with every camera's intrinsics KNOWN and
+held fixed: a PINHOLE camera from `fx, fy, cx, cy` multiplied by `imageWidth / intrinsics.width` (and the same for height),
+because the JPEG may be a resized copy of the native image the intrinsics describe.
+
+Conventions: an ARKit camera looks along -z with +y up; a COLMAP camera looks along +z with +y DOWN. With
+`D = diag(1, -1, -1)`: `cam_from_world(COLMAP) = D * inverse(cameraTransform)` and `cameraTransform = inverse(cam_from_world) * D`
+(the self-test in the script and the synthetic scene check both). COLMAP's model is unscaled and in its own frame: a similarity
+transform (Umeyama on the camera centres; when the centres lie on a line the rotation comes from the camera orientations)
+puts it in ARKit's world, in metres. The alignment's RMS over the camera centres is reported.
+
+The refined poses (COLMAP's, transformed) replace ARKit's when **at least 4 frames are registered and the alignment RMS is under
+2 cm** (and the cameras' orientation RMS is under 2 degrees: a turn round a line of camera centres is invisible in the centres).
+A frame COLMAP put more than 5 cm or 5 degrees from the phone's keeps ARKit's pose. If COLMAP's poses fit the marks worse than
+ARKit's (more gates fail), ARKit's are kept. Otherwise ARKit's poses stay, and the reason is on the scan. The aligned sparse
+points are kept as an ascii PLY (`.../cloud.ply`).
+
+### Robust triangulation
+
+Each corner is triangulated from ALL its candidate marks: a pair of candidates from two frames makes a hypothesis, the point most
+frames agree with (within 4 px) wins, the corner is met again from the frames that agree, and a mark landing more than 8 px from it
+is thrown out while at least 3 marks remain. A reviewer's own marks are never thrown out. Then the level rectangle and the seven
+gates run exactly as above (`computeRefinedScan` in `packages/shared/src/window-scan-refine.ts`).
+
+### What is stored and shown
+
+- `window_scans.refinement` (migration 0049, `ScanRefinementRecord`): `state` (`queued | running | done | failed`), `trigger`
+  (`upload | rerun`), times, `firstResult`, `poseSource` (`arkit | colmap`) and `poseNote`, `poses` (the refined camera
+  transforms by frame id), `colmap` (registered/total, alignment RMS cm, scale, method, points, timings, reason), per-frame AI
+  (`frames`: state, fit quality, SAM score, prompt box, mask key, ms), `aiMarks`, `alternatives` (candidates that lost),
+  `dropped` (marks thrown out), the cloud key and `timings`.
+- `server_result.refined` (additive on `ScanResult`): pose source, frames on COLMAP poses, alignment RMS, AI frames and marks,
+  marks used and dropped, and the size before refinement.
+- `marks` become the marks the refined result is worked out from (one per frame and corner); `marksOriginal` stays the phone's.
+  The staff screen's live triangulation and `PATCH .../marks` use the refined poses (`frames[].cameraTransform` in the detail is
+  the effective one, `frames[].poseSource` says where it is from), so what the reviewer sees is what the server computes.
+
+Staff API additions: `GET /api/window-scans/:id` carries `refinement` (`ScanRefineView`), `mayRefine` and per frame `poseSource`
+and `ai` (with `maskUrl`); `POST /api/window-scans/:id/refine` runs it again on an open scan (409 `already_running`,
+409 `scan_closed`, 503 `refine_unavailable`; a reviewer's marks are kept); `GET /:id/frames/:frameId/mask` (PNG);
+`GET /:id/refinement/cloud` (`{ count, points: [[x, y, z, r, g, b]] }`, thinned for the screen) and `/cloud.ply` (the file).
+Statuses and history: `processing` shows in the counts and not in the review queue until the job is done; history gains
+`refined` (with a one-line summary) and `refine_failed`.
+
+### Limits worth knowing
+
+- The AI is prompted from the first result: if the phone's marks were far off, the first rectangle (and the box) is too, and the
+  AI may find nothing; a re-run starts from the refined rectangle.
+- A mask quad is a noisier corner than a phone's snapped mark; an AI mark that agrees (8 px) replaces the phone's, as asked.
+- Metric scale comes from ARKit's camera centres (COLMAP has none of its own): a scale drift in the phone's tracking carries over.
+- Close-ups give masks and no quad; planar scenes with little texture may not register in COLMAP (then ARKit's poses are kept).

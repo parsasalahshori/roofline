@@ -30,7 +30,7 @@ function Panel({ view, points, scene }: { view: CloudView; points: readonly Clou
   }, [view, points, scene]);
   const { fit } = geo;
   const bar = scaleBar(fit.scale);
-  const label = view === 'top' ? scanReview.cloudTop : scanReview.cloudSide;
+  const label = view === 'front' ? scanReview.cloudFront : view === 'top' ? scanReview.cloudTop : scanReview.cloudSide;
   // The window's outline: the four corners in order, closed
   const outline = geo.corners.length === 4 ? geo.corners.map((c) => toPanel(fit, c).join(',')).join(' ') : null;
   return (
@@ -59,7 +59,7 @@ function Panel({ view, points, scene }: { view: CloudView; points: readonly Clou
   );
 }
 
-/** The 3D rebuild as two plain scatters (from above and from the side) with the window's corners and the cameras on them. */
+/** The 3D rebuild as plain scatters (facing the wall, from above and from the side) with the window's corners and the cameras on them. */
 export function PointCloud({ url, scene, count }: { url: string; scene: CloudScene; count: number }) {
   const cloud = useCloud(url);
   return (

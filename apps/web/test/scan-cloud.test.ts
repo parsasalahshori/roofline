@@ -12,6 +12,8 @@ describe('the 3D rebuild’s geometry', () => {
   it('from above the wall runs along the page and depth goes down it; from the side depth runs right to left and height up', () => {
     expect(cloudUv('top', [0.5, 1.4, -3])).toEqual([0.5, -3]);
     expect(cloudUv('side', [0.5, 1.4, -3])).toEqual([3, -1.4]);
+    // facing the wall: x to the right, height up the page
+    expect(cloudUv('front', [0.5, 1.4, -3])).toEqual([0.5, -1.4]);
     // a camera in front of the wall (z = 0) is below it (larger v) from above, and to the left of it from the side
     expect(cloudUv('top', [0, 1, 0])[1]).toBeGreaterThan(cloudUv('top', [0, 1, -3])[1]);
     expect(cloudUv('side', [0, 1, 0])[0]).toBeLessThan(cloudUv('side', [0, 1, -3])[0]);

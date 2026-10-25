@@ -2,7 +2,6 @@ import { execFile } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterAll, describe, expect, test } from 'vitest';
 import { COLMAP_SCRIPT, type ColmapOutput, PythonColmapRunner } from '@roofline/api';
