@@ -13,77 +13,72 @@ struct CallbackScreen: View {
     private var reason: CallbackCopy.Reason { CallbackCopy.reason(store.callbackReason) }
 
     var body: some View {
-        VStack(spacing: 0) {
-            WCNavBar(title: store.brand.wordmark, wordmark: true, onBack: { store.pop() })
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    WCHeadline(text: "We'll call you with your price", subtitle: "\(shortAddress). Usually the same day.")
-                    InfoPanel(icon: .home, lead: reason.lead, text: reason.rest, tile: true).padding(.top, 20)
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Phone").wc(15, .semibold, relativeTo: .subheadline).foregroundStyle(Theme.ink2)
-                        TextField("", text: $phone, prompt: Text("(501) 555-0142").foregroundColor(Theme.ink3))
-                            .keyboardType(.phonePad)
-                            .textContentType(.telephoneNumber)
-                            .focused($focused)
-                            .wc(19, relativeTo: .body)
-                            .foregroundStyle(Theme.ink)
-                            .padding(.horizontal, 14)
-                            .frame(minHeight: 50)
-                            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(phoneError == nil ? (focused ? Theme.blue : Theme.line2) : Theme.bad, lineWidth: focused || phoneError != nil ? 2 : 1))
-                            .onChange(of: phone) { _, new in
-                                let formatted = PhoneFormat.progressive(new)
-                                if formatted != new { phone = formatted }
-                                phoneError = nil
-                            }
-                            .accessibilityLabel("Phone number")
-                        if let e = phoneError {
-                            Text(e).wc(13, .medium, relativeTo: .footnote).foregroundStyle(Theme.badText)
+        @Bindable var store = store
+        Form {
+            Section {
+                HStack(alignment: .top, spacing: 14) {
+                    Image(systemName: WCIcon.home.symbol)
+                        .symbolRenderingMode(.hierarchical)
+                        .font(.title2)
+                        .foregroundStyle(Theme.ink2)
+                        .frame(width: 32)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(reason.lead).font(.headline).foregroundStyle(Theme.ink)
+                        Text(reason.rest).font(.subheadline).foregroundStyle(Theme.ink2)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, 4)
+                .accessibilityElement(children: .combine)
+            } header: {
+                JourneyHeader { JourneyLead("\(shortAddress). Usually the same day.") }
+            }
+            Section {
+                TextField("", text: $phone, prompt: Text("(501) 555-0142").foregroundColor(Theme.ink2))
+                    .keyboardType(.phonePad)
+                    .textContentType(.telephoneNumber)
+                    .focused($focused)
+                    .font(.title3)
+                    .frame(minHeight: Theme.minTap)
+                    .onChange(of: phone) { _, new in
+                        let formatted = PhoneFormat.progressive(new)
+                        if formatted != new { phone = formatted }
+                        phoneError = nil
+                    }
+                    .accessibilityLabel("Phone number")
+            } header: {
+                Text("Phone").foregroundStyle(Theme.ink2)
+            } footer: {
+                if let e = phoneError {
+                    Text(e).font(.footnote.weight(.medium)).foregroundStyle(Theme.badText)
+                }
+            }
+            if store.features.bestTime {
+                Section {
+                    Picker("Best time to call", selection: $store.bestTime) {
+                        Text("Any time").tag(String?.none)
+                        ForEach(["morning", "afternoon", "evening"], id: \.self) { t in
+                            Text(t.capitalized).tag(String?.some(t))
                         }
                     }
-                    .padding(.top, 22)
-                    if store.features.bestTime { bestTimeRow.padding(.top, 18) }
-                    WCScrollFooter()
+                    .frame(minHeight: Theme.minTap)
                 }
-                .padding(.horizontal, Theme.gutter)
-                .padding(.bottom, 24)
             }
-            .scrollDismissesKeyboard(.interactively)
+            JourneyListFooter()
         }
+        .scrollDismissesKeyboard(.interactively)
+        .hiNav(title: "We'll call you", display: .large)
         .wcFooter {
             WCPrimaryButton(title: CallbackCopy.button(bestTime: store.features.bestTime ? store.bestTime : nil)) { submit() }
             FinePrint(text: "We only call about this request.")
         }
-        .wcScreenChrome()
         .onAppear { if phone.isEmpty { phone = store.contactDraft.phone } }
     }
 
     private var shortAddress: String {
         let parts = store.address.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
         return parts.prefix(2).joined(separator: ", ")
-    }
-
-    private var bestTimeRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Best time to call").wc(15, .semibold, relativeTo: .subheadline).foregroundStyle(Theme.ink2)
-            HStack(spacing: 12) {
-                ForEach(["morning", "afternoon", "evening"], id: \.self) { t in
-                    Button {
-                        store.bestTime = store.bestTime == t ? nil : t
-                    } label: {
-                        let on = store.bestTime == t
-                        Text(t.capitalized)
-                            .wc(17, on ? .semibold : .regular, relativeTo: .body)
-                            .foregroundStyle(on ? Theme.blue : Theme.ink)
-                            .frame(maxWidth: .infinity, minHeight: 48)
-                            .background(on ? Theme.blueTint : Theme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(on ? Theme.blue : Theme.line2, lineWidth: on ? 2 : 1))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(store.bestTime == t ? .isSelected : [])
-                }
-            }
-        }
     }
 
     private func submit() {
@@ -109,59 +104,30 @@ struct CallbackSentScreen: View {
     }
 
     var body: some View {
-        ScrollView {
-        VStack(alignment: .leading, spacing: 0) {
-            ZStack {
-                Circle().fill(Theme.ok)
-                IconView(icon: .phone, size: 24, weight: 1.7).foregroundStyle(.white)
-            }
-            .frame(width: 56, height: 56)
-            .padding(.top, 8)
-            .accessibilityHidden(true)
-            Text("We'll call you")
-                .wcHeading(30, .heavy, relativeTo: .largeTitle)
-                .foregroundStyle(Theme.ink)
-                .padding(.top, 20)
-                .accessibilityAddTraits(.isHeader)
-            Text(lead).wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink2).padding(.top, 6).fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: 0) {
+        List {
+            Section {
                 row(icon: .pin, title: store.address, detail: "Your home")
-                RowDivider(inset: 60)
                 row(icon: .phone, title: phone ?? "The number you gave us", detail: "We only call about this request")
-            }
-            .wcCard(radius: 16)
-            .padding(.top, 20)
-            WCScrollFooter()
-        }
-        .padding(.horizontal, Theme.gutter)
-        .padding(.top, 14)
-        .padding(.bottom, 16)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        }
-        .scrollBounceBehavior(.basedOnSize)
-        .background(Theme.ground.ignoresSafeArea())
-        .wcFooter {
-            if let tel = store.companyPhone.flatMap(Self.telURL) {
-                Link(destination: tel) {
-                    HStack(spacing: 8) {
-                        IconView(icon: .phone, size: 16, weight: 1.9)
-                        Text("Call us instead").wc(17, .semibold, relativeTo: .headline)
-                    }
-                    .foregroundStyle(Theme.blue)
-                    .frame(maxWidth: .infinity, minHeight: Theme.secondaryButtonHeight)
-                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.line2, lineWidth: 1))
+            } header: {
+                JourneyHeader {
+                    FilledSymbol(name: "phone.circle.fill", fill: Theme.okText)
+                        .font(.system(size: 56))
+                    JourneyLead(lead)
                 }
             }
-            Button {
-                confirmStartOver = true
-            } label: {
-                Text("Start a new request")
-                    .wc(15, .medium, relativeTo: .subheadline)
-                    .foregroundStyle(Theme.ink3)
-                    .frame(maxWidth: .infinity, minHeight: Theme.minTap)
-                    .contentShape(Rectangle())
+            JourneyListFooter()
+        }
+        .listStyle(.insetGrouped)
+        .hiNav(title: "We'll call you", display: .large, showsBack: false)
+        .wcFooter {
+            if let tel = store.companyPhone.flatMap(Self.telURL) {
+                CallUsButton(url: tel)
             }
+            Button("Start a new request") {
+                confirmStartOver = true
+            }
+            .frame(maxWidth: .infinity, minHeight: Theme.minTap)
+            .contentShape(Rectangle())
         }
         .confirmationDialog("Start a new request?", isPresented: $confirmStartOver, titleVisibility: .visible) {
             Button("Start a new request", role: .destructive) { store.startOver() }
@@ -169,7 +135,6 @@ struct CallbackSentScreen: View {
         } message: {
             Text("This one stays with \(store.brand.name); the app will just stop showing it.")
         }
-        .toolbar(.hidden, for: .navigationBar)
     }
 
     private var lead: String {
@@ -178,19 +143,40 @@ struct CallbackSentScreen: View {
 
     private func row(icon: WCIcon, title: String, detail: String) -> some View {
         HStack(spacing: 14) {
-            IconTile(icon: icon, size: 36, iconSize: 18)
+            Image(systemName: icon.symbol)
+                .symbolRenderingMode(.hierarchical)
+                .font(.title3)
+                .foregroundStyle(Theme.ink2)
+                .frame(width: 28)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).wc(16, .semibold, relativeTo: .body).foregroundStyle(Theme.ink)
-                Text(detail).wc(13, relativeTo: .footnote).foregroundStyle(Theme.ink3)
+                Text(title).font(.body.weight(.semibold)).foregroundStyle(Theme.ink)
+                Text(detail).font(.footnote).foregroundStyle(Theme.ink2)
             }
             Spacer(minLength: 0)
         }
-        .padding(14)
+        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
     }
 
     static func telURL(_ phone: String) -> URL? {
         let digits = phone.filter { $0.isNumber || $0 == "+" }
         return digits.isEmpty ? nil : URL(string: "tel:\(digits)")
+    }
+}
+
+/// "Call us instead": a bordered button that opens the phone app.
+private struct CallUsButton: View {
+    let url: URL
+
+    var body: some View {
+        Link(destination: url) {
+            Label("Call us instead", systemImage: WCIcon.phone.symbol)
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .tint(Theme.ink)
     }
 }

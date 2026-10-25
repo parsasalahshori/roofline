@@ -1,32 +1,100 @@
 import RooflineCore
 import SwiftUI
 
-/// 01b What to measure: windows or roof, one per request. A tap on a card goes straight on to the address.
+/// 01b What to measure: windows or roof, one per request. A tap on a row goes straight on to the address.
 struct ServiceScreen: View {
     @Environment(HomeownerStore.self) private var store
 
     var body: some View {
-        VStack(spacing: 0) {
-            WCNavBar(title: store.brand.wordmark, wordmark: true, onBack: { store.pop() })
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    WCHeadline(text: "What do you want to measure?", subtitle: "Pick one. You can measure the other one after.")
-                    StepProgress(step: 1).padding(.bottom, 8)
-                    ForEach(store.offeredServices, id: \.self) { service in
-                        ServiceChoice(service: service) { store.chooseService(service) }
-                    }
-                    WCScrollFooter()
+        List {
+            Section {
+                ForEach(store.offeredServices, id: \.self) { service in
+                    ServiceChoice(service: service) { store.chooseService(service) }
                 }
-                .padding(.horizontal, Theme.gutter)
-                .padding(.bottom, 24)
+            } header: {
+                JourneyHeader {
+                    JourneyLead("Pick one. You can measure the other one after.")
+                    StepProgress(step: 1)
+                }
             }
+            JourneyListFooter()
         }
-        .wcScreenChrome()
+        .listStyle(.insetGrouped)
+        .hiNav(title: "What to measure", display: .large)
     }
 }
 
-/// One big card per service: icon tile, title, one line, a chevron. The whole card is the button.
+/// The lines under a large title (a lead sentence and, on the first steps, the progress bar): the header of the list's first
+/// section, pulled out to the title's own left edge and with its capital letters turned off. Shared by the journey screens that
+/// are lists.
+struct JourneyHeader<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) { content }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .textCase(nil)
+            .padding(.horizontal, -16)
+            .padding(.bottom, 6)
+    }
+}
+
+/// A lead sentence for `JourneyHeader`: body text in the secondary colour, or a heading when `heading` is set.
+struct JourneyLead: View {
+    let text: String
+    var heading = false
+
+    init(_ text: String, heading: Bool = false) {
+        self.text = text
+        self.heading = heading
+    }
+
+    var body: some View {
+        Text(text)
+            .font(heading ? Font.title3.weight(.semibold) : Font.body)
+            .foregroundStyle(heading ? Theme.ink : Theme.ink2)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(heading ? .isHeader : [])
+    }
+}
+
+/// A filled-shape SF Symbol (`checkmark.circle.fill`, `3.circle.fill`, `plus.circle.fill`) as a solid shape with a glyph cut out of it:
+/// a palette of two plain colours rather than the hierarchical look, whose shape is only half-strength (the accessibility audit
+/// reads the glyph against that pale shape and calls it low contrast). `fill` is the shape, `glyph` the mark on it (white in the
+/// light appearance, black in the dark one, so it reads on the lighter dark-mode colours too).
+struct FilledSymbol: View {
+    let name: String
+    let fill: Color
+    var glyph = Color(light: 0xFFFFFF, dark: 0x000000)
+
+    var body: some View {
+        Image(systemName: name)
+            .symbolRenderingMode(.palette)
+            .foregroundStyle(glyph, fill)
+            .accessibilityHidden(true)
+    }
+}
+
+/// The last section of a screen's `List`: the screen's footer buttons, when the text is too large to pin them (see `WCScrollFooter`).
+/// At ordinary sizes it draws nothing. Shared by the journey screens that are lists.
+struct JourneyListFooter: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        if typeSize.isAccessibilitySize {
+            Section {
+                WCScrollFooter()
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
+        }
+    }
+}
+
+/// One row per service, like a Settings row: a symbol, the title, one line, a chevron. The whole row is the button.
 struct ServiceChoice: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     let service: HomeownerService
     let action: () -> Void
 
@@ -59,22 +127,30 @@ struct ServiceChoice: View {
             Haptics.tap()
             action()
         }) {
-            HStack(spacing: 14) {
-                IconTile(icon: icon, size: 52, iconSize: 26)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title).wc(19, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
-                    Text(line).wc(14, relativeTo: .footnote).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
+            // At accessibility text sizes the symbol sits above the words (side by side they would get a narrow column)
+            AdaptiveStack(alignment: .center, spacing: 14) {
+                Image(systemName: icon.symbol)
+                    .symbolRenderingMode(.hierarchical)
+                    .font(.title2)
+                    .foregroundStyle(Theme.red)
+                    .frame(width: 36)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.headline).foregroundStyle(Theme.ink)
+                    Text(line).font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                IconView(icon: .chevRight, size: 18, weight: 2).foregroundStyle(Theme.ink3)
+                if !typeSize.isAccessibilitySize {
+                    Image(systemName: WCIcon.chevRight.symbol)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Theme.decor)
+                        .accessibilityHidden(true)
+                }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 18)
-            .frame(minHeight: 92)
-            .wcCard()
+            .padding(.vertical, 8)
+            .frame(minHeight: Theme.minTap)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title). \(line)")
         .accessibilityAddTraits(.isButton)

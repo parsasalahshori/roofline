@@ -10,60 +10,54 @@ struct RoomsScreen: View {
 
     var body: some View {
         let target = store.suggestedRoom
-        VStack(spacing: 0) {
-            WCNavBar(title: "Rooms", onBack: { store.pop() })
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    WCHeadline(text: "Go room by room", subtitle: "Pick a room, then measure each window in it. We count as you go.")
-                    GroupHeader(text: "Your rooms").padding(.top, 24)
-                    GroupCard {
-                        ForEach(Array(store.rooms.enumerated()), id: \.offset) { i, room in
-                            RoomRow(room: room, line: store.roomLine(room), done: store.roomHasWindows(room), suggested: room == target) { store.measure(room: room) }
-                            if i < store.rooms.count - 1 { RowDivider(inset: 56) }
-                        }
-                    }
-                    GroupHeader(text: "Add a room").padding(.top, 20)
-                    GroupCard {
-                        ForEach(Array(store.roomSuggestions.enumerated()), id: \.offset) { i, name in
-                            Button {
-                                if let added = store.addRoom(name) { Haptics.tap(); _ = added }
-                            } label: {
-                                HStack {
-                                    Text(name).wc(17, relativeTo: .body).foregroundStyle(Theme.ink)
-                                    Spacer()
-                                    IconView(icon: .plus, size: 20, weight: 1.9).foregroundStyle(Theme.blue)
-                                }
-                                .padding(.horizontal, 14)
-                                .frame(minHeight: 42)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Add \(name)")
-                            RowDivider()
-                        }
-                        TextField("", text: $typed, prompt: Text("Type a room name…").foregroundColor(Theme.ink3))
-                            .wc(17, relativeTo: .body)
-                            .foregroundStyle(Theme.ink)
-                            .focused($typing)
-                            .submitLabel(.done)
-                            .padding(.horizontal, 14)
-                            .frame(minHeight: 46)
-                            .onSubmit { addTyped() }
-                            .accessibilityLabel("Type a room name")
-                    }
-                    if store.lastMethod != nil, let room = target ?? store.rooms.first {
-                        Button("Change how I measure") { store.changeMethod(room: room) }
-                            .wc(16, .medium, relativeTo: .body).foregroundStyle(Theme.blue)
-                            .frame(maxWidth: .infinity, minHeight: Theme.minTap)
-                            .padding(.top, 12)
-                    }
-                    WCScrollFooter()
+        List {
+            Section {
+                ForEach(Array(store.rooms.enumerated()), id: \.offset) { _, room in
+                    RoomRow(room: room, line: store.roomLine(room), done: store.roomHasWindows(room), suggested: room == target) { store.measure(room: room) }
                 }
-                .padding(.horizontal, Theme.gutter)
-                .padding(.bottom, 24)
+            } header: {
+                JourneyHeader {
+                    JourneyLead("Pick a room, then measure each window in it. We count as you go.")
+                }
             }
-            .scrollDismissesKeyboard(.interactively)
+            Section {
+                ForEach(Array(store.roomSuggestions.enumerated()), id: \.offset) { _, name in
+                    Button {
+                        if let added = store.addRoom(name) { Haptics.tap(); _ = added }
+                    } label: {
+                        HStack {
+                            Text(name).font(.body).foregroundStyle(Theme.ink)
+                            Spacer()
+                            Image(systemName: WCIcon.plus.symbol)
+                                .font(.body.weight(.semibold))
+                                .accessibilityHidden(true)
+                        }
+                        .frame(minHeight: Theme.minTap)
+                        .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("Add \(name)")
+                }
+                TextField("", text: $typed, prompt: Text("Type a room name…").foregroundColor(Theme.ink2))
+                    .font(.body)
+                    .focused($typing)
+                    .submitLabel(.done)
+                    .frame(minHeight: Theme.minTap)
+                    .onSubmit { addTyped() }
+                    .accessibilityLabel("Type a room name")
+            } header: {
+                Text("Add a room").foregroundStyle(Theme.ink2)
+            }
+            if store.lastMethod != nil, let room = target ?? store.rooms.first {
+                Section {
+                    Button("Change how I measure") { store.changeMethod(room: room) }
+                        .frame(maxWidth: .infinity, minHeight: Theme.minTap)
+                }
+            }
+            JourneyListFooter()
         }
+        .listStyle(.insetGrouped)
+        .scrollDismissesKeyboard(.interactively)
+        .hiNav(title: "Go room by room", display: .large)
         .wcFooter {
             if let target = target {
                 WCPrimaryButton(title: "Measure \(target)") {
@@ -76,7 +70,6 @@ struct RoomsScreen: View {
                 WCSecondaryButton(title: "I'm done measuring") { store.showList() }
             }
         }
-        .wcScreenChrome()
     }
 
     private func addTyped() {
@@ -88,7 +81,9 @@ struct RoomsScreen: View {
     }
 }
 
+/// A room, as a row: a symbol (a green check once a window is measured in it), the name, what is measured, a chevron.
 private struct RoomRow: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     let room: String
     let line: String
     let done: Bool
@@ -97,27 +92,36 @@ private struct RoomRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
-                IconView(icon: done ? .check : .win, size: 18, weight: done ? 2 : 1.7)
-                    .foregroundStyle(done ? Theme.ok : Theme.ink)
-                    .frame(width: 30, height: 30)
-                    .background(done ? Theme.okTint : Theme.surface2, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(room).wc(17, .semibold, relativeTo: .body).foregroundStyle(Theme.ink)
-                    Text(line).wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink3)
+            AdaptiveStack(alignment: .center, spacing: 14) {
+                Group {
+                    if done {
+                        FilledSymbol(name: "checkmark.circle.fill", fill: Theme.okText)
+                    } else {
+                        Image(systemName: WCIcon.win.symbol).symbolRenderingMode(.hierarchical).foregroundStyle(Theme.ink2)
+                    }
+                }
+                .font(.title3)
+                .frame(width: 28)
+                .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(room).font(.body.weight(.semibold)).foregroundStyle(Theme.ink)
+                    Text(line).font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 if suggested && !done {
-                    Text("Measure").wc(16, relativeTo: .body).foregroundStyle(Theme.ink3)
+                    Text("Measure").font(.body).foregroundStyle(Theme.ink2)
                 }
-                IconView(icon: .chevRight, size: 16, weight: 2).foregroundStyle(Theme.ink3)
+                if !typeSize.isAccessibilitySize {
+                    Image(systemName: WCIcon.chevRight.symbol)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Theme.decor)
+                        .accessibilityHidden(true)
+                }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .frame(minHeight: 60)
+            .padding(.vertical, 4)
+            .frame(minHeight: Theme.minTap)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(room). \(line)")
         .accessibilityHint("Measure the windows in this room")

@@ -28,34 +28,31 @@ struct ResultsScreen: View {
     private var revealing: Bool { heroGeometry != nil && !alreadyRevealed && reveal.stage != .done }
 
     var body: some View {
-        VStack(spacing: 0) {
-            WCNavBar(title: store.brand.wordmark, wordmark: true, onBack: { store.pop() })
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    WCHeadline(text: "Here's your home")
-                    StepProgress(step: 3).padding(.bottom, 4)
-                    if let g = heroGeometry { heroCard(g) } else { homeCard }
-                    if store.services.contains(.windows) { windowsCard.revealed(cardsVisible, order: 0, reduceMotion: reduceMotion) }
-                    if store.services.contains(.roof) { roofCard.revealed(cardsVisible, order: store.services.contains(.windows) ? 1 : 0, reduceMotion: reduceMotion) }
-                    // Roof only: this is the result page (windows get theirs on the quote, after measuring)
-                    if !includesWindows, store.services.contains(.roof) {
-                        EstimateCallCard(service: .roof).revealed(cardsVisible, order: 1, reduceMotion: reduceMotion)
-                    }
-                    if store.offline {
-                        InfoPanel(icon: .info, text: "You're offline. We'll refresh this when you're back.", tint: Theme.warnTint, iconColor: Theme.warn)
-                    }
-                    WCScrollFooter()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                StepProgress(step: 3)
+                if let g = heroGeometry { heroCard(g) } else { homeCard }
+                if store.services.contains(.windows) { windowsCard.revealed(cardsVisible, order: 0, reduceMotion: reduceMotion) }
+                if store.services.contains(.roof) { roofCard.revealed(cardsVisible, order: store.services.contains(.windows) ? 1 : 0, reduceMotion: reduceMotion) }
+                // Roof only: this is the result page (windows get theirs on the quote, after measuring)
+                if !includesWindows, store.services.contains(.roof) {
+                    EstimateCallCard(service: .roof).revealed(cardsVisible, order: 1, reduceMotion: reduceMotion)
                 }
-                .padding(.horizontal, Theme.gutter)
-                .padding(.bottom, 24)
-                // A tap anywhere on the screen skips the reveal to the finished picture (a button still gets its tap too)
-                .simultaneousGesture(TapGesture().onEnded { if revealing { reveal.skip() } })
+                if store.offline {
+                    InfoPanel(icon: .info, text: "You're offline. We'll refresh this when you're back.").wcPanel()
+                }
+                WCScrollFooter()
             }
+            .padding(.horizontal, Theme.gutter)
+            .padding(.bottom, 24)
+            // A tap anywhere on the screen skips the reveal to the finished picture (a button still gets its tap too)
+            .simultaneousGesture(TapGesture().onEnded { if revealing { reveal.skip() } })
         }
+        .background(Theme.ground.ignoresSafeArea())
+        .hiNav(title: "Here's your home", display: .large)
         .wcFooter {
             WCPrimaryButton(title: includesWindows ? "Measure my windows" : "Continue", icon: includesWindows ? nil : .arrow) { store.continueFromResults() }
         }
-        .wcScreenChrome()
     }
 
     // MARK: Cards
@@ -78,17 +75,17 @@ struct ResultsScreen: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 changeButton
             }
-            .padding(.leading, 14).padding(.trailing, 14).padding(.vertical, 6)
+            .padding(.leading, 16).padding(.trailing, 8).padding(.vertical, 8)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .wcCard(radius: 16)
+        .background(Theme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
     }
 
     /// The street and, under it, "Irvine, CA · 2 floors · about 190 ft of outside wall".
     private var addressText: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(streetLine).wc(17, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
-            Text(detailLine).wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
+            Text(streetLine).font(.headline).foregroundStyle(Theme.ink)
+            Text(detailLine).font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)
     }
@@ -96,8 +93,6 @@ struct ResultsScreen: View {
     /// Back to the address screen to pick another home (the back arrow does the same, but this says what it is for).
     private var changeButton: some View {
         Button("Change") { store.pop() }
-            .wc(15, .semibold, relativeTo: .subheadline)
-            .foregroundStyle(Theme.blue)
             .frame(minWidth: Theme.minTap, minHeight: Theme.minTap)
             .contentShape(Rectangle())
             .accessibilityLabel("Change address")
@@ -114,8 +109,8 @@ struct ResultsScreen: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(10)
-        .wcCard(radius: 16)
+        .padding(12)
+        .wcCard()
     }
 
     private var streetLine: String {
@@ -138,20 +133,26 @@ struct ResultsScreen: View {
     }
 
     private var windowsCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
-                IconTile(icon: .win, size: 34, iconSize: 18, selected: true)
-                Text("Windows").wc(17, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
-                Spacer()
-                Text("Next").wc(15, .semibold, relativeTo: .subheadline).foregroundStyle(Theme.blue)
-                    .padding(.horizontal, 14).padding(.vertical, 6)
-                    .background(Theme.surface, in: Capsule())
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: WCIcon.win.symbol)
+                .symbolRenderingMode(.hierarchical)
+                .font(.title2)
+                .foregroundStyle(Theme.red)
+                .frame(width: 32)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text("Windows").font(.headline).foregroundStyle(Theme.ink)
+                    Spacer(minLength: 8)
+                    Text("Next").font(.subheadline).foregroundStyle(Theme.ink2)
+                    Image(systemName: WCIcon.chevRight.symbol).font(.footnote.weight(.semibold)).foregroundStyle(Theme.decor).accessibilityHidden(true)
+                }
+                windowsBody
             }
-            windowsBody
         }
-        .padding(14)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .wcCard(selected: true, radius: 16)
+        .wcCard()
         .accessibilityElement(children: .combine)
     }
 
@@ -168,45 +169,51 @@ struct ResultsScreen: View {
         } else {
             attributed += AttributedString("Measure each window with your iPhone for an exact quote. We'll count as you go.")
         }
-        return Text(attributed).wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+        return Text(attributed).font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var roofName: some View {
+        HStack(spacing: 14) {
+            Image(systemName: WCIcon.roof.symbol)
+                .symbolRenderingMode(.hierarchical)
+                .font(.title2)
+                .foregroundStyle(Theme.red)
+                .frame(width: 32)
+                .accessibilityHidden(true)
+            Text("Roof").font(.headline).foregroundStyle(Theme.ink)
+        }
     }
 
     private var roofCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             // The price sits beside the name when it fits, under it when it does not (large text), never cut or squeezed
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 12) {
-                    IconTile(icon: .roof, size: 34, iconSize: 18)
-                    Text("Roof").wc(17, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
+                    roofName
                     Spacer(minLength: 8)
                     roofPrice.fixedSize()
                 }
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 12) {
-                        IconTile(icon: .roof, size: 34, iconSize: 18)
-                        Text("Roof").wc(17, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
-                    }
+                    roofName
                     roofPrice.fixedSize()
                 }
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 12) {
-                        IconTile(icon: .roof, size: 34, iconSize: 18)
-                        Text("Roof").wc(17, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
-                    }
+                    roofName
                     roofPrice.lineLimit(2)
                 }
             }
-            Text(roofBody).wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+            Text(roofBody).font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, 46)
         }
-        .padding(14)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .wcCard(radius: 16)
+        .wcCard()
         .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder private var roofPrice: some View {
         if let r = store.roofEstimate {
-            Text(Money.range(r.low, r.high)).wcHeading(20, .heavy, relativeTo: .title3).foregroundStyle(Theme.ink)
+            Text(Money.range(r.low, r.high)).font(.title3.weight(.heavy)).monospacedDigit().foregroundStyle(Theme.ink)
         }
     }
 

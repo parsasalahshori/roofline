@@ -15,63 +15,55 @@ struct AddressScreen: View {
     private var hasAddress: Bool { typed.count >= 5 }
     private var showCard: Bool { store.addressPlace != nil || store.addressLocked || (hasAddress && !focused) }
 
+    /// The question this screen asks, and why: the lead under the title.
+    private var question: String { store.services.contains(.windows) ? "Where are the windows?" : "Where's your home?" }
+
+    private var subtitle: String {
+        store.services.contains(.windows)
+            ? "So we send the right local rep and check what your home's windows usually look like."
+            : "So we can measure your roof from above and send the right local rep."
+    }
+
+    private var showingSuggestions: Bool { !suggestions.isEmpty && focused }
+
     var body: some View {
-        @Bindable var store = store
-        VStack(spacing: 0) {
-            WCNavBar(title: store.brand.wordmark, wordmark: true, onBack: { store.pop() })
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    if store.services.contains(.windows) {
-                        WCHeadline(text: "Where are the windows?", subtitle: "So we send the right local rep and check what your home's windows usually look like.")
-                    } else {
-                        WCHeadline(text: "Where's your home?", subtitle: "So we can measure your roof from above and send the right local rep.")
-                    }
-                    StepProgress(step: 2).padding(.top, 14)
-                    field.padding(.top, 20)
-                    if let error = store.addressError {
-                        Text(error).wc(13, .medium, relativeTo: .footnote).foregroundStyle(Theme.badText).padding(.top, 8).padding(.horizontal, 4)
-                            .accessibilityLabel("Problem: \(error)")
-                        if error == LiveHomeownerAPI.offlineMessage {
-                            Button("Try again") {
-                                focused = false
-                                Task {
-                                    if !store.companyLoaded { await store.loadCompany() }
-                                    await store.confirmAddress()
-                                }
-                            }
-                            .wc(17, .semibold, relativeTo: .body)
-                            .foregroundStyle(Theme.blue)
-                            .frame(minHeight: Theme.minTap)
-                            .padding(.horizontal, 4)
-                        }
-                    }
-                    if !suggestions.isEmpty && focused {
-                        suggestionList.padding(.top, 8)
-                    } else {
-                        mapCard.padding(.top, 12)
-                        HStack(spacing: 10) {
-                            IconView(icon: .lock, size: 16)
-                            Text("We only use your address for this quote and your visit.").wc(13, relativeTo: .footnote)
-                        }
-                        .foregroundStyle(Theme.ink3)
-                        .padding(.top, 12)
-                        .padding(.horizontal, 4)
-                        .accessibilityElement(children: .combine)
-                    }
-                    WCScrollFooter()
+        List {
+            Section {
+                field
+                if let error = store.addressError { errorRows(error) }
+                if showingSuggestions {
+                    ForEach(Array(suggestions.enumerated()), id: \.offset) { _, place in suggestionRow(place) }
                 }
-                .padding(.horizontal, Theme.gutter)
-                .padding(.bottom, 24)
+            } header: {
+                JourneyHeader {
+                    VStack(alignment: .leading, spacing: 4) {
+                        JourneyLead(question, heading: true)
+                        JourneyLead(subtitle)
+                    }
+                    StepProgress(step: 2)
+                }
             }
-            .scrollDismissesKeyboard(.interactively)
+            if !showingSuggestions {
+                Section {
+                    mapRow
+                    addressRow
+                } footer: {
+                    Label("We only use your address for this quote and your visit.", systemImage: WCIcon.lock.symbol)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.ink2)
+                }
+            }
+            JourneyListFooter()
         }
+        .listStyle(.insetGrouped)
+        .scrollDismissesKeyboard(.interactively)
+        .hiNav(title: "Your address", display: .large)
         .wcFooter {
             WCPrimaryButton(title: "Yes, this is my home", isLoading: store.creating, isEnabled: hasAddress && !store.creating) {
                 focused = false
                 Task { await store.confirmAddress() }
             }
         }
-        .wcScreenChrome()
         .alert(
             "Start over at this address?",
             isPresented: Binding(get: { store.pendingAddressChange != nil }, set: { if !$0 { store.pendingAddressChange = nil } })
@@ -86,14 +78,18 @@ struct AddressScreen: View {
         }
     }
 
+    /// The address row: a pin, the field (a long address wraps to three lines instead of being cut off) and "use my location".
     private var field: some View {
         @Bindable var store = store
         return HStack(spacing: 10) {
-            IconView(icon: .pin, size: 20).foregroundStyle(Theme.ink3)
-            // A long address wraps (up to three lines) instead of being cut off at the edge
-            TextField("", text: $store.addressText, prompt: Text("Street address").foregroundColor(Theme.ink3), axis: .vertical)
+            Image(systemName: WCIcon.pin.symbol)
+                .symbolRenderingMode(.hierarchical)
+                .font(.title3)
+                .foregroundStyle(Theme.ink2)
+                .accessibilityHidden(true)
+            TextField("", text: $store.addressText, prompt: Text("Street address").foregroundColor(Theme.ink2), axis: .vertical)
                 .lineLimit(1...3)
-                .wc(18, relativeTo: .body)
+                .font(.body)
                 .foregroundStyle(Theme.ink)
                 .textContentType(.fullStreetAddress)
                 .textInputAutocapitalization(.words)
@@ -120,78 +116,94 @@ struct AddressScreen: View {
                 Button {
                     Task { await useLocation() }
                 } label: {
-                    IconView(icon: .target, size: 22).foregroundStyle(Theme.blue).frame(width: Theme.minTap, height: Theme.minTap)
+                    Image(systemName: "location")
+                        .font(.title3)
+                        .frame(width: Theme.minTap, height: Theme.minTap)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.borderless)
                 .accessibilityLabel("Use my current location")
             }
         }
-        .padding(.leading, 14)
-        .padding(.trailing, 4)
-        .padding(.vertical, 4)
-        .frame(minHeight: 54)
-        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(focused || showCard ? Theme.blue : Theme.line2, lineWidth: focused || showCard ? 2 : 1))
+        .frame(minHeight: Theme.minTap)
     }
 
-    private var suggestionList: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(suggestions.enumerated()), id: \.offset) { i, place in
-                Button {
-                    pick(place)
-                } label: {
-                    HStack(spacing: 12) {
-                        IconView(icon: .pin, size: 18).foregroundStyle(Theme.ink3)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(place.title).wc(16, .semibold, relativeTo: .body).foregroundStyle(Theme.ink)
-                            Text(AddressPlace.trimmedSubtitle(place.subtitle)).wc(13, relativeTo: .footnote).foregroundStyle(Theme.ink3)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 14)
-                    .frame(minHeight: 56)
-                    .contentShape(Rectangle())
+    /// A problem with the address, in words, under the field; "Try again" when the phone was offline.
+    @ViewBuilder private func errorRows(_ error: String) -> some View {
+        Text(error)
+            .font(.footnote.weight(.medium))
+            .foregroundStyle(Theme.badText)
+            .accessibilityLabel("Problem: \(error)")
+        if error == LiveHomeownerAPI.offlineMessage {
+            Button("Try again") {
+                focused = false
+                Task {
+                    if !store.companyLoaded { await store.loadCompany() }
+                    await store.confirmAddress()
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(place.title), \(AddressPlace.trimmedSubtitle(place.subtitle))")
-                if i < suggestions.count - 1 { Divider().padding(.leading, 44) }
             }
+            .buttonStyle(.borderless)
+            .frame(minHeight: Theme.minTap, alignment: .leading)
         }
-        .wcCard()
     }
 
-    private var mapCard: some View {
-        VStack(spacing: 0) {
-            Group {
-                if let c = store.addressPlace?.coordinate, CLLocationCoordinate2DIsValid(c) {
-                    AddressMap(coordinate: c)
-                } else {
-                    StyledMap(streetName: streetName, showPin: showCard)
-                }
-            }
-            .frame(height: 240)
+    private func suggestionRow(_ place: AddressPlace) -> some View {
+        Button {
+            pick(place)
+        } label: {
             HStack(spacing: 12) {
-                IconView(icon: .home, size: 22).foregroundStyle(Theme.ok)
+                Image(systemName: WCIcon.pin.symbol)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(Theme.ink2)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(cardTitle).wc(17, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
-                    Text(cardLine).wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink3)
+                    Text(place.title).font(.body.weight(.semibold)).foregroundStyle(Theme.ink)
+                    Text(AddressPlace.trimmedSubtitle(place.subtitle)).font(.footnote).foregroundStyle(Theme.ink2)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                if !store.addressLocked && showCard {
-                    Button("Edit") {
-                        store.addressPlace = nil
-                        focused = true
-                    }
-                    .wc(17, .medium, relativeTo: .body)
-                    .foregroundStyle(Theme.blue)
-                    .frame(minWidth: Theme.minTap, minHeight: Theme.minTap)
-                }
+                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(Theme.surface)
+            .frame(minHeight: Theme.minTap)
+            .contentShape(Rectangle())
         }
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
+        .accessibilityLabel("\(place.title), \(AddressPlace.trimmedSubtitle(place.subtitle))")
+    }
+
+    /// The map with the pin, edge to edge in its group.
+    private var mapRow: some View {
+        Group {
+            if let c = store.addressPlace?.coordinate, CLLocationCoordinate2DIsValid(c) {
+                AddressMap(coordinate: c)
+            } else {
+                StyledMap(streetName: streetName, showPin: showCard)
+            }
+        }
+        .frame(height: 240)
+        .listRowInsets(EdgeInsets())
+    }
+
+    /// Under the map: the home found, with "Edit".
+    private var addressRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: WCIcon.home.symbol)
+                .symbolRenderingMode(.hierarchical)
+                .font(.title2)
+                .foregroundStyle(Theme.ok)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(cardTitle).font(.headline).foregroundStyle(Theme.ink)
+                Text(cardLine).font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if !store.addressLocked && showCard {
+                Button("Edit") {
+                    store.addressPlace = nil
+                    focused = true
+                }
+                .buttonStyle(.borderless)
+                .frame(minWidth: Theme.minTap, minHeight: Theme.minTap)
+            }
+        }
+        .frame(minHeight: Theme.minTap)
         .accessibilityElement(children: .contain)
     }
 

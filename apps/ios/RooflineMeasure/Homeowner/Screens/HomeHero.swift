@@ -205,22 +205,24 @@ struct HomeHeroMap: View {
         .allowsHitTesting(false)
     }
 
+    /// The status chip on the picture: a dark ultra-thin material capsule, white words and a symbol (the camera screens' look).
     @ViewBuilder private var chipView: some View {
         if chip != .none {
             VStack {
                 HStack {
                     HStack(spacing: 6) {
                         if chip == .done {
-                            IconView(icon: .check, size: 13)
+                            Image(systemName: "checkmark.circle.fill").symbolRenderingMode(.hierarchical).font(.caption.weight(.semibold))
                         } else {
-                            ProgressView().controlSize(.mini).tint(.white)
+                            ProgressView().controlSize(.mini)
                         }
-                        Text(chipText).wc(13, .semibold, relativeTo: .caption).lineLimit(1)
+                        Text(chipText).font(.caption.weight(.semibold)).lineLimit(1)
                     }
                     .dynamicTypeSize(...DynamicTypeSize.xxLarge)
                     .foregroundStyle(Color.white)
-                    .padding(.horizontal, 11).padding(.vertical, 6)
-                    .background(Theme.scrim.opacity(0.7), in: Capsule())
+                    .padding(.horizontal, 12).padding(.vertical, 7)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .environment(\.colorScheme, .dark)
                     Spacer(minLength: 0)
                 }
                 Spacer(minLength: 0)

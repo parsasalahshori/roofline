@@ -6,36 +6,44 @@ struct CoachingScreen: View {
     @Environment(HomeownerStore.self) private var store
 
     var body: some View {
-        VStack(spacing: 0) {
-            WCNavBar(title: "How to measure", onBack: { store.pop() })
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    WCHeadline(text: "Four tips for a good size")
-                    StepProgress(step: 3).padding(.bottom, 6)
-                    Tip(art: .standBack, title: "Stand 3 to 5 feet back", detail: "About 1 to 1.5 meters, facing the window straight on.")
-                    Tip(art: .inside, title: "Measure from inside", detail: "Point at the inside of the frame, not the trim around it.")
-                    Tip(art: .light, title: "Good light, blinds open", detail: "Daytime is best. Turn on the room lights at night.")
-                    Tip(art: .corners, title: "Tap all four corners", detail: "A magnifier helps you land on each corner of the frame.")
-                    if store.capabilities.methodCount > 0 {
-                        InfoPanel(icon: .lidar, text: store.capabilities.depthSentence, iconColor: Theme.blue).padding(.top, 2)
-                    } else {
-                        InfoPanel(icon: .alert, text: "This device can't measure with a camera. Open WinChoice on your iPhone to measure your windows.", tint: Theme.warnTint, iconColor: Theme.warn).padding(.top, 2)
-                    }
-                    WCScrollFooter()
+        List {
+            Section {
+                Tip(art: .standBack, title: "Stand 3 to 5 feet back", detail: "About 1 to 1.5 meters, facing the window straight on.")
+                Tip(art: .inside, title: "Measure from inside", detail: "Point at the inside of the frame, not the trim around it.")
+                Tip(art: .light, title: "Good light, blinds open", detail: "Daytime is best. Turn on the room lights at night.")
+                Tip(art: .corners, title: "Tap all four corners", detail: "A magnifier helps you land on each corner of the frame.")
+            } header: {
+                JourneyHeader {
+                    JourneyLead("Four tips for a good size", heading: true)
+                    StepProgress(step: 3)
                 }
-                .padding(.horizontal, Theme.gutter)
-                .padding(.bottom, 24)
+            } footer: {
+                // A plain note under the tips: what the phone can do (no tinted box)
+                if store.capabilities.methodCount > 0 {
+                    Label(store.capabilities.depthSentence, systemImage: WCIcon.lidar.symbol)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.ink2)
+                        .padding(.top, 4)
+                } else {
+                    Label("This device can't measure with a camera. Open WinChoice on your iPhone to measure your windows.", systemImage: WCIcon.alert.symbol)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.ink2)
+                        .padding(.top, 4)
+                }
             }
+            JourneyListFooter()
         }
+        .listStyle(.insetGrouped)
+        .hiNav(title: "How to measure", display: .large)
         .wcFooter {
             WCPrimaryButton(title: "Measure my first window") {
                 store.push(.rooms)
             }
         }
-        .wcScreenChrome()
     }
 }
 
+/// One tip as a row: its little picture, the tip, and a line on how.
 struct Tip: View {
     enum Art { case standBack, inside, light, corners }
     let art: Art
@@ -46,15 +54,14 @@ struct Tip: View {
         HStack(spacing: 14) {
             TipArt(art: art)
                 .frame(width: 86, height: 66)
-                .background(Theme.surface2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).wc(16, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
-                Text(detail).wc(13, relativeTo: .footnote).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
+                Text(title).font(.headline).foregroundStyle(Theme.ink)
+                Text(detail).font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(10)
-        .wcCard()
+        .padding(.vertical, 6)
         .accessibilityElement(children: .combine)
     }
 }
@@ -79,7 +86,7 @@ struct TipArt: View {
             case .inside:
                 ctx.stroke(rect(10, 8, 66, 50), with: .color(ink3), lineWidth: 1.5 * sx)
                 let pane = rect(28, 16, 30, 30)
-                ctx.fill(pane, with: .color(Theme.blueTint))
+                ctx.fill(pane, with: .color(Color(.systemGray5)))
                 ctx.stroke(pane, with: .color(ink), lineWidth: 2 * sx)
                 ctx.stroke(p("M10 58l-4 6M76 58l4 6"), with: .color(ink3), lineWidth: 1.5 * sx)
             case .light:

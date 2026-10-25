@@ -5,7 +5,6 @@ import SwiftUI
 /// The shape of the window suggests the likeliest style. A window left without a style takes that suggestion.
 struct StylesScreen: View {
     @Environment(HomeownerStore.self) private var store
-    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var picked: String?
     @State private var color: String?
     @State private var working = false
@@ -17,56 +16,62 @@ struct StylesScreen: View {
     private var suggestion: StyleGuess.Suggestion? { row.flatMap { store.suggestedStyle(for: $0) } }
 
     var body: some View {
-        VStack(spacing: 0) {
-            WCNavBar(title: "Window \(index + 1) of \(rows.count)", onBack: back) {
-                NavTextButton(title: "Skip") { advance(setting: nil) }
-            }
+        Group {
             if let row = row {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        WCHeadline(text: "Pick a style")
-                        windowCard(row).padding(.top, 14)
-                        GroupHeader(text: "Style").padding(.top, 18)
-                        // Three tiles across (four plain choices: two by two); with large text one, so the names are not cut
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: typeSize.isAccessibilitySize ? 1 : (store.styles.count == 4 ? 2 : 3)), spacing: 8) {
-                            ForEach(store.styles) { style in
-                                StyleTile(style: style, selected: picked == style.key) {
-                                    picked = style.key
-                                    Haptics.tap()
-                                }
+                List {
+                    Section {
+                        windowRow(row)
+                    }
+                    Section {
+                        ForEach(store.styles) { style in
+                            StyleRow(style: style, selected: picked == style.key) {
+                                picked = style.key
+                                Haptics.tap()
                             }
                         }
-                        if store.features.windowColor { colorRow.padding(.top, 20) }
-                        HStack(alignment: .top, spacing: 10) {
-                            IconView(icon: .check, size: 16, weight: 2).foregroundStyle(Theme.ok).padding(.top, 1)
-                            Text(store.brand.glassNote).wc(13, relativeTo: .footnote).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
-                        }
-                        .padding(.top, 14)
-                        .padding(.horizontal, 4)
-                        .accessibilityElement(children: .combine)
-                        WCScrollFooter()
+                    } header: {
+                        Text("Pick a style").foregroundStyle(Theme.ink2)
+                    } footer: {
+                        if !store.features.windowColor { glassNote }
                     }
-                    .padding(.horizontal, Theme.gutter)
-                    .padding(.bottom, 24)
+                    if store.features.windowColor {
+                        Section {
+                            colorRow
+                        } header: {
+                            Text("Color").foregroundStyle(Theme.ink2)
+                        } footer: {
+                            glassNote
+                        }
+                    }
+                    JourneyListFooter()
                 }
+                .listStyle(.insetGrouped)
             } else {
-                Spacer()
+                Color.clear
             }
+        }
+        .hiNav(title: "Window \(index + 1) of \(rows.count)", onBack: back) {
+            NavTextButton(title: "Skip") { advance(setting: nil) }
         }
         .wcFooter {
             WCPrimaryButton(title: nextTitle, isLoading: working, isEnabled: picked != nil) { advance(setting: picked) }
             WCSecondaryButton(title: "Use this style for all \(rows.count)", isEnabled: picked != nil && rows.count > 1) { applyToAll() }
         }
-        .wcScreenChrome()
         .onAppear { load() }
         .onChange(of: store.styleIndex) { _, _ in load() }
     }
 
-    private func windowCard(_ row: WindowRow) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            IconView(icon: .win, size: 22).foregroundStyle(Theme.ink3).padding(.top, 2)
+    /// The window being styled: its name and size, with the likeliest style said under it.
+    private func windowRow(_ row: WindowRow) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: WCIcon.win.symbol)
+                .symbolRenderingMode(.hierarchical)
+                .font(.title2)
+                .foregroundStyle(Theme.red)
+                .frame(width: 32)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                Text(row.title).wc(17, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
+                Text(row.title).font(.headline).foregroundStyle(Theme.ink)
                 if let w = row.widthIn, let h = row.heightIn {
                     StyleSizeLine(widthIn: w, heightIn: h, hint: suggestion?.hint)
                         .accessibilityLabel("\(SizeWording.spokenSize(widthIn: w, heightIn: h)). \(suggestion?.hint ?? "")")
@@ -74,39 +79,48 @@ struct StylesScreen: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .wcCard()
+        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
     }
 
+    private var glassNote: some View {
+        Label {
+            Text(store.brand.glassNote).fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            FilledSymbol(name: "checkmark.circle.fill", fill: Theme.okText)
+        }
+        .font(.footnote)
+        .foregroundStyle(Theme.ink2)
+        .padding(.top, 4)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The colours as swatches in one row: the chosen one has an accent ring.
     private var colorRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            GroupHeader(text: "Color")
-            HStack(alignment: .top, spacing: 6) {
-                ForEach(store.brand.windowColors) { c in
-                    Button {
-                        color = c.key
-                        Haptics.tap()
-                    } label: {
-                        VStack(spacing: 6) {
-                            Circle().fill(Color(hex: c.hex)).frame(width: 40, height: 40)
-                                .overlay(Circle().strokeBorder(Color.black.opacity(0.15), lineWidth: 1))
-                                .overlay { if color == c.key { Circle().strokeBorder(Theme.blue, lineWidth: 2).padding(-4) } }
-                                .padding(4)
-                            Text(Self.display(c.label)).wc(12, color == c.key ? .semibold : .regular, relativeTo: .caption)
-                                .foregroundStyle(color == c.key ? Theme.ink : Theme.ink2)
-                                .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.8)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .contentShape(Rectangle())
+        HStack(alignment: .top, spacing: 6) {
+            ForEach(store.brand.windowColors) { c in
+                Button {
+                    color = c.key
+                    Haptics.tap()
+                } label: {
+                    VStack(spacing: 6) {
+                        Circle().fill(Color(hex: c.hex)).frame(width: 40, height: 40)
+                            .overlay(Circle().strokeBorder(Color.black.opacity(0.15), lineWidth: 1))
+                            .overlay { if color == c.key { Circle().strokeBorder(Theme.red, lineWidth: 2).padding(-4) } }
+                            .padding(4)
+                        Text(Self.display(c.label)).font(.caption.weight(color == c.key ? .semibold : .regular))
+                            .foregroundStyle(color == c.key ? Theme.ink : Theme.ink2)
+                            .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.8)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(c.label)
-                    .accessibilityAddTraits(color == c.key ? .isSelected : [])
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(c.label)
+                .accessibilityAddTraits(color == c.key ? .isSelected : [])
             }
         }
+        .padding(.vertical, 4)
     }
 
     /// The two long names break across lines in the mockup ("Sand-stone", "Earth-tone").
@@ -191,18 +205,19 @@ private struct StyleSizeLine: View {
     @ScaledMetric(relativeTo: .subheadline) private var size: CGFloat = 15
 
     var body: some View {
-        var line = SizeFormat.pair(widthIn, heightIn, size: size, weight: .regular, color: Theme.ink3, unit: true)
+        var line = SizeFormat.pair(widthIn, heightIn, size: size, weight: .regular, color: Theme.ink2, unit: true)
         if let hint = hint {
             var tail = AttributedString(" \u{00B7} \(hint)")
             tail.font = .system(size: size - 1)
-            tail.foregroundColor = Theme.ink3
+            tail.foregroundColor = Theme.ink2
             line += tail
         }
         return Text(line).fixedSize(horizontal: false, vertical: true)
     }
 }
 
-private struct StyleTile: View {
+/// A style as a row: its drawing, the name and a hint, and a checkmark on the chosen one.
+private struct StyleRow: View {
     let style: HomeownerStyleOption
     let selected: Bool
     let action: () -> Void
@@ -210,30 +225,28 @@ private struct StyleTile: View {
     var body: some View {
         let parts = StyleLabel.split(style.label)
         Button(action: action) {
-            VStack(spacing: 4) {
+            HStack(spacing: 14) {
                 StyleGlyph(key: style.key, width: 44)
-                    .foregroundStyle(selected ? Theme.blue : Theme.ink)
-                    .padding(.bottom, 2)
-                Text(parts.title).wc(14, selected ? .semibold : .medium, relativeTo: .footnote)
-                    .foregroundStyle(selected ? Theme.blue : Theme.ink)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.85)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(parts.detail ?? style.hint ?? " ").wc(11, relativeTo: .caption2)
-                    .foregroundStyle(Theme.ink3)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .opacity(parts.detail == nil && style.hint == nil ? 0 : 1)
+                    .foregroundStyle(selected ? Theme.red : Theme.ink)
+                    .frame(width: 52)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(parts.title).font(.body.weight(selected ? .semibold : .regular)).foregroundStyle(Theme.ink)
+                    if let detail = parts.detail ?? style.hint {
+                        Text(detail).font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if selected {
+                    Image(systemName: WCIcon.check.symbol)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(Theme.red)
+                        .accessibilityHidden(true)
+                }
             }
-            .padding(.horizontal, 4)
-            .padding(.top, 9)
-            .padding(.bottom, 8)
-            .frame(maxWidth: .infinity, minHeight: 100)
-            .wcCard(selected: selected, radius: 12)
+            .padding(.vertical, 2)
+            .frame(minHeight: Theme.minTap)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
         .accessibilityLabel(style.label)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
