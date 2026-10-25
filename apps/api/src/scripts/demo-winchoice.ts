@@ -21,6 +21,7 @@ import { type Query, seedCompany } from '@roofline/db/testing';
 import type { JobStage } from '@roofline/shared';
 import { systemContext } from '../permissions.ts';
 import { createTask } from '../tasks/service.ts';
+import { seedWinChoiceBackoffice } from './demo-winchoice-backoffice.ts';
 import { seedWinChoiceCatalog } from './demo-winchoice-catalog.ts';
 import { seedRidgewayWindows } from './demo-winchoice-windows.ts';
 import { demoWorldCounts, seedAgentsDashboardActivity, type DemoWorld, type DemoWorldOptions } from './demo-world.ts';
@@ -135,6 +136,14 @@ export async function seedWinChoiceWorld(pools: Pools, ownerUrl: string, now: Da
       // A demo made before the catalog existed gets it now (a company that already has one keeps its own).
       const has = await q(`select window_catalog is not null as has from company_settings where company_id = $1`, [existing.id]);
       if (has[0]?.has !== true) await seedWinChoiceCatalog(pools, systemContext(existing.id), now);
+      // A demo made before the back office existed gets it now (the jobs by address come from the stored book).
+      const rows = await q(`select p.address_line, j.id as job_id, j.customer_id, j.property_id from jobs j join properties p on p.id = j.property_id where j.company_id = $1`, [existing.id]);
+      const known = Object.fromEntries(rows.map((r) => [String(r.address_line), { jobId: String(r.job_id), customerId: String(r.customer_id), propertyId: String(r.property_id) }]));
+      const users = await q(`select u.id, u.email from users u join memberships m on m.user_id = u.id where m.company_id = $1`, [existing.id]);
+      const idOf = (email: string) => String(users.find((u) => u.email === email)?.id);
+      if (WINCHOICE_JOBS.every((j) => known[j.address] !== undefined)) {
+        await seedWinChoiceBackoffice(pools, systemContext(existing.id), now, known, { office: idOf('office@winchoice.test'), owner: idOf(DEMO_WINCHOICE_LOGIN.email) });
+      }
       return { created: false, companyId: existing.id, counts: await winChoiceCounts(q, existing.id) };
     }
 
@@ -296,6 +305,9 @@ export async function seedWinChoiceWorld(pools: Pools, ownerUrl: string, now: Da
       opts.objectStore,
     );
 
+    // 7. The back office: on for WinChoice (Summit Ridge stays off), with quotes of drawn units and ten orders, one in each stage.
+    await seedWinChoiceBackoffice(pools, ctx, now, made, { office: userId('office@winchoice.test'), owner: userId(DEMO_WINCHOICE_LOGIN.email) });
+
     return { created: true, companyId, counts: await winChoiceCounts(q, companyId) };
   } finally {
     await owner.end();
@@ -309,6 +321,8 @@ async function winChoiceCounts(q: Query, companyId: string): Promise<Record<stri
     ...(await demoWorldCounts(q, companyId)),
     windowMeasurements: await one(`select count(*) as n from window_measurements where company_id = $1`),
     windowOrders: await one(`select count(*) as n from window_orders where company_id = $1`),
+    backofficeQuotes: await one(`select count(*) as n from backoffice_quotes where company_id = $1`),
+    backofficeOrders: await one(`select count(*) as n from backoffice_orders where company_id = $1`),
   };
 }
 

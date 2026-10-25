@@ -60,6 +60,13 @@ import {
   type WindowOrderSettings,
   type WindowCatalog,
   type WindowOrderSettingsPatch,
+  BACKOFFICE_QUOTE_STATUSES,
+  ORDER_STAGES,
+  type BackofficeSettings,
+  type HouseVisual,
+  type OrderEvent,
+  type ProductCatalog,
+  type WindowDesign,
 } from '@roofline/shared';
 import { bytea, citext, enumCheck, multiPolygon, pk, point4326, timestamps, tstz } from './columns.ts';
 import {
@@ -179,6 +186,9 @@ export const TENANT_TABLES = [
   'quote_requests',
   'window_orders',
   'homeowner_requests',
+  'backoffice_quotes',
+  'backoffice_orders',
+  'backoffice_order_events',
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];
@@ -229,6 +239,12 @@ export const companySettings = pgTable(
     windowOrderSettings: jsonb('window_order_settings').$type<WindowOrderSettingsPatch>(),
     /** The window catalog homeowners see: style choices, tier names and prices, adders, included list, trust, offer, financing (null = the defaults in code). */
     windowCatalog: jsonb('window_catalog').$type<WindowCatalog>(),
+    /** WinChoice back office: off until the owner (or the demo seed) turns it on. Every /api/backoffice route is a 404 while it is off. */
+    backofficeEnabled: boolean('backoffice_enabled').notNull().default(false),
+    /** The back office price book: products, options, accessories, tiers (null = the defaults in code). */
+    productCatalog: jsonb('product_catalog').$type<ProductCatalog>(),
+    /** The back office settings: customer messages per order stage and stuck days (null = the defaults in code). */
+    backoffice: jsonb('backoffice').$type<Partial<BackofficeSettings>>(),
     /** Front Desk: false until forwarding passes or the owner turns it on. */
     frontDeskEnabled: boolean('front_desk_enabled').notNull().default(false),
     /** Front Desk: text the caller back about a missed call and answer SMS. */
@@ -2411,5 +2427,102 @@ export const homeownerRequests = pgTable(
     check('homeowner_requests_callback_pair_check', sql`(${t.status} = 'callback') = (${t.callbackReason} is not null)`),
     check('homeowner_requests_services_check', sql`cardinality(${t.services}) between 1 and 3 and ${t.services} <@ array['windows','roof','gutters']::text[]`),
     check('homeowner_requests_window_count_check', sql`${t.windowCountOverride} is null or ${t.windowCountOverride} between 1 and 80`),
+  ],
+);
+
+/**
+ * Back office quotes: the windows and doors drawn for one job (designs), the extras (accessories), the chosen tier and
+ * discount. Prices are never stored: the server prices the quote from the designs and the catalog on every read. A quote
+ * keeps the version of the price book it was last priced with. 'accepted' is set only by accepting it, which makes the order.
+ */
+export const backofficeQuotes = pgTable(
+  'backoffice_quotes',
+  {
+    id: pk(),
+    companyId: companyId(),
+    jobId: uuid('job_id').notNull(),
+    status: text('status', { enum: BACKOFFICE_QUOTE_STATUSES }).notNull().default('draft'),
+    tier: text('tier', { enum: TIERS }).notNull().default('better'),
+    catalogVersion: integer('catalog_version').notNull().default(0),
+    designs: jsonb('designs').$type<WindowDesign[]>().notNull().default([]),
+    accessories: jsonb('accessories').$type<{ accessoryId: string; quantity: number }[]>().notNull().default([]),
+    discountPercent: numeric('discount_percent', { precision: 5, scale: 2, mode: 'number' }).notNull().default(0),
+    /** The drawn units placed on a photo of the house (HouseVisual without its quote id); the photo is kept in the object store. */
+    houseVisual: jsonb('house_visual').$type<StoredHouseVisual>(),
+    /** The price book the quote was accepted with: an accepted quote keeps its prices whatever the catalog becomes. Null until accepted. */
+    catalogSnapshot: jsonb('catalog_snapshot').$type<ProductCatalog>(),
+    createdByUserId: userRef('created_by_user_id'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('backoffice_quotes_company_id_id_uniq').on(t.companyId, t.id),
+    foreignKey({ name: 'backoffice_quotes_company_job_fk', columns: [t.companyId, t.jobId], foreignColumns: [jobs.companyId, jobs.id] }),
+    index('backoffice_quotes_company_job_idx').on(t.companyId, t.jobId),
+    index('backoffice_quotes_company_updated_idx').on(t.companyId, t.updatedAt),
+    enumCheck('backoffice_quotes', 'status', t.status, BACKOFFICE_QUOTE_STATUSES),
+    enumCheck('backoffice_quotes', 'tier', t.tier, TIERS),
+    check('backoffice_quotes_discount_check', sql`${t.discountPercent} between 0 and 100`),
+  ],
+);
+
+/** A house visual as stored: the placements plus the photo (an object-store key and its type), when one is uploaded. */
+export type StoredHouseVisual = Pick<HouseVisual, 'placements' | 'updatedAt'> & {
+  photo: { id: string; key: string; kind: 'jpeg' | 'png'; widthPx: number; heightPx: number; bytes: number } | null;
+};
+
+/**
+ * Back office orders: one per accepted quote. The stage moves through ORDER_STAGES (the events table is the timeline).
+ * Money and unit count are the accepted quote's, frozen at acceptance; the designs stay on the quote.
+ */
+export const backofficeOrders = pgTable(
+  'backoffice_orders',
+  {
+    id: pk(),
+    companyId: companyId(),
+    jobId: uuid('job_id').notNull(),
+    quoteId: uuid('quote_id').notNull(),
+    stage: text('stage', { enum: ORDER_STAGES }).notNull().default('sold'),
+    stageChangedAt: tstz('stage_changed_at').notNull().defaultNow(),
+    units: integer('units').notNull(),
+    totalCents: integer('total_cents').notNull(),
+    /** The factory order sheet (window_orders) this order released, when there is one. */
+    windowOrderId: uuid('window_order_id'),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('backoffice_orders_company_id_id_uniq').on(t.companyId, t.id),
+    unique('backoffice_orders_company_quote_uniq').on(t.companyId, t.quoteId),
+    foreignKey({ name: 'backoffice_orders_company_job_fk', columns: [t.companyId, t.jobId], foreignColumns: [jobs.companyId, jobs.id] }),
+    foreignKey({ name: 'backoffice_orders_company_quote_fk', columns: [t.companyId, t.quoteId], foreignColumns: [backofficeQuotes.companyId, backofficeQuotes.id] }),
+    foreignKey({ name: 'backoffice_orders_company_window_order_fk', columns: [t.companyId, t.windowOrderId], foreignColumns: [windowOrders.companyId, windowOrders.id] }),
+    index('backoffice_orders_company_stage_idx').on(t.companyId, t.stage),
+    index('backoffice_orders_job_idx').on(t.companyId, t.jobId),
+    enumCheck('backoffice_orders', 'stage', t.stage, ORDER_STAGES),
+    check('backoffice_orders_amounts_check', sql`${t.units} >= 0 and ${t.totalCents} >= 0`),
+  ],
+);
+
+/** One move on an order's timeline. Append-only: a move is never edited or removed. */
+export const backofficeOrderEvents = pgTable(
+  'backoffice_order_events',
+  {
+    id: pk(),
+    /** The order of the moves: two moves in the same instant still read in the order they were made. */
+    seq: bigint('seq', { mode: 'number' }).generatedAlwaysAsIdentity().notNull(),
+    companyId: companyId(),
+    orderId: uuid('order_id').notNull(),
+    stage: text('stage', { enum: ORDER_STAGES }).notNull(),
+    /** Null: automatic (the order was made by accepting the quote, say). */
+    byUserId: userRef('by_user_id'),
+    note: text('note').notNull().default(''),
+    /** The date shown to the customer for the stage (install date, ship date), 'YYYY-MM-DD'. */
+    plannedFor: date('planned_for', { mode: 'string' }),
+    notified: jsonb('notified').$type<OrderEvent['notified']>(),
+    createdAt: tstz('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({ name: 'backoffice_order_events_company_order_fk', columns: [t.companyId, t.orderId], foreignColumns: [backofficeOrders.companyId, backofficeOrders.id] }),
+    index('backoffice_order_events_order_idx').on(t.companyId, t.orderId, t.seq),
+    enumCheck('backoffice_order_events', 'stage', t.stage, ORDER_STAGES),
   ],
 );

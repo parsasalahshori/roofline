@@ -78,6 +78,7 @@ import { todayRoutes } from './routes/today.ts';
 import { weatherRoutes } from './routes/weather.ts';
 import { measurementRoutes } from './routes/measurements.ts';
 import { windowMeasurementRoutes } from './routes/window-measurements.ts';
+import { backofficeRoutes } from './routes/backoffice.ts';
 import { windowMeasurementOrderRoutes, windowOrderRoutes, windowOrderSettingsRoutes } from './routes/window-orders.ts';
 import type { StreetView } from './providers/street-view.ts';
 import type { WindowDetector } from './providers/window-detector.ts';
@@ -413,6 +414,8 @@ export function createApp(deps: AppDeps, options: AppOptions = {}): Express {
   app.use('/api/window-measurements', windowMeasurementOrderRoutes(deps));
   app.use('/api/window-orders', windowOrderRoutes(deps));
   app.use('/api/window-order-settings', windowOrderSettingsRoutes(deps));
+  // WinChoice back office: quotes, orders and documents; every route is a 404 unless the company has it on.
+  app.use('/api/backoffice', backofficeRoutes(deps));
   app.use('/api/tier-templates', tierTemplateRoutes(deps));
   app.use('/api/estimator/settings', estimatorSettingsRoutes(deps));
   app.use('/api/instant-quote/settings', instantQuoteSettingsRoutes(deps));

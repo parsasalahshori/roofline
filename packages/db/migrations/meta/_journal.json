@@ -323,6 +323,20 @@
       "when": 1792274614981,
       "tag": "0045_window_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1792938682084,
+      "tag": "0046_backoffice",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1792938682564,
+      "tag": "0047_backoffice_grants_rls",
+      "breakpoints": true
     }
   ]
 }
