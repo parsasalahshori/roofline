@@ -3,6 +3,8 @@ import SwiftUI
 
 /// 08 Label (ios-hw-08): the window just measured, its size, "Which room is it in?" and an optional name. Every method ends
 /// here. A bottom sheet over the frozen camera picture.
+/// A native sheet (medium-to-large detents) with a grouped list: the size, the room (a menu picker), the optional name and the
+/// bathroom switch; Save, Measure it again and Discard (which asks first) at the bottom.
 struct LabelSheet: View {
     @Environment(HomeownerStore.self) private var store
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -16,7 +18,7 @@ struct LabelSheet: View {
     @State private var frostedTouched = false
     @State private var saving = false
     @State private var confirmDiscard = false
-    @State private var detent: PresentationDetent = .fraction(0.74)
+    @State private var detent: PresentationDetent = .fraction(0.8)
     @FocusState private var nameFocused: Bool
 
     init(pending: PendingWindow, onAgain: @escaping () -> Void) {
@@ -32,139 +34,132 @@ struct LabelSheet: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Check the size, then save").wcHeading(22, .heavy, relativeTo: .title2).foregroundStyle(Theme.ink)
-                        .fixedSize(horizontal: false, vertical: true).padding(.bottom, 12).accessibilityAddTraits(.isHeader)
-                    sizeCard
-                    Text("Which room is it in?").wcHeading(22, .heavy, relativeTo: .title2).foregroundStyle(Theme.ink).padding(.top, 22).accessibilityAddTraits(.isHeader)
-                    FlowLayout(spacing: 8, lineSpacing: 10) {
-                        ForEach(RoomType.allCases, id: \.self) { type in
-                            WCChip(title: type.chip, isOn: RoomNames.type(of: room) == type) {
-                                room = RoomNames.room(for: type, current: room, existing: store.rooms)
-                                if !frostedTouched { frosted = type == .bathroom }
-                            }
+        NavigationStack {
+            VStack(spacing: 0) {
+                List {
+                    Section { sizeRow }
+                    Section {
+                        Picker("Which room is it in?", selection: roomType) {
+                            ForEach(RoomType.allCases, id: \.self) { Text($0.chip).tag($0) }
                         }
+                        .pickerStyle(.menu)
+                        TextField("Name", text: $name, prompt: Text("Optional name, like \"\(room), front\"").foregroundColor(Theme.ink2))
+                            .focused($nameFocused)
+                            .submitLabel(.done)
+                            .accessibilityLabel("Optional name for this window")
                     }
-                    .padding(.top, 12)
-                    TextField("", text: $name, prompt: Text("Optional name, like \"\(room), front\"").foregroundColor(Theme.ink3))
-                        .wc(17, relativeTo: .body)
-                        .foregroundStyle(Theme.ink)
-                        .focused($nameFocused)
-                        .submitLabel(.done)
-                        .padding(.horizontal, 14)
-                        .frame(minHeight: 50)
-                        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(nameFocused ? Theme.blue : Theme.line2, lineWidth: nameFocused ? 2 : 1))
-                        .padding(.top, 16)
-                        .accessibilityLabel("Optional name for this window")
-                    bathroomRow.padding(.top, 16)
+                    Section { bathroomRow }
                     // With large text the buttons would fill the sheet: they come at the end of what scrolls
-                    if typeSize.isAccessibilitySize { buttons.padding(.top, 20) }
+                    if typeSize.isAccessibilitySize {
+                        Section { VStack(spacing: 12) { buttons } }
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                    }
                 }
-                .padding(.horizontal, Theme.gutter)
-                .padding(.top, 14)
-                .padding(.bottom, 12)
+                .listStyle(.insetGrouped)
+                .scrollDismissesKeyboard(.interactively)
+                if !typeSize.isAccessibilitySize {
+                    // under the list, not over it: no row shows through the bar
+                    VStack(spacing: 8) { buttons }
+                        .padding(.horizontal, Theme.gutter)
+                        .padding(.top, 12)
+                        .padding(.bottom, 8)
+                        .frame(maxWidth: .infinity)
+                        .background(Theme.ground)
+                        .overlay(alignment: .top) { Divider() }
+                }
             }
-            .scrollDismissesKeyboard(.interactively)
-            if !typeSize.isAccessibilitySize {
-                buttons
-                    .padding(.horizontal, Theme.gutter)
-                    .padding(.bottom, 8)
-                    .padding(.top, 6)
-            }
+            .navigationTitle("Check the size, then save")
+            .navigationBarTitleDisplayMode(.inline)
         }
-        .background(Theme.ground)
-        .presentationDetents([.fraction(0.74), .large], selection: $detent)
+        .presentationDetents([.fraction(0.8), .large], selection: $detent)
         .onChange(of: nameFocused) { _, focused in
             if focused { detent = .large }
         }
         .presentationDragIndicator(.visible)
         .presentationBackground(Theme.ground)
-        .presentationCornerRadius(28)
         .interactiveDismissDisabled()
+    }
+
+    /// The room's type as the picker's choice; picking one names the room the way the chips did.
+    private var roomType: Binding<RoomType> {
+        Binding(
+            get: { RoomNames.type(of: room) },
+            set: { type in
+                room = RoomNames.room(for: type, current: room, existing: store.rooms)
+                if !frostedTouched { frosted = type == .bathroom }
+            }
+        )
     }
 
     /// "Bathroom window?": yes means frosted (privacy) glass, which adds to the price.
     private var bathroomRow: some View {
         Toggle(isOn: Binding(get: { frosted }, set: { frosted = $0; frostedTouched = true; Haptics.tap() })) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Bathroom window?").wc(17, .medium, relativeTo: .body).foregroundStyle(Theme.ink)
-                Text("Frosted glass, so no one can see in.").wc(14, relativeTo: .footnote).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
+                Text("Bathroom window?").font(.body).foregroundStyle(Theme.ink)
+                Text("Frosted glass, so no one can see in.").font(.footnote).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
             }
         }
-        .tint(Theme.blue)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .frame(minHeight: 56)
-        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.line2, lineWidth: 1))
+        .tint(Color(.systemGreen))
         .accessibilityIdentifier("bathroom-toggle")
     }
 
-    private var buttons: some View {
-        VStack(spacing: 10) {
-            WCPrimaryButton(title: "Save window \(pending.number)", isLoading: saving) {
-                saving = true
-                Task {
-                    await store.savePending(room: room, name: name, frosted: frosted)
-                    saving = false
-                }
-            }
-            if confirmDiscard {
-                VStack(spacing: 8) {
-                    Text("Discard this window? The size is lost.").wc(15, .medium, relativeTo: .subheadline).foregroundStyle(Theme.ink2).multilineTextAlignment(.center)
-                    AdaptiveStack(spacing: 10) {
-                        WCSecondaryButton(title: "Keep it") { confirmDiscard = false }
-                        Button {
-                            Haptics.tap()
-                            store.discardPending()
-                        } label: {
-                            Text("Yes, discard").wc(17, .semibold, relativeTo: .headline).foregroundStyle(Theme.badText)
-                                .frame(maxWidth: .infinity, minHeight: Theme.secondaryButtonHeight)
-                                .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.bad.opacity(0.5), lineWidth: 1))
-                        }
-                    }
-                }
-            } else {
-                WCSecondaryButton(title: "Measure it again") { onAgain() }
-                Button("Discard") { confirmDiscard = true }
-                    .wc(16, .medium, relativeTo: .body).foregroundStyle(Theme.ink3)
-                    .frame(maxWidth: .infinity, minHeight: Theme.minTap)
-                    .accessibilityHint("Throws this measured window away")
+    @ViewBuilder private var buttons: some View {
+        WCPrimaryButton(title: "Save window \(pending.number)", isLoading: saving) {
+            saving = true
+            Task {
+                await store.savePending(room: room, name: name, frosted: frosted)
+                saving = false
             }
         }
+        WCSecondaryButton(title: "Measure it again") { onAgain() }
+        Button(role: .destructive) { confirmDiscard = true } label: {
+            // the full-width, 44 pt area is the button's own, not just its word
+            Text("Discard")
+                .font(.body.weight(.medium))
+                .foregroundStyle(Theme.badText)
+                .frame(maxWidth: .infinity, minHeight: Theme.minTap)
+                .contentShape(Rectangle())
+        }
+        .accessibilityHint("Throws this measured window away")
+            .confirmationDialog("Discard this window?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+                Button("Discard", role: .destructive) {
+                    Haptics.tap()
+                    store.discardPending()
+                }
+                Button("Keep it", role: .cancel) {}
+            } message: {
+                Text("The size is lost.")
+            }
     }
 
-    private var sizeCard: some View {
-        HStack(alignment: .center, spacing: 14) {
-            ZStack {
-                Circle().fill(showable == nil ? Theme.info : Theme.ok)
-                IconView(icon: showable == nil ? .clock : .check, size: 20, weight: 2.2).foregroundStyle(.white)
-            }
-            .frame(width: 34, height: 34)
+    /// The size just measured, as the first row: a status symbol and the size to the eighth, with what it is good for.
+    private var sizeRow: some View {
+        HStack(alignment: typeSize.isAccessibilitySize ? .top : .center, spacing: 14) {
+            Image(systemName: showable == nil ? "clock.fill" : "checkmark.circle.fill")
+                .font(.title)
+                .foregroundStyle(showable == nil ? Theme.ink2 : Theme.ok)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 if let p = showable {
-                    if pending.windowFrame != nil { Text("Opening").wc(13, .medium, relativeTo: .footnote).foregroundStyle(Theme.ink3) }
+                    if pending.windowFrame != nil { Text("Opening").font(.footnote.weight(.medium)).foregroundStyle(Theme.ink2) }
                     SizeText(widthIn: p.widthIn, heightIn: p.heightIn, size: 34, weight: .semibold, unit: true)
                     if let frame = pending.windowFrame {
-                        Text(frame.line).wc(15, .semibold, relativeTo: .subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+                        Text(frame.line).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
                     }
-                    Text(subtitle(p)).wc(14, relativeTo: .footnote).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
+                    Text(subtitle(p)).font(.footnote).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
                     // A window's nominal size is its frame's: keyed to the window's own size when it was found, else to the opening's
                     if let line = pending.windowFrame.map({ StandardWindowSizes.line(widthIn: $0.widthIn, heightIn: $0.heightIn) }) ?? StandardWindowSizes.line(widthIn: p.widthIn, heightIn: p.heightIn) {
-                        Text(line).wc(14, .medium, relativeTo: .footnote).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+                        Text(line).font(.footnote.weight(.medium)).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
                     }
                 } else {
-                    Text("Window \(pending.number) measured").wc(18, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
-                    Text("The size comes after we upload your photo. A rep checks every size anyway.").wc(14, relativeTo: .footnote).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
+                    Text("Window \(pending.number) measured").font(.headline).foregroundStyle(Theme.ink)
+                    Text("The size comes after we upload your photo. A rep checks every size anyway.").font(.footnote).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(14)
-        .wcCard(radius: 14)
+        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
     }
 

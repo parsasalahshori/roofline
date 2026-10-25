@@ -2,6 +2,9 @@ import RooflineCore
 import SwiftUI
 
 /// 15 My order (ios-hw-15): where the order is, in five steps, and how to reach someone. Three tabs: My order, Windows, Messages.
+/// Each tab is a grouped list under a large title in the app's navigation bar (a root: no back button). The tab bar sits under the
+/// list, not over it: iOS 26's own floating `TabView` bar lets the list scroll beneath it, and the accessibility audit (which looks at
+/// the screen before it is scrolled) then reads the rows behind the glass as failing contrast.
 struct StatusScreen: View {
     @Environment(HomeownerStore.self) private var store
     @State private var tab = "order"
@@ -22,9 +25,17 @@ struct StatusScreen: View {
                 .init(id: "messages", title: "Messages", icon: .message),
             ], selection: $tab)
         }
-        .background(Theme.ground.ignoresSafeArea())
-        .toolbar(.hidden, for: .navigationBar)
+        .hiNav(title: title, display: .large, showsBack: false)
         .task { await store.loadStatus() }
+    }
+
+    /// The bar's title is the tab's own.
+    private var title: String {
+        switch tab {
+        case "windows": return "Windows"
+        case "messages": return "Messages"
+        default: return "My order"
+        }
     }
 }
 
@@ -40,80 +51,77 @@ private struct OrderTab: View {
         return OrderTimeline.steps(stage: stage, dates: store.status?.dates ?? [:], windowCount: store.windowCount, city: city, visitDate: visit)
     }
 
+    private var addressLine: String {
+        "\(store.address.split(separator: ",").first.map(String.init) ?? store.address) · \(store.windowCount) window\(store.windowCount == 1 ? "" : "s")"
+    }
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                AdaptiveStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(store.brand.wordmark).wcHeading(20, .heavy, relativeTo: .title3).foregroundStyle(Theme.ink).accessibilityAddTraits(.isHeader)
-                        // the name never breaks across lines
-                        .lineLimit(1).minimumScaleFactor(0.6)
-                        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    if let n = store.status?.orderNumber { Text("Order \(n)").wc(15, .regular, relativeTo: .subheadline).foregroundStyle(Theme.ink3) }
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(OrderTimeline.headline(stage)).font(.title2.weight(.bold)).foregroundStyle(Theme.ink)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(OrderTimeline.subhead(stage)).font(.body).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.top, 10)
-                Text("\(store.address.split(separator: ",").first.map(String.init) ?? store.address) · \(store.windowCount) window\(store.windowCount == 1 ? "" : "s")")
-                    .wc(15, .semibold, relativeTo: .subheadline).foregroundStyle(Theme.blue).padding(.top, 14)
-                Text(OrderTimeline.headline(stage)).wcHeading(32, .heavy, relativeTo: .largeTitle).foregroundStyle(Theme.ink).padding(.top, 4).accessibilityAddTraits(.isHeader)
-                Text(OrderTimeline.subhead(stage)).wc(16, relativeTo: .body).foregroundStyle(Theme.ink2).padding(.top, 6).fixedSize(horizontal: false, vertical: true)
+                .padding(.vertical, 4)
                 if let eta = store.status?.eta.flatMap(VisitTimes.parse) {
-                    HStack(spacing: 10) {
-                        IconView(icon: .truck, size: 20).foregroundStyle(Theme.blue)
-                        Text("Expected to ship \(VisitTimes.monthDay(eta, zone))").wc(17, .medium, relativeTo: .body).foregroundStyle(Theme.blue)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Image(systemName: WCIcon.truck.symbol).foregroundStyle(Theme.red).accessibilityHidden(true)
+                        Text("Expected to ship \(VisitTimes.monthDay(eta, zone))").foregroundStyle(Theme.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, 16).padding(.vertical, 8).frame(minHeight: 44)
-                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .padding(.top, 14)
                     .accessibilityElement(children: .combine)
                 }
-                timeline.padding(.top, 18)
-                questions.padding(.top, 14)
+            } header: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text([store.brand.wordmark, store.status?.orderNumber.map { "Order \($0)" }].compactMap { $0 }.joined(separator: " · "))
+                        .fontWeight(.semibold)
+                    Text(addressLine)
+                }
+                .font(.footnote)
+                .foregroundStyle(Theme.ink2)
+                .textCase(nil)
+                .accessibilityElement(children: .combine)
             }
-            .padding(.horizontal, Theme.gutter)
-            .padding(.bottom, 20)
-        }
-        .refreshable { await store.loadStatus() }
-    }
-
-    private var timeline: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(steps.enumerated()), id: \.element.id) { i, step in
-                TimelineRow(step: step, isLast: i == steps.count - 1, zone: zone)
+            Section {
+                ForEach(steps) { step in TimelineRow(step: step, zone: zone) }
+            } header: {
+                Text("Progress").foregroundStyle(Theme.ink2)
             }
-        }
-        .padding(.horizontal, 14).padding(.vertical, 6)
-        .wcCard(radius: 20)
-    }
-
-    private var questions: some View {
-        AdaptiveStack(spacing: 14) {
-            IconView(icon: .message, size: 26).foregroundStyle(Theme.ink3)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Questions?").wc(18, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
-                Text(store.repName.map { "Text \($0) or the \(store.brand.name) office" } ?? "Text or call the \(store.brand.name) office").wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            if let sms = store.companyPhone.flatMap({ URL(string: "sms:\($0.filter { $0.isNumber || $0 == "+" })") }) {
-                Link(destination: sms) {
-                    HStack(spacing: 8) {
-                        IconView(icon: .message, size: 18, weight: 1.9)
-                        Text("Text").wc(18, .bold, relativeTo: .headline)
-                    }
-                    .foregroundStyle(Theme.onRed)
-                    .padding(.horizontal, 20).frame(minHeight: 50)
-                    .background(Theme.buttonFill, in: Capsule())
+            Section {
+                if let sms = store.companyPhone.flatMap({ URL(string: "sms:\($0.filter { $0.isNumber || $0 == "+" })") }) {
+                    Link(destination: sms) { questionsRow(icon: .message, title: "Questions? Text the office") }
+                } else {
+                    questionsRow(icon: .phone, title: "Questions? Call the \(store.brand.name) office")
                 }
             }
         }
-        .padding(14)
-        .wcCard(radius: 16)
+        .listStyle(.insetGrouped)
+        .refreshable { await store.loadStatus() }
     }
 }
 
+extension OrderTab {
+    /// "Questions?" as one row: a symbol, the ask, and who answers.
+    fileprivate func questionsRow(icon: WCIcon, title: String) -> some View {
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).foregroundStyle(Theme.ink)
+                Text(store.repName.map { "Text \($0) or the \(store.brand.name) office" } ?? "Text or call the \(store.brand.name) office")
+                    .font(.footnote).foregroundStyle(Theme.ink2)
+            }
+        } icon: {
+            Image(systemName: icon.symbol).foregroundStyle(Theme.red)
+        }
+    }
+}
+
+/// One step of the order as a list row with a status symbol: a green checkmark when done, the accent dot for the step in
+/// progress, an empty circle for what is coming up; its date after it.
 private struct TimelineRow: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     let step: OrderTimeline.Step
-    let isLast: Bool
     let zone: TimeZone
 
     private var dateText: String? {
@@ -131,23 +139,30 @@ private struct TimelineRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            VStack(spacing: 0) {
-                marker.frame(width: 26, height: 26)
-                if !isLast { Rectangle().fill(Theme.line2).frame(width: 2).frame(maxHeight: .infinity) }
+        HStack(alignment: .top, spacing: 12) {
+            marker.font(.title3).frame(width: 28, height: 28)
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 2) { texts; date }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                texts.frame(maxWidth: .infinity, alignment: .leading)
+                date
             }
-            .frame(width: 26)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(step.title).wc(17, .semibold, relativeTo: .headline).foregroundStyle(step.state == .now ? Theme.blue : Theme.ink)
-                Text(step.detail).wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.bottom, isLast ? 0 : 8)
-            if let d = dateText { Text(d).wcMono(14, .regular, relativeTo: .subheadline).foregroundStyle(Theme.ink3).padding(.top, 2) }
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, 2)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(step.title). \(step.detail). \(stateWords)\(dateText.map { ". \($0)" } ?? "")")
+    }
+
+    private var texts: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(step.title).font(.headline).foregroundStyle(step.state == .now ? Theme.red : Theme.ink)
+            Text(step.detail).font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder private var date: some View {
+        if let d = dateText { Text(d).font(.subheadline).monospacedDigit().foregroundStyle(Theme.ink2).padding(.top, 2) }
     }
 
     private var stateWords: String {
@@ -161,11 +176,11 @@ private struct TimelineRow: View {
     @ViewBuilder private var marker: some View {
         switch step.state {
         case .done:
-            ZStack { Circle().fill(Theme.ok); IconView(icon: .check, size: 16, weight: 2.4).foregroundStyle(.white) }
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.ok)
         case .now:
-            ZStack { Circle().fill(Theme.blue); Circle().fill(Theme.surface).frame(width: 9, height: 9) }
+            Image(systemName: "circle.inset.filled").foregroundStyle(Theme.red)
         case .pending:
-            Circle().strokeBorder(Theme.line2, lineWidth: 2)
+            Image(systemName: "circle").foregroundStyle(Theme.decor)
         }
     }
 }
@@ -176,25 +191,25 @@ private struct WindowsTab: View {
 
     var body: some View {
         let rows = store.windowRows
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                WCHeadline(text: "\(rows.count) window\(rows.count == 1 ? "" : "s")", subtitle: "Sizes are the inside of each frame, in inches. A rep re-measures every one.").padding(.top, 14)
-                GroupCard {
-                    ForEach(Array(rows.enumerated()), id: \.element.id) { i, row in
-                        WindowListRow(row: row) {}
-                        if i < rows.count - 1 { RowDivider(inset: 56) }
-                    }
+        List {
+            Section {
+                ForEach(rows, id: \.id) { row in
+                    WindowListRow(row: row) {}
+                        .listRowInsets(EdgeInsets())
                 }
-                .padding(.top, 16)
-                WCSecondaryButton(title: "Add a window", icon: .plus) {
+            } header: {
+                HiListHeading(title: "\(rows.count) window\(rows.count == 1 ? "" : "s")", subtitle: "Sizes are the inside of each frame, in inches. A rep re-measures every one.")
+            }
+            Section {
+                Button {
                     store.path = store.stack(to: .rooms)
                     store.noteStep(.rooms)
+                } label: {
+                    Label("Add a window", systemImage: WCIcon.plus.symbol)
                 }
-                .padding(.top, 16)
             }
-            .padding(.horizontal, Theme.gutter)
-            .padding(.bottom, 20)
         }
+        .listStyle(.insetGrouped)
     }
 }
 
@@ -203,34 +218,37 @@ private struct MessagesTab: View {
     @Environment(HomeownerStore.self) private var store
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            WCHeadline(text: "Questions?", subtitle: "Text or call the \(store.brand.name) office about your order. Say your address so we can find it.").padding(.top, 14)
-            if let phone = store.companyPhone {
-                let digits = phone.filter { $0.isNumber || $0 == "+" }
-                if let sms = URL(string: "sms:\(digits)"), let tel = URL(string: "tel:\(digits)") {
-                    Link(destination: sms) { actionRow(icon: .message, title: "Text us", detail: PhoneDisplay.pretty(phone)) }
-                    Link(destination: tel) { actionRow(icon: .phone, title: "Call us", detail: PhoneDisplay.pretty(phone)) }
+        List {
+            Section {
+                if let phone = store.companyPhone {
+                    let digits = phone.filter { $0.isNumber || $0 == "+" }
+                    if let sms = URL(string: "sms:\(digits)"), let tel = URL(string: "tel:\(digits)") {
+                        Link(destination: sms) { actionRow(icon: .message, title: "Text us", detail: PhoneDisplay.pretty(phone)) }
+                        Link(destination: tel) { actionRow(icon: .phone, title: "Call us", detail: PhoneDisplay.pretty(phone)) }
+                    }
+                } else {
+                    Label {
+                        Text("We'll show the office's number here once your company has added one.").font(.subheadline).foregroundStyle(Theme.ink2)
+                    } icon: {
+                        Image(systemName: WCIcon.info.symbol).foregroundStyle(Theme.ink2)
+                    }
                 }
-            } else {
-                InfoPanel(icon: .info, text: "We'll show the office's number here once your company has added one.")
+            } header: {
+                HiListHeading(title: "Questions?", subtitle: "Text or call the \(store.brand.name) office about your order. Say your address so we can find it.")
             }
-            Spacer()
         }
-        .padding(.horizontal, Theme.gutter)
+        .listStyle(.insetGrouped)
     }
 
     private func actionRow(icon: WCIcon, title: String, detail: String) -> some View {
-        HStack(spacing: 14) {
-            IconTile(icon: icon, size: 40, iconSize: 20, selected: true)
+        Label {
             VStack(alignment: .leading, spacing: 1) {
-                Text(title).wc(17, .semibold, relativeTo: .body).foregroundStyle(Theme.ink)
-                Text(detail).wc(14, relativeTo: .footnote).foregroundStyle(Theme.ink3)
+                Text(title).font(.body.weight(.semibold)).foregroundStyle(Theme.ink)
+                Text(detail).font(.footnote).monospacedDigit().foregroundStyle(Theme.ink2)
             }
-            Spacer()
-            IconView(icon: .chevRight, size: 16, weight: 2).foregroundStyle(Theme.ink3)
+        } icon: {
+            Image(systemName: icon.symbol).foregroundStyle(Theme.red)
         }
-        .padding(14)
-        .wcCard(radius: 16)
     }
 }
 
