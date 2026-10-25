@@ -419,3 +419,15 @@
     border-top: 0.5px solid var(--ap-sep);
   }
 }
+
+@media (max-width: 640px) {
+  .picker {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .viewerBar {
+    flex-wrap: wrap;
+  }
+  .title {
+    font-size: 24px;
+  }
+}

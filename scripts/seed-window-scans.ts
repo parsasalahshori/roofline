@@ -117,7 +117,7 @@ async function call(method: string, path: string, o: { body?: unknown; token?: s
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (o.token) headers.Authorization = `Bearer ${o.token}`;
   if (o.cookie) headers.Cookie = o.cookie;
-  let body: BodyInit | undefined;
+  let body: string | Buffer | undefined;
   if (o.raw) {
     headers['Content-Type'] = 'image/jpeg';
     body = Buffer.from(o.raw);

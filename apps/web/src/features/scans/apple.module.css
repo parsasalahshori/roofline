@@ -1,8 +1,8 @@
 /*
  * The look of the scan screens: Apple's iOS design language in a browser (clarity, hierarchy, depth). The system font,
  * the system grays, inset grouped lists with hairline separators, capsule chips, 44 px rows and targets, a translucent
- * material for the inspector, light and dark. Everything is a custom property on .root, so the screens inside it use
- * var(--ap-*) and the kit's own controls (which read --f-ui) pick the system font up too. The company's brand colour stays
+ * material for the inspector, light and dark. Everything is a custom property on .root, so the screens inside it read
+ * the --ap- ones and the kit's own controls (which read --f-ui) pick the system font up too. The company's brand colour stays
  * the tint (the primary button, the selected segment), as an iOS app's tint does.
  */
 .root {

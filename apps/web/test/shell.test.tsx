@@ -65,7 +65,7 @@ function renderApp(path: string) {
 }
 
 /** The apps in the rail, top to bottom: the core pages, the AI team, the field, then Settings. */
-const RAIL_KEYS = ['home', 'today', 'jobs', 'calendar', 'customers', 'estimator', 'approvals', 'front-desk', 'agents', 'storm', 'orders', 'settings'] as const;
+const RAIL_KEYS = ['home', 'today', 'jobs', 'calendar', 'customers', 'estimator', 'approvals', 'front-desk', 'agents', 'storm', 'orders', 'scans', 'settings'] as const;
 const LABELS = RAIL_KEYS.map((key) => WINDOW_COPY[key].title);
 
 /** A rail link by its label. Its name also holds any count, so only the start of the name is matched. */
@@ -73,7 +73,7 @@ function railLink(nav: HTMLElement, label: string) {
   return within(nav).getByRole('link', { name: new RegExp('^' + label) });
 }
 
-it('shows the rail: the company, search, twelve labeled apps and the person', async () => {
+it('shows the rail: the company, search, thirteen labeled apps and the person', async () => {
   signedInApi();
   renderApp('/');
 

@@ -126,7 +126,7 @@ it('lights More on a page that lives under it, and no other tab then', async () 
   expect(within(await MAIN()).getByRole('button', { name: shell.tabMore })).not.toHaveAttribute('data-current');
 });
 
-it('More opens a sheet with the nine pages the tab bar does not hold', async () => {
+it('More opens a sheet with the ten pages the tab bar does not hold', async () => {
   stubPhone(true);
   signedInApi();
   const { user } = renderApp('/');
@@ -134,7 +134,7 @@ it('More opens a sheet with the nine pages the tab bar does not hold', async () 
   await user.click(within(await MAIN()).getByRole('button', { name: shell.tabMore }));
   const sheet = await screen.findByRole('dialog', { name: shell.moreTitle });
   const links = within(sheet).getAllByRole('link');
-  expect(links).toHaveLength(9);
+  expect(links).toHaveLength(10);
   const expected: [string, string][] = [
     [WINDOW_COPY.calendar.title, '/calendar'],
     [WINDOW_COPY.customers.title, '/customers'],
@@ -144,6 +144,7 @@ it('More opens a sheet with the nine pages the tab bar does not hold', async () 
     [WINDOW_COPY.storm.title, '/storm'],
     [doors.myRoutesLink, '/storm/routes'],
     [WINDOW_COPY.orders.title, '/estimator/windows'],
+    [WINDOW_COPY.scans.title, '/scans'],
     [WINDOW_COPY.settings.title, '/settings'],
   ];
   expected.forEach(([name, href], i) => {
