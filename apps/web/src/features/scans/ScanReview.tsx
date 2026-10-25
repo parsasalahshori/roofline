@@ -5,6 +5,7 @@ import {
   type ScanDetailView,
   type ScanFrameView,
   type ScanMark,
+  type ScanVec3,
   SCAN_CORNERS,
   SCAN_GATE_LABELS,
   windowSizeLabel,
@@ -14,10 +15,12 @@ import { useParams, useSearchParams } from 'react-router';
 import { ApiError } from '../../api/client.ts';
 import { scanReview } from '../../copy/scanReview.ts';
 import { AppPage } from '../../shell/AppPage.tsx';
-import { useExpediteScan, useFinalizeScan, useSaveMarks, useScan, useSubmitScan } from './api.ts';
+import { useExpediteScan, useFinalizeScan, useRefineScan, useSaveMarks, useScan, useSubmitScan } from './api.ts';
 import apple from './apple.module.css';
 import { SlaChip, StatusChip } from './Chips.tsx';
 import { FrameCanvas } from './FrameCanvas.tsx';
+import { PointCloud } from './PointCloud.tsx';
+import { RefinementPanel } from './RefinementPanel.tsx';
 import styles from './ScanReview.module.css';
 import { markOf, marksOfFrame, moveMark, placeMark, removeMark, sameMarks } from './scanMarks.ts';
 import { scanTitle } from './ScanQueue.tsx';
@@ -93,6 +96,8 @@ function Body({ scan }: { scan: ScanDetailView }) {
   const editable = scan.mayEdit;
 
   const [zoom, setZoom] = useState(true);
+  const [showMask, setShowMask] = useState(true);
+  const [showCandidates, setShowCandidates] = useState(false);
   const [armed, setArmed] = useState<ScanCorner | null>(null);
   const [selected, setSelected] = useState<ScanCorner | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -102,6 +107,19 @@ function Body({ scan }: { scan: ScanDetailView }) {
   const submit = useSubmitScan(scan.id);
   const finalize = useFinalizeScan(scan.id);
   const expedite = useExpediteScan(scan.id);
+  const refine = useRefineScan(scan.id);
+
+  // When a refinement finishes under the draft, the server's marks (the AI's among them) replace it, unless there are changes not saved yet
+  const finishedAt = scan.refinement?.finishedAt ?? null;
+  const seenFinish = useRef(finishedAt);
+  useEffect(() => {
+    if (finishedAt === seenFinish.current) return;
+    seenFinish.current = finishedAt;
+    if (!sameMarks(marksRef.current, lastSaved.current)) return;
+    lastSaved.current = scan.marks;
+    marksRef.current = scan.marks;
+    setMarks(scan.marks);
+  }, [finishedAt, scan.marks]);
 
   const change = useCallback((next: ScanMark[]) => {
     marksRef.current = next;
@@ -183,6 +201,31 @@ function Body({ scan }: { scan: ScanDetailView }) {
     }
   }
 
+  async function onRefine() {
+    setError(null);
+    if (!(await flush())) return;
+    try {
+      await refine.mutateAsync();
+    } catch (e) {
+      setError(messageOf(e));
+    }
+  }
+
+  const refinement = scan.refinement ?? null;
+  const hasMasks = scan.frames.some((f) => f.ai?.maskUrl != null);
+  /** What the canvas needs of the refinement for one frame. */
+  const refineFor = (f: ScanFrameView) =>
+    refinement === null
+      ? undefined
+      : { maskUrl: f.ai?.maskUrl ?? null, showMask, showCandidates, alternatives: refinement.alternatives, dropped: refinement.dropped };
+  const cloudScene = useMemo(
+    () => ({
+      corners: (comp.cornersM ?? []) as ScanVec3[],
+      cameras: scan.frames.map((f) => ({ p: [f.cameraTransform[12]!, f.cameraTransform[13]!, f.cameraTransform[14]!] as ScanVec3, colmap: f.poseSource === 'colmap' })),
+    }),
+    [comp.cornersM, scan.frames],
+  );
+
   const regularFrames = scan.frames.filter((f) => f.kind === 'regular');
   const closeupFrames = scan.frames.filter((f) => f.kind === 'closeup');
 
@@ -191,10 +234,10 @@ function Body({ scan }: { scan: ScanDetailView }) {
     return (
       <li key={f.frameId}>
         <UiLink href={`/scans/${scan.id}?frame=${encodeURIComponent(f.frameId)}`} className={styles.tile} aria-label={scanReview.openFrame(names.get(f.frameId) ?? '')}>
-          <FrameCanvas frame={f} frameName={names.get(f.frameId) ?? ''} marks={marks} comp={comp} mode="thumb" />
+          <FrameCanvas frame={f} frameName={names.get(f.frameId) ?? ''} marks={marks} comp={comp} mode="thumb" refine={refineFor(f)} />
           <span className={styles.tileText}>
             <span className={styles.tileName}>{names.get(f.frameId)}</span>
-            <span className={styles.tileMeta}>{scanReview.frameMarks(n)}</span>
+            <span className={styles.tileMeta}>{f.ai?.quality != null && f.ai.state === 'ok' ? `${scanReview.frameMarks(n)}  ·  ${scanReview.aiQuality(f.ai.quality)}` : scanReview.frameMarks(n)}</span>
           </span>
         </UiLink>
       </li>
@@ -230,6 +273,13 @@ function Body({ scan }: { scan: ScanDetailView }) {
 
         {frame === null ? (
           <>
+            {hasMasks ? (
+              <ul className={apple.group}>
+                <li className={styles.toggleRow}>
+                  <Toggle label={scanReview.maskLabelAll} checked={showMask} onChange={setShowMask} />
+                </li>
+              </ul>
+            ) : null}
             <section className={styles.section} aria-label={scanReview.frameGroup.regular}>
               <div className={styles.sectionHead}>
                 <h3>{scanReview.frameGroup.regular}</h3>
@@ -250,6 +300,7 @@ function Body({ scan }: { scan: ScanDetailView }) {
                 </ul>
               </section>
             ) : null}
+            {refinement?.cloudUrl != null ? <PointCloud url={refinement.cloudUrl} scene={cloudScene} count={refinement.cloudPoints} /> : null}
           </>
         ) : (
           <section className={styles.viewer} aria-label={names.get(frame.frameId)}>
@@ -288,11 +339,30 @@ function Body({ scan }: { scan: ScanDetailView }) {
                 change(removeMark(marksRef.current, frame.frameId, c));
                 setSelected(null);
               }}
+              refine={refineFor(frame)}
             />
+            {frame.ai !== undefined ? (
+              <p className={styles.help} data-testid="frame-ai">
+                <span className={frame.ai.state === 'ok' ? styles.good : styles.warn}>{scanReview.aiState[frame.ai.state]}</span>
+                {frame.ai.quality !== null ? `  ·  ${scanReview.aiQuality(frame.ai.quality)}` : ''}
+                {frame.poseSource !== undefined ? `  ·  ${frame.poseSource === 'colmap' ? scanReview.poseColmap : scanReview.poseArkit}` : ''}
+                {frame.ai.note !== null && frame.ai.state !== 'ok' ? `  ·  ${frame.ai.note}` : ''}
+              </p>
+            ) : null}
             <ul className={apple.group}>
               <li className={styles.toggleRow}>
                 <Toggle label={scanReview.zoomLabel} checked={zoom} onChange={setZoom} />
               </li>
+              {frame.ai?.maskUrl != null ? (
+                <li className={styles.toggleRow}>
+                  <Toggle label={scanReview.maskLabel} checked={showMask} onChange={setShowMask} />
+                </li>
+              ) : null}
+              {refinement !== null && (refinement.alternatives.length > 0 || refinement.dropped.length > 0) ? (
+                <li className={styles.toggleRow}>
+                  <Toggle label={scanReview.candidatesLabel} checked={showCandidates} onChange={setShowCandidates} />
+                </li>
+              ) : null}
             </ul>
             {editable ? (
               <>
@@ -340,6 +410,28 @@ function Body({ scan }: { scan: ScanDetailView }) {
                 <span className={styles.legendDiamond} aria-hidden="true" />
                 {scanReview.legendProjected}
               </li>
+              {refinement !== null ? (
+                <>
+                  <li>
+                    <span className={styles.legendAi} aria-hidden="true" />
+                    {scanReview.legendAi}
+                  </li>
+                  {showCandidates ? (
+                    <>
+                      <li>
+                        <span className={styles.legendAlt} aria-hidden="true" />
+                        {scanReview.legendCandidate}
+                      </li>
+                      <li>
+                        <span className={styles.legendDrop} aria-hidden="true">
+                          ×
+                        </span>
+                        {scanReview.legendDropped}
+                      </li>
+                    </>
+                  ) : null}
+                </>
+              ) : null}
             </ul>
             {editable ? <p className={styles.help}>{scanReview.viewerHelp}</p> : null}
           </section>
@@ -366,6 +458,8 @@ function Body({ scan }: { scan: ScanDetailView }) {
             )}
           </div>
         </section>
+
+        <RefinementPanel scan={scan} onRerun={() => void onRefine()} busy={refine.isPending || refinement?.state === 'queued' || refinement?.state === 'running'} />
 
         <section aria-label={scanReview.cornersTitle}>
           <h3 className={apple.groupTitle}>{scanReview.cornersTitle}</h3>

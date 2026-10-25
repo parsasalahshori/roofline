@@ -438,6 +438,8 @@ export type ScanResult = {
   status: 'measured' | 'needs_review';
   /** Additive (server only): the corners as triangulated, before the rectangle fit. */
   triangulatedM?: (ScanVec3 | null)[];
+  /** Additive: present on a result the server's refinement worked out (docs/windows/scan-contract.md, "Refinement"). */
+  refined?: ScanRefinedSummary;
 };
 
 const round = (v: number, places: number): number => {
@@ -713,7 +715,7 @@ export function homeownerScanState(status: ScanStatus): HomeownerScanState {
 }
 
 /** One line of a scan's history (stored on the scan, shown to the reviewers). */
-export const SCAN_HISTORY_ACTIONS = ['created', 'auto_accepted', 'marks_edited', 'submitted', 'finalized', 'expedited', 'unexpedited'] as const;
+export const SCAN_HISTORY_ACTIONS = ['created', 'auto_accepted', 'marks_edited', 'submitted', 'finalized', 'expedited', 'unexpedited', 'refined', 'refine_failed'] as const;
 export type ScanHistoryAction = (typeof SCAN_HISTORY_ACTIONS)[number];
 export type ScanHistoryEvent = {
   at: string;
@@ -756,7 +758,13 @@ export type ScanQueueItem = {
 
 export type ScanQueueView = { scans: ScanQueueItem[]; counts: Record<ScanStatus, number> };
 
-export type ScanFrameView = ScanFrame & { imageUrl: string };
+export type ScanFrameView = ScanFrame & {
+  imageUrl: string;
+  /** Additive: where `cameraTransform` comes from (the refinement may have put COLMAP's bundle-adjusted pose there). */
+  poseSource?: ScanPoseSource;
+  /** Additive: what the AI found on this frame. */
+  ai?: ScanFrameAiView;
+};
 
 export type ScanReviewer = { id: string; name: string; at: string } | null;
 
@@ -794,4 +802,121 @@ export type ScanDetailView = {
   mayEdit: boolean;
   /** The signed-in member may finalise (a senior reviewer: owner or office). */
   mayFinalize: boolean;
+  /** Additive: the server's refinement (COLMAP + AI on every frame); null for a scan that is not refined. */
+  refinement?: ScanRefineView | null;
+  /** Additive: the signed-in member may start the refinement again. */
+  mayRefine?: boolean;
+};
+
+/* ------------------------------------------------------------------------------------------------------------------ */
+/* Refinement: COLMAP + AI masks on every frame (types; the math is window-scan-refine.ts)                             */
+/* ------------------------------------------------------------------------------------------------------------------ */
+
+/** Where a frame's camera pose comes from: ARKit's own, or COLMAP's bundle-adjusted pose carried into ARKit's world. */
+export type ScanPoseSource = 'arkit' | 'colmap';
+export const SCAN_REFINE_STATES = ['queued', 'running', 'done', 'failed'] as const;
+export type ScanRefineState = (typeof SCAN_REFINE_STATES)[number];
+/** What happened to the AI on one frame. `ok`: a mask and a believable quad. */
+export const SCAN_AI_STATES = ['ok', 'low_quality', 'no_quad', 'no_estimate', 'not_visible', 'error'] as const;
+export type ScanAiState = (typeof SCAN_AI_STATES)[number];
+
+/** A frame's AI result as stored: the box SAM was asked about, the mask it gave, how good the quad fitted to it is. */
+export type ScanFrameAi = {
+  frameId: string;
+  state: ScanAiState;
+  /** The quad fit's quality, 0..1 (fill x coverage x roughness x support); null without a quad. */
+  quality: number | null;
+  /** SAM's own score for the mask it chose, 0..1. */
+  maskScore: number | null;
+  /** The prompt box in native pixels [x0, y0, x1, y1], and how it was made: from the triangulated window (`projected`) or OWLv2. */
+  box: [number, number, number, number] | null;
+  prompt: 'projected' | 'owlv2' | null;
+  /** Object store key of the mask PNG (tinted, transparent elsewhere), null when there is none. */
+  maskKey: string | null;
+  /** Marks this frame gave (0 or 4). */
+  marks: number;
+  ms: number;
+  note: string | null;
+};
+
+export type ScanColmapSummary = {
+  /** COLMAP ran (false: it is not set up on this machine). */
+  ran: boolean;
+  /** Its poses were taken. */
+  used: boolean;
+  registered: number;
+  total: number;
+  alignmentRmsCm: number | null;
+  alignmentMaxCm: number | null;
+  rotationRmsDeg: number | null;
+  scale: number | null;
+  method: 'centres' | 'orientations' | null;
+  points: number;
+  meanReprojPx: number | null;
+  /** Why the poses were not taken (or COLMAP did not run), in a plain sentence. */
+  reason: string | null;
+  ms: { extract: number; match: number; map: number; align: number } | null;
+};
+
+/** What a refined result says about how it came about (additive on `ScanResult`). */
+export type ScanRefinedSummary = {
+  poseSource: ScanPoseSource;
+  /** Frames whose pose is COLMAP's, of all frames. */
+  colmapFrames: number;
+  frames: number;
+  alignmentRmsCm: number | null;
+  /** Frames the AI cut the window out of (a believable quad), and the marks that gave. */
+  aiFrames: number;
+  aiMarks: number;
+  /** Marks in the result, and marks the robust step threw out. */
+  marksUsed: number;
+  marksDropped: number;
+  /** The size before refinement (the first server result), for comparison. */
+  firstWidthIn: number | null;
+  firstHeightIn: number | null;
+};
+
+/** The refinement record stored with a scan (`window_scans.refinement`). */
+export type ScanRefinementRecord = {
+  version: 1;
+  state: ScanRefineState;
+  trigger: 'upload' | 'rerun';
+  requestedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  attempt: number;
+  /** A safe sentence about why it failed (never a stack or an SQL parameter). */
+  error: string | null;
+  /** The server's result as it stood before this refinement (what the phone's upload gave). */
+  firstResult: ScanResult | null;
+  poseSource: ScanPoseSource | null;
+  /** Why ARKit's poses were kept, or a note on what was taken. */
+  poseNote: string | null;
+  /** The refined camera transforms (16 numbers, column-major, ARKit's world) of the frames that took COLMAP's pose. */
+  poses: Record<string, number[]>;
+  colmap: ScanColmapSummary | null;
+  frames: ScanFrameAi[];
+  /** Every mark the AI made (source 'ai'), whether or not it was used. */
+  aiMarks: ScanMark[];
+  /** Candidate marks that lost to another candidate on their frame and corner. */
+  alternatives: ScanMark[];
+  /** Marks the robust triangulation threw out (reprojection over 8 px). */
+  dropped: ScanMark[];
+  cloudKey: string | null;
+  cloudPoints: number;
+  timings: { totalMs: number; aiMs: number; colmapMs: number } | null;
+};
+
+/** What the reviewer's screen gets of a frame's AI result: URLs in place of keys. */
+export type ScanFrameAiView = Omit<ScanFrameAi, 'maskKey'> & { maskUrl: string | null };
+
+/** What the reviewer's screen gets of the refinement. */
+export type ScanCloudView = { count: number; points: number[][] };
+
+export type ScanRefineView = Omit<ScanRefinementRecord, 'poses' | 'frames' | 'cloudKey' | 'firstResult'> & {
+  frames: ScanFrameAiView[];
+  firstWidthIn: number | null;
+  firstHeightIn: number | null;
+  /** The aligned COLMAP sparse points for the screen (`{ count, points: [[x, y, z, r, g, b], ...] }`, session auth), when there are some; the same as an ascii PLY at `${cloudUrl}.ply`. */
+  cloudUrl: string | null;
 };

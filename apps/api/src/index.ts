@@ -14,6 +14,8 @@ export {
   ensureJobQueues,
 } from './jobs/queue.ts';
 export { type ScheduledJob, SCHEDULES, startWorker, type WorkerOptions } from './jobs/worker.ts';
+// The window-scan refinement's COLMAP runner, for the worker's own tests (apps/worker/test)
+export { COLMAP_SCRIPT, type ColmapJob, type ColmapOutput, type ColmapRunner, createColmapRunner, PythonColmapRunner } from './scans/refine/colmap.ts';
 export { ConsoleMailer, type MailMessage, type Mailer, PostmarkMailer } from './mailer.ts';
 export {
   type BillingProvider,

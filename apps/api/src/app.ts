@@ -84,6 +84,7 @@ import { windowMeasurementOrderRoutes, windowOrderRoutes, windowOrderSettingsRou
 import type { StreetView } from './providers/street-view.ts';
 import type { WindowDetector } from './providers/window-detector.ts';
 import type { WindowSegmenter } from './providers/window-segmenter.ts';
+import type { ColmapRunner } from './scans/refine/colmap.ts';
 import { tierTemplateRoutes } from './routes/tier-templates.ts';
 import { estimatorSettingsRoutes } from './routes/estimator-settings.ts';
 import { stormLayerRoutes, stormRoutes } from './routes/storms.ts';
@@ -208,6 +209,8 @@ export type AppDeps = {
   windowDetector: WindowDetector;
   /** The homeowner app's optional window segmenter (providers/window-segmenter.ts): none by default. */
   windowSegmenter: WindowSegmenter;
+  /** COLMAP for the window-scan refinement (scans/refine/colmap.ts): none unless SCAN_COLMAP_PYTHON is set; tests pass a fake. */
+  scanColmap?: ColmapRunner | null;
 };
 
 export type AppOptions = {

@@ -189,6 +189,26 @@ const ConfigSchema = z
       .transform((v) => path.resolve(REPO_ROOT, v))
       .optional(),
     /**
+     * Server-side refinement of every multi-frame window scan (apps/api/src/scans/refine, docs/windows/scan-contract.md
+     * "Refinement"): after the phone's scan is stored, the worker runs SAM 2 on every frame and COLMAP on the photos, then
+     * triangulates again. off (default): a scan is accepted or sent to review from the phone's marks at once. on: a scan
+     * waits as `processing` (the homeowner still sees "Being checked by WinChoice") until the `scan-refine` job is done.
+     * It only has work to do with WINDOW_SEGMENTER=sam2 (and its model) and/or SCAN_COLMAP_PYTHON.
+     */
+    SCAN_REFINE: z.enum(['off', 'on'], { error: 'must be off or on' }).default('off'),
+    /** The python that has pycolmap, numpy and pillow (a venv's bin/python). Unset: COLMAP is skipped and ARKit's poses are kept. Resolved from the repository root. */
+    SCAN_COLMAP_PYTHON: z
+      .string()
+      .transform((v) => path.resolve(REPO_ROOT, v))
+      .optional(),
+    /** The COLMAP refinement script. Default: apps/worker/python/colmap_refine.py. Resolved from the repository root. */
+    SCAN_COLMAP_SCRIPT: z
+      .string()
+      .transform((v) => path.resolve(REPO_ROOT, v))
+      .optional(),
+    /** How long COLMAP may run on one scan before it is stopped and ARKit's poses are kept (seconds). */
+    SCAN_COLMAP_TIMEOUT_S: integer(900, 30, 7200),
+    /**
      * The homeowner app's DEBUG capture dump (public/homeowner-debug.ts): a directory that tester builds of the phone app
      * (Debug or TestFlight) write each Capture's photo, depth, camera and result into, so a bad proposal can be replayed on a
      * Mac. Unset (default): the route does not exist (404 debug_captures_off). Resolved from the repository root. Holds

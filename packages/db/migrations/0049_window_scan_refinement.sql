@@ -1,0 +1,1 @@
+ALTER TABLE "window_scans" ADD COLUMN "refinement" jsonb;

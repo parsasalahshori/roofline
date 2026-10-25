@@ -28,11 +28,18 @@ export type WindowQuad = {
   maskScore: number;
 };
 
+/** The mask SAM gave for a window, at the size SAM decoded the picture to (the picture's own pixels): 1 where the window is. */
+export type SegmentedMask = { width: number; height: number; data: Uint8Array; /** SAM's own score for it, 0..1. */ score: number };
+/** `segmentMask`'s answer: the quad (null when the mask has no believable four-sided shape) and the mask itself (null when SAM gave none). */
+export type MaskedSegment = { quad: WindowQuad | null; mask: SegmentedMask | null };
+
 export interface WindowSegmenter {
   readonly name: 'sam2' | null;
   readonly configured: boolean;
   /** The window quad inside `box` (and round the point `aim`, 0..1), or null when the mask has no believable quad. */
   segment(jpeg: Uint8Array, box: DetectedBox, aim: { x: number; y: number }): Promise<WindowQuad | null>;
+  /** Like `segment`, and also the mask (the scan refinement draws it on every frame). Absent on a segmenter that does not do it. */
+  segmentMask?(jpeg: Uint8Array, box: DetectedBox, aim: { x: number; y: number }): Promise<MaskedSegment>;
   /** Loads the model ahead of the first call. */
   warm?(): Promise<void>;
 }
@@ -193,6 +200,27 @@ export function chooseQuad(out: SegmentOutput, box: DetectedBox): { quad: Window
   };
 }
 
+/** The mask to draw when there is no quad: the model's best (score times overlap with the box) among those that are the box's window, else its best scoring one. */
+export function chooseMask(out: SegmentOutput, box: DetectedBox): { index: number; score: number } | null {
+  const { width: w, height: h } = out;
+  let bestIndex = -1;
+  let bestScore = 0;
+  let bestRank = -Infinity;
+  for (let index = 0; index < out.masks.length; index++) {
+    const mb = maskBox(out.masks[index]!, w, h);
+    if (mb === null) continue;
+    const iou = boxIoU(mb, box);
+    const score = out.scores[index] ?? 0;
+    const rank = iou >= MIN_BOX_IOU ? 1 + score * iou : score * iou;
+    if (rank > bestRank) {
+      bestRank = rank;
+      bestIndex = index;
+      bestScore = score;
+    }
+  }
+  return bestIndex < 0 ? null : { index: bestIndex, score: bestScore };
+}
+
 export class Sam2Segmenter implements WindowSegmenter {
   readonly name = 'sam2' as const;
   readonly configured = true;
@@ -217,12 +245,27 @@ export class Sam2Segmenter implements WindowSegmenter {
   }
 
   async segment(jpeg: Uint8Array, box: DetectedBox, aim: { x: number; y: number }): Promise<WindowQuad | null> {
+    return this.guarded(async () => quadFromMasks(await this.output(jpeg, box, aim), box));
+  }
+
+  async segmentMask(jpeg: Uint8Array, box: DetectedBox, aim: { x: number; y: number }): Promise<MaskedSegment> {
+    return this.guarded(async () => {
+      const out = await this.output(jpeg, box, aim);
+      const chosen = chooseQuad(out, box);
+      if (chosen !== null) return { quad: chosen.quad, mask: { width: out.width, height: out.height, data: out.masks[chosen.maskIndex]!, score: chosen.quad.maskScore } };
+      const m = chooseMask(out, box);
+      return { quad: null, mask: m === null ? null : { width: out.width, height: out.height, data: out.masks[m.index]!, score: m.score } };
+    });
+  }
+
+  /** Runs `work` with the timeout; anything that goes wrong is a SegmenterError, and the model is loaded afresh next time. */
+  private async guarded<T>(work: () => Promise<T>): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const late = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new SegmenterError('The window segmenter timed out.')), this.timeoutMs);
     });
     try {
-      return await Promise.race([this.run(jpeg, box, aim), late]);
+      return await Promise.race([work(), late]);
     } catch (err) {
       if (err instanceof SegmenterError) throw err;
       this.loaded = null;
@@ -232,12 +275,12 @@ export class Sam2Segmenter implements WindowSegmenter {
     }
   }
 
-  private async run(jpeg: Uint8Array, box: DetectedBox, aim: { x: number; y: number }): Promise<WindowQuad | null> {
+  private async output(jpeg: Uint8Array, box: DetectedBox, aim: { x: number; y: number }): Promise<SegmentOutput> {
     this.loaded ??= this.load(this.modelDir);
     const { run } = await this.loaded;
     // The prompt is the box, and the point the person aimed at when it is inside the box (it is on the window, not on a neighbour)
     const inside = aim.x >= box.x && aim.x <= box.x + box.w && aim.y >= box.y && aim.y <= box.y + box.h;
-    return quadFromMasks(await run(jpeg, { box, point: inside ? aim : null }), box);
+    return run(jpeg, { box, point: inside ? aim : null });
   }
 }
 

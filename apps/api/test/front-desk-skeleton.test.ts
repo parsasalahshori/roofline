@@ -22,9 +22,9 @@ afterAll(() => undefined);
 describe('Front Desk skeleton', () => {
   test('JOB_NAMES gain the Front Desk names before the G1 names', () => {
     expect(JOB_NAMES.slice(0, 2)).toEqual(['import-customers', 'texting-registration']);
-    // G1 appends seven agent jobs after the Front Desk names, then the lidar round adds 'lidar-area' last.
-    expect(JOB_NAMES.slice(-12, -8)).toEqual([...FD_JOBS]);
-    expect(JOB_NAMES.at(-1)).toBe('lidar-area');
+    // G1 appends seven agent jobs after the Front Desk names, then the lidar round adds 'lidar-area', then the window-scan refinement 'scan-refine' last.
+    expect(JOB_NAMES.slice(-13, -9)).toEqual([...FD_JOBS]);
+    expect(JOB_NAMES.slice(-2)).toEqual(['lidar-area', 'scan-refine']);
     for (const name of JOB_NAMES) expect(typeof JOB_HANDLERS[name]).toBe('function');
   });
 

@@ -14,6 +14,8 @@ import { computeScanResult, HOMEOWNER_APP_SOURCE, SCAN_GATE_CODES, SCAN_LIMITS, 
 import type { AppDeps } from '../app.ts';
 import { applyMeasuredScan, scanSizeProblem } from '../estimator/window-scan-apply.ts';
 import { AppError } from '../errors.ts';
+import { systemContext } from '../permissions.ts';
+import { enqueueScanRefine, failRefinement, queuedRefinement, refineAvailable } from '../scans/refine/run.ts';
 import { noNul, parse } from '../validate.ts';
 import { authed, type TokenBudget } from './homeowner-auth.ts';
 import { route } from './quote-access.ts';
@@ -148,6 +150,7 @@ export function registerScanRoutes(router: Router, o: { deps: AppDeps; budget: T
       const body = parse(ScanBody, req.body);
       await budget(request.id, 'scans');
       const now = clock.now();
+      const refine = refineAvailable(deps);
       const out = await withTenant(pools, ctx, async (tx) => {
         const locked = await getHomeownerRequest(tx, ctx, request.id, { lock: true });
         if (locked === null) return null;
@@ -183,8 +186,9 @@ export function registerScanRoutes(router: Router, o: { deps: AppDeps; budget: T
             marks,
             phoneResult: body.result as ScanResult,
             serverResult: result,
-            status: accepted ? 'measured' : 'needs_review',
+            status: refine ? 'processing' : accepted ? 'measured' : 'needs_review',
             slaDueAt: new Date(now.getTime() + SCAN_SLA_MS),
+            ...(refine && { refinement: queuedRefinement('upload', now, result) }),
           },
           now,
         );
@@ -192,6 +196,8 @@ export function registerScanRoutes(router: Router, o: { deps: AppDeps; budget: T
           const stored = await getWindowScanByScanId(tx, ctx, locked.id, scanId);
           return stored === null ? null : { row: stored, created: false };
         }
+        // Refining: the job decides (accept, or send to a person) when it is done
+        if (refine) return { row, created: true, queue: true };
         if (!accepted) return { row, created: true };
         if (await applyMeasuredScan(tx, ctx, row, now)) return { row, created: true };
         // The window could not take the size: a person looks at it instead
@@ -209,6 +215,15 @@ export function registerScanRoutes(router: Router, o: { deps: AppDeps; budget: T
         return { row: held ?? row, created: true };
       });
       if (out === null) throw new AppError(409, "We can't take scans for this request.").coded('callback_only');
+      if ('queue' in out && out.queue === true) {
+        try {
+          await enqueueScanRefine(deps, ctx.companyId, out.row.id);
+        } catch (err) {
+          // The queue is not reachable: the scan must not wait for a job that was never sent
+          deps.logError?.(err, 'scan-refine enqueue');
+          await failRefinement(deps, systemContext(ctx.companyId), out.row.id, 'The refinement could not be queued.');
+        }
+      }
       res.status(out.created ? 201 : 200).json(scanAnswer(out.row));
     }),
   );

@@ -14,8 +14,6 @@ import {
 import {
   computeScanResult,
   type ScanDetailView,
-  type ScanFrame,
-  type ScanFrameView,
   type ScanHistoryEvent,
   type ScanMark,
   type ScanQueueItem,
@@ -31,6 +29,9 @@ import type { AppDeps } from '../app.ts';
 import { applyMeasuredScan, scanSizeProblem } from '../estimator/window-scan-apply.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { can, requireCapability } from '../permissions.ts';
+import { plyPoints } from '../scans/refine/ply.ts';
+import { cloudKeyOf, enqueueScanRefine, maskKeyOf, queuedRefinement, refineActive, refineAvailable } from '../scans/refine/run.ts';
+import { effectiveFramesOf, frameViewsOf, refineViewOf } from '../scans/refine/view.ts';
 import { noNul, parse, UUID } from '../validate.ts';
 
 /*
@@ -43,6 +44,10 @@ import { noNul, parse, UUID } from '../validate.ts';
  *   POST  /:id/submit                       the first reviewer is done (needs_review/in_review -> junior_done)
  *   POST  /:id/finalize                     { outcome: 'measured' | 'visit_required', reason?, override? } (senior reviewer)
  *   POST  /:id/expedite                     { expedite?: boolean } moves a scan to the top, out of the regular SLA
+ *   POST  /:id/refine                       run the server's refinement again (COLMAP + AI on every frame), on an open scan
+ *   GET   /:id/frames/:frameId/mask         a frame's AI mask (a tinted PNG, transparent outside the window)
+ *   GET   /:id/refinement/cloud             the aligned COLMAP sparse points for the screen: { count, points: [[x, y, z, r, g, b], ...] }, thinned
+ *   GET   /:id/refinement/cloud.ply         the same points, all of them, as an ascii PLY (a download)
  * Roles: any member (owner, office, rep) is a first ("junior") reviewer; the senior reviewer is whoever may mark window
  * factory orders ready (capability approve_factory_order: the owner and the office), the closest existing sign-off for sizes.
  */
@@ -147,7 +152,8 @@ export function windowScanRoutes(deps: AppDeps): Router {
     });
     if (found === null) return null;
     const { row, context, names } = found;
-    const frames: ScanFrameView[] = row.frames.map((f) => ({ ...f, imageUrl: `/api/window-scans/${row.id}/frames/${encodeURIComponent(f.frameId)}/image` }));
+    const frames = frameViewsOf(row);
+    const mayEdit = OPEN.includes(row.status) && (row.status !== 'junior_done' || can(ctx, 'approve_factory_order'));
     const reviewer = (userId: string | null, at: Date | null) => (userId === null ? null : { id: userId, name: names.get(userId) ?? 'Team member', at: (at ?? row.updatedAt).toISOString() });
     return {
       id: row.id,
@@ -175,8 +181,10 @@ export function windowScanRoutes(deps: AppDeps): Router {
       outcomeReason: row.outcomeReason,
       overrode: row.overrode,
       history: row.history.map((h) => ({ ...h, byName: h.by === null ? null : (names.get(h.by) ?? 'Team member') })),
-      mayEdit: OPEN.includes(row.status) && (row.status !== 'junior_done' || can(ctx, 'approve_factory_order')),
+      mayEdit,
       mayFinalize: row.status === 'junior_done' && can(ctx, 'approve_factory_order'),
+      refinement: refineViewOf(row),
+      mayRefine: mayEdit && refineAvailable(deps) && !refineActive(row.refinement),
     };
   }
 
@@ -205,6 +213,47 @@ export function windowScanRoutes(deps: AppDeps): Router {
     res.send(Buffer.from(bytes));
   });
 
+  /** A file the refinement stored for a scan (a mask or the point cloud), by the key the scan's own record holds. */
+  async function refinementFile(ctx: TenantContext, id: string, pick: (row: WindowScanRow) => string | null): Promise<Uint8Array> {
+    const key = await withTenant(pools, ctx, async (tx) => {
+      const row = await getWindowScan(tx, ctx, id);
+      return row === null ? null : pick(row);
+    });
+    if (key === null) throw new AppError(404, MESSAGES.notFound);
+    const bytes = await deps.objectStore.get(key);
+    if (bytes === null) throw new AppError(404, MESSAGES.notFound);
+    return bytes;
+  }
+
+  router.get('/:id/frames/:frameId/mask', async (req, res) => {
+    const id = idParam(req.params.id);
+    const frameId = typeof req.params.frameId === 'string' ? req.params.frameId : '';
+    const bytes = await refinementFile(req.ctx, id, (row) => {
+      const key = row.refinement?.frames.find((f) => f.frameId === frameId)?.maskKey ?? null;
+      // Only the key this scan's own record names (never a key built from the request)
+      return key !== null && key === maskKeyOf(req.ctx.companyId, row.id, frameId) ? key : null;
+    });
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'private, max-age=300');
+    res.send(Buffer.from(bytes));
+  });
+
+  router.get('/:id/refinement/cloud', async (req, res) => {
+    const id = idParam(req.params.id);
+    const bytes = await refinementFile(req.ctx, id, (row) => (row.refinement?.cloudKey === cloudKeyOf(req.ctx.companyId, row.id) ? row.refinement.cloudKey : null));
+    const points = plyPoints(Buffer.from(bytes).toString('utf8'));
+    res.set('Cache-Control', 'private, max-age=300');
+    res.json({ count: points.length, points });
+  });
+
+  router.get('/:id/refinement/cloud.ply', async (req, res) => {
+    const id = idParam(req.params.id);
+    const bytes = await refinementFile(req.ctx, id, (row) => (row.refinement?.cloudKey === cloudKeyOf(req.ctx.companyId, row.id) ? row.refinement.cloudKey : null));
+    res.set('Content-Type', 'text/plain; charset=utf-8');
+    res.set('Cache-Control', 'private, max-age=300');
+    res.send(Buffer.from(bytes));
+  });
+
   /** Runs `change` on the scan, locked; 404 when it is not this company's. */
   async function changeScan(ctx: TenantContext, id: string, change: (tx: Parameters<Parameters<typeof withTenant>[2]>[0], row: WindowScanRow, now: Date) => Promise<WindowScanRow>): Promise<void> {
     const now = clock.now();
@@ -227,13 +276,13 @@ export function windowScanRoutes(deps: AppDeps): Router {
       if (!OPEN.includes(row.status)) throw new AppError(409, CLOSED_MESSAGE).coded('scan_closed');
       // The first reviewer's work is done: only the senior reviewer moves marks now
       if (row.status === 'junior_done' && !can(ctx, 'approve_factory_order')) throw new AppError(403, MESSAGES.roleCannot);
-      const frames: ScanFrame[] = row.frames;
+      const frames = effectiveFramesOf(row);
       for (const m of body.marks) {
         const f = frames.find((x) => x.frameId === m.frameId);
         if (f === undefined || m.x < -2 || m.y < -2 || m.x > f.intrinsics.width + 2 || m.y > f.intrinsics.height + 2) throw new AppError(400, MARKS_MESSAGE, 'marks');
       }
       const marks: ScanMark[] = body.marks;
-      const result = scanResultOf(computeScanResult(frames, marks, row.wall), row.serverResult.windowFrame);
+      const result = { ...scanResultOf(computeScanResult(frames, marks, row.wall), row.serverResult.windowFrame), ...(row.serverResult.refined !== undefined && { refined: row.serverResult.refined }) };
       const claiming = row.status === 'needs_review';
       const next = await updateWindowScan(
         tx,
@@ -291,8 +340,8 @@ export function windowScanRoutes(deps: AppDeps): Router {
         if (reason === '') throw new AppError(422, 'Say why this window needs a visit.', 'reason').coded('reason_needed');
       } else {
         // Measured: the marks as they stand must make a size, and every gate must pass, or the senior overrides in writing
-        const comp = computeScanResult(row.frames, row.marks, row.wall);
-        const result = scanResultOf(comp, row.serverResult.windowFrame);
+        const comp = computeScanResult(effectiveFramesOf(row), row.marks, row.wall);
+        const result = { ...scanResultOf(comp, row.serverResult.windowFrame), ...(row.serverResult.refined !== undefined && { refined: row.serverResult.refined }) };
         if (comp.cornersM === null) throw new AppError(422, 'This scan has no size yet. Mark every corner on at least two frames, or choose Visit required.').coded('no_size');
         const sizeProblem = scanSizeProblem(result);
         if (sizeProblem !== null) throw new AppError(422, sizeProblem).coded('no_size');
@@ -321,6 +370,30 @@ export function windowScanRoutes(deps: AppDeps): Router {
       );
       return next ?? row;
     });
+    res.json(await detail(ctx, id));
+  });
+
+  router.post('/:id/refine', async (req, res) => {
+    const { ctx } = req;
+    const id = idParam(req.params.id);
+    if (!refineAvailable(deps)) throw new AppError(503, 'The server is not set up to refine scans.').coded('refine_unavailable');
+    await changeScan(ctx, id, async (tx, row, now) => {
+      if (!OPEN.includes(row.status)) throw new AppError(409, CLOSED_MESSAGE).coded('scan_closed');
+      if (row.status === 'junior_done' && !can(ctx, 'approve_factory_order')) throw new AppError(403, MESSAGES.roleCannot);
+      if (refineActive(row.refinement)) throw new AppError(409, 'This scan is being refined already.').coded('already_running');
+      const next = await updateWindowScan(tx, ctx, row.id, { refinement: queuedRefinement('rerun', now, row.serverResult, row.refinement) }, now, 'window_scan.refine_request');
+      return next ?? row;
+    });
+    try {
+      await enqueueScanRefine(deps, ctx.companyId, id);
+    } catch (err) {
+      deps.logError?.(err, 'scan-refine enqueue');
+      await changeScan(ctx, id, async (tx, row, now) => {
+        const next = await updateWindowScan(tx, ctx, row.id, { refinement: row.refinement === null ? null : { ...row.refinement, state: 'failed', finishedAt: now.toISOString(), error: 'The refinement could not be queued.' } }, now);
+        return next ?? row;
+      });
+      throw new AppError(503, 'The refinement could not be started. Try again in a moment.').coded('refine_unavailable');
+    }
     res.json(await detail(ctx, id));
   });
 

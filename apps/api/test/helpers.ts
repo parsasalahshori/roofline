@@ -250,6 +250,8 @@ export function testConfig(
     ROOF_3D_MODE: 'on',
     WINDOW_DETECTOR: 'off',
     WINDOW_SEGMENTER: 'off',
+    SCAN_REFINE: 'off',
+    SCAN_COLMAP_TIMEOUT_S: 900,
     FOOTPRINT_WAIT_MS: 120_000,
     GOOGLE_ADS_API_VERSION: 'v21',
     META_GRAPH_VERSION: 'v24.0',

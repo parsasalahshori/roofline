@@ -43,6 +43,8 @@ try {
   console.error(`Could not set up the job queue: ${describeErrorForLog(err)}`);
   process.exit(1);
 }
+// The segmenter's model loads now, not with the first scan's first frame (SCAN_REFINE=on runs SAM 2 here, in the worker)
+if (config.SCAN_REFINE === 'on') void deps.windowSegmenter.warm?.().catch((err: unknown) => console.warn(`The window segmenter did not warm up: ${describeErrorForLog(err)}`));
 console.log(
   `Roofline worker started (${config.NODE_ENV}): agent-step, job queues ${JOB_NAMES.join(', ')}, ${SCHEDULES.map((s) => `${s.name} (${s.cron})`).join(', ')}`,
 );

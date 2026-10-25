@@ -1,0 +1,135 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin: 0 4px;
+}
+
+.head h3 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.note {
+  font-size: 13px;
+  color: var(--ap-label-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.panels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.panel {
+  margin: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--ap-card);
+}
+
+.svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--ap-fill);
+}
+
+.caption {
+  padding: 8px 14px 10px;
+  font-size: 13px;
+  color: var(--ap-label-2);
+}
+
+.outline {
+  fill: rgba(255, 159, 10, 0.12);
+  stroke: #ff9f0a;
+  stroke-width: 1.5;
+  stroke-dasharray: 5 3;
+}
+
+.corner {
+  fill: rgba(255, 149, 10, 0.75);
+  stroke: #ff9f0a;
+  stroke-width: 1;
+}
+
+.camera {
+  fill: var(--ap-label-3);
+  stroke: var(--ap-card);
+  stroke-width: 1;
+}
+
+.camera[data-colmap='true'] {
+  fill: #0a84ff;
+}
+
+.bar {
+  stroke: var(--ap-label-2);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.barText {
+  fill: var(--ap-label-2);
+  font-family: var(--ap-font);
+  font-size: 11px;
+}
+
+.state {
+  margin: 0;
+  padding: 28px 16px;
+  border-radius: 12px;
+  background: var(--ap-card);
+  text-align: center;
+  font-size: 15px;
+  color: var(--ap-label-2);
+}
+
+.legend {
+  margin: 0 4px;
+}
+
+.keyPoint,
+.keyCorner,
+.keyCamera {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+}
+
+.keyPoint {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #c8553d;
+}
+
+.keyCorner {
+  transform: rotate(45deg) scale(0.85);
+  border: 2px solid #ff9f0a;
+  background: rgba(255, 159, 10, 0.5);
+}
+
+.keyCamera {
+  border-radius: 3px;
+  background: #0a84ff;
+}
+
+@media (max-width: 640px) {
+  .panels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

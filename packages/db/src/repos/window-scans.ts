@@ -26,6 +26,8 @@ export type NewWindowScan = {
   serverResult: WindowScanRow['serverResult'];
   status: ScanStatus;
   slaDueAt: Date;
+  /** Set when the scan is to be refined (the status is then `processing`). */
+  refinement?: WindowScanRow['refinement'];
 };
 
 /** Stores a scan; the same scan id on the same request is not stored twice (null: it was there already). */
@@ -49,6 +51,7 @@ export async function createWindowScan(tx: Tx, ctx: TenantContext, s: NewWindowS
       status: s.status,
       slaDueAt: s.slaDueAt,
       history: s.status === 'measured' ? [first, { at: now.toISOString(), by: null, action: 'auto_accepted', from: 'processing', to: 'measured' }] : [first],
+      refinement: s.refinement ?? null,
       createdAt: now,
       updatedAt: now,
     })
@@ -149,7 +152,7 @@ export async function listWindowScans(tx: Tx, ctx: TenantContext, opts: { status
 }
 
 export type WindowScanChange = Partial<
-  Pick<WindowScanRow, 'marks' | 'serverResult' | 'status' | 'expedite' | 'juniorUserId' | 'juniorAt' | 'seniorUserId' | 'seniorAt' | 'outcome' | 'outcomeReason' | 'overrode' | 'history'>
+  Pick<WindowScanRow, 'marks' | 'serverResult' | 'refinement' | 'status' | 'expedite' | 'juniorUserId' | 'juniorAt' | 'seniorUserId' | 'seniorAt' | 'outcome' | 'outcomeReason' | 'overrode' | 'history'>
 >;
 
 /** Changes a scan; the caller holds it locked and passes the new history (the old one plus the new events). */

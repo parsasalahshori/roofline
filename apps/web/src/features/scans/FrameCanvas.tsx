@@ -21,6 +21,8 @@ export type FrameCanvasProps = {
   onMove?: (corner: ScanCorner, x: number, y: number) => void;
   onPlace?: (corner: ScanCorner, x: number, y: number) => void;
   onRemove?: (corner: ScanCorner) => void;
+  /** The server's refinement of this frame: its AI mask, and the candidate marks that were not used or were thrown out. */
+  refine?: { maskUrl: string | null; showMask: boolean; showCandidates: boolean; alternatives: readonly ScanMark[]; dropped: readonly ScanMark[] };
 };
 
 /** A big error is worth a number next to the mark. */
@@ -32,9 +34,11 @@ const HIT_PX = 44;
  * One frame with its marks drawn on it (rings), and where the triangulated corners land on it (orange diamonds, joined to
  * their marks by a dashed line), so a mark that disagrees with the rest shows as a long line. The picture and the marks
  * share the native image's pixel space (the viewBox), whatever size the stored JPEG is. In 'edit' a mark is dragged, nudged
- * with the arrow keys, removed with Delete, and an armed corner is placed where the picture is tapped.
+ * with the arrow keys, removed with Delete, and an armed corner is placed where the picture is tapped. A mark the AI made is a
+ * rounded square (a phone's or a reviewer's is a ring); with the server's refinement a mask can be laid over the picture, and
+ * the candidates that lost (dashed) and the marks thrown out (a cross) can be shown.
  */
-export function FrameCanvas({ frame, frameName, marks, comp, mode, zoom = false, editable = false, armed = null, selected = null, onSelect, onMove, onPlace, onRemove }: FrameCanvasProps) {
+export function FrameCanvas({ frame, frameName, marks, comp, mode, zoom = false, editable = false, armed = null, selected = null, onSelect, onMove, onPlace, onRemove, refine }: FrameCanvasProps) {
   const W = frame.intrinsics.width;
   const H = frame.intrinsics.height;
   const svgRef = useRef<SVGSVGElement>(null);
@@ -140,11 +144,27 @@ export function FrameCanvas({ frame, frameName, marks, comp, mode, zoom = false,
         }
       >
         <image href={frame.imageUrl} x={0} y={0} width={W} height={H} preserveAspectRatio="none" />
+        {refine?.showMask === true && refine.maskUrl !== null ? <image href={refine.maskUrl} x={0} y={0} width={W} height={H} preserveAspectRatio="none" className={styles.mask} data-glyph="mask" pointerEvents="none" aria-label={scanReview.maskAlt(frameName)} /> : null}
         {outline !== null ? <polygon points={outline} className={styles.outline} strokeWidth={sw} /> : null}
+        {refine?.showCandidates === true
+          ? refine.alternatives
+              .filter((m) => m.frameId === frame.frameId)
+              .map((m, i) => (
+                <circle key={`a${m.corner}-${i}`} cx={m.x} cy={m.y} r={radius * 0.9} className={styles.alt} data-glyph="alt" data-ai={m.source === 'ai' ? 'true' : undefined} strokeWidth={sw} pointerEvents="none" />
+              ))
+          : null}
+        {refine?.showCandidates === true
+          ? refine.dropped
+              .filter((m) => m.frameId === frame.frameId)
+              .map((m, i) => (
+                <path key={`d${m.corner}-${i}`} d={`M ${m.x - radius} ${m.y - radius} L ${m.x + radius} ${m.y + radius} M ${m.x + radius} ${m.y - radius} L ${m.x - radius} ${m.y + radius}`} className={styles.dropped} data-glyph="dropped" strokeWidth={sw + 0.5} pointerEvents="none" />
+              ))
+          : null}
         {mine.map((mark) => {
           const c = mark.corner;
           const isSel = selected === c;
           const err = errorOf(c);
+          const ai = mark.source === 'ai';
           return (
             <g key={`m${c}`}>
               {edit ? (
@@ -173,8 +193,17 @@ export function FrameCanvas({ frame, frameName, marks, comp, mode, zoom = false,
                   onPointerCancel={editable ? () => setDrag(null) : undefined}
                 />
               ) : null}
-              <circle cx={mark.x} cy={mark.y} r={radius + stroke / 2} className={styles.halo} strokeWidth={sw} pointerEvents="none" />
-              <circle cx={mark.x} cy={mark.y} r={radius} className={styles.ring} data-selected={isSel ? 'true' : undefined} strokeWidth={sw} pointerEvents="none" />
+              {ai ? (
+                <>
+                  <rect x={mark.x - radius - stroke / 2} y={mark.y - radius - stroke / 2} width={2 * radius + stroke} height={2 * radius + stroke} rx={radius * 0.55} className={styles.halo} strokeWidth={sw} pointerEvents="none" />
+                  <rect x={mark.x - radius} y={mark.y - radius} width={2 * radius} height={2 * radius} rx={radius * 0.5} className={styles.aiMark} data-glyph="ai" data-selected={isSel ? 'true' : undefined} strokeWidth={sw} pointerEvents="none" />
+                </>
+              ) : (
+                <>
+                  <circle cx={mark.x} cy={mark.y} r={radius + stroke / 2} className={styles.halo} strokeWidth={sw} pointerEvents="none" />
+                  <circle cx={mark.x} cy={mark.y} r={radius} className={styles.ring} data-glyph="ring" data-selected={isSel ? 'true' : undefined} strokeWidth={sw} pointerEvents="none" />
+                </>
+              )}
               {edit && err !== null && err > SHOW_ERROR_PX ? (
                 <text x={mark.x + radius * 1.8} y={mark.y + radius * 3} fontSize={13 * scale} strokeWidth={3 * scale} className={styles.err} data-bad={err > 8 ? 'true' : undefined} pointerEvents="none">
                   {scanReview.px(err)}

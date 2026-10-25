@@ -923,6 +923,7 @@ function queueHandlers(over: Partial<JobHandlers> = {}): JobHandlers {
     'calendar-push': async () => {},
     'footprints-load': async () => {},
     'lidar-area': async () => {},
+    'scan-refine': async () => {},
     'signed-pdf': async () => {},
     'storm-match-company': async () => {},
     'storm-draft': async () => {},

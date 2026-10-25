@@ -49,6 +49,49 @@
   stroke: #ffffff;
 }
 
+/* A mark the AI made: a rounded square in indigo, so it reads apart from a phone's or a reviewer's ring */
+.aiMark {
+  fill: rgba(94, 92, 230, 0.28);
+  stroke: #7d7aff;
+  paint-order: stroke;
+  vector-effect: non-scaling-stroke;
+}
+
+.aiMark[data-selected='true'] {
+  fill: rgba(125, 122, 255, 0.6);
+}
+
+.hit:focus-visible + .aiMark,
+.hit:focus-visible + rect + .aiMark {
+  stroke: #ffffff;
+}
+
+/* The AI's mask: a tinted PNG, transparent outside the window */
+.mask {
+  pointer-events: none;
+}
+
+/* A candidate that lost to another mark on its frame */
+.alt {
+  fill: none;
+  stroke: #0a84ff;
+  stroke-dasharray: 3 3;
+  opacity: 0.9;
+  vector-effect: non-scaling-stroke;
+}
+
+.alt[data-ai='true'] {
+  stroke: #7d7aff;
+}
+
+/* A mark the robust triangulation threw out */
+.dropped {
+  fill: none;
+  stroke: #ff453a;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
 .halo {
   fill: none;
   stroke: rgba(0, 0, 0, 0.45);

@@ -61,6 +61,7 @@ import {
   type ScanFrame,
   type ScanMark,
   type ScanResult,
+  type ScanRefinementRecord,
   type ScanWall,
   type ScanHistoryEvent,
   type WindowOrderLine,
@@ -2479,6 +2480,8 @@ export const windowScans = pgTable(
     /** A senior reviewer finalised 'measured' although a gate failed. */
     overrode: boolean('overrode').notNull().default(false),
     history: jsonb('history').$type<ScanHistoryEvent[]>().notNull().default(sql`'[]'::jsonb`),
+    /** The server's refinement (COLMAP poses + AI masks on every frame, docs/windows/scan-contract.md "Refinement"); null for a scan never refined. */
+    refinement: jsonb('refinement').$type<ScanRefinementRecord | null>(),
     ...timestamps(),
   },
   (t) => [

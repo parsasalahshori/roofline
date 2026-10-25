@@ -30,6 +30,7 @@ import { createStaticMap } from './providers/static-map.ts'; // G1 Task 7
 import { createStreetView } from './providers/street-view.ts';
 import { createWindowDetector } from './providers/window-detector.ts';
 import { createWindowSegmenter } from './providers/window-segmenter.ts';
+import { createColmapRunner } from './scans/refine/colmap.ts';
 import { createFootprintSource } from './providers/footprints.ts';
 import { createObjectStore } from './providers/object-store.ts';
 import { createGeocoder } from './providers/geocoder.ts';
@@ -323,6 +324,7 @@ export function buildDeps(config: Config, queue: StepQueue, jobs: JobQueue): App
     streetView: createStreetView(config),
     windowDetector: createWindowDetector(config),
     windowSegmenter: createWindowSegmenter(config),
+    scanColmap: createColmapRunner(config),
     jobs,
     // D1 Front Desk
     llm: createLlm(config),

@@ -19,13 +19,17 @@ export function useScanQueue(filter: QueueFilter): UseQueryResult<ScanQueueView>
   });
 }
 
+/** A scan the server is still refining: the screen asks again every few seconds until it is done. */
+export const refining = (scan: Pick<ScanDetailView, 'status' | 'refinement'> | undefined): boolean =>
+  scan !== undefined && (scan.status === 'processing' || scan.refinement?.state === 'queued' || scan.refinement?.state === 'running');
+
 /** GET /api/window-scans/:id. */
 export function useScan(id: string): UseQueryResult<ScanDetailView> {
   return useQuery({
     queryKey: detailKey(id),
     queryFn: ({ signal }) => apiFetch<ScanDetailView>(path(id), { signal }),
     enabled: id !== '',
-    refetchInterval: 60_000,
+    refetchInterval: (query) => (refining(query.state.data) ? 3_000 : 60_000),
   });
 }
 
@@ -49,3 +53,5 @@ export const useFinalizeScan = (id: string) =>
   useScanMutation(id, (body: { outcome: ScanOutcome; reason?: string; override?: boolean }) => apiFetch<ScanDetailView>(`${path(id)}/finalize`, { method: 'POST', body }));
 /** POST /:id/expedite. */
 export const useExpediteScan = (id: string) => useScanMutation(id, (expedite: boolean) => apiFetch<ScanDetailView>(`${path(id)}/expedite`, { method: 'POST', body: { expedite } }));
+/** POST /:id/refine: the server runs COLMAP and the AI on the photos again. */
+export const useRefineScan = (id: string) => useScanMutation(id, () => apiFetch<ScanDetailView>(`${path(id)}/refine`, { method: 'POST', body: {} }));
