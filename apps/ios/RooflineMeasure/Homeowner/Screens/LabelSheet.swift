@@ -121,7 +121,7 @@ struct LabelSheet: View {
                             Haptics.tap()
                             store.discardPending()
                         } label: {
-                            Text("Yes, discard").wc(17, .semibold, relativeTo: .headline).foregroundStyle(Theme.bad)
+                            Text("Yes, discard").wc(17, .semibold, relativeTo: .headline).foregroundStyle(Theme.badText)
                                 .frame(maxWidth: .infinity, minHeight: Theme.secondaryButtonHeight)
                                 .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.bad.opacity(0.5), lineWidth: 1))
                         }

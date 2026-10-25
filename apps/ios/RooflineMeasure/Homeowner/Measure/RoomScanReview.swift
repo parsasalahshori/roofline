@@ -232,7 +232,7 @@ struct RoomScanReview: View {
                     if row.included {
                         Text(looksLike(row)).wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink3).lineLimit(typeSize.isAccessibilitySize ? nil : 2)
                         Text(ScanWording.sourceLine(row.confidence)).wc(14, row.confidence == .low ? .semibold : .regular, relativeTo: .subheadline)
-                            .foregroundStyle(row.confidence == .low ? Theme.warn : Theme.ink3)
+                            .foregroundStyle(row.confidence == .low ? Theme.warnText : Theme.ink3)
                     } else {
                         Text("Left out. Tap to add it.").wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink3)
                     }

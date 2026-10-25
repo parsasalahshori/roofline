@@ -142,7 +142,7 @@ private struct ConsentRow: View {
             .accessibilityValue(isOn ? "Checked" : "Not checked")
             .accessibilityAddTraits(.isButton)
             if let e = error {
-                Text(e).wc(13, .medium, relativeTo: .footnote).foregroundStyle(Theme.bad).padding(.leading, 38)
+                Text(e).wc(13, .medium, relativeTo: .footnote).foregroundStyle(Theme.badText).padding(.leading, 38)
             }
         }
     }

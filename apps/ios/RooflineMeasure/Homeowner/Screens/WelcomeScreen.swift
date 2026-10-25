@@ -39,10 +39,8 @@ struct WelcomeScreen: View {
             .padding(.bottom, 2)
             .accessibilityElement(children: .combine)
         }
-        // A navy hero under the status bar: its text must be white whatever the phone's appearance
         .toolbar(.visible, for: .navigationBar)
         .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
         .navigationBarBackButtonHidden(true)
         .sheet(isPresented: $showServerSetting) { ServerSettingSheet() }
     }
@@ -50,8 +48,8 @@ struct WelcomeScreen: View {
     private var hero: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(store.brand.wordmark)
-                .wcHeading(20, .heavy, relativeTo: .title3)
-                .foregroundStyle(.white)
+                .wcWordmark(.title3)
+                .foregroundStyle(.primary)
                 .padding(.top, 10)
                 .padding(.bottom, 30)
                 .accessibilityAddTraits(.isHeader)
@@ -62,8 +60,8 @@ struct WelcomeScreen: View {
             .padding(.bottom, 18)
             .accessibilityHidden(true)
             Text("Measure your home from your phone.")
-                .wcHeading(32, .heavy, relativeTo: .largeTitle)
-                .foregroundStyle(.white)
+                .wcHeading(32, .bold, relativeTo: .largeTitle)
+                .foregroundStyle(.primary)
                 .lineSpacing(-1)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: 330, alignment: .leading)
@@ -80,8 +78,8 @@ struct WelcomeScreen: View {
         .padding(.bottom, 28)
         .padding(.top, StatusBar.height)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.navy)
-        // Held anywhere on the navy hero, not just the wordmark: the wordmark sits under the transparent navigation
+        .background(Theme.ground)
+        // Held anywhere on the hero, not just the wordmark: the wordmark sits under the transparent navigation
         // bar, which takes its touches, so a hold on it alone never fired on a phone.
         .contentShape(Rectangle())
         .onLongPressGesture(minimumDuration: 1.2) {
@@ -92,15 +90,15 @@ struct WelcomeScreen: View {
     }
 }
 
-/// A white icon on a translucent tile, in the navy hero.
+/// An accent icon on a quiet tile, in the hero.
 private struct HeroBadge: View {
     let icon: WCIcon
 
     var body: some View {
         IconView(icon: icon, size: 26, weight: 1.8)
-            .foregroundStyle(.white)
+            .foregroundStyle(Theme.red)
             .frame(width: 52, height: 52)
-            .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 

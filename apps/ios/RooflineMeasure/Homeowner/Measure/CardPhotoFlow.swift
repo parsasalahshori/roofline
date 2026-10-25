@@ -340,7 +340,7 @@ struct CardPhotoFlow: View {
             } label: {
                 Text(onCard ? "Next: window corners" : "Use this size").wc(17, .semibold, relativeTo: .headline).foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: Theme.buttonHeight)
-                    .background(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).fill(Theme.red))
+                    .background(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).fill(Theme.buttonFill))
                     .opacity(count == 4 && (onCard || problem == nil) ? 1 : 0.45)
             }
             .disabled(count != 4 || (!onCard && problem != nil))

@@ -38,7 +38,7 @@ struct CallbackScreen: View {
                             }
                             .accessibilityLabel("Phone number")
                         if let e = phoneError {
-                            Text(e).wc(13, .medium, relativeTo: .footnote).foregroundStyle(Theme.bad)
+                            Text(e).wc(13, .medium, relativeTo: .footnote).foregroundStyle(Theme.badText)
                         }
                     }
                     .padding(.top, 22)

@@ -147,7 +147,7 @@ private struct SummaryCard: View {
                 Text(Self.line(count: rows.count, checks: checks))
                     .wc(16, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                if checks == 0 { Text("Ready for a quote").wc(16, .semibold, relativeTo: .headline).foregroundStyle(Theme.ok) }
+                if checks == 0 { Text("Ready for a quote").wc(16, .semibold, relativeTo: .headline).foregroundStyle(Theme.okText) }
             }
             HStack(spacing: 4) {
                 ForEach(rows) { r in
@@ -218,17 +218,17 @@ struct WindowListRow: View {
                 Text("\(row.number)")
                     .wcMono(16, .bold, relativeTo: .body)
                     .foregroundStyle(Theme.blue)
-                    .frame(width: 30, height: 30)
+                    .frame(minWidth: 30, minHeight: 30)
                     .background(Theme.blueTint, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .padding(.top, large ? 4 : 0)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(row.title).wc(17, .semibold, relativeTo: .body).foregroundStyle(Theme.ink).lineLimit(large ? nil : 2)
+                    Text(row.title).wc(17, .semibold, relativeTo: .body).foregroundStyle(Theme.ink).lineLimit(nil)
                     secondLine
                     if let line = row.windowSizeLine {
-                        Text(line).wc(13, .medium, relativeTo: .footnote).foregroundStyle(Theme.ink2).lineLimit(large ? nil : 2)
+                        Text(line).wc(13, .medium, relativeTo: .footnote).foregroundStyle(Theme.ink2).lineLimit(nil)
                     }
                     if let line = row.standardSizeLine {
-                        Text(line).wc(13, relativeTo: .footnote).foregroundStyle(Theme.ink3).lineLimit(large ? nil : 2)
+                        Text(line).wc(13, relativeTo: .footnote).foregroundStyle(Theme.ink3).lineLimit(nil)
                     }
                     // With large text the size goes under the name instead of beside it
                     if large { sizeView }
@@ -280,10 +280,10 @@ struct WindowListRow: View {
             .accessibilityHint(m)
         default:
             if row.flagged {
-                Text("Needs a look · \(row.lookReason)").wc(14, .medium, relativeTo: .subheadline).foregroundStyle(Theme.warn)
+                Text("Needs a look · \(row.lookReason)").wc(14, .medium, relativeTo: .subheadline).foregroundStyle(Theme.warnText)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text(row.methodLine).wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink3).lineLimit(large ? nil : 2)
+                Text(row.methodLine).wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink3).lineLimit(nil)
             }
         }
     }

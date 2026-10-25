@@ -315,7 +315,7 @@ struct FreezeFrameEditor: View {
                     }
                     .foregroundStyle(Theme.onRed)
                     .frame(maxWidth: .infinity, minHeight: 56)
-                    .background(Capsule().fill(Theme.red))
+                    .background(Capsule().fill(Theme.buttonFill))
                     .overlay(Capsule().strokeBorder(Color.white, lineWidth: 3))
                     .opacity(editing.canUse ? 1 : 0.45)
                 }

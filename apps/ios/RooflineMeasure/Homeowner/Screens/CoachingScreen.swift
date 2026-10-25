@@ -7,10 +7,11 @@ struct CoachingScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            WCNavBar(title: "How to measure", onBack: { store.pop() }) { StepDots(filled: 3) }
+            WCNavBar(title: "How to measure", onBack: { store.pop() })
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
-                    WCHeadline(text: "Four tips for a good size").padding(.bottom, 6)
+                    WCHeadline(text: "Four tips for a good size")
+                    StepProgress(step: 3).padding(.bottom, 6)
                     Tip(art: .standBack, title: "Stand 3 to 5 feet back", detail: "About 1 to 1.5 meters, facing the window straight on.")
                     Tip(art: .inside, title: "Measure from inside", detail: "Point at the inside of the frame, not the trim around it.")
                     Tip(art: .light, title: "Good light, blinds open", detail: "Daytime is best. Turn on the room lights at night.")
@@ -89,7 +90,7 @@ struct TipArt: View {
                 for (x, y) in [(24.0, 10.0), (62.0, 10.0), (62.0, 56.0), (24.0, 56.0)] {
                     let dot = Path(ellipseIn: CGRect(x: (x - 4) * sx, y: (y - 4) * sy, width: 8 * sx, height: 8 * sy))
                     ctx.fill(dot, with: .color(tape))
-                    ctx.stroke(dot, with: .color(Theme.navy), lineWidth: 1.2 * sx)
+                    ctx.stroke(dot, with: .color(Theme.ink), lineWidth: 1.2 * sx)
                 }
             }
         }

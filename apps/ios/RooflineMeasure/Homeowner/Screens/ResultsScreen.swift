@@ -29,10 +29,11 @@ struct ResultsScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            WCNavBar(title: store.brand.wordmark, wordmark: true, onBack: { store.pop() }) { StepDots(filled: 3) }
+            WCNavBar(title: store.brand.wordmark, wordmark: true, onBack: { store.pop() })
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    WCHeadline(text: "Here's your home").padding(.bottom, 4)
+                    WCHeadline(text: "Here's your home")
+                    StepProgress(step: 3).padding(.bottom, 4)
                     if let g = heroGeometry { heroCard(g) } else { homeCard }
                     if store.services.contains(.windows) { windowsCard.revealed(cardsVisible, order: 0, reduceMotion: reduceMotion) }
                     if store.services.contains(.roof) { roofCard.revealed(cardsVisible, order: store.services.contains(.windows) ? 1 : 0, reduceMotion: reduceMotion) }

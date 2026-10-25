@@ -63,7 +63,7 @@ private struct OrderTab: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .padding(.horizontal, 16).padding(.vertical, 8).frame(minHeight: 44)
-                    .background(Theme.blueTint, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                     .padding(.top, 14)
                     .accessibilityElement(children: .combine)
                 }
@@ -102,7 +102,7 @@ private struct OrderTab: View {
                     }
                     .foregroundStyle(Theme.onRed)
                     .padding(.horizontal, 20).frame(minHeight: 50)
-                    .background(Theme.red, in: Capsule())
+                    .background(Theme.buttonFill, in: Capsule())
                 }
             }
         }

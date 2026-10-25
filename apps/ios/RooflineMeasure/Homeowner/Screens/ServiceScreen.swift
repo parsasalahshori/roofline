@@ -7,11 +7,11 @@ struct ServiceScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            WCNavBar(title: store.brand.wordmark, wordmark: true, onBack: { store.pop() }) { StepDots(filled: 1) }
+            WCNavBar(title: store.brand.wordmark, wordmark: true, onBack: { store.pop() })
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     WCHeadline(text: "What do you want to measure?", subtitle: "Pick one. You can measure the other one after.")
-                        .padding(.bottom, 8)
+                    StepProgress(step: 1).padding(.bottom, 8)
                     ForEach(store.offeredServices, id: \.self) { service in
                         ServiceChoice(service: service) { store.chooseService(service) }
                     }

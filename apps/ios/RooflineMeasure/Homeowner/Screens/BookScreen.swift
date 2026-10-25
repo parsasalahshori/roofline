@@ -101,12 +101,12 @@ struct BookScreen: View {
             Haptics.tap()
         } label: {
             VStack(spacing: 2) {
-                Text(VisitTimes.weekdayShort(d.date, zone)).wc(15, relativeTo: .subheadline).foregroundStyle(on ? Color.white.opacity(0.85) : Theme.ink3)
+                Text(VisitTimes.weekdayShort(d.date, zone)).wc(15, relativeTo: .subheadline).foregroundStyle(on ? Color.white : Theme.ink3)
                 Text(VisitTimes.dayNumber(d.date, zone)).wc(22, .bold, relativeTo: .title3).foregroundStyle(on ? Color.white : Theme.ink)
             }
             .frame(maxWidth: flexible ? .infinity : 66, minHeight: 64)
             .frame(width: flexible ? nil : 66)
-            .background(on ? Theme.navy : Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(on ? Theme.buttonFill : Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(on ? Color.clear : Theme.line2, lineWidth: 1))
         }
         .buttonStyle(.plain)

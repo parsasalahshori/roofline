@@ -18,7 +18,7 @@ struct AddressScreen: View {
     var body: some View {
         @Bindable var store = store
         VStack(spacing: 0) {
-            WCNavBar(title: store.brand.wordmark, wordmark: true, onBack: { store.pop() }) { StepDots(filled: 2) }
+            WCNavBar(title: store.brand.wordmark, wordmark: true, onBack: { store.pop() })
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     if store.services.contains(.windows) {
@@ -26,9 +26,10 @@ struct AddressScreen: View {
                     } else {
                         WCHeadline(text: "Where's your home?", subtitle: "So we can measure your roof from above and send the right local rep.")
                     }
+                    StepProgress(step: 2).padding(.top, 14)
                     field.padding(.top, 20)
                     if let error = store.addressError {
-                        Text(error).wc(13, .medium, relativeTo: .footnote).foregroundStyle(Theme.bad).padding(.top, 8).padding(.horizontal, 4)
+                        Text(error).wc(13, .medium, relativeTo: .footnote).foregroundStyle(Theme.badText).padding(.top, 8).padding(.horizontal, 4)
                             .accessibilityLabel("Problem: \(error)")
                         if error == LiveHomeownerAPI.offlineMessage {
                             Button("Try again") {

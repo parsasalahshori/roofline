@@ -383,9 +383,9 @@ private struct Marker: View {
         ZStack {
             if side {
                 RoundedRectangle(cornerRadius: 3, style: .continuous).fill(Theme.tape).frame(width: 13, height: 13)
-                    .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous).strokeBorder(Theme.navy.opacity(0.85), lineWidth: 2))
+                    .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous).strokeBorder(Theme.scrim.opacity(0.85), lineWidth: 2))
             } else {
-                Circle().strokeBorder(Theme.navy.opacity(0.75), lineWidth: 4.5).frame(width: d, height: d)
+                Circle().strokeBorder(Theme.scrim.opacity(0.75), lineWidth: 4.5).frame(width: d, height: d)
                 Circle().strokeBorder(Theme.tape, lineWidth: 2.5).frame(width: d, height: d)
                 Circle().fill(Theme.tape).frame(width: 3.5, height: 3.5)
                 if let n = number {

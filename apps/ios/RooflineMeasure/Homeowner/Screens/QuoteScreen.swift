@@ -198,7 +198,7 @@ private struct TierCard: View {
                 if let b = badge {
                     Text(b).wc(13, .semibold, relativeTo: .footnote).foregroundStyle(.white)
                         .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(Theme.blue, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .background(Theme.buttonFill, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
             }
             Text(detail).wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)

@@ -123,7 +123,7 @@ struct CalendarTile: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text(month).wc(15, .bold, relativeTo: .footnote).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 3).background(Theme.red)
+            Text(month).wc(15, .bold, relativeTo: .footnote).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 3).background(Theme.buttonFill)
             Text(day).wc(30, .bold, relativeTo: .title).foregroundStyle(Theme.ink).frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(width: 54, height: 54)

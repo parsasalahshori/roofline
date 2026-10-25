@@ -114,7 +114,7 @@ private struct MethodCard: View {
                             Text("Accuracy: \(accuracy.text)").wc(13, relativeTo: .footnote).foregroundStyle(Theme.ink3)
                         }
                     } else {
-                        Text(unavailable).wc(13, .medium, relativeTo: .footnote).foregroundStyle(Theme.warn).padding(.top, 4)
+                        Text(unavailable).wc(13, .medium, relativeTo: .footnote).foregroundStyle(Theme.warnText).padding(.top, 4)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

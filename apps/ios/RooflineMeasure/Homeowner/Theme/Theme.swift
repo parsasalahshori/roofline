@@ -1,68 +1,96 @@
 import SwiftUI
 import UIKit
 
-/// Roofline's "Chalk Line" design, WinChoice in the brand slot (REDESIGN.md sections 5, 7, 8; the mockups in
-/// ~/RooflineWork/design/mockups/ios-hw-*.html). Semantic colours, light and dark, from the mockups' own tokens:
-/// - RED (#ED3A2B) is the one main action on a screen;
-/// - NAVY is the welcome hero and ink;
-/// - BLUE (#155EAB) is selection, links, and "you picked this";
-/// - tape yellow is only for measuring guides; green, amber and red-brick are status, always with an icon and a word.
-/// Headings are the system font at `.width(.expanded)` (Archivo's role); sizes are monospaced digits (SF Mono's role).
+/// The homeowner app follows Apple's Human Interface Guidelines (plans/ios-hig-redesign.md): system colours, the system font
+/// at Dynamic Type text styles, SF Symbols, native bars and controls. WinChoice red is the one accent (primary buttons,
+/// selected states, key links); everything else is a semantic system colour that adapts to light and dark by itself.
+///
+/// The token names below are kept from the earlier "Chalk Line" look so every screen compiles; each now points at a system colour.
+/// New code should prefer these tokens (or `.primary`, `Color(.systemGroupedBackground)`). For secondary text use `Theme.ink2`, not
+/// `.secondary` (see ink2).
 enum Theme {
     // MARK: Colours
 
-    /// The company's own colours (Brand/WinChoice/WinChoice.json): the brand slot and the ink. Everything else in the look
-    /// (grounds, lines, status colours, the measuring tape) is Roofline's and the same for every company.
-    private static let brand = Brand.current.colors
+    /// The page behind grouped content (Settings' grey in light, black in dark).
+    static let ground = Color(.systemGroupedBackground)
+    /// A card or grouped row sitting on the ground (white in light, dark grey in dark).
+    static let surface = Color(.secondarySystemGroupedBackground)
+    /// Something quiet inside a card (an icon tile, a plain tag).
+    static let surface2 = Color(.tertiarySystemGroupedBackground)
+    static let sunken = Color(.systemFill)
+    static let raised = Color(.secondarySystemGroupedBackground)
 
-    static let ground = Color(light: 0xF3F5F8, dark: 0x08111D)
-    static let surface = Color(light: 0xFFFFFF, dark: 0x0F1A28)
-    static let surface2 = Color(light: 0xF6F7F5, dark: 0x142132)
-    static let sunken = Color(light: 0xE6E9E6, dark: 0x0C121A)
-    static let raised = Color(light: 0xFFFFFF, dark: 0x1A2431)
+    /// Text: label, and one secondary level. The secondary is the system's secondary label made opaque and a step darker (lighter in
+    /// dark mode): `secondaryLabel` itself is 3.4:1 on white and the accessibility audit asks for 4.5:1 on small text, so it is not
+    /// used for words. `tertiaryLabel` is for placeholders and decoration only (`Theme.decor`).
+    static let ink = Color(.label)
+    static let ink2 = Color(light: 0x626268, dark: 0xAEAEB2)
+    static let ink3 = ink2
+    /// Decoration only (chevrons, empty selection circles, placeholders): never body text.
+    static let decor = Color(.tertiaryLabel)
 
-    static let ink = Color(light: Color.parse(brand.navy), dark: 0xE7ECF3)
-    static let ink2 = Color(light: 0x3B4A5E, dark: 0xA9B6C6)
-    /// The quiet text. A touch darker than the mockups' #66748A / #7F8C9D so small text clears 4.5:1 on every tint and surface
-    /// (Apple's accessibility audit flagged the original as nearly passing).
-    static let ink3 = Color(light: 0x4E5A6E, dark: 0x8A97A8)
+    /// Hairlines and outlines.
+    static let line = Color(.separator)
+    static let line2 = Color(.opaqueSeparator)
 
-    static let line = Color(light: 0xDCE0DF, dark: 0x203045)
-    static let line2 = Color(light: 0xC5CBCB, dark: 0x2C3F57)
-
-    /// The brand slot: WinChoice red. The one main button of a screen.
-    static let red = Color(light: Color.parse(brand.red), dark: Color.parse(brand.redDark))
+    /// The accent: WinChoice red, as text, icons, selection, the app-wide tint and the fill behind white button text. The brand's
+    /// #ED3A2B is 4.0:1 against white and 3.7:1 on the grouped grey, short of the 4.5:1 small text needs (the accessibility audit
+    /// flags it: the old "Contrast nearly passed" on the quote screen). #DB3425 clears 4.5:1 only barely (4.6:1) and small white
+    /// labels on it still came out "nearly passed"; #CC2F23 is 5.3:1 with white and 4.7:1 on the grey, so red text, links and white
+    /// labels on red all pass on every ground. In dark mode the brand's own lighter red reads on black.
+    static let red = Color(light: 0xCC2F23, dark: Color.parse(Brand.current.colors.redDark))
+    /// The fill behind white text (buttons, selected chips, badges). The same #CC2F23 in both appearances, because the lighter
+    /// dark-mode red is too light for white text.
+    static let buttonFill = Color(light: 0xCC2F23, dark: 0xCC2F23)
     static let onRed = Color.white
-    static let redTint = Color(light: 0xFDE8E6, dark: 0x3A1512)
+    static let redTint = red.opacity(0.12)
 
-    /// Selection, links, "you picked this".
-    static let blue = Color(light: Color.parse(brand.blue), dark: Color.parse(brand.blueDark))
-    static let blueTint = Color(light: 0xE6EEF8, dark: 0x132A47)
+    /// Earlier "blue" slot (selection, links, "you picked this"): now the accent. The tint is a neutral system grey (systemGray6, 4.7:1 for accent text on it).
+    static let blue = red
+    static let blueTint = Color(.systemGray6)
 
-    /// The welcome hero, in both appearances.
-    static let navy = Color(light: Color.parse(brand.navyDeep), dark: Color.parse(brand.navyDeep))
-    static let heroText = Color(light: 0xC3CFDE, dark: 0xC3CFDE)
+    /// Retired: the navy hero is gone. Kept only so old references compile; both are neutral system colours.
+    static let navy = Color(.secondarySystemGroupedBackground)
+    static let heroText = ink2
+    /// A dark scrim for chips and covers over maps and photos.
+    static let scrim = Color.black
 
-    static let ok = Color(light: 0x157545, dark: 0x48C27F)
-    static let okTint = Color(light: 0xE2F2E8, dark: 0x0F2A1C)
-    static let warn = Color(light: 0x985800, dark: 0xF0A63A)
-    static let warnTint = Color(light: 0xFCEFD9, dark: 0x33230A)
-    static let info = Color(light: 0x2563C9, dark: 0x6FA2FF)
-    static let infoTint = Color(light: 0xE3ECFA, dark: 0x11223F)
-    static let bad = Color(light: 0xC8352A, dark: 0xFF6F61)
+    /// Status colours, always with an icon and a word.
+    static let ok = Color(.systemGreen)
+    static let okTint = Color(.systemGreen).opacity(0.15)
+    static let warn = Color(.systemOrange)
+    static let warnTint = Color(.systemOrange).opacity(0.15)
+    static let info = ink2
+    static let infoTint = Color(.tertiarySystemFill)
+    static let bad = Color(.systemRed)
+    /// The same three as TEXT: the system greens, oranges and reds are 2 to 3.6:1 on white, so in light mode these are the system
+    /// colour darkened until the words clear 4.5:1 (also on their own 15 % tints). In dark mode the system colour already does.
+    static let okText = textVariant(.systemGreen, darkenedTo: 0.6)
+    static let warnText = textVariant(.systemOrange, darkenedTo: 0.6)
+    static let badText = textVariant(.systemRed, darkenedTo: 0.8)
 
-    /// Measuring guides only (the corners, the sides, the magnifier's dashes).
-    static let tape = Color(light: 0xFFC21F, dark: 0xFFCB3D)
-    static let tapeInk = Color(light: 0x1A1405, dark: 0x1A1405)
+    private static func textVariant(_ base: UIColor, darkenedTo factor: CGFloat) -> Color {
+        Color(UIColor { traits in
+            let c = base.resolvedColor(with: traits)
+            guard traits.userInterfaceStyle != .dark else { return c }
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            c.getRed(&r, green: &g, blue: &b, alpha: &a)
+            return UIColor(red: r * factor, green: g * factor, blue: b * factor, alpha: a)
+        })
+    }
+
+    /// Measuring guides only (the corners, the sides, the magnifier's dashes): a high-visibility yellow.
+    static let tape = Color(.systemYellow)
+    static let tapeInk = Color.black
 
     // MARK: Shape
 
-    /// 14 pt: cards and buttons on the homeowner screens.
-    static let radius: CGFloat = 14
+    /// Continuous corners of cards and grouped rows.
+    static let radius: CGFloat = 12
     static let gutter: CGFloat = 16
-    /// The main button's height (52 to 54 in the mockups) and the minimum tap target.
-    static let buttonHeight: CGFloat = 54
-    static let secondaryButtonHeight: CGFloat = 50
+    /// The large control height and the minimum tap target.
+    static let buttonHeight: CGFloat = 50
+    static let secondaryButtonHeight: CGFloat = 44
     static let minTap: CGFloat = 44
 }
 
@@ -92,47 +120,56 @@ extension UIColor {
 
 // MARK: - Type
 
-/// A font that grows with Dynamic Type from the mockup's size: `size` is what the mockup shows at the default setting.
-struct ScaledFont: ViewModifier {
-    @ScaledMetric private var size: CGFloat
-    private let weight: Font.Weight
-    private let design: Font.Design
-    private let expanded: Bool
-
-    init(size: CGFloat, weight: Font.Weight, design: Font.Design, expanded: Bool, relativeTo style: Font.TextStyle) {
-        _size = ScaledMetric(wrappedValue: size, relativeTo: style)
-        self.weight = weight
-        self.design = design
-        self.expanded = expanded
-    }
-
-    func body(content: Content) -> some View {
-        content.font(Font.wc(size, weight, design: design, expanded: expanded))
+extension Font.TextStyle {
+    /// The Dynamic Type text style whose default size is closest to a size taken from the earlier mockups.
+    static func nearest(toSize size: CGFloat) -> Font.TextStyle {
+        switch size {
+        case 31...: return .largeTitle
+        case 25..<31: return .title
+        case 21..<25: return .title2
+        case 18.5..<21: return .title3
+        case 16.5..<18.5: return .body
+        case 15.5..<16.5: return .callout
+        case 14..<15.5: return .subheadline
+        case 12.5..<14: return .footnote
+        case 11.5..<12.5: return .caption
+        default: return .caption2
+        }
     }
 }
 
-extension Font {
-    /// A fixed-size WinChoice font. Prefer `View.wc(...)` (it scales with Dynamic Type).
-    static func wc(_ size: CGFloat, _ weight: Font.Weight = .regular, design: Font.Design = .default, expanded: Bool = false) -> Font {
-        let base = Font.system(size: size, weight: weight, design: design)
-        return expanded ? base.width(.expanded) : base
+/// The system font at a Dynamic Type text style. `size` only picks the style when none is given; it never fixes a point size,
+/// so the text always follows the reader's text-size setting.
+struct SystemTextStyle: ViewModifier {
+    let style: Font.TextStyle
+    let weight: Font.Weight
+    let monospacedDigits: Bool
+
+    func body(content: Content) -> some View {
+        let base = Font.system(style, design: .default, weight: weight)
+        content.font(monospacedDigits ? base.monospacedDigit() : base)
     }
 }
 
 extension View {
-    /// Body text and labels (the system font).
-    func wc(_ size: CGFloat, _ weight: Font.Weight = .regular, relativeTo style: Font.TextStyle = .body) -> some View {
-        modifier(ScaledFont(size: size, weight: weight, design: .default, expanded: false, relativeTo: style))
+    /// Body text and labels: the system font at a text style (`relativeTo`, or the one nearest `size`).
+    func wc(_ size: CGFloat, _ weight: Font.Weight = .regular, relativeTo style: Font.TextStyle? = nil) -> some View {
+        modifier(SystemTextStyle(style: style ?? .nearest(toSize: size), weight: weight, monospacedDigits: false))
     }
 
-    /// Headings: the system font, expanded, heavy (Archivo at width 125 in the mockups).
-    func wcHeading(_ size: CGFloat, _ weight: Font.Weight = .heavy, relativeTo style: Font.TextStyle = .title) -> some View {
-        modifier(ScaledFont(size: size, weight: weight, design: .default, expanded: true, relativeTo: style))
+    /// Headings: the system font, bold by default, at a title text style.
+    func wcHeading(_ size: CGFloat, _ weight: Font.Weight = .bold, relativeTo style: Font.TextStyle? = nil) -> some View {
+        modifier(SystemTextStyle(style: style ?? .nearest(toSize: size), weight: weight, monospacedDigits: false))
     }
 
-    /// Sizes, times and counts: monospaced digits (SF Mono).
-    func wcMono(_ size: CGFloat, _ weight: Font.Weight = .medium, relativeTo style: Font.TextStyle = .body) -> some View {
-        modifier(ScaledFont(size: size, weight: weight, design: .monospaced, expanded: false, relativeTo: style))
+    /// Sizes, times and counts: the system font with monospaced digits.
+    func wcMono(_ size: CGFloat, _ weight: Font.Weight = .medium, relativeTo style: Font.TextStyle? = nil) -> some View {
+        modifier(SystemTextStyle(style: style ?? .nearest(toSize: size), weight: weight, monospacedDigits: true))
+    }
+
+    /// The "WinChoice" wordmark: plain text in SF Pro, black weight.
+    func wcWordmark(_ style: Font.TextStyle = .title3) -> some View {
+        modifier(SystemTextStyle(style: style, weight: .black, monospacedDigits: false))
     }
 }
 
