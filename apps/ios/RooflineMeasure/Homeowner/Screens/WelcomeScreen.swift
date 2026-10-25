@@ -1,8 +1,8 @@
 import RooflineCore
 import SwiftUI
 
-/// 01 Welcome: what are you looking for (ios-hw-01-welcome). A navy hero with the WinChoice wordmark, then one card per
-/// service. Continue is the screen's one red button.
+/// 01 Welcome: what the app does, the way Apple's own "What's New" sheets say it: the name, three feature rows with a
+/// symbol each, and one prominent Measure button. What to measure (windows or roof) is the next screen.
 struct WelcomeScreen: View {
     @Environment(HomeownerStore.self) private var store
     @State private var showServerSetting = false
@@ -10,149 +10,86 @@ struct WelcomeScreen: View {
     var body: some View {
         // It scrolls when the text is large (it sits still when everything fits)
         ScrollView {
-            VStack(spacing: 0) {
-                hero
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("What are you looking for? Pick one or more.")
-                        .wc(15, .semibold, relativeTo: .subheadline)
-                        .foregroundStyle(Theme.ink2)
-                        .padding(.horizontal, 2)
-                        .accessibilityAddTraits(.isHeader)
-                    ForEach(store.offeredServices, id: \.self) { service in
-                        ServiceOption(service: service, isOn: store.selectedServices.contains(service)) { store.toggle(service) }
-                    }
+            VStack(alignment: .leading, spacing: 36) {
+                header
+                VStack(alignment: .leading, spacing: 26) {
+                    WelcomeFeature(symbol: WCIcon.lidar.symbol, title: "Your iPhone does the measuring",
+                                   line: "Point it at a window and it finds the size in about a minute.")
+                    WelcomeFeature(symbol: WCIcon.roof.symbol, title: "Roofs measured from above",
+                                   line: "Type your address and we size your roof from satellite pictures.")
+                    WelcomeFeature(symbol: "dollarsign.circle", title: "A price range right away",
+                                   line: "Good, Better and Best, before anyone comes to your home.")
                 }
-                .padding(Theme.gutter)
-                WCScrollFooter().padding(.horizontal, Theme.gutter)
+                WCScrollFooter()
             }
-            .frame(maxWidth: .infinity, alignment: .top)
+            .padding(.horizontal, 24)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollBounceBehavior(.basedOnSize)
-        .wcNoTopScrollFade()
         .background(Theme.ground.ignoresSafeArea())
-        .ignoresSafeArea(edges: .top)
         .wcFooter {
-            WCPrimaryButton(title: "Continue", icon: .arrow, isEnabled: !store.selectedServices.isEmpty) { store.continueFromWelcome() }
-            HStack(spacing: 8) {
-                IconView(icon: .factory, size: 16)
-                Text(store.brand.madeIn).wc(12, .medium, relativeTo: .caption)
-            }
-            .foregroundStyle(Theme.ink3)
-            .padding(.bottom, 2)
-            .accessibilityElement(children: .combine)
+            WCPrimaryButton(title: "Measure") { store.startMeasuring() }
+            Label(store.brand.madeIn, systemImage: WCIcon.factory.symbol)
+                .font(.footnote)
+                .foregroundStyle(Theme.ink2)
+                .padding(.bottom, 2)
+                .accessibilityElement(children: .combine)
         }
-        // A navy hero under the status bar: its text must be white whatever the phone's appearance
-        .toolbar(.visible, for: .navigationBar)
-        .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
-        .navigationBarBackButtonHidden(true)
+        .hiNav(title: nil, showsBack: false)
         .sheet(isPresented: $showServerSetting) { ServerSettingSheet() }
     }
 
-    private var hero: some View {
-        VStack(alignment: .leading, spacing: 0) {
+    /// The name, one line on what the app is for, and a sentence under it.
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 10) {
             Text(store.brand.wordmark)
-                .wcHeading(20, .heavy, relativeTo: .title3)
-                .foregroundStyle(.white)
-                .padding(.top, 10)
-                .padding(.bottom, 26)
+                .wcWordmark(.title2)
+                .foregroundStyle(Theme.ink)
                 .accessibilityAddTraits(.isHeader)
-            Text("Measure your windows. Get your price tonight.")
-                .wcHeading(30, .heavy, relativeTo: .largeTitle)
-                .foregroundStyle(.white)
-                .lineSpacing(-1)
+            Text("Measure your home from your phone.")
+                .font(.largeTitle.weight(.bold))
+                .foregroundStyle(Theme.ink)
                 .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: 330, alignment: .leading)
                 .accessibilityAddTraits(.isHeader)
-            Text("Your iPhone measures each window in about a minute. A WinChoice rep checks every size before anything is built.")
-                .wc(15, relativeTo: .subheadline)
-                .foregroundStyle(Theme.heroText)
-                .lineSpacing(3)
-                .padding(.top, 10)
-                .frame(maxWidth: 340, alignment: .leading)
+            Text("Windows or roof: see your price in minutes. A \(store.brand.name) expert confirms every size before anything is built.")
+                .font(.body)
+                .foregroundStyle(Theme.ink2)
                 .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 2)
         }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 22)
-        .padding(.top, StatusBar.height)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.navy)
-        // Held anywhere on the navy hero, not just the wordmark: the wordmark sits under the transparent navigation
-        // bar, which takes its touches, so a hold on it alone never fired on a phone.
+        // Held anywhere on the header: the server address is a tester's setting, never shown in the App Store build
         .contentShape(Rectangle())
         .onLongPressGesture(minimumDuration: 1.2) {
-            // The server address is a tester's setting, never shown in the App Store build
             if BuildEnvironment.isTesterBuild { showServerSetting = true }
         }
         .accessibilityElement(children: .contain)
     }
 }
 
-/// One service card: icon tile, title, one line, a checkbox. Selected: blue ring and tint (the mockup's `.selc`).
-struct ServiceOption: View {
-    let service: HomeownerService
-    let isOn: Bool
-    let action: () -> Void
-
-    private var icon: WCIcon {
-        switch service {
-        case .windows: return .win
-        case .roof: return .roof
-        case .gutters: return .gutter // never listed: gutters are not offered to homeowners
-        }
-    }
-
-    private var title: String {
-        switch service {
-        case .windows: return "Windows"
-        case .roof: return "Roof"
-        case .gutters: return "Gutters"
-        }
-    }
-
-    private var line: String {
-        switch service {
-        case .windows: return "Measure with this app, instant quote"
-        case .roof: return "Price range from above, then a free visit"
-        case .gutters: return "Priced at your free visit"
-        }
-    }
+/// One line of what the app does, as a "What's New" row: a hierarchical symbol in the accent, a headline and a sentence.
+private struct WelcomeFeature: View {
+    let symbol: String
+    let title: String
+    let line: String
 
     var body: some View {
-        Button(action: {
-            Haptics.tap()
-            action()
-        }) {
-            HStack(spacing: 12) {
-                IconTile(icon: icon, size: 44, iconSize: 22, selected: isOn, tint: isOn ? Color.clear : nil)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).wc(17, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
-                    Text(line).wc(13, relativeTo: .footnote).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                WCCheckbox(isOn: isOn)
+        HStack(alignment: .top, spacing: 16) {
+            Image(systemName: symbol)
+                .symbolRenderingMode(.hierarchical)
+                .font(.title)
+                .foregroundStyle(Theme.red)
+                .frame(width: 44)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.headline).foregroundStyle(Theme.ink)
+                Text(line).font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .frame(minHeight: 68)
-            .wcCard(selected: isOn)
-            .contentShape(Rectangle())
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title). \(line)")
-        .accessibilityValue(isOn ? "Selected" : "Not selected")
-        .accessibilityAddTraits(.isButton)
-        .accessibilityHint("Double tap to \(isOn ? "unselect" : "select")")
-    }
-}
-
-/// The status bar's height (the Dynamic Island area), for drawing a hero under it by hand.
-enum StatusBar {
-    @MainActor
-    static var height: CGFloat {
-        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
-        return scene?.statusBarManager?.statusBarFrame.height ?? 54
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -187,7 +124,7 @@ struct ServerSettingSheet: View {
                 } footer: {
                     Text("The company's quote name on that server. Leave empty for \(store.brand.slug).")
                 }
-                if saved { Text("Saved. Using it now.").foregroundStyle(.secondary) }
+                if saved { Text("Saved. Using it now.").foregroundStyle(Theme.ink2) }
             }
             .navigationTitle("Server")
             .navigationBarTitleDisplayMode(.inline)

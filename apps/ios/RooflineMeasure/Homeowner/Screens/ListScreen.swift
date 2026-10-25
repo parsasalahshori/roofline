@@ -5,57 +5,73 @@ import SwiftUI
 /// any?" against what homes like theirs have, and the way on to styles and the quote.
 struct ListScreen: View {
     @Environment(HomeownerStore.self) private var store
-    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var actionRow: WindowRow?
     @State private var askTotal = false
     @State private var total = 8
 
     private var rows: [WindowRow] { store.windowRows }
 
+    private func addRoom() {
+        store.path = store.stack(to: .rooms)
+        store.noteStep(.rooms)
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            WCNavBar(title: "Your windows", onBack: { store.pop() }) {
-                NavTextButton(title: "Add") { store.path = store.stack(to: .rooms); store.noteStep(.rooms) }
-            }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    WCHeadline(text: rows.isEmpty ? "No windows yet" : "\(rows.count) window\(rows.count == 1 ? "" : "s") measured", subtitle: "Sizes are the inside of each frame, in inches.")
-                    if !rows.isEmpty {
-                        SummaryCard(rows: rows).padding(.top, 14)
-                        // One group per room, each with its own "add a window" row
-                        ForEach(WindowGroups.group(rows, roomOrder: store.rooms)) { group in
-                            GroupHeader(text: group.header).padding(.top, 20)
-                            GroupCard {
-                                ForEach(group.rows) { row in
-                                    WindowListRow(row: row, highlighted: row.id == store.justSavedId, action: { actionRow = row },
-                                                  onAgain: { Task { await store.measureAgain(row) } })
-                                    RowDivider(inset: 56)
-                                }
-                                AddRow(title: "+ Add a window in \(group.room)") { store.measure(room: group.room) }
-                            }
-                        }
-                        GroupCard {
-                            AddRow(title: "+ Add another room") { store.path = store.stack(to: .rooms); store.noteStep(.rooms) }
-                        }
-                        .padding(.top, 14)
-                    }
-                    if store.sendingCount > 0 || !store.failedItems.isEmpty { sendingNote.padding(.top, 12) }
-                    if store.heldCount > 0 { heldNote.padding(.top, 12) }
-                    // With large text the panel would fill the pinned area: it scrolls with the list instead
-                    if typeSize.isAccessibilitySize { missPanel.padding(.top, 12) }
-                    WCScrollFooter()
+        List {
+            if !rows.isEmpty {
+                Section {
+                    SummaryRow(rows: rows)
+                } header: {
+                    JourneyHeader { JourneyLead("Sizes are the inside of each frame, in inches.") }
                 }
-                .padding(.horizontal, Theme.gutter)
-                .padding(.bottom, 24)
+                // One group per room, each with its own "add a window" row
+                ForEach(WindowGroups.group(rows, roomOrder: store.rooms)) { group in
+                    Section {
+                        ForEach(group.rows) { row in
+                            WindowListRow(row: row, action: { actionRow = row }, onAgain: { Task { await store.measureAgain(row) } })
+                                .listRowBackground(rowBackground(highlighted: row.id == store.justSavedId))
+                                .animation(.easeOut(duration: 0.4), value: store.justSavedId)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button(role: .destructive) {
+                                        Task { await store.removeWindow(row.id) }
+                                    } label: {
+                                        Label("Remove", systemImage: "trash")
+                                    }
+                                    Button {
+                                        Task { await store.measureAgain(row) }
+                                    } label: {
+                                        Label("Measure again", systemImage: WCIcon.refresh.symbol)
+                                    }
+                                    .tint(Color(.systemGray))
+                                }
+                        }
+                        AddRow(title: "Add a window in \(group.room)") { store.measure(room: group.room) }
+                    } header: {
+                        Text(group.header).foregroundStyle(Theme.ink2)
+                    }
+                }
+                Section {
+                    AddRow(title: "Add another room") { addRoom() }
+                }
             }
+            if store.sendingCount > 0 || !store.failedItems.isEmpty { Section { sendingNote } }
+            if store.heldCount > 0 { Section { heldNote } }
+            Section {
+                missRow
+            } header: {
+                if rows.isEmpty { JourneyHeader { JourneyLead("Sizes are the inside of each frame, in inches.") } }
+            }
+            JourneyListFooter()
+        }
+        .listStyle(.insetGrouped)
+        .hiNav(title: rows.isEmpty ? "No windows yet" : "\(rows.count) window\(rows.count == 1 ? "" : "s") measured", display: .large) {
+            NavTextButton(title: "Add") { addRoom() }
         }
         .wcFooter {
-            if !typeSize.isAccessibilitySize { missPanel }
             WCPrimaryButton(title: footerTitle, icon: .arrow, isEnabled: !rows.isEmpty) {
                 Task { await store.continueFromList() }
             }
         }
-        .wcScreenChrome()
         .confirmationDialog(actionRow.map { "\($0.title) · \($0.sizeTextWithUnit)" } ?? "", isPresented: Binding(get: { actionRow != nil }, set: { if !$0 { actionRow = nil } }), titleVisibility: .visible, presenting: actionRow) { row in
             Button("Measure again") { Task { await store.measureAgain(row) } }
             Button("Remove this window", role: .destructive) { Task { await store.removeWindow(row.id) } }
@@ -74,89 +90,93 @@ struct ListScreen: View {
         return "Choose window styles"
     }
 
-    private var missPanel: some View {
-        AdaptiveStack(alignment: .center, spacing: 10) {
+    /// The row's ground: the grouped row colour, with a green wash for the window just saved.
+    private func rowBackground(highlighted: Bool) -> some View {
+        ZStack {
+            Theme.surface
+            if highlighted { Theme.okTint }
+        }
+    }
+
+    /// "Did we miss any?": what homes like theirs have, and "I have more" for telling us the real count.
+    private var missRow: some View {
+        AdaptiveStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Did we miss any?").wc(16, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
+                Text("Did we miss any?").font(.headline).foregroundStyle(Theme.ink)
                 Text(WindowCountHint.detail(measured: rows.count, estimate: store.windowEstimate))
-                    .wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+                    .font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Button {
-                askTotal = true
-            } label: {
-                Text("I have more").wc(15, .semibold, relativeTo: .body).foregroundStyle(Theme.blue)
-                    .padding(.horizontal, 12).frame(minHeight: Theme.minTap)
-                    .background(Theme.surface, in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .accessibilityHint("Tell us how many windows your home has")
+            Button("I have more") { askTotal = true }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .tint(Theme.ink)
+                .accessibilityHint("Tell us how many windows your home has")
         }
-        .padding(12)
-        .wcPanel()
+        .padding(.vertical, 4)
     }
 
     /// Windows wait on the phone for their style: said plainly, only while there are any.
     private var heldNote: some View {
-        HStack(alignment: .top, spacing: 10) {
-            IconView(icon: .lock, size: 18).foregroundStyle(Theme.ink3)
-            Text("Saved on this phone. They're sent to WinChoice when you pick styles.").wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+        Label {
+            Text("Saved on this phone. They're sent to WinChoice when you pick styles.")
+                .font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: WCIcon.lock.symbol).symbolRenderingMode(.hierarchical).foregroundStyle(Theme.ink2)
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
     }
 
-    private var sendingNote: some View {
-        let failed = store.failedItems
-        return VStack(alignment: .leading, spacing: 8) {
-            if let first = failed.first {
-                HStack(alignment: .top, spacing: 10) {
-                    IconView(icon: .alert, size: 18).foregroundStyle(Theme.warn)
-                    Text(first.lastError ?? "A window could not be sent.").wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
-                }
-            } else if let held = store.heldBackNote {
-                // The server asked the phone to wait: its sentence, calmly. They go by themselves when the wait is over.
-                HStack(alignment: .top, spacing: 10) {
-                    IconView(icon: .clock, size: 18).foregroundStyle(Theme.ink3)
-                    Text("Saved on this phone. \(held)").wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
-                }
-            } else {
-                HStack(spacing: 10) {
-                    ProgressView()
-                    Text(store.offline ? "Saved on this phone. They send when you're back online." : "Sending \(store.sendingCount) window\(store.sendingCount == 1 ? "" : "s")…")
-                        .wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink2)
-                }
+    @ViewBuilder private var sendingNote: some View {
+        if let first = store.failedItems.first {
+            Label {
+                Text(first.lastError ?? "A window could not be sent.")
+                    .font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: WCIcon.alert.symbol).symbolRenderingMode(.hierarchical).foregroundStyle(Theme.warnText)
             }
+            .accessibilityElement(children: .combine)
+        } else if let held = store.heldBackNote {
+            // The server asked the phone to wait: its sentence, calmly. They go by themselves when the wait is over.
+            Label {
+                Text("Saved on this phone. \(held)")
+                    .font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: WCIcon.clock.symbol).symbolRenderingMode(.hierarchical).foregroundStyle(Theme.ink2)
+            }
+            .accessibilityElement(children: .combine)
+        } else {
+            HStack(spacing: 10) {
+                ProgressView()
+                Text(store.offline ? "Saved on this phone. They send when you're back online." : "Sending \(store.sendingCount) window\(store.sendingCount == 1 ? "" : "s")…")
+                    .font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityElement(children: .combine)
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.warnTint.opacity(failed.isEmpty ? 0 : 1), in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
-        .accessibilityElement(children: .combine)
     }
 }
 
-/// "6 ready · 1 needs a look" with a bar of one segment per window. "Ready for a quote" only when none needs a look.
-private struct SummaryCard: View {
+/// "6 ready · 1 needs a look" with a progress bar of how many are ready. "Ready for a quote" only when none needs a look.
+private struct SummaryRow: View {
     let rows: [WindowRow]
 
     var body: some View {
         let checks = rows.filter { $0.flagged }.count
-        VStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             AdaptiveStack(spacing: 4) {
-                Text(Self.line(count: rows.count, checks: checks))
-                    .wc(16, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if checks == 0 { Text("Ready for a quote").wc(16, .semibold, relativeTo: .headline).foregroundStyle(Theme.ok) }
-            }
-            HStack(spacing: 4) {
-                ForEach(rows) { r in
-                    Capsule().fill(r.flagged ? Theme.warn : Theme.ok).frame(height: 5)
+                Label {
+                    Text(Self.line(count: rows.count, checks: checks)).font(.headline).foregroundStyle(Theme.ink)
+                } icon: {
+                    FilledSymbol(name: checks == 0 ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
+                                 fill: checks == 0 ? Theme.okText : Theme.warnText)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if checks == 0 { Text("Ready for a quote").font(.headline).foregroundStyle(Theme.okText) }
             }
+            ProgressView(value: Double(rows.count - checks), total: Double(max(rows.count, 1)))
+                .tint(checks == 0 ? Theme.ok : Theme.warn)
         }
-        .padding(12)
-        .wcCard(radius: 16)
+        .padding(.vertical, 4)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(checks == 0 ? "\(rows.count) windows ready. Ready for a quote." : "\(rows.count - checks) windows ready, \(checks) need a look.")
     }
@@ -166,24 +186,27 @@ private struct SummaryCard: View {
     }
 }
 
-/// "+ Add a window in Kitchen": a blue row at the end of a group.
+/// "Add a window in Kitchen": an accent row at the end of a group.
 private struct AddRow: View {
     let title: String
     let action: () -> Void
 
     var body: some View {
         Button(action: { Haptics.tap(); action() }) {
-            Text(title).wc(17, .semibold, relativeTo: .body).foregroundStyle(Theme.blue)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 14)
-                .frame(minHeight: 50)
-                .contentShape(Rectangle())
+            Label {
+                Text(title)
+            } icon: {
+                FilledSymbol(name: "plus.circle.fill", fill: Theme.buttonFill, glyph: .white)
+            }
+            .frame(maxWidth: .infinity, minHeight: Theme.minTap, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title.replacingOccurrences(of: "+ ", with: ""))
+        .accessibilityLabel(title)
     }
 }
 
+/// A measured window as a row: its number, name and how it was measured, its size on the right. A window to look at again says
+/// why and has its button right there. Used by the list and by the status screen.
 struct WindowListRow: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     let row: WindowRow
@@ -199,12 +222,12 @@ struct WindowListRow: View {
             // A window to look at again says why, and has its button right there
             if row.flagged, case .failed = row.send {} else if row.flagged {
                 Button(action: onAgain) {
-                    Text("Measure again").wc(16, .semibold, relativeTo: .body).foregroundStyle(Theme.blue)
-                        .padding(.horizontal, 14).frame(minHeight: Theme.minTap)
-                        .background(Theme.blueTint, in: Capsule())
+                    Text("Measure again")
+                        .frame(minHeight: Theme.minTap, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .padding(.leading, 56).padding(.bottom, 8)
+                .buttonStyle(.borderless)
+                .padding(.leading, 40)
                 .accessibilityLabel("Measure window \(row.number) again")
             }
         }
@@ -212,23 +235,35 @@ struct WindowListRow: View {
         .animation(.easeOut(duration: 0.4), value: highlighted)
     }
 
+    /// The window's number in a circle (the system's own numbered symbols to 50): orange when it needs a look.
+    @ViewBuilder private var numberBadge: some View {
+        if (1...50).contains(row.number) {
+            FilledSymbol(name: "\(row.number).circle.fill", fill: row.flagged ? Theme.warnText : Theme.ink2)
+                .font(.title2)
+                .frame(width: 28)
+        } else {
+            Text("\(row.number)")
+                .font(.footnote.weight(.bold)).monospacedDigit()
+                .foregroundStyle(.white)
+                .frame(width: 28, height: 28)
+                .background(row.flagged ? Theme.warnText : Theme.ink2, in: Circle())
+        }
+    }
+
     private var rowButton: some View {
         Button(action: action) {
             HStack(alignment: large ? .top : .center, spacing: 12) {
-                Text("\(row.number)")
-                    .wcMono(16, .bold, relativeTo: .body)
-                    .foregroundStyle(Theme.blue)
-                    .frame(width: 30, height: 30)
-                    .background(Theme.blueTint, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                numberBadge
                     .padding(.top, large ? 4 : 0)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(row.title).wc(17, .semibold, relativeTo: .body).foregroundStyle(Theme.ink).lineLimit(large ? nil : 2)
+                    Text(row.title).font(.body.weight(.semibold)).foregroundStyle(Theme.ink).lineLimit(nil)
                     secondLine
                     if let line = row.windowSizeLine {
-                        Text(line).wc(13, .medium, relativeTo: .footnote).foregroundStyle(Theme.ink2).lineLimit(large ? nil : 2)
+                        Text(line).font(.footnote.weight(.medium)).foregroundStyle(Theme.ink2).lineLimit(nil)
                     }
                     if let line = row.standardSizeLine {
-                        Text(line).wc(13, relativeTo: .footnote).foregroundStyle(Theme.ink3).lineLimit(large ? nil : 2)
+                        Text(line).font(.footnote).foregroundStyle(Theme.ink2).lineLimit(nil)
                     }
                     if let scan = row.scanLabel {
                         Label(scan, systemImage: row.scanState == "measured" ? "checkmark.seal.fill" : (row.scanState == "checking" ? "hourglass" : "ruler"))
@@ -238,14 +273,14 @@ struct WindowListRow: View {
                     if large { sizeView }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .multilineTextAlignment(.leading)
                 if !large { sizeView }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .frame(minHeight: 54)
+            .padding(.vertical, 6)
+            .frame(minHeight: Theme.minTap)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Window \(row.number), \(row.title). \(row.spokenSize). \(row.flagged ? "Needs a look. \(row.lookReason). " : "")\(statusWords)\(row.spokenWindowSize.map { ". \($0)" } ?? "")\(row.standardSizeLine.map { ". \($0)" } ?? "")\(row.scanLabel.map { ". \($0)" } ?? "")")
         .accessibilityHint("Opens options for this window")
@@ -260,7 +295,7 @@ struct WindowListRow: View {
                 SizeText(widthIn: w, heightIn: h, size: 17, weight: .bold, relativeTo: .body).fixedSize()
             }
         } else {
-            Text("Size after upload").wc(13, relativeTo: .footnote).foregroundStyle(Theme.ink3)
+            Text("Size after upload").font(.footnote).foregroundStyle(Theme.ink2)
         }
     }
 
@@ -277,17 +312,18 @@ struct WindowListRow: View {
     @ViewBuilder private var secondLine: some View {
         switch row.send {
         case .failed(let m):
-            HStack(spacing: 6) {
-                WCTag(text: "Not sent", kind: .warn, icon: .alert)
-                Text("measure again").wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink3)
+            Label {
+                Text("Not sent, measure again").font(.subheadline.weight(.medium)).foregroundStyle(Theme.warnText)
+            } icon: {
+                Image(systemName: WCIcon.alert.symbol).symbolRenderingMode(.hierarchical).foregroundStyle(Theme.warnText)
             }
             .accessibilityHint(m)
         default:
             if row.flagged {
-                Text("Needs a look · \(row.lookReason)").wc(14, .medium, relativeTo: .subheadline).foregroundStyle(Theme.warn)
+                Text("Needs a look · \(row.lookReason)").font(.subheadline.weight(.medium)).foregroundStyle(Theme.warnText)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text(row.methodLine).wc(14, relativeTo: .subheadline).foregroundStyle(Theme.ink3).lineLimit(large ? nil : 2)
+                Text(row.methodLine).font(.subheadline).foregroundStyle(Theme.ink2).lineLimit(nil)
             }
         }
     }
@@ -306,18 +342,18 @@ private struct TotalSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("How many windows does your home have?").wcHeading(22, .heavy, relativeTo: .title2).foregroundStyle(Theme.ink).fixedSize(horizontal: false, vertical: true)
+            Text("How many windows does your home have?")
+                .font(.title2.weight(.bold)).foregroundStyle(Theme.ink).fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
             Text("Count the ones you measured too. We'll price the rest from your home's size, and a rep checks every window anyway.")
-                .wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 24) {
-                Spacer()
-                stepButton("−", enabled: count > WindowTotal.min) { count = WindowTotal.clamp(count - 1) }
-                Text("\(count)").wcMono(44, .bold, relativeTo: .largeTitle).foregroundStyle(Theme.ink).frame(minWidth: 80)
+                .font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+            Stepper(value: $count, in: WindowTotal.min...WindowTotal.max) {
+                Text("\(count)")
+                    .font(.largeTitle.weight(.bold)).monospacedDigit().foregroundStyle(Theme.ink)
                     .accessibilityLabel("\(count) windows")
-                stepButton("+", enabled: count < WindowTotal.max) { count = WindowTotal.clamp(count + 1) }
-                Spacer()
             }
-            .padding(.vertical, 8)
+            .padding(.horizontal, 16).padding(.vertical, 8)
+            .wcCard()
             WCPrimaryButton(title: "Save") {
                 onSave(count)
                 dismiss()
@@ -326,27 +362,13 @@ private struct TotalSheet: View {
                 onSave(nil)
                 dismiss()
             }
-            .wc(16, .medium, relativeTo: .body).foregroundStyle(Theme.blue).frame(maxWidth: .infinity, minHeight: Theme.minTap)
+            .frame(maxWidth: .infinity, minHeight: Theme.minTap)
         }
         .padding(Theme.gutter)
         .padding(.top, 8)
+        .frame(maxHeight: .infinity, alignment: .top)
         .background(Theme.ground.ignoresSafeArea())
         .presentationDetents([.medium])
         .presentationDragIndicator(.visible)
-    }
-
-    private func stepButton(_ symbol: String, enabled: Bool, _ action: @escaping () -> Void) -> some View {
-        Button(action: {
-            Haptics.tap()
-            action()
-        }) {
-            Text(symbol).wc(28, .semibold, relativeTo: .title).foregroundStyle(Theme.blue)
-                .frame(width: 56, height: 56)
-                .background(Theme.surface, in: Circle())
-                .overlay(Circle().strokeBorder(Theme.line2, lineWidth: 1))
-                .opacity(enabled ? 1 : 0.4)
-        }
-        .disabled(!enabled)
-        .accessibilityLabel(symbol == "+" ? "One more window" : "One fewer window")
     }
 }

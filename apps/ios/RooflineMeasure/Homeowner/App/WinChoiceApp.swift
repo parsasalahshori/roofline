@@ -10,7 +10,7 @@ struct WinChoiceApp: App {
         WindowGroup {
             RootView()
                 .environment(store)
-                .tint(Theme.blue)
+                .tint(Theme.red)
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active { store.appBecameActive() }
                 }

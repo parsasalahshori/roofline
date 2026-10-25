@@ -367,6 +367,15 @@ final class HomeownerStoreTests: XCTestCase {
         XCTAssertFalse(h.store.features.bestTime)
     }
 
+    func testMeasureThenAServiceGoesToTheAddressWithThatServiceOnly() async throws {
+        let h = StoreHarness()
+        h.store.startMeasuring()
+        XCTAssertEqual(h.store.path.last, .step(.service), "Measure opens the windows-or-roof choice")
+        h.store.chooseService(.roof)
+        XCTAssertEqual(h.store.selectedServices, [.roof], "one service per request")
+        XCTAssertEqual(h.store.path.last, .step(.address))
+    }
+
     // MARK: Resume
 
     func testAReturningHomeownerLandsWhereTheyLeft() async throws {
@@ -374,7 +383,7 @@ final class HomeownerStoreTests: XCTestCase {
         try await h.open(windows: FakeWindowSpec.mockupSeven, step: .styles)
         XCTAssertEqual(h.store.root, .welcome)
         XCTAssertEqual(h.store.path.last, .step(.styles))
-        XCTAssertEqual(h.store.path.first, .step(.address), "the back stack leads home")
+        XCTAssertEqual(h.store.path.first, .step(.service), "the back stack leads home, through the windows-or-roof choice")
     }
 
     func testAReturningHomeownerWithNoWindowsLandsOnTheResults() async throws {

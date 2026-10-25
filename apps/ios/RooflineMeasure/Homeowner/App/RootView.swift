@@ -50,6 +50,7 @@ private struct RouteScreen: View {
         case .step(let step):
             switch step {
             case .welcome: WelcomeScreen()
+            case .service: ServiceScreen()
             case .address: AddressScreen()
             case .results: ResultsScreen()
             case .callback: CallbackScreen()
@@ -70,16 +71,16 @@ private struct RouteScreen: View {
     }
 }
 
-/// Shown for a moment while the saved request is opened: the navy of the welcome, so nothing flashes.
+/// Shown for a moment while the saved request is opened: the plain system background and the wordmark, so nothing flashes.
 struct LaunchScreen: View {
     @Environment(HomeownerStore.self) private var store
 
     var body: some View {
         ZStack {
-            Theme.navy.ignoresSafeArea()
+            Theme.ground.ignoresSafeArea()
             VStack(spacing: 18) {
-                Text(store.brand.wordmark).wcHeading(26, .heavy, relativeTo: .title).foregroundStyle(.white)
-                ProgressView().tint(.white)
+                Text(store.brand.wordmark).wcWordmark(.title).foregroundStyle(.primary)
+                ProgressView()
             }
         }
         .toolbar(.hidden, for: .navigationBar)
@@ -88,7 +89,7 @@ struct LaunchScreen: View {
     }
 }
 
-/// A transient message over the top of any screen (a failed call, a window that could not be sent).
+/// A transient message over the top of any screen (a failed call, a window that could not be sent): a material banner.
 struct NoticeBanner: View {
     @Environment(HomeownerStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -96,18 +97,16 @@ struct NoticeBanner: View {
     var body: some View {
         if let notice = store.notice {
             HStack(alignment: .top, spacing: 10) {
-                IconView(icon: notice.kind == .error ? .alert : .info, size: 18).foregroundStyle(notice.kind == .error ? Theme.bad : Theme.blue)
-                Text(notice.text).wc(14, .medium, relativeTo: .subheadline).foregroundStyle(Theme.ink).fixedSize(horizontal: false, vertical: true)
+                IconView(icon: notice.kind == .error ? .alert : .info, size: 18).foregroundStyle(notice.kind == .error ? Theme.bad : Theme.ink2).padding(.top, 12)
+                Text(notice.text).font(.subheadline).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true).padding(.vertical, 12)
                 Spacer(minLength: 0)
                 Button { store.dismissNotice() } label: {
-                    IconView(icon: .close, size: 16).foregroundStyle(Theme.ink3).frame(width: Theme.minTap, height: Theme.minTap)
+                    Image(systemName: "xmark").font(.footnote.weight(.semibold)).foregroundStyle(Theme.ink2).frame(width: Theme.minTap, height: Theme.minTap)
                 }
                 .accessibilityLabel("Dismiss")
             }
             .padding(.leading, 14)
-            .padding(.vertical, 6)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.line2, lineWidth: 1))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
             .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
             .padding(.horizontal, Theme.gutter)
             .padding(.top, 8)
@@ -128,6 +127,6 @@ struct PlaceholderScreen: View {
     let name: String
 
     var body: some View {
-        Text(name).wc(20, .semibold).frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.ground).wcScreenChrome()
+        Text(name).font(.title3.weight(.semibold)).frame(maxWidth: .infinity, maxHeight: .infinity).wcScreenChrome()
     }
 }

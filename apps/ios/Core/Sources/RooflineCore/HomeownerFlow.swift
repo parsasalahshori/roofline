@@ -5,8 +5,10 @@ import Foundation
 
 /// The screens of the WinChoice journey (the storyboard in ~/RooflineWork/design/mockups/app-flow.html).
 public enum HomeownerStep: String, Codable, CaseIterable, Sendable, Hashable {
-    /// 01: what are you looking for (the root, never on the back stack).
+    /// 01: the welcome, with one Measure button (the root, never on the back stack).
     case welcome
+    /// 01b: what to measure, windows or roof (one service per request).
+    case service
     /// 02: the address and its pin.
     case address
     /// 03: what we found about the home, per service.
@@ -94,11 +96,17 @@ public enum ResumeRouter {
 
 public enum HomeownerFlow {
     /// The back stack that leads to `step` (without the welcome, which is the root): back from the list goes to the rooms,
-    /// back from the rooms to the tips, and so on. Terminal screens have no stack.
+    /// back from the rooms to the tips, and so on, back to the windows-or-roof choice. Terminal screens have no stack.
     public static func path(to step: HomeownerStep, services: Set<HomeownerService>) -> [HomeownerStep] {
+        guard step != .service else { return [.service] }
+        let rest = pathAfterService(to: step, services: services)
+        return rest.isEmpty ? [] : [.service] + rest
+    }
+
+    private static func pathAfterService(to step: HomeownerStep, services: Set<HomeownerService>) -> [HomeownerStep] {
         let windows = services.contains(.windows)
         switch step {
-        case .welcome, .booked, .status, .callbackSent: return []
+        case .welcome, .service, .booked, .status, .callbackSent: return []
         case .address: return [.address]
         case .callback: return [.address, .callback]
         case .results: return [.address, .results]
@@ -117,11 +125,12 @@ public enum HomeownerFlow {
         services.contains(.windows) ? .coaching : .contact
     }
 
-    /// Dots at the top of the first screens (02, 03, 04 of the storyboard): how far along, out of 4. Zero: no dots.
+    /// Dots at the top of the first screens (01b, 02, 03, 04 of the storyboard): how far along, out of 4. Zero: no dots.
     public static func progressDots(_ step: HomeownerStep) -> Int {
         switch step {
-        case .address: return 1
-        case .results, .coaching: return 2
+        case .service: return 1
+        case .address: return 2
+        case .results, .coaching: return 3
         default: return 0
         }
     }

@@ -15,11 +15,15 @@ struct MeasureHost: View {
             Color.black.ignoresSafeArea()
             // A window restored after the app was closed has no camera behind its sheet
             if !store.pendingRestored {
-                switch session.method {
-                case .corners: ArMeasureScreen(session: session).id(attempt)
-                case .roomScan, .quickScan: RoomScanScreen(session: session).id(attempt)
-                case .card: CardPhotoFlow(session: session).id(attempt)
+                Group {
+                    switch session.method {
+                    case .corners: ArMeasureScreen(session: session).id(attempt)
+                    case .roomScan, .quickScan: RoomScanScreen(session: session).id(attempt)
+                    case .card: CardPhotoFlow(session: session).id(attempt)
+                    }
                 }
+                // The label sheet is modal: what is dimmed behind it is not read or audited as part of the screen
+                .accessibilityHidden(store.pending != nil)
             }
             // The camera picture is dimmed behind the label sheet: the sheet is the thing to read
             if store.pending != nil { Color.black.opacity(0.6).ignoresSafeArea().allowsHitTesting(false) }
@@ -90,16 +94,21 @@ struct UnsupportedMeasureView: View {
         VStack(spacing: 18) {
             HStack {
                 Button(action: onClose) {
-                    IconView(icon: .close, size: 20, weight: 2).foregroundStyle(Theme.ink)
-                        .frame(width: 44, height: 44).background(Circle().fill(Theme.surface))
+                    Image(systemName: WCIcon.close.symbol).font(.body.weight(.semibold)).foregroundStyle(Theme.ink).hudCircle()
                 }
                 .accessibilityLabel("Close")
                 Spacer()
             }
             Spacer()
-            IconTile(icon: (reason == .cameraOff || reason == .cameraRestricted) ? .camera : .alert, size: 72, iconSize: 34, tint: reason == .cameraOff ? Theme.blueTint : Theme.warnTint, foreground: reason == .cameraOff ? Theme.blue : Theme.warn)
-            Text(title).wcHeading(26, .heavy, relativeTo: .title).foregroundStyle(Theme.ink).multilineTextAlignment(.center).accessibilityAddTraits(.isHeader)
-            Text(detail).wc(16, relativeTo: .body).foregroundStyle(Theme.ink2).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+            ContentUnavailableView {
+                Label {
+                    Text(title)
+                } icon: {
+                    Image(systemName: symbol)
+                }
+            } description: {
+                Text(detail)
+            }
             Spacer()
             if reason == .cameraOff {
                 WCPrimaryButton(title: "Open Settings") {
@@ -112,5 +121,12 @@ struct UnsupportedMeasureView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.ground.ignoresSafeArea())
         .accessibilityElement(children: .contain)
+    }
+
+    private var symbol: String {
+        switch reason {
+        case .cameraOff, .cameraRestricted: return WCIcon.camera.symbol
+        case .noCamera, .noDepth: return WCIcon.alert.symbol
+        }
     }
 }

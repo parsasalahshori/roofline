@@ -130,7 +130,7 @@ struct HomeHeroMap: View {
     @State private var points: [CGPoint] = []
     @State private var progress = 0.0
     @State private var fill = 0.0
-    /// A navy cover over the map while its first tiles come in (the map's own placeholder is a grey grid); fades out as the camera moves.
+    /// A dark cover over the map while its first tiles come in (the map's own placeholder is a grey grid); fades out as the camera moves.
     @State private var cover = 1.0
     @State private var chip: Chip = .finding
     /// What the map is asked for, as a multiple of the framing: MapKit does not always show the ground a region says (an animated
@@ -157,13 +157,13 @@ struct HomeHeroMap: View {
     var body: some View {
         MapReader { proxy in
             ZStack {
-                // What shows until the tiles are in (or if they never come): the brand's navy
-                Theme.navy
+                // What shows until the tiles are in (or if they never come)
+                Theme.scrim
                 // The minimum distance is lowered: MapKit's own stops the camera short of a close frame like this one (it landed on 1.6x the ground)
                 Map(position: $position, bounds: MapCameraBounds(minimumDistance: 10), interactionModes: []) {}
                     .mapStyle(.imagery(elevation: .flat))
                     .allowsHitTesting(false)
-                Theme.navy.opacity(cover).allowsHitTesting(false)
+                Theme.scrim.opacity(cover).allowsHitTesting(false)
                 if points.count >= 3 { outlineLayers }
                 chipView
             }
@@ -184,7 +184,7 @@ struct HomeHeroMap: View {
     private var outlineLayers: some View {
         ZStack {
             AroundRoofShape(points: points)
-                .fill(Theme.navy.opacity(0.34), style: FillStyle(eoFill: true))
+                .fill(Theme.scrim.opacity(0.34), style: FillStyle(eoFill: true))
                 .opacity(fill)
             RoofAreaShape(points: points)
                 .fill(Theme.red.opacity(0.30))
@@ -205,22 +205,24 @@ struct HomeHeroMap: View {
         .allowsHitTesting(false)
     }
 
+    /// The status chip on the picture: a dark ultra-thin material capsule, white words and a symbol (the camera screens' look).
     @ViewBuilder private var chipView: some View {
         if chip != .none {
             VStack {
                 HStack {
                     HStack(spacing: 6) {
                         if chip == .done {
-                            IconView(icon: .check, size: 13)
+                            Image(systemName: "checkmark.circle.fill").symbolRenderingMode(.hierarchical).font(.caption.weight(.semibold))
                         } else {
-                            ProgressView().controlSize(.mini).tint(.white)
+                            ProgressView().controlSize(.mini)
                         }
-                        Text(chipText).wc(13, .semibold, relativeTo: .caption).lineLimit(1)
+                        Text(chipText).font(.caption.weight(.semibold)).lineLimit(1)
                     }
                     .dynamicTypeSize(...DynamicTypeSize.xxLarge)
                     .foregroundStyle(Color.white)
-                    .padding(.horizontal, 11).padding(.vertical, 6)
-                    .background(Theme.navy.opacity(0.84), in: Capsule())
+                    .padding(.horizontal, 12).padding(.vertical, 7)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .environment(\.colorScheme, .dark)
                     Spacer(minLength: 0)
                 }
                 Spacer(minLength: 0)

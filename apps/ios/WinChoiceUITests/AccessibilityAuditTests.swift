@@ -70,6 +70,7 @@ final class AccessibilityAuditTests: XCTestCase {
     // MARK: Default text size
 
     func testWelcome() throws { try audit("welcome") }
+    func testService() throws { try audit("service") }
     func testAddress() throws { try audit("address") }
     func testResults() throws { try audit("results") }
     func testCallback() throws { try audit("callback") }
@@ -92,6 +93,7 @@ final class AccessibilityAuditTests: XCTestCase {
     // MARK: Dark appearance
 
     func testWelcomeDark() throws { try audit("welcome", dark: true) }
+    func testServiceDark() throws { try audit("service", dark: true) }
     func testResultsDark() throws { try audit("results", dark: true) }
     func testListDark() throws { try audit("list", dark: true) }
     func testQuoteDark() throws { try audit("quote", dark: true) }
@@ -102,6 +104,7 @@ final class AccessibilityAuditTests: XCTestCase {
     // MARK: Largest accessibility text size
 
     func testWelcomeLargestText() throws { try audit("welcome", largestText: true) }
+    func testServiceLargestText() throws { try audit("service", largestText: true) }
     func testAddressLargestText() throws { try audit("address", largestText: true) }
     func testResultsLargestText() throws { try audit("results", largestText: true) }
     func testRoomsLargestText() throws { try audit("rooms", largestText: true) }

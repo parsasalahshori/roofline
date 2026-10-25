@@ -4,85 +4,84 @@ import RooflineCore
 import SwiftUI
 
 /// 14 Booked (ios-hw-14): the visit is on the calendar. The date, the rep, two things to do, Add to Calendar.
+/// A native grouped list under a large title: the saved quote as the header, the visit and the rep as rows, the two things to do,
+/// and the buttons at the bottom. "My order" is a plain toolbar button.
 struct BookedScreen: View {
     @Environment(HomeownerStore.self) private var store
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var showCalendar = false
 
     private var zone: TimeZone { store.timeZone }
     private var start: Date? { store.visitStart }
 
     var body: some View {
-        ScrollView {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top) {
-                ZStack {
-                    Circle().fill(Theme.ok)
-                    IconView(icon: .check, size: 24, weight: 1.7).foregroundStyle(.white)
-                }
-                .frame(width: 56, height: 56)
-                .accessibilityHidden(true)
-                Spacer(minLength: 8)
-                NavTextButton(title: "My order") { store.showStatus() }
-                    .dynamicTypeSize(...DynamicTypeSize.accessibility1)
-            }
-            Text("Your visit is booked").wcHeading(28, .heavy, relativeTo: .title).foregroundStyle(Theme.ink).padding(.top, 20).accessibilityAddTraits(.isHeader)
-            Text(savedLine).wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink2).padding(.top, 6).fixedSize(horizontal: false, vertical: true)
-            VStack(spacing: 0) {
+        List {
+            Section {
                 AdaptiveStack(spacing: 14) {
                     if let s = start { CalendarTile(month: VisitTimes.monthShortCaps(s, zone), day: VisitTimes.dayNumber(s, zone)) }
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(start.map { VisitTimes.confirmation($0, zone) } ?? "Your visit").wc(20, .semibold, relativeTo: .title3).foregroundStyle(Theme.ink)
+                        Text(start.map { VisitTimes.confirmation($0, zone) } ?? "Your visit").font(.title3.weight(.semibold)).foregroundStyle(Theme.ink)
                         Text("About 30 minutes · \(store.address.split(separator: ",").first.map(String.init) ?? store.address)")
-                            .wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
+                            .font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(14)
-                RowDivider(inset: 14)
-                AdaptiveStack(spacing: 14) {
+                .padding(.vertical, 4)
+                .accessibilityElement(children: .combine)
+                AdaptiveStack(spacing: 12) {
                     RepAvatar(size: 44)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(store.repName ?? "A \(store.brand.name) rep").wc(18, .semibold, relativeTo: .headline).foregroundStyle(Theme.ink)
-                        Text("Re-measures your \(store.windowCount) window\(store.windowCount == 1 ? "" : "s") by hand").wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink3)
+                        Text(store.repName ?? "A \(store.brand.name) rep").font(.headline).foregroundStyle(Theme.ink)
+                        Text("Re-measures your \(store.windowCount) window\(store.windowCount == 1 ? "" : "s") by hand").font(.subheadline).foregroundStyle(Theme.ink2)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(14)
+                .accessibilityElement(children: .combine)
+            } header: {
+                Label {
+                    Text(savedLine).font(.subheadline).foregroundStyle(Theme.ink2)
+                } icon: {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.ok)
+                }
+                .textCase(nil)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, 6)
             }
-            .wcCard(radius: 16)
-            .padding(.top, 20)
-            VStack(alignment: .leading, spacing: 10) {
+            Section {
                 tip("Open the blinds in each room if you can")
                 tip("You can still add windows in the app until then")
+            } header: {
+                Text("Before your visit").foregroundStyle(Theme.ink2)
             }
-            .padding(.top, 16).padding(.horizontal, 4)
-            WCScrollFooter()
+            if typeSize.isAccessibilitySize {
+                Section { WCScrollFooter() }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
         }
-        .padding(.horizontal, Theme.gutter)
-        .padding(.top, 14)
-        .padding(.bottom, 16)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        }
+        .listStyle(.insetGrouped)
         .scrollBounceBehavior(.basedOnSize)
-        .background(Theme.ground.ignoresSafeArea())
         .wcFooter {
             WCSecondaryButton(title: "Add to Calendar", icon: .calendar) { showCalendar = true }
             if let tel = store.companyPhone.flatMap(CallbackSentScreen.telURL) {
                 // The whole line is the link, so there is a full-size target to hit
                 Link(destination: tel) {
                     Text(callLine)
-                        .wc(14, relativeTo: .footnote)
+                        .font(.footnote)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity, minHeight: Theme.minTap)
                         .contentShape(Rectangle())
                 }
             } else {
-                Text("Need another time? Contact \(store.brand.name).").foregroundStyle(Theme.ink3)
-                    .wc(14, relativeTo: .footnote)
+                Text("Need another time? Contact \(store.brand.name).").foregroundStyle(Theme.ink2)
+                    .font(.footnote)
                     .frame(minHeight: Theme.minTap)
             }
         }
-        .toolbar(.hidden, for: .navigationBar)
+        .hiNav(title: "Your visit is booked", display: .large, showsBack: false) {
+            NavTextButton(title: "My order") { store.showStatus() }
+        }
         .sheet(isPresented: $showCalendar) {
             if let s = start {
                 CalendarEventSheet(title: "\(store.brand.name) visit", location: store.address, start: s, end: store.visitEnd ?? s.addingTimeInterval(1800), notes: "A rep re-measures your windows by hand.")
@@ -91,12 +90,12 @@ struct BookedScreen: View {
         }
     }
 
-    /// "Need another time? Call us." (the second sentence is the link's blue)
+    /// "Need another time? Call us." (the second sentence is the link's accent)
     private var callLine: AttributedString {
         var question = AttributedString("Need another time? ")
-        question.foregroundColor = Theme.ink3
+        question.foregroundColor = Theme.ink2
         var call = AttributedString("Call us.")
-        call.foregroundColor = Theme.blue
+        call.foregroundColor = Theme.red
         return question + call
     }
 
@@ -108,9 +107,10 @@ struct BookedScreen: View {
     }
 
     private func tip(_ text: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            IconView(icon: .check, size: 18, weight: 2).foregroundStyle(Theme.ok).padding(.top, 1)
-            Text(text).wc(16, relativeTo: .body).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+        Label {
+            Text(text).foregroundStyle(Theme.ink).fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: "checkmark.circle").foregroundStyle(Theme.okText)
         }
         .accessibilityElement(children: .combine)
     }
@@ -123,11 +123,11 @@ struct CalendarTile: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text(month).wc(15, .bold, relativeTo: .footnote).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 3).background(Theme.red)
-            Text(day).wc(30, .bold, relativeTo: .title).foregroundStyle(Theme.ink).frame(maxWidth: .infinity, maxHeight: .infinity)
+            Text(month).font(.caption.weight(.bold)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 2).background(Theme.buttonFill)
+            Text(day).font(.title2.weight(.semibold)).monospacedDigit().foregroundStyle(Theme.ink).frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(width: 54, height: 54)
-        .background(Theme.surface)
+        .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.line2, lineWidth: 1))
         .accessibilityHidden(true)

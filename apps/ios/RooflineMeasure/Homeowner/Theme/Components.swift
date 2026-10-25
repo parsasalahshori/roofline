@@ -1,83 +1,94 @@
 import RooflineCore
 import SwiftUI
 
-// The building blocks of the homeowner screens, from the mockups' own CSS (_wc.css, _hw.css, _ios.css): 54 pt main
-// button with 14 pt radius, hairline cards, blue selection, step dots, grouped rows. One red main button per screen.
+// The building blocks of the homeowner screens, in Apple's own vocabulary (plans/ios-hig-redesign.md): a native navigation
+// bar, bordered buttons, a material footer, grouped-list cards, SF Symbols and Dynamic Type text styles. WinChoice red is the
+// one accent, set app-wide with `.tint`. One prominent button per screen.
 
 // MARK: - Navigation bar
 
-/// The top row of the mockups (.wnav): a blue back chevron, the title (the WinChoice wordmark or a few words), and
-/// whatever belongs at the right (step dots, "Skip", "Add", a share icon). Drawn by hand so it looks the same on every
-/// version of iOS; the back swipe still works (see SwipeBack).
+/// A screen's top bar, native: the system navigation bar with a title, a back button and trailing items. Apply it to the
+/// screen's outermost view (inside the navigation stack):
+///
+///     ScrollView { ... }
+///         .hiNav(title: "Your details")
+///         .hiNav(title: "Your windows") { NavTextButton(title: "Add") { ... } }
+///
+/// - `display`: `.inline` (the default, for sub-screens) or `.large` (main step screens; the content must then be a
+///   `ScrollView` or `List` at the top of the screen so the large title can collapse).
+/// - `wordmark`: the title is the brand name (inline; kept so older calls compile: it is the system's own inline title, because a
+///   custom title view does not follow the audit's Dynamic Type check).
+/// - `onBack`: what the back button does; nil means `store.pop()` (the same step the swipe-back and the old bar took).
+///   `showsBack: false` leaves no back button.
+/// The back button is a toolbar button over the hidden system one, so it can run `store.pop()` and its book-keeping, and it looks
+/// the same: a chevron, VoiceOver "Back". The swipe-from-the-edge gesture stays on.
+struct HiNavModifier<Trailing: View>: ViewModifier {
+    @Environment(HomeownerStore.self) private var store: HomeownerStore?
+    let title: String?
+    let display: NavigationBarItem.TitleDisplayMode
+    let wordmark: Bool
+    let showsBack: Bool
+    let onBack: (() -> Void)?
+    let trailing: Trailing
+
+    func body(content: Content) -> some View {
+        content
+            .navigationTitle(title ?? "")
+            .navigationBarTitleDisplayMode(wordmark ? .inline : display)
+            .navigationBarBackButtonHidden(true)
+            .toolbar {
+                if showsBack {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            if let onBack = onBack { onBack() } else { store?.pop() }
+                        } label: {
+                            Image(systemName: "chevron.backward")
+                        }
+                        .accessibilityLabel("Back")
+                        .accessibilityHint("Goes to the previous step")
+                    }
+                }
+                if Trailing.self != EmptyView.self {
+                    ToolbarItem(placement: .topBarTrailing) { trailing }
+                }
+            }
+            .background(SwipeBackEnabler())
+    }
+}
+
+extension View {
+    /// A native navigation bar for this screen (see `HiNavModifier`), with trailing toolbar content ("Skip", "Add", a step caption).
+    func hiNav<Trailing: View>(
+        title: String?, display: NavigationBarItem.TitleDisplayMode = .inline, wordmark: Bool = false, showsBack: Bool = true,
+        onBack: (() -> Void)? = nil, @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
+        modifier(HiNavModifier(title: title, display: display, wordmark: wordmark, showsBack: showsBack, onBack: onBack, trailing: trailing()))
+    }
+
+    /// A native navigation bar for this screen (see `HiNavModifier`).
+    func hiNav(
+        title: String?, display: NavigationBarItem.TitleDisplayMode = .inline, wordmark: Bool = false, showsBack: Bool = true,
+        onBack: (() -> Void)? = nil
+    ) -> some View {
+        modifier(HiNavModifier(title: title, display: display, wordmark: wordmark, showsBack: showsBack, onBack: onBack, trailing: EmptyView()))
+    }
+}
+
+/// The earlier bar, kept so the screens not yet converted compile and get the native bar anyway: drop it anywhere in a screen
+/// (it draws nothing itself) and the screen's navigation bar takes its title, back button and trailing content. New and converted
+/// screens use `.hiNav(...)` on the screen instead. Because it only carries the bar, it must be a direct part of the screen's
+/// view hierarchy (not inside a lazy container).
 struct WCNavBar<Trailing: View>: View {
-    @Environment(\.dynamicTypeSize) private var typeSize
     var title: String?
-    /// Draw the title as the WinChoice wordmark (expanded, heavy).
+    /// Draw the title as the WinChoice wordmark.
     var wordmark = false
     var onBack: (() -> Void)?
     @ViewBuilder var trailing: Trailing
 
-    private var back: some View {
-        Group {
-            if let onBack = onBack {
-                Button(action: onBack) {
-                    IconView(icon: .chevLeft, size: 22, weight: 2)
-                        .foregroundStyle(Theme.blue)
-                        .frame(width: Theme.minTap, height: Theme.minTap, alignment: .leading)
-                        .contentShape(Rectangle())
-                }
-                .accessibilityLabel("Back")
-                .accessibilityHint("Goes to the previous step")
-            } else {
-                Color.clear.frame(width: 1, height: Theme.minTap)
-            }
-        }
-    }
-
-    private func titleText(lines: Int?) -> some View {
-        Group {
-            if let title = title {
-                Group {
-                    if wordmark {
-                        Text(title).wcHeading(16, .heavy, relativeTo: .headline)
-                    } else {
-                        Text(title).wc(16, .semibold, relativeTo: .headline)
-                    }
-                }
-                .foregroundStyle(Theme.ink)
-                .lineLimit(lines)
-                .minimumScaleFactor(wordmark ? 0.5 : 0.7)
-                .accessibilityAddTraits(.isHeader)
-            }
-        }
-    }
-
     var body: some View {
-        if typeSize.isAccessibilitySize {
-            // Large text: the buttons on one row, the title under them at the full size
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 8) {
-                    back
-                    Spacer(minLength: 4)
-                    trailing.frame(minHeight: Theme.minTap)
-                }
-                titleText(lines: wordmark ? 1 : nil)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.bottom, 4)
-            }
-            .padding(.horizontal, Theme.gutter)
-        } else {
-            HStack(spacing: 8) {
-                back
-                Spacer(minLength: 4)
-                titleText(lines: 1)
-                Spacer(minLength: 4)
-                trailing
-                    .frame(minHeight: Theme.minTap)
-            }
-            .padding(.horizontal, Theme.gutter)
-            .frame(minHeight: 44)
-        }
+        Color.clear
+            .frame(width: 0, height: 0)
+            .hiNav(title: title, wordmark: wordmark, showsBack: onBack != nil, onBack: onBack) { trailing }
     }
 }
 
@@ -87,38 +98,51 @@ extension WCNavBar where Trailing == EmptyView {
     }
 }
 
-/// The four little bars at the top right of the first screens: how far along (REDESIGN.md 8.2).
+/// "Step 2 of 4", small and secondary: the trailing item of the bar on the first screens. Under a title, `StepProgress` draws
+/// the same words with a progress bar.
 struct StepDots: View {
     let filled: Int
     var total = 4
 
     var body: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<total, id: \.self) { i in
-                Capsule().fill(i < filled ? Theme.ink : Theme.line2).frame(width: 18, height: 4)
-            }
+        Text("Step \(filled) of \(total)")
+            .font(.footnote)
+            .foregroundStyle(Theme.ink2)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Step \(filled) of \(total)")
+            .accessibilityAddTraits(.isStaticText)
+    }
+}
+
+/// How far along, under a screen title: "Step 2 of 4" and a native linear `ProgressView`.
+struct StepProgress: View {
+    let step: Int
+    var total = 4
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Step \(step) of \(total)").font(.footnote).monospacedDigit().foregroundStyle(Theme.ink2)
+            ProgressView(value: Double(min(max(step, 0), total)), total: Double(total))
+                .progressViewStyle(.linear)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Step \(filled) of \(total)")
+        .accessibilityLabel("Step \(step) of \(total)")
         .accessibilityAddTraits(.isStaticText)
     }
 }
 
-/// A plain text button at the right of the bar ("Skip", "Add").
+/// A plain text button in the bar ("Skip", "Add"): the system's own toolbar button.
 struct NavTextButton: View {
     let title: String
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            Text(title).wc(16, .medium, relativeTo: .body).foregroundStyle(Theme.blue)
-                .frame(minWidth: Theme.minTap, minHeight: Theme.minTap, alignment: .trailing)
-                .contentShape(Rectangle())
-        }
+        Button(title, action: action)
     }
 }
 
-/// The big screen title under the bar (.wh): 26 pt, expanded, heavy.
+/// The screen title in the content, under an inline bar: title text style, bold, with an optional line under it. (A main step
+/// screen uses a large navigation title instead: `.hiNav(title:, display: .large)`.)
 struct WCHeadline: View {
     let text: String
     var subtitle: String?
@@ -126,13 +150,13 @@ struct WCHeadline: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(text)
-                .wcHeading(26, .heavy, relativeTo: .title)
-                .foregroundStyle(Theme.ink)
+                .font(.title.weight(.bold))
+                .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
             if let subtitle = subtitle {
                 Text(subtitle)
-                    .wc(15, relativeTo: .subheadline)
+                    .font(.body)
                     .foregroundStyle(Theme.ink2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -143,7 +167,8 @@ struct WCHeadline: View {
 
 // MARK: - Buttons
 
-/// The one main button of a screen (.wcta): WinChoice red, 54 pt, 14 pt radius. Disabled is half strength.
+/// The one prominent button of a screen: `.borderedProminent`, large, full width, WinChoice red (the #CC2F23 fill that clears
+/// 4.5:1 with white text). Loading swaps the label for a spinner. Disabled is the system's dimmed look.
 struct WCPrimaryButton: View {
     let title: String
     var icon: WCIcon?
@@ -159,27 +184,26 @@ struct WCPrimaryButton: View {
         }) {
             HStack(spacing: 8) {
                 if isLoading {
-                    ProgressView().tint(Theme.onRed)
+                    ProgressView().tint(.white)
                 } else {
-                    if let icon = icon, iconLeading { IconView(icon: icon, size: 16, weight: 2) }
-                    Text(title).wc(18, .bold, relativeTo: .headline).multilineTextAlignment(.center)
-                    if let icon = icon, !iconLeading { IconView(icon: icon, size: 16, weight: 2) }
+                    if let icon = icon, iconLeading { Image(systemName: icon.symbol) }
+                    Text(title).multilineTextAlignment(.center)
+                    if let icon = icon, !iconLeading { Image(systemName: icon.symbol) }
                 }
             }
-            .foregroundStyle(Theme.onRed)
-            .frame(maxWidth: .infinity, minHeight: Theme.buttonHeight)
-            .padding(.horizontal, 12)
-            .background(Theme.red, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
-            .opacity(isEnabled ? 1 : 0.5)
-            .contentShape(Rectangle())
+            .fontWeight(.semibold)
+            .frame(maxWidth: .infinity)
         }
-        .buttonStyle(PressScaleStyle())
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .tint(Theme.buttonFill)
         .disabled(!isEnabled || isLoading)
         .accessibilityLabel(title)
     }
 }
 
-/// The quiet button under it (.wcta2): white, blue text, hairline.
+/// The quieter button under it: `.bordered`, large, full width, in the neutral label colour (red stays for the one prominent
+/// button; red text on a red tint would also fall short of 4.5:1).
 struct WCSecondaryButton: View {
     let title: String
     var icon: WCIcon?
@@ -189,39 +213,25 @@ struct WCSecondaryButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                if let icon = icon { IconView(icon: icon, size: 16, weight: 1.9) }
-                Text(title).wc(17, .semibold, relativeTo: .headline).multilineTextAlignment(.center)
+                if let icon = icon { Image(systemName: icon.symbol) }
+                Text(title).multilineTextAlignment(.center)
             }
-            .foregroundStyle(Theme.blue)
-            .frame(maxWidth: .infinity, minHeight: Theme.secondaryButtonHeight)
-            .padding(.horizontal, 12)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.line2, lineWidth: 1))
-            .opacity(isEnabled ? 1 : 0.5)
-            .contentShape(Rectangle())
+            .fontWeight(.semibold)
+            .frame(maxWidth: .infinity)
         }
-        .buttonStyle(PressScaleStyle())
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .tint(Theme.ink)
         .disabled(!isEnabled)
-    }
-}
-
-struct PressScaleStyle: ButtonStyle {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
-            .opacity(configuration.isPressed ? 0.92 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
 // MARK: - Footer
 
 extension View {
-    /// The bottom area with the main button(s): the page's ground colour, 16 pt gutters, content scrolls above it. With
-    /// accessibility text sizes a pinned area would fill the screen, so there it is not pinned: the screen's scrolling content
-    /// ends with `WCScrollFooter()`, which draws the same buttons at the full text size.
+    /// The bottom area with the main button(s): `.safeAreaInset(edge: .bottom)` on a bar material, 16 pt gutters, content scrolls
+    /// above it. With accessibility text sizes a pinned area would fill the screen, so there it is not pinned: the screen's
+    /// scrolling content ends with `WCScrollFooter()`, which draws the same buttons at the full text size.
     func wcFooter<Footer: View>(@ViewBuilder _ footer: () -> Footer) -> some View {
         modifier(WCFooterModifier(footer: footer()))
     }
@@ -233,15 +243,16 @@ private struct WCFooterModifier<Footer: View>: ViewModifier {
 
     func body(content: Content) -> some View {
         if typeSize.isAccessibilitySize {
-            content.environment(\.wcFooterView, AnyView(VStack(spacing: 10) { footer }))
+            content.environment(\.wcFooterView, AnyView(VStack(spacing: 12) { footer }))
         } else {
             content.safeAreaInset(edge: .bottom, spacing: 0) {
-                VStack(spacing: 10) { footer }
+                VStack(spacing: 12) { footer }
                     .padding(.horizontal, Theme.gutter)
-                    .padding(.top, 10)
+                    .padding(.top, 12)
                     .padding(.bottom, 8)
                     .frame(maxWidth: .infinity)
-                    .background(Theme.ground)
+                    .background(Theme.surface)
+                    .overlay(alignment: .top) { Divider() }
             }
         }
     }
@@ -278,9 +289,9 @@ struct FinePrint: View {
     var body: some View {
         HStack(spacing: 6) {
             if let icon = icon { IconView(icon: icon, size: 16) }
-            Text(text).wc(13, relativeTo: .footnote).multilineTextAlignment(.center)
+            Text(text).font(.footnote).multilineTextAlignment(.center)
         }
-        .foregroundStyle(Theme.ink3)
+        .foregroundStyle(Theme.ink2)
         .frame(maxWidth: .infinity)
     }
 }
@@ -288,19 +299,24 @@ struct FinePrint: View {
 // MARK: - Cards and rows
 
 extension View {
-    /// A white card with a hairline (box-shadow: inset 0 0 0 1px --line); selected: a 2 pt blue ring on a blue tint.
+    /// A grouped-list card: `secondarySystemGroupedBackground` with continuous 12 pt corners and no border. Selected: the same
+    /// card with a 2 pt accent ring. (`radius` is kept so older calls compile; every card uses the system radius.)
     func wcCard(selected: Bool = false, radius: CGFloat = Theme.radius, fill: Color? = nil) -> some View {
-        background(selected ? Theme.blueTint : (fill ?? Theme.surface), in: RoundedRectangle(cornerRadius: radius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(selected ? Theme.blue : Theme.line, lineWidth: selected ? 2 : 1))
+        background(fill ?? Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+            .overlay {
+                if selected {
+                    RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.red, lineWidth: 2)
+                }
+            }
     }
 
-    /// A tinted panel without a border (the blue "why" and note boxes).
-    func wcPanel(_ tint: Color = Theme.blueTint, radius: CGFloat = Theme.radius) -> some View {
-        background(tint, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+    /// A plain panel on the grouped surface (a callout). Pass a tint for a status panel only.
+    func wcPanel(_ tint: Color = Theme.surface, radius: CGFloat = Theme.radius) -> some View {
+        background(tint, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
     }
 }
 
-/// An icon in a 34 to 48 pt rounded square (.ic), on the quiet surface, or white when selected.
+/// An SF Symbol in a rounded square on a quiet fill (like a Settings row's icon), accent-coloured when selected.
 struct IconTile: View {
     let icon: WCIcon
     var size: CGFloat = 44
@@ -311,49 +327,41 @@ struct IconTile: View {
 
     var body: some View {
         IconView(icon: icon, size: iconSize)
-            .foregroundStyle(foreground ?? (selected ? Theme.blue : Theme.ink))
+            .foregroundStyle(foreground ?? (selected ? Theme.red : Theme.ink))
             .frame(width: size, height: size)
-            .background(tint ?? (selected ? Theme.surface : Theme.surface2), in: RoundedRectangle(cornerRadius: size / 4, style: .continuous))
+            .background(tint ?? Theme.surface2, in: RoundedRectangle(cornerRadius: size / 4, style: .continuous))
     }
 }
 
-/// A rounded checkbox, 24 pt (.rd): empty with a 2 pt grey ring, or blue with a white check.
+/// A selection circle, 24 pt: an empty grey circle, or the accent checkmark circle (SF Symbols).
 struct WCCheckbox: View {
     let isOn: Bool
     var size: CGFloat = 24
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: size * 0.29, style: .continuous)
-                .fill(isOn ? Theme.blue : Color.clear)
-            RoundedRectangle(cornerRadius: size * 0.29, style: .continuous)
-                .strokeBorder(isOn ? Color.clear : Theme.line2, lineWidth: 2)
-            if isOn { IconView(icon: .check, size: size * 0.66, weight: 2.4).foregroundStyle(Color.white) }
-        }
-        .frame(width: size, height: size)
-        .accessibilityHidden(true)
+        Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+            .font(.system(size: size))
+            .foregroundStyle(isOn ? Theme.red : Theme.decor)
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
     }
 }
 
-/// A radio dot, 22 pt: a grey ring, or a blue disc with a white centre.
+/// The same circle for a single choice.
 struct WCRadio: View {
     let isOn: Bool
     var size: CGFloat = 22
 
     var body: some View {
-        ZStack {
-            Circle().strokeBorder(isOn ? Theme.blue : Theme.line2, lineWidth: 2)
-            if isOn {
-                Circle().fill(Theme.blue)
-                Circle().fill(Theme.surface).frame(width: size * 0.32, height: size * 0.32)
-            }
-        }
-        .frame(width: size, height: size)
-        .accessibilityHidden(true)
+        Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+            .font(.system(size: size))
+            .foregroundStyle(isOn ? Theme.red : Theme.decor)
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
     }
 }
 
-/// A pill chip (38 pt): the room names, "Morning / Afternoon / Evening".
+/// A capsule chip: the room names, "Morning / Afternoon / Evening". Quiet fill; the chosen one is the accent with white text.
 struct WCChip: View {
     let title: String
     let isOn: Bool
@@ -363,12 +371,11 @@ struct WCChip: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .wc(15, isOn ? .semibold : .medium, relativeTo: .callout)
-                .foregroundStyle(isOn ? Theme.blue : Theme.ink)
+                .font(.callout.weight(isOn ? .semibold : .regular))
+                .foregroundStyle(isOn ? Theme.onRed : Theme.ink)
                 .padding(.horizontal, 14)
                 .frame(minHeight: max(height, Theme.minTap - 6))
-                .background(isOn ? Theme.blueTint : Theme.surface, in: Capsule())
-                .overlay(Capsule().strokeBorder(isOn ? Theme.blue : Theme.line2, lineWidth: isOn ? 2 : 1))
+                .background(isOn ? Theme.buttonFill : Color(.tertiarySystemFill), in: Capsule())
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -376,7 +383,8 @@ struct WCChip: View {
     }
 }
 
-/// A small status tag: icon-less words on a tint ("About 1/4 inch · best", "Check").
+/// A small status tag: words on a tint ("About 1/4 inch · best", "Check"). The text uses the darker status variants so it
+/// clears 4.5:1 on its tint.
 struct WCTag: View {
     enum Kind { case ok, info, warn, plain, blue }
     let text: String
@@ -386,18 +394,18 @@ struct WCTag: View {
 
     private var colors: (Color, Color) {
         switch kind {
-        case .ok: return (Theme.ok, Theme.okTint)
-        case .info: return (Theme.info, Theme.infoTint)
-        case .warn: return (Theme.warn, Theme.warnTint)
-        case .blue: return (Theme.blue, Theme.blueTint)
+        case .ok: return (Theme.okText, Theme.okTint)
+        case .info: return (Theme.ink2, Theme.infoTint)
+        case .warn: return (Theme.warnText, Theme.warnTint)
+        case .blue: return (Theme.red, Theme.blueTint)
         case .plain: return (Theme.ink2, Theme.surface2)
         }
     }
 
     var body: some View {
         HStack(spacing: 4) {
-            if let icon = icon { IconView(icon: icon, size: 13, weight: 1.9) }
-            Text(text).wc(12, .semibold, relativeTo: .caption)
+            if let icon = icon { Image(systemName: icon.symbol).imageScale(.small) }
+            Text(text).font(.caption.weight(.semibold))
         }
         .foregroundStyle(colors.0)
         .padding(.horizontal, 7)
@@ -406,16 +414,59 @@ struct WCTag: View {
     }
 }
 
-/// The blue "why" and note panels: an icon, a sentence (a bold lead optional).
+/// On a result screen (the window price, the roof's price range): the price is an estimate, and a call to the company gets
+/// an exact measurement, done in person. A grouped callout: an info symbol, the words, a bordered call button when the brand
+/// has a phone.
+struct EstimateCallCard: View {
+    @Environment(HomeownerStore.self) private var store
+    @Environment(\.openURL) private var openURL
+    let service: HomeownerService
+
+    private var line: String {
+        let name = store.brand.name
+        switch service {
+        case .roof: return "For a foolproof measurement, call us. A \(name) expert measures your roof in person, for free."
+        case .windows, .gutters: return "For a foolproof measurement, call us. A \(name) expert measures every window in person, for free, before anything is built."
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: WCIcon.info.symbol)
+                    .font(.title3)
+                    .foregroundStyle(Theme.ink2)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("This is an estimate").font(.headline).foregroundStyle(.primary)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(line).font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if let url = store.brand.phoneURL, let phone = store.brand.phone {
+                WCSecondaryButton(title: "Call \(phone)", icon: .phone) { openURL(url) }
+                    .accessibilityLabel("Call \(store.brand.name) at \(phone)")
+                    .accessibilityIdentifier("estimate.call")
+            }
+        }
+        .padding(16)
+        .wcCard()
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// A callout: an SF Symbol and a sentence (a bold lead optional) on the grouped surface. Notices are plain, not tinted boxes:
+/// `tint` is kept so older calls compile and is ignored; `iconColor` colours the symbol (a status colour for a warning).
 struct InfoPanel: View {
     var icon: WCIcon = .info
     var lead: String?
     let text: String
-    var tint: Color = Theme.blueTint
-    var iconColor: Color = Theme.blue
-    /// The icon sits in a white 40 pt tile (the call-back panel) rather than loose.
+    var tint: Color = Theme.surface
+    var iconColor: Color = Theme.ink2
+    /// The icon sits in a 40 pt quiet tile (the call-back panel) rather than loose.
     var tile = false
-    /// The panel has no padding of its own when it sits inside another card.
+    /// The panel has no padding or background of its own when it sits inside another card.
     var padded = true
 
     private var composed: AttributedString {
@@ -435,27 +486,29 @@ struct InfoPanel: View {
             if tile {
                 IconView(icon: icon, size: 20).foregroundStyle(iconColor)
                     .frame(width: 40, height: 40)
-                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .background(Theme.surface2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             } else {
                 IconView(icon: icon, size: 18).foregroundStyle(iconColor).padding(.top, 1)
             }
             Text(composed)
-                .wc(14, relativeTo: .subheadline)
+                .font(.subheadline)
                 .foregroundStyle(Theme.ink2)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(padded ? 14 : 0)
+        .padding(padded ? 16 : 0)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(padded ? tint : Color.clear, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+        .background(padded ? Theme.surface : Color.clear, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 }
 
 // MARK: - Fields
 
-/// A labelled text field (46 to 48 pt, 12 pt radius, hairline).
+/// A labelled text field in the system's look: the label above, the field on the grouped surface (44 pt, continuous corners,
+/// no border), a red outline and a line of words when there is an error.
 struct WCField: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     let label: String
     @Binding var text: String
     var prompt = ""
@@ -467,26 +520,42 @@ struct WCField: View {
     var submitLabel: SubmitLabel = .next
     var onSubmit: (() -> Void)?
 
+    /// With accessibility text sizes a phone number or an email does not fit on one line, so the value wraps (a field that cuts
+    /// its own text short is what the audit calls "may be clipped"). Return still submits: the newline it types is taken out.
+    private var wraps: Bool { typeSize.isAccessibilitySize }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(label).wc(13, .semibold, relativeTo: .footnote).foregroundStyle(Theme.ink2)
-            TextField("", text: $text, prompt: Text(prompt).foregroundColor(Theme.ink3))
+            Text(label).font(.footnote).foregroundStyle(Theme.ink2)
+            TextField("", text: $text, prompt: Text(prompt).foregroundColor(Theme.ink3), axis: wraps ? .vertical : .horizontal)
+                .lineLimit(wraps ? 1...6 : 1...1)
                 .keyboardType(keyboard)
                 .textContentType(content)
                 .textInputAutocapitalization(capitalization)
                 .autocorrectionDisabled(keyboard != .default)
                 .submitLabel(submitLabel)
                 .onSubmit { onSubmit?() }
-                .wc(16, relativeTo: .body)
+                .onChange(of: text) { _, new in
+                    if wraps, new.contains("\n") {
+                        text = new.replacingOccurrences(of: "\n", with: "")
+                        onSubmit?()
+                    }
+                }
+                .font(.body)
                 .modifier(MonoIf(on: mono))
-                .foregroundStyle(Theme.ink)
+                .foregroundStyle(.primary)
                 .padding(.horizontal, 12)
-                .frame(minHeight: 46)
-                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(error == nil ? Theme.line2 : Theme.bad, lineWidth: error == nil ? 1 : 1.5))
+                .padding(.vertical, wraps ? 8 : 0)
+                .frame(minHeight: Theme.minTap)
+                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay {
+                    if error != nil {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.bad, lineWidth: 1.5)
+                    }
+                }
                 .accessibilityLabel(label)
             if let error = error {
-                Text(error).wc(12, .medium, relativeTo: .caption).foregroundStyle(Theme.bad)
+                Text(error).font(.footnote).foregroundStyle(Theme.badText)
                     .accessibilityLabel("\(label): \(error)")
             }
         }
@@ -496,15 +565,14 @@ struct WCField: View {
 private struct MonoIf: ViewModifier {
     let on: Bool
     func body(content: Content) -> some View {
-        if on { content.font(.system(size: 16, design: .monospaced)) } else { content }
+        if on { content.monospacedDigit() } else { content }
     }
 }
 
 // MARK: - Scroll edge
 
 extension View {
-    /// iOS 26 fades the top of a scroll view under the status bar; a hero that is drawn up there on purpose (the navy welcome)
-    /// should not get that fade.
+    /// iOS 26 fades the top of a scroll view under the status bar; a header drawn up there on purpose should not get that fade.
     @ViewBuilder func wcNoTopScrollFade() -> some View {
         if #available(iOS 26.0, *) {
             scrollEdgeEffectHidden(true, for: .top)
@@ -516,7 +584,7 @@ extension View {
 
 // MARK: - Swipe back
 
-/// The system's swipe-from-the-edge back gesture keeps working with the hidden navigation bar.
+/// The system's swipe-from-the-edge back gesture keeps working with the system back button hidden.
 struct SwipeBackEnabler: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIViewController { Holder() }
     func updateUIViewController(_ vc: UIViewController, context: Context) {}
@@ -531,26 +599,22 @@ struct SwipeBackEnabler: UIViewControllerRepresentable {
 }
 
 extension View {
+    /// The page behind a screen: the grouped-list ground. (The navigation bar comes from `.hiNav` / `WCNavBar`.)
     func wcScreenChrome() -> some View {
-        self
-            .background(Theme.ground.ignoresSafeArea())
-            .toolbar(.hidden, for: .navigationBar)
-            .navigationBarBackButtonHidden(true)
-            .background(SwipeBackEnabler())
+        background(Theme.ground.ignoresSafeArea())
     }
 }
 
 // MARK: - Grouped rows (the iOS lists of the rooms, windows and rows screens)
 
-/// A small caps heading above a group ("YOUR ROOMS").
+/// A section header above a group ("YOUR ROOMS"): footnote, secondary, capitals like a grouped list's.
 struct GroupHeader: View {
     let text: String
 
     var body: some View {
         Text(text.uppercased())
-            .wc(13, .semibold, relativeTo: .footnote)
-            .tracking(0.3)
-            .foregroundStyle(Theme.ink3)
+            .font(.footnote)
+            .foregroundStyle(Theme.ink2)
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -558,14 +622,15 @@ struct GroupHeader: View {
     }
 }
 
-/// A white rounded group; rows inside are separated by a hairline inset from the left.
+/// A grouped-list container: rows on `secondarySystemGroupedBackground`, continuous corners; rows inside are separated by a
+/// hairline inset from the left.
 struct GroupCard<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
         VStack(spacing: 0) { content }
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
     }
 }
 
@@ -574,7 +639,7 @@ struct RowDivider: View {
     var inset: CGFloat = 14
 
     var body: some View {
-        Rectangle().fill(Theme.line).frame(height: 1).padding(.leading, inset)
+        Divider().padding(.leading, inset)
     }
 }
 
@@ -583,11 +648,11 @@ struct SmallNote: View {
     let text: String
 
     var body: some View {
-        Text(text).wc(15, relativeTo: .subheadline).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
+        Text(text).font(.footnote).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
     }
 }
 
-/// A bank card drawn small (the card-photo method's icon): blue card, gold chip.
+/// A bank card drawn small (the card-photo method's icon): a card with a chip. It stands for the real card, so it keeps its drawing.
 struct BankCardGlyph: View {
     var width: CGFloat = 32
 
@@ -595,7 +660,7 @@ struct BankCardGlyph: View {
         let h = width * 0.66
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: width * 0.09, style: .continuous)
-                .fill(LinearGradient(colors: [Color(light: 0x2B5FA8, dark: 0x3A70BA), Color(light: 0x16345F, dark: 0x1D4478)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                .fill(LinearGradient(colors: [Color(light: 0x6B7280, dark: 0x7A808C), Color(light: 0x3C4150, dark: 0x4A505E)], startPoint: .topLeading, endPoint: .bottomTrailing))
             RoundedRectangle(cornerRadius: width * 0.04, style: .continuous)
                 .fill(Color(light: 0xE7C477, dark: 0xE7C477))
                 .frame(width: width * 0.2, height: width * 0.14)
@@ -606,7 +671,8 @@ struct BankCardGlyph: View {
     }
 }
 
-/// A tab bar like the mockup's (My order, Windows, Messages): hairline on top, icon over a 12 pt label, the chosen one blue.
+/// A tab bar in the system's look: a bar material with a hairline on top, an SF Symbol over a caption label, the chosen one in
+/// the accent. (My order, Windows, Messages.)
 struct WCTabBar: View {
     struct Item: Identifiable {
         var id: String
@@ -626,8 +692,8 @@ struct WCTabBar: View {
                 bar
             }
         }
-        .background(Theme.surface.ignoresSafeArea(edges: .bottom))
-        .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+        .background(Theme.surface)
+        .overlay(alignment: .top) { Divider() }
     }
 
     private var bar: some View {
@@ -636,12 +702,12 @@ struct WCTabBar: View {
                 Button {
                     selection = item.id
                 } label: {
-                    VStack(spacing: 4) {
-                        IconView(icon: item.icon, size: 24, weight: 2.1)
-                        Text(item.title).wc(12, .medium, relativeTo: .caption)
+                    VStack(spacing: 2) {
+                        Image(systemName: item.icon.symbol).font(.title3).frame(height: 28)
+                        Text(item.title).font(.caption2)
                     }
-                    .foregroundStyle(selection == item.id ? Theme.blue : Theme.ink3)
-                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .foregroundStyle(selection == item.id ? Theme.red : Theme.ink2)
+                    .frame(maxWidth: .infinity, minHeight: 49)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -649,8 +715,7 @@ struct WCTabBar: View {
                 .accessibilityAddTraits(selection == item.id ? [.isButton, .isSelected] : [.isButton])
             }
         }
-        .padding(.top, 8)
-        .padding(.bottom, 2)
+        .padding(.top, 4)
     }
 
     /// Three tabs do not fit side by side at accessibility text sizes: one button at the full size opens the list.
@@ -661,16 +726,16 @@ struct WCTabBar: View {
                 Button {
                     selection = item.id
                 } label: {
-                    Label(item.title, systemImage: item.id == selection ? "checkmark" : "circle")
+                    Label(item.title, systemImage: item.id == selection ? "checkmark" : item.icon.symbol)
                 }
             }
         } label: {
             HStack(spacing: 10) {
-                IconView(icon: current.icon, size: 24)
-                Text(current.title).wc(17, .semibold, relativeTo: .headline)
+                Image(systemName: current.icon.symbol)
+                Text(current.title).font(.headline)
                 Image(systemName: "chevron.up.chevron.down").imageScale(.small)
             }
-            .foregroundStyle(Theme.blue)
+            .foregroundStyle(Theme.red)
             .frame(maxWidth: .infinity, minHeight: 56)
             .padding(.horizontal, Theme.gutter)
             .contentShape(Rectangle())
@@ -682,7 +747,7 @@ struct WCTabBar: View {
 
 // MARK: - Sizes with stacked fractions
 
-/// A size as the mockups set it: monospaced digits, the fraction small and stacked ("35 ⁵⁄₈"), never a decimal.
+/// A size as the mockups set it: monospaced digits (the system font), the fraction small and stacked ("35 ⁵⁄₈"), never a decimal.
 enum SizeFormat {
     /// A length: the whole number in `size` points, the fraction (numerator raised, denominator lowered) smaller.
     static func attributed(_ inches: Double, size: CGFloat, weight: Font.Weight = .semibold, color: Color? = nil) -> AttributedString {
@@ -814,21 +879,16 @@ struct FlowLayout: Layout {
     }
 }
 
-/// The rep's picture: a plain person on a pale disc (the mockup's avatar), no photo needed.
+/// The rep's picture: the system's person placeholder (like a contact without a photo), no photo needed.
 struct RepAvatar: View {
     var size: CGFloat = 44
 
     var body: some View {
-        Canvas { ctx, s in
-            let k = s.width / 44
-            ctx.fill(Path(ellipseIn: CGRect(origin: .zero, size: s)), with: .color(Color(light: 0xD7DFE6, dark: 0x2A3A4D)))
-            var body = Path()
-            body.addEllipse(in: CGRect(x: 6 * k, y: 28 * k, width: 32 * k, height: 30 * k))
-            ctx.clip(to: Path(ellipseIn: CGRect(origin: .zero, size: s)))
-            ctx.fill(body, with: .color(Theme.blue))
-            ctx.fill(Path(ellipseIn: CGRect(x: 14 * k, y: 10 * k, width: 16 * k, height: 16 * k)), with: .color(Color(light: 0xD9AE86, dark: 0xC99A72)))
-        }
-        .frame(width: size, height: size)
-        .accessibilityHidden(true)
+        Image(systemName: "person.crop.circle.fill")
+            .resizable()
+            .scaledToFit()
+            .frame(width: size, height: size)
+            .foregroundStyle(Color(.systemGray3))
+            .accessibilityHidden(true)
     }
 }

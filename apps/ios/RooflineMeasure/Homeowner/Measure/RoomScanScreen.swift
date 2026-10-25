@@ -65,10 +65,11 @@ struct RoomScanScreen: View {
             if scanner.phase == .processing {
                 VStack(spacing: 16) {
                     ProgressView().tint(.white).scaleEffect(1.3)
-                    Text(mode == .oneWall ? "Measuring your windows…" : "Building your room…").wc(17, .semibold, relativeTo: .headline).foregroundStyle(.white)
+                    Text(mode == .oneWall ? "Measuring your windows…" : "Building your room…").font(.headline).foregroundStyle(.white)
                 }
                 .padding(28)
-                .background(RoundedRectangle(cornerRadius: 20).fill(Color(white: 0.12, opacity: 0.85)))
+                .hudPanel(cornerRadius: 20)
+                .environment(\.colorScheme, .dark)
             } else {
                 ScanHud(room: session.room, progress: scanner.progress, windows: scanner.liveWindows,
                         onCancel: { store.measureSession = nil }, onDone: { scanner.stop() })
@@ -95,32 +96,38 @@ struct RoomScanScreen: View {
     /// The scan worked, but there is no window in it: say so, and offer another go or the photo method.
     private var noWindows: some View {
         VStack(spacing: 18) {
-            Text(ScanWording.foundTitle(0)).wcHeading(24, .heavy, relativeTo: .title).foregroundStyle(.white).multilineTextAlignment(.center)
+            Text(ScanWording.foundTitle(0)).font(.title.weight(.bold)).foregroundStyle(.white).multilineTextAlignment(.center)
                 .accessibilityAddTraits(.isHeader)
             Text(mode == .oneWall ? "Point your phone at the window for a few seconds, then tap Done. Or measure it with a photo and a bank card."
                                   : "Walk round the room again with every window in view. Or measure them with a photo and a bank card.")
-                .wc(16, relativeTo: .body).foregroundStyle(Color.white.opacity(0.85)).multilineTextAlignment(.center)
+                .font(.body).foregroundStyle(Color.white.opacity(0.9)).multilineTextAlignment(.center)
             WCPrimaryButton(title: "Scan again") { store.measureSession = MeasureSession(method: session.method, room: session.room, number: session.number) }
             if store.isAvailable(.card) {
                 WCSecondaryButton(title: "Measure with a photo instead") { photoMethod() }
             }
-            Button("Close") { store.measureSession = nil }
-                .wc(17, .semibold, relativeTo: .body).foregroundStyle(Color.white.opacity(0.85)).frame(minHeight: Theme.minTap)
+            Button { store.measureSession = nil } label: {
+                Text("Close").font(.body.weight(.semibold)).foregroundStyle(Color.white.opacity(0.9))
+                    .frame(maxWidth: .infinity, minHeight: Theme.minTap).contentShape(Rectangle())
+            }
         }
         .padding(Theme.gutter)
+        .environment(\.colorScheme, .dark)
     }
 
     private func failed(_ message: String) -> some View {
         VStack(spacing: 18) {
-            Text("The scan didn't finish").wcHeading(24, .heavy, relativeTo: .title).foregroundStyle(.white).multilineTextAlignment(.center)
+            Text("The scan didn't finish").font(.title.weight(.bold)).foregroundStyle(.white).multilineTextAlignment(.center)
                 .accessibilityAddTraits(.isHeader)
-            Text(message).wc(16, relativeTo: .body).foregroundStyle(Color.white.opacity(0.85)).multilineTextAlignment(.center)
+            Text(message).font(.body).foregroundStyle(Color.white.opacity(0.9)).multilineTextAlignment(.center)
             WCPrimaryButton(title: "Try again") { store.measureSession = MeasureSession(method: session.method, room: session.room, number: session.number) }
             WCSecondaryButton(title: "Measure one window at a time instead") { corners() }
-            Button("Close") { store.measureSession = nil }
-                .wc(17, .semibold, relativeTo: .body).foregroundStyle(Color.white.opacity(0.85)).frame(minHeight: Theme.minTap)
+            Button { store.measureSession = nil } label: {
+                Text("Close").font(.body.weight(.semibold)).foregroundStyle(Color.white.opacity(0.9))
+                    .frame(maxWidth: .infinity, minHeight: Theme.minTap).contentShape(Rectangle())
+            }
         }
         .padding(Theme.gutter)
+        .environment(\.colorScheme, .dark)
     }
 
     /// Saves the windows that were kept, each in the room it was given (the review can rename the room or move one window), through

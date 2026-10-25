@@ -242,9 +242,9 @@ struct PhotoTapView: View {
                             pan = .zero
                         }
                     } label: {
-                        Text("Show all").wc(14, .semibold, relativeTo: .footnote).foregroundStyle(.white)
-                            .padding(.horizontal, 12).frame(minHeight: 36)
-                            .background(Capsule().fill(Color(white: 0.12, opacity: 0.85)))
+                        Label("Show all", systemImage: "arrow.down.right.and.arrow.up.left").font(.footnote.weight(.semibold)).foregroundStyle(.white)
+                            .padding(.horizontal, 12).frame(minHeight: Theme.minTap)
+                            .hudCapsule()
                     }
                     .padding(8)
                 }
@@ -383,9 +383,9 @@ private struct Marker: View {
         ZStack {
             if side {
                 RoundedRectangle(cornerRadius: 3, style: .continuous).fill(Theme.tape).frame(width: 13, height: 13)
-                    .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous).strokeBorder(Theme.navy.opacity(0.85), lineWidth: 2))
+                    .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous).strokeBorder(Theme.scrim.opacity(0.85), lineWidth: 2))
             } else {
-                Circle().strokeBorder(Theme.navy.opacity(0.75), lineWidth: 4.5).frame(width: d, height: d)
+                Circle().strokeBorder(Theme.scrim.opacity(0.75), lineWidth: 4.5).frame(width: d, height: d)
                 Circle().strokeBorder(Theme.tape, lineWidth: 2.5).frame(width: d, height: d)
                 Circle().fill(Theme.tape).frame(width: 3.5, height: 3.5)
                 if let n = number {

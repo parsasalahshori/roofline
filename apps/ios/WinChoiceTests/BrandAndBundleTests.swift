@@ -28,18 +28,27 @@ final class BrandAndBundleTests: XCTestCase {
         XCTAssertEqual((icons?["CFBundlePrimaryIcon"] as? [String: Any])?["CFBundleIconName"] as? String, "AppIcon", "the app has its icon")
     }
 
-    func testTheThemeReadsItsBrandColoursFromTheBrandFile() {
-        XCTAssertEqual(components(Theme.red).r, 0xED)
-        XCTAssertEqual(components(Theme.red).g, 0x3A)
-        XCTAssertEqual(components(Theme.red).b, 0x2B)
-        XCTAssertEqual(components(Theme.blue).b, 0xAB)
-        XCTAssertEqual(components(Theme.navy).r, 0x06)
-        XCTAssertEqual(components(Theme.ink).r, 0x11, "ink is the brand navy in light mode")
-        // Dark mode lifts them so they read on the dark ground
+    func testTheThemeIsTheSystemLookWithWinChoiceRedAsTheAccent() {
+        // The accent: the brand red darkened from #ED3A2B (4.0:1 on white) to #CC2F23 (5.3:1 with white, 4.7:1 on the grouped grey),
+        // so red text, links and white labels on red clear 4.5:1. Dark mode takes the brand's own lighter red for text.
+        XCTAssertEqual(components(Theme.red).r, 0xCC)
+        XCTAssertEqual(components(Theme.red).g, 0x2F)
+        XCTAssertEqual(components(Theme.red).b, 0x23)
+        XCTAssertEqual(components(Theme.buttonFill).r, 0xCC)
+        XCTAssertEqual(components(Theme.buttonFill).g, 0x2F)
+        XCTAssertEqual(components(Theme.buttonFill).b, 0x23)
         XCTAssertEqual(components(Theme.red, dark: true).r, 0xFF)
-        XCTAssertEqual(components(Theme.blue, dark: true).b, 0xEF)
-        XCTAssertEqual(components(Theme.ground).r, 0xF3)
-        XCTAssertEqual(components(Theme.ground, dark: true).r, 0x08)
+        XCTAssertEqual(components(Theme.red, dark: true).g, 0x5A)
+        XCTAssertEqual(components(Theme.red, dark: true).b, 0x4B)
+        XCTAssertEqual(components(Theme.buttonFill, dark: true).r, 0xCC, "white button text needs the darker red in dark mode too")
+        XCTAssertEqual(components(Theme.blue).r, 0xCC, "the old blue slot is the accent now")
+        // Everything else is a system colour: nothing navy, no custom blue.
+        XCTAssertEqual(components(Theme.ground).r, 0xF2, "systemGroupedBackground")
+        XCTAssertEqual(components(Theme.ground, dark: true).r, 0x00)
+        XCTAssertEqual(components(Theme.surface).r, 0xFF, "secondarySystemGroupedBackground")
+        XCTAssertEqual(components(Theme.ink).r, 0x00, "label is black in light mode")
+        XCTAssertEqual(components(Theme.ink, dark: true).r, 0xFF)
+        XCTAssertNotEqual(components(Theme.navy).b, 0x3F, "the navy hero colour is retired")
     }
 
     func testThePermissionsSayWhatTheyAreFor() throws {
