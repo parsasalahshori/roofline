@@ -105,6 +105,18 @@ private struct WelcomeFeature: View {
     }
 }
 
+/// The gear that opens Settings, for any screen's navigation bar (My order, the booked screen): once an order is placed the app
+/// opens on My order, so Settings must not live only on the welcome screen.
+struct SettingsToolbarButton: View {
+    @State private var show = false
+
+    var body: some View {
+        Button { show = true } label: { Image(systemName: "gearshape") }
+            .accessibilityLabel("Settings")
+            .sheet(isPresented: $show) { AppSettingsSheet() }
+    }
+}
+
 /// Settings: delete everything the app keeps on this phone (to start again with brand-new information), the tester's server,
 /// and the version. An inset-grouped Form, the way Apple's own settings look.
 struct AppSettingsSheet: View {

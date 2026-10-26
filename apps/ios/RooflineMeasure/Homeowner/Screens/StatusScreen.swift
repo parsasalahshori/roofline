@@ -25,7 +25,7 @@ struct StatusScreen: View {
                 .init(id: "messages", title: "Messages", icon: .message),
             ], selection: $tab)
         }
-        .hiNav(title: title, display: .large, showsBack: false)
+        .hiNav(title: title, display: .large, showsBack: false) { SettingsToolbarButton() }
         .task { await store.loadStatus() }
     }
 

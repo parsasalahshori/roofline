@@ -80,7 +80,10 @@ struct BookedScreen: View {
             }
         }
         .hiNav(title: "Your visit is booked", display: .large, showsBack: false) {
-            NavTextButton(title: "My order") { store.showStatus() }
+            HStack(spacing: 4) {
+                NavTextButton(title: "My order") { store.showStatus() }
+                SettingsToolbarButton()
+            }
         }
         .sheet(isPresented: $showCalendar) {
             if let s = start {
