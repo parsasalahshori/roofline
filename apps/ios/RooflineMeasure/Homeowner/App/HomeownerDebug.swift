@@ -114,6 +114,11 @@ enum HomeownerDebug {
             session = await api.seed(address: "2210 Leavenworth St, Little Rock, AR", services: [.windows], contact: true, callMe: true)
             store.contactDraft.phone = "(501) 555-0142"
             step = .callbackSent
+        case "thanks":
+            // The interest form sent on the estimate path: "Thanks, Tia. WinChoice will call you soon."
+            session = await api.seed(windows: seven, contact: true, callMe: true)
+            store.contactDraft = HomeownerContact(firstName: "Tia", lastName: "Bell", phone: "(501) 555-0177", email: "tia.bell@example.com", zip: "72205", contactConsent: true, textConsent: false)
+            step = .callbackSent
         case "coaching": session = await api.seed(); step = .coaching
         case "rooms": session = await api.seed(windows: two); step = .rooms
         case "method": session = await api.seed(windows: two); step = .rooms
@@ -137,7 +142,7 @@ enum HomeownerDebug {
         if let session = session {
             try? store.vault.save(session)
             // What the homeowner picked on the quote screen, for the screens after it
-            if ["quote", "contact", "book", "booked", "status"].contains(name) {
+            if ["quote", "contact", "book", "booked", "status", "thanks"].contains(name) {
                 var progress = HomeownerProgress()
                 progress.tierKey = "better"
                 progress.tierTotal = 5600

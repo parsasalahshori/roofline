@@ -127,10 +127,9 @@ private struct MethodRow: View {
                         let tag = store.methodTag(method)
                         CapsuleLabel(text: tag.text, kind: tag.best ? .ok : .plain).padding(.top, 2)
                         if method.isRoomPlan {
-                            // Apple's scan gives a quote-grade size, not a number of inches: the visit settles the exact one
-                            Text("\(accuracy.text). We confirm the exact size at your visit.").font(.footnote).foregroundStyle(Theme.ink2)
+                                                        Text("\(accuracy.text).").font(.footnote).foregroundStyle(Theme.ink2)
                         } else if method == .roomCloseups {
-                            Text("We check every size. A window you skip keeps Apple's size.").font(.footnote).foregroundStyle(Theme.ink2)
+                            Text("A window you skip keeps Apple's size.").font(.footnote).foregroundStyle(Theme.ink2)
                         } else if tag.text != accuracy.text {
                             Text("Accuracy: \(accuracy.text)").font(.footnote).foregroundStyle(Theme.ink2)
                         }
@@ -153,7 +152,7 @@ private struct MethodRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title). \(detail) \(available ? store.methodTag(method).text + (method.isRoomPlan ? ". " + accuracy.text + "." : (method == .roomCloseups ? ". We check every size. A window you skip keeps Apple's size." : ". Accuracy: " + accuracy.text)) : unavailable)")
+        .accessibilityLabel("\(title). \(detail) \(available ? store.methodTag(method).text + (method.isRoomPlan ? ". " + accuracy.text + "." : (method == .roomCloseups ? ". A window you skip keeps Apple's size." : ". Accuracy: " + accuracy.text)) : unavailable)")
         .accessibilityValue(selected && available ? "Selected" : "")
         .accessibilityAddTraits(.isButton)
     }

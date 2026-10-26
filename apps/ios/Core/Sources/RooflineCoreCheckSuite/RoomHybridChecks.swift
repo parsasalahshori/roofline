@@ -437,7 +437,11 @@ let roomHybridChecks: [Check] = [
         ctx.equal(HybridWording.addTitle(count: 3, room: "Kitchen"), "Add 3 windows to Kitchen")
         ctx.equal(HybridWording.addTitle(count: 1, room: "Kitchen"), "Add 1 window to Kitchen")
         ctx.equal(HybridWording.measuringLine(done: 1, of: 3), "Measuring window 2 of 3")
-        ctx.equal(HybridWording.outcomeTitle(.check), "WinChoice will check this one")
+        ctx.equal(HybridWording.outcomeTitle(.check), "Measured", "a scan that needed a second look reads like any measured window")
+        for o in [HybridOutcome.measured, .check, .appleSize] {
+            let words = (HybridWording.outcomeTitle(o) + " " + HybridWording.outcomeDetail(o)).lowercased()
+            for banned in ["check this", "visit", "someone will", "confirm"] { ctx.expect(!words.contains(banned), "\(o): no '\(banned)' in '\(words)'") }
+        }
         ctx.equal(ScanProgress(mode: .panForCloseups, seconds: 0).canFinish, true, "Done is open from the start, like the whole room")
         ctx.equal(ScanProgress(mode: .oneWall, seconds: 1).canFinish, false)
     },

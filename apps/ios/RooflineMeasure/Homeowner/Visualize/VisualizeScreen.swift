@@ -30,7 +30,7 @@ struct VisualizeScreen: View {
                     gridSection
                     colorSection
                     glassSection
-                    Text("Colors, grids and glass are for your look. They're chosen at your visit.")
+                    Text("Colors, grids and glass are just to show your look.")
                         .font(.footnote).foregroundStyle(Theme.ink2)
                         .padding(.horizontal, Theme.gutter)
                     if typeSize.isAccessibilitySize { WCScrollFooter() }

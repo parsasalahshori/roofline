@@ -69,7 +69,7 @@ struct LabelSheet: View {
                         .overlay(alignment: .top) { Divider() }
                 }
             }
-            .navigationTitle("Check the size, then save")
+            .navigationTitle("Save this window")
             .navigationBarTitleDisplayMode(.inline)
         }
         .presentationDetents([.fraction(0.9), .large], selection: $detent)
@@ -154,7 +154,7 @@ struct LabelSheet: View {
                     }
                 } else {
                     Text("Window \(pending.number) measured").font(.headline).foregroundStyle(Theme.ink)
-                    Text("The size comes after we upload your photo. A rep checks every size anyway.").font(.footnote).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+                    Text("The size comes after we upload your photo.").font(.footnote).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -168,7 +168,6 @@ struct LabelSheet: View {
         if let u = p.uncertaintyIn {
             if case .roomplan = pending.scale { s += " · \(SizeWording.plusMinus(u))" } else { s += " · accurate to \(SizeWording.accuracy(u))" }
         }
-        if p.needsCheck { s += ". We confirm it at your free visit." }
         return s
     }
 }

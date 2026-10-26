@@ -1,10 +1,9 @@
 import RooflineCore
 import SwiftUI
 
-/// 11 Quote (ios-hw-11): "7 windows, your price": Good, Better and Best for the windows measured (and an estimate for any
-/// not measured yet), what every window includes, and the honest line that a rep re-measures before anything is built.
-/// A native grouped list: the estimate-and-call card first, the three levels as selectable rows with a checkmark, the rest as
-/// section rows and footers. Share is a plain toolbar `ShareLink`.
+/// 11 Your estimate: what the homeowner's windows come to, at the end of measuring. A price range with Good, Better and Best, the
+/// windows listed with their sizes (each opens "See it in your home" on its own photo), and two buttons: "Have WinChoice call me"
+/// (the interest form) and "See new windows in your home". A native grouped list; Share is a plain toolbar `ShareLink`.
 struct QuoteScreen: View {
     @Environment(HomeownerStore.self) private var store
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -22,7 +21,7 @@ struct QuoteScreen: View {
                         Text(store.unsentCount > 0 ? "Sending your windows first…" : "One moment…").font(.subheadline).foregroundStyle(Theme.ink2)
                     }
                 } header: {
-                    HiListHeading(title: "Working out your price")
+                    HiListHeading(title: "Working out your estimate")
                 }
             } else {
                 Section {
@@ -44,15 +43,18 @@ struct QuoteScreen: View {
         .listStyle(.insetGrouped)
         .refreshable { await store.prepareQuote() }
         .wcFooter {
-            WCPrimaryButton(title: "Book my confirmation visit", isEnabled: quote?.tiers.isEmpty == false) { store.bookFromQuote() }
-            FinePrint(text: store.brand.quoteFootnote + " A rep re-measures every window before anything is built.")
+            WCPrimaryButton(title: "Have WinChoice call me", isEnabled: quote?.tiers.isEmpty == false) { store.requestCallFromEstimate() }
+                .accessibilityIdentifier("estimate.callMe")
+            WCSecondaryButton(title: "See new windows in your home", icon: .win, isEnabled: store.windowRows.first != nil) { store.openVisualizerForFirstWindow(from: .quote) }
+                .accessibilityIdentifier("estimate.visualize")
+            FinePrint(text: store.brand.quoteFootnote)
         }
-        .hiNav(title: "Your quote", display: .large)
+        .hiNav(title: "Your estimate", display: .large)
         .toolbar {
             if quote != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     ShareLink(item: shareText) { Image(systemName: WCIcon.upload.symbol) }
-                        .accessibilityLabel("Share your quote")
+                        .accessibilityLabel("Share your estimate")
                 }
             }
         }
@@ -63,30 +65,41 @@ struct QuoteScreen: View {
 
     // MARK: Sections
 
+    /// The lowest and highest level, "$9,800 to $14,300".
+    private func range(_ q: HomeownerQuote) -> String? {
+        let totals = q.tiers.map { $0.total }
+        guard let lo = totals.min(), let hi = totals.max() else { return nil }
+        return lo == hi ? Money.dollars(lo) : "\(Money.dollars(lo)) to \(Money.dollars(hi))"
+    }
+
     @ViewBuilder private func loaded(_ q: HomeownerQuote) -> some View {
-        // The owner's requirement: it is an estimate, and a call gets an exact measurement. First, and prominent.
         Section {
-            EstimateCallCard(service: .windows)
-                // the card's own height at any text size (a list row would otherwise clip its title to one line at the large sizes)
-                .fixedSize(horizontal: false, vertical: true)
-                .listRowInsets(EdgeInsets())
-                .listRowBackground(Color.clear)
-        } header: {
-            HiListHeading(title: "\(q.windowCount) window\(q.windowCount == 1 ? "" : "s"), your price",
-                          subtitle: "\(q.measuredCount) measured by you · \(q.estimatedCount) estimated. Installed, old windows hauled away.")
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Estimated price").font(.subheadline).foregroundStyle(Theme.ink2)
+                if let r = range(q) {
+                    Text(r).font(.largeTitle.weight(.bold)).monospacedDigit().foregroundStyle(Theme.ink)
+                        .minimumScaleFactor(0.6).lineLimit(2)
+                        .accessibilityIdentifier("estimate.range")
+                }
+                Text("For \(q.windowCount) window\(q.windowCount == 1 ? "" : "s"), installed, old windows hauled away. This is your estimate.")
+                    .font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.vertical, 6)
+            .accessibilityElement(children: .combine)
         }
-        offerAndTrustSection
         Section {
             ForEach(q.tiers) { tier in
                 TierRow(tier: tier, windowCount: q.windowCount, selected: store.selectedTier == tier.key) { store.selectTier(tier.key) }
             }
         } footer: {
             if q.atVisitCount > 0 {
-                Text("\(q.atVisitCount) window\(q.atVisitCount == 1 ? " is a bay, bow or odd shape, so it isn't" : "s are bays, bows or odd shapes, so they aren't") in these prices. We price \(q.atVisitCount == 1 ? "it" : "them") at your visit.")
+                Text("\(q.atVisitCount) window\(q.atVisitCount == 1 ? " is a bay, bow or odd shape, so it isn't" : "s are bays, bows or odd shapes, so they aren't") in these prices. WinChoice will price \(q.atVisitCount == 1 ? "it" : "them") when they call.")
                     .foregroundStyle(Theme.ink2)
                     .accessibilityIdentifier("at-visit-note")
             }
         }
+        windowsSection(q)
+        offerAndTrustSection
         Section {
             ForEach(includedLines, id: \.self) { line in
                 Label {
@@ -97,62 +110,45 @@ struct QuoteScreen: View {
             }
         } header: {
             if !includedLines.isEmpty { Text("Every window includes").foregroundStyle(Theme.ink2) }
-        } footer: {
-            Text("Colors and grids are chosen at your visit.").foregroundStyle(Theme.ink2)
         }
-        windowsSection
         if let financing = store.company.catalog.financing { financingSection(financing) }
-        Section {
-            Label {
-                Text(honestLine).font(.subheadline).foregroundStyle(Theme.ink2)
-            } icon: {
-                Image(systemName: WCIcon.ruler.symbol).foregroundStyle(Theme.ink2)
-            }
-            if q.estimatedCount > 0 {
+        if q.estimatedCount > 0 {
+            Section {
                 Label {
-                    Text("\(q.estimatedCount) window\(q.estimatedCount == 1 ? " isn't" : "s aren't") measured yet, so \(q.estimatedCount == 1 ? "it is" : "they are") priced from your home's size. Measuring them makes your price exact.")
+                    Text("\(q.estimatedCount) window\(q.estimatedCount == 1 ? " isn't" : "s aren't") measured yet, so \(q.estimatedCount == 1 ? "it is" : "they are") priced from your home's size. Measuring them makes your estimate exact.")
                         .font(.subheadline).foregroundStyle(Theme.ink2)
                 } icon: {
-                    Image(systemName: WCIcon.alert.symbol).foregroundStyle(Theme.warn)
+                    Image(systemName: WCIcon.info.symbol).foregroundStyle(Theme.ink2)
                 }
             }
         }
     }
 
-    /// "See it in your home": each window with what was chosen for it (kept on the phone), a way to try a new one on its own photo.
-    @ViewBuilder private var windowsSection: some View {
+    /// The windows, compactly: name and size. Each opens "See it in your home" on its own photo.
+    @ViewBuilder private func windowsSection(_ q: HomeownerQuote) -> some View {
         let rows = store.windowRows
         if !rows.isEmpty {
             Section {
                 ForEach(rows) { row in
                     Button { store.openVisualizer(row.id, from: .quote) } label: {
                         HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(row.title).font(.body).foregroundStyle(Theme.ink)
-                                Text(visualLine(row)).font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
-                            }
-                            Spacer(minLength: 8)
-                            Image(systemName: "photo.on.rectangle").foregroundStyle(Theme.red).accessibilityHidden(true)
+                            Text(row.title).font(.body).foregroundStyle(Theme.ink).frame(maxWidth: .infinity, alignment: .leading)
+                            if row.hasSize { Text(row.sizeTextWithUnit).font(.subheadline).monospacedDigit().foregroundStyle(Theme.ink2) }
                             Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(Theme.decor).accessibilityHidden(true)
                         }
                         .frame(minHeight: Theme.minTap)
                         .contentShape(Rectangle())
                     }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(row.title), \(row.spokenSize)")
                     .accessibilityHint("Shows new windows on your own photo")
                 }
             } header: {
-                Text("See it in your home").foregroundStyle(Theme.ink2)
+                Text("\(rows.count) window\(rows.count == 1 ? "" : "s")").foregroundStyle(Theme.ink2)
             } footer: {
-                Text("Try other kinds, grids, colors and glass on your own photos.").foregroundStyle(Theme.ink2)
+                Text("Tap a window to try other kinds, grids, colors and glass on your own photo.").foregroundStyle(Theme.ink2)
             }
         }
-    }
-
-    /// What a window shows under its name: the look chosen for it, else "Try a new window".
-    private func visualLine(_ row: WindowRow) -> String {
-        guard let look = row.look else { return "Try a new window" }
-        let label = store.brand.windowColors.first { $0.key == row.colorKey }?.label
-        return look.summary(colorLabel: label)
     }
 
     /// What every window includes: the company's own list, else the brand file's.
@@ -215,22 +211,9 @@ struct QuoteScreen: View {
         }
     }
 
-    /// "This is your price if the sizes hold. ... Window 1 needs a check."
-    private var honestLine: String {
-        var s = "This is your price if the sizes hold. At a free visit a \(store.brand.name) rep re-measures every window before we build."
-        let checks = store.windowRows.filter { $0.flagged }.map { $0.number }
-        switch checks.count {
-        case 0: break
-        case 1: s += " Window \(checks[0]) needs a check."
-        case 2: s += " Windows \(checks[0]) and \(checks[1]) need a check."
-        default: s += " \(checks.count) windows need a check."
-        }
-        return s
-    }
-
     private var shareText: String {
         guard let q = quote, let t = q.tier(store.selectedTier) ?? q.tiers.first else { return store.brand.name }
-        return "\(store.brand.name) quote for \(store.address): \(q.windowCount) windows, \(t.label), \(Money.dollars(t.total)). A rep re-measures every window before anything is built."
+        return "\(store.brand.name) estimate for \(store.address): \(q.windowCount) windows, \(t.label), \(Money.dollars(t.total))."
     }
 }
 

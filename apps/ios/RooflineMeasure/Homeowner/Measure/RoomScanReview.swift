@@ -129,7 +129,7 @@ struct RoomScanReview: View {
                 Section { roomRow }
                 Section {
                     Label {
-                        Text("Good for your quote. We confirm the exact size at your visit. Want it closer now? Tap the 4 corners of each window.")
+                        Text("Good for your estimate. Want it closer now? Tap the 4 corners of each window.")
                             .font(.subheadline).foregroundStyle(Theme.ink2)
                     } icon: {
                         Image(systemName: WCIcon.info.symbol).foregroundStyle(Theme.ink2)
@@ -226,8 +226,8 @@ struct RoomScanReview: View {
                     SizeText(widthIn: row.widthIn, heightIn: row.heightIn, size: 20, weight: .bold, unit: true, color: row.included ? Theme.ink : Theme.ink2, relativeTo: .title3)
                     if row.included {
                         Text(looksLike(row)).font(.subheadline).foregroundStyle(Theme.ink2).lineLimit(typeSize.isAccessibilitySize ? nil : 2)
-                        Text(ScanWording.sourceLine(row.confidence)).font(.subheadline.weight(row.confidence == .low ? .semibold : .regular))
-                            .foregroundStyle(row.confidence == .low ? Theme.warnText : Theme.ink2)
+                        Text(ScanWording.sourceLine(row.confidence)).font(.subheadline)
+                            .foregroundStyle(Theme.ink2)
                     } else {
                         Text("Left out. Tap to add it.").font(.subheadline).foregroundStyle(Theme.ink2)
                     }

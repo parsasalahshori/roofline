@@ -385,9 +385,16 @@ extension HomeownerStore {
         saveProgress()
     }
 
-    func bookFromQuote() {
+    /// "Have WinChoice call me": the interest form (the contact step). The visit-booking step is not forced after it.
+    func requestCallFromEstimate() {
         selectTier(selectedTier)
         push(.contact)
+    }
+
+    /// "See new windows in your home": the visualizer, on the first window (the others are one tap away on the estimate).
+    func openVisualizerForFirstWindow(from origin: VisualizeOrigin) {
+        guard let first = windowRows.first else { return }
+        openVisualizer(first.id, from: origin)
     }
 
     // MARK: "I have more" (10)
@@ -403,15 +410,14 @@ extension HomeownerStore {
         }
     }
 
-    /// From the list: styles to pick (any window without one, or a first look), else straight on.
+    /// From the list: after booking, a changed list goes back to My order once everything is styled; otherwise straight to the
+    /// estimate. Styles are optional (they are tried in "See it in your home"): a window without one takes the likeliest for its shape.
     func continueFromList() async {
         if hasBooking {
-            // After booking, a changed list goes back to My order once everything is styled
             if unstyledCount > 0 { styleIndex = 0; push(.styles) } else { await syncWindows(); showStatus() }
             return
         }
-        styleIndex = 0
-        push(.styles)
+        await finishStyles()
     }
 }
 

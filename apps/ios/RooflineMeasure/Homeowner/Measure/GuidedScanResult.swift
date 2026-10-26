@@ -185,15 +185,24 @@ struct ScanResultView: View {
                 } icon: {
                     Image(systemName: "checkmark.seal.fill").foregroundStyle(.green).imageScale(.large)
                 }
+            } else if model.size != nil {
+                // A size the scan was less sure of is shown like any other: calmly, with no warning colour (staff still review the scan)
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Measured").font(.headline)
+                        Text("Measured from \(model.photosUsed) photos").font(.subheadline).foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.secondary).imageScale(.large)
+                }
             } else {
                 Label {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("We'll have WinChoice check this one").font(.headline)
+                        Text("We couldn't measure this one").font(.headline)
                         Text(reasons).font(.subheadline).foregroundStyle(.secondary)
-                        Text("You can still use this size. Someone will check it against your photos.").font(.footnote).foregroundStyle(.secondary)
                     }
                 } icon: {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).imageScale(.large)
+                    Image(systemName: "info.circle.fill").foregroundStyle(.secondary).imageScale(.large)
                 }
             }
         }
@@ -285,7 +294,7 @@ struct ScanResultView: View {
                     RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color(.secondarySystemFill)).frame(width: 84, height: 112)
                 }
                 if big {
-                    Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange, Color(.systemBackground)).padding(4)
+                    Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.secondary, Color(.systemBackground)).padding(4)
                 }
             }
             Text(shot.kind == .closeup ? "Close-up" : "Photo \(shot.id.dropFirst())").font(.caption2).foregroundStyle(.secondary)
@@ -297,7 +306,7 @@ struct ScanResultView: View {
         switch c {
         case .sure: return .green
         case .fair: return .secondary
-        case .check: return .orange
+        case .check: return .secondary
         }
     }
 
@@ -305,7 +314,7 @@ struct ScanResultView: View {
         switch c {
         case .sure: return "checkmark.circle.fill"
         case .fair: return "circle.lefthalf.filled"
-        case .check: return "exclamationmark.circle.fill"
+        case .check: return "circle.dashed"
         }
     }
 
@@ -349,10 +358,10 @@ struct ScanMarkEditor: View {
                     .padding(.horizontal, 16)
                     Text(shot.kind == .closeup ? "Drag the dot onto the \(ScanCorner.names[shot.corner ?? 0]) corner of the window." : "Drag any dot that isn't on its corner of the window.")
                         .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal, 24)
-                    if let s = model.solution {
+                    if let s = model.solution, s.status == .measured {
                         HStack(spacing: 8) {
-                            Image(systemName: s.status == .measured ? "checkmark.seal.fill" : "exclamationmark.triangle.fill").foregroundStyle(s.status == .measured ? .green : .orange)
-                            Text(s.status == .measured ? "Measured" : "WinChoice will check this one").font(.footnote.weight(.semibold))
+                            Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+                            Text("Measured").font(.footnote.weight(.semibold))
                         }
                     }
                 } else {

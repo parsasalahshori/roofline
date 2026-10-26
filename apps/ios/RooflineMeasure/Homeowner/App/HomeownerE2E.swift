@@ -127,17 +127,12 @@ enum HomeownerE2E {
         // Contact, visit, status
         store.contactDraft = contact
         await store.prepareContact()
-        store.bookFromQuote()
+        store.requestCallFromEstimate()
         await beat("contact")
         await store.submitContact()
         say("contact filed=\(store.hasContact) error=\(store.contactError ?? "none") errors=\(store.contactErrors.keys.map { $0.rawValue })")
-        await store.loadSlots()
-        await beat("book")
-        say("slots \(store.slots?.slots.count ?? 0) zone=\(store.slots?.timeZone ?? "?") first=\(store.slots?.slots.first?.start ?? "none")")
-        store.pickedSlot = store.slots?.slots.first
-        await store.bookPicked()
-        await beat("booked")
-        say("booked root=\(store.root) visit=\(store.visitStart.map { "\($0)" } ?? "none") error=\(store.bookError ?? "none")")
+        await beat("thanks")
+        say("call asked root=\(store.root) callMe=\(store.view?.booking?.callMe == true)")
         await store.loadStatus()
         store.showStatus()
         await beat("status")

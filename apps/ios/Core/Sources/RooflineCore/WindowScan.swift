@@ -65,7 +65,7 @@ public enum ScanConfidence: String, Sendable {
         switch self {
         case .sure: return "Sure"
         case .fair: return "Fairly sure"
-        case .check: return "Needs a check"
+        case .check: return "Estimated"
         }
     }
 }

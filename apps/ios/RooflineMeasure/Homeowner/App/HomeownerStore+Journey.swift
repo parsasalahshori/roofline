@@ -196,7 +196,8 @@ extension HomeownerStore {
         do {
             var v = try await api.fileContact(s, contact: ContactValidation.prepared(draft))
             accept(v)
-            if requestStatus == .callback {
+            if requestStatus == .callback || services.contains(.windows) {
+                // The interest form is the end of the windows path: WinChoice calls (no visit time is asked for)
                 v = try await api.book(s, choice: .callMe(bestTime: bestTime))
                 accept(v)
                 Haptics.success()

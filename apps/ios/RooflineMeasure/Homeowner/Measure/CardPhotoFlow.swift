@@ -294,7 +294,7 @@ struct CardPhotoFlow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(SizeFormat.pair(p.widthIn, p.heightIn, size: 24, weight: .bold, color: .white, unit: true))
                     .accessibilityLabel(SizeWording.spokenSize(widthIn: p.widthIn, heightIn: p.heightIn))
-                Text(p.needsCheck ? "\(SizeWording.plusMinus(p.uncertaintyIn ?? 1)). We confirm it at your free visit." : "Accurate to \(SizeWording.accuracy(p.uncertaintyIn ?? 0.25)).")
+                Text(p.needsCheck ? "\(SizeWording.plusMinus(p.uncertaintyIn ?? 1))." : "Accurate to \(SizeWording.accuracy(p.uncertaintyIn ?? 0.25)).")
                     .font(.footnote).foregroundStyle(Color.white.opacity(0.88)).fixedSize(horizontal: false, vertical: true)
             }
         } else if let problem = problem {

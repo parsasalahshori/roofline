@@ -487,7 +487,7 @@ public enum HybridWording {
     public static func outcomeTitle(_ o: HybridOutcome) -> String {
         switch o {
         case .measured: return "Measured"
-        case .check: return "WinChoice will check this one"
+        case .check: return "Measured"
         case .appleSize: return "Apple's size"
         }
     }
@@ -495,8 +495,8 @@ public enum HybridWording {
     public static func outcomeDetail(_ o: HybridOutcome) -> String {
         switch o {
         case .measured: return "Measured from your photos and close-ups"
-        case .check: return "You can still use this size. Someone will check it against your photos."
-        case .appleSize: return "Good for your quote. We confirm the exact size at your visit."
+        case .check: return "Measured from your photos and close-ups"
+        case .appleSize: return "Good for your estimate"
         }
     }
 

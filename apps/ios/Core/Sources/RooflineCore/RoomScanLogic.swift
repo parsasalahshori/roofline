@@ -277,8 +277,8 @@ public enum ScanWording {
     /// "Apple's scan · fairly sure": the line under a window's size.
     public static func sourceLine(_ c: RoomPlanConfidence) -> String { "Apple's scan · \(confidence(c))" }
 
-    /// Said once, under the list: the scan is a quote-grade size.
-    public static let confirmLine = "Apple's scan. We confirm every size at your visit."
+    /// Said once, under the list: how the sizes were measured.
+    public static let confirmLine = "Measured with Apple's room scan."
 
     /// "We found 2 windows", "We found 1 window", "We didn't find a window".
     public static func foundTitle(_ n: Int) -> String {

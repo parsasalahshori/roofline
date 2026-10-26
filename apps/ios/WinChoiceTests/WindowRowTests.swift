@@ -39,22 +39,12 @@ final class WindowRowTests: XCTestCase {
 
     // MARK: To check
 
-    func testOnlyAClearlyPoorRoomScanOrCardWindowIsFlagged() {
-        // The server marks every scan and card window "check" (quote-grade by design); that alone is not worth the homeowner's worry
-        XCTAssertFalse(row(scale: scanScale, uncertainty: 1, needsCheck: true).flagged)
-        XCTAssertTrue(row(scale: scanScale, uncertainty: 2, needsCheck: true).flagged)
-        XCTAssertFalse(row(scale: cardScale, uncertainty: 0.5, needsCheck: true).flagged)
-        XCTAssertTrue(row(scale: cardScale, uncertainty: 2.5, needsCheck: true).flagged)
-        XCTAssertTrue(row(scale: arScale, uncertainty: 0.2, needsCheck: true).flagged, "an AR window the server marked is flagged")
-        XCTAssertFalse(row(scale: arScale, uncertainty: 0.2, needsCheck: false).flagged)
-        XCTAssertFalse(row(scale: scanScale, uncertainty: 5, needsCheck: false).flagged, "nothing is flagged unless the server said check")
-    }
-
-    func testARoomLineCountsTheWindowsAndTheOnesToCheck() {
+    func testARoomLineCountsTheWindowsAndNeverAsksForACheck() {
         var rows = [row(scale: arScale, uncertainty: 0.1, needsCheck: false)]
         XCTAssertEqual(RoomSummary.line(for: "Kitchen", in: rows), "1 window measured · tap to add another")
         rows.append(row(scale: arScale, uncertainty: 0.5, needsCheck: true))
-        XCTAssertEqual(RoomSummary.line(for: "kitchen", in: rows), "2 windows · 1 to check · tap to add another")
+        XCTAssertEqual(RoomSummary.line(for: "kitchen", in: rows), "2 windows measured · tap to add another", "the server's check flag is kept on the row but never shown")
+        XCTAssertTrue(rows[1].needsCheck, "the data is kept for staff review")
         XCTAssertEqual(RoomSummary.line(for: "Hall", in: rows), "Not started")
     }
 
@@ -69,16 +59,6 @@ final class WindowRowTests: XCTestCase {
         XCTAssertEqual(groups[0].header, "Kitchen · 2 windows")
         XCTAssertEqual(groups[1].header, "Hall · 1 window")
         XCTAssertEqual(WindowGroups.group([r("x", "")], roomOrder: []).first?.room, "Other")
-    }
-
-    func testAWindowToLookAtSaysWhyInPlainWords() {
-        var w = row(scale: arScale, uncertainty: 0.2, needsCheck: true)
-        w.reasons = ["a corner is 3.2° off square"]
-        XCTAssertEqual(w.lookReason, "The four corners didn't line up")
-        w.reasons = ["The corners were hard to see."]
-        XCTAssertEqual(w.lookReason, "The corners were hard to see")
-        w.reasons = []
-        XCTAssertEqual(row(scale: cardScale, uncertainty: 3, needsCheck: true).lookReason, "The card photo wasn't clear enough")
     }
 
     // MARK: Words

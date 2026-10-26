@@ -242,7 +242,6 @@ final class HomeownerStore {
 
     var windowCount: Int { windowRows.count }
     var unstyledCount: Int { windowRows.filter { $0.style == nil }.count }
-    var needsCheckCount: Int { windowRows.filter { $0.flagged }.count }
     var unsentCount: Int { outboxItems.filter { $0.measurementId == requestId && $0.state != .done }.count }
     /// Windows actually on their way: not done, not refused, and not held back for a style the homeowner has yet to pick (those
     /// wait on the person, not on the network).

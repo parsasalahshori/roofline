@@ -32,7 +32,7 @@ struct WindowRow: Identifiable, Equatable {
     var send: Send
     /// The window's own frame just inside the opening above (photo measure; kept on this phone, never sent).
     var windowFrame: WindowFrameSize? = nil
-    /// Where the window's multi-frame scan is, in the server's words ("Being checked by WinChoice"); nil without a scan.
+    /// Where the window's multi-frame scan is, in the server's words (kept for staff; the homeowner screens do not show it); nil without a scan.
     var scanLabel: String? = nil
     var scanState: String? = nil
     /// What the homeowner chose in "See it in your home" (kept on the phone), and the colour picked for the window.
@@ -47,31 +47,6 @@ struct WindowRow: Identifiable, Equatable {
 
     var hasSize: Bool { widthIn != nil && heightIn != nil }
 
-    /// A window the homeowner is asked to look at again. The server marks every room-scan and card window "check" (they are
-    /// quote-grade by design: the free visit measures every window again), and that alone is not a problem to show, so for
-    /// those only a clearly poor one counts (a low-confidence scan, a card too small next to the window).
-    var flagged: Bool {
-        guard needsCheck else { return false }
-        switch scale {
-        case .roomplan: return (uncertaintyIn ?? 0) >= 2
-        case .card: return (uncertaintyIn ?? 0) > 2
-        default: return true
-        }
-    }
-
-    /// Why a window needs a look, in plain words (the server's and the phone's own sentences are used when they are already plain;
-    /// the AR maths' lower-case technical ones become one sentence).
-    var lookReason: String {
-        if let first = reasons.first?.trimmingCharacters(in: .whitespaces), let c = first.first {
-            if c.isUppercase { return first.hasSuffix(".") ? String(first.dropLast()) : first }
-            return "The four corners didn't line up"
-        }
-        switch scale {
-        case .roomplan: return "The room scan wasn't sure of this window"
-        case .card: return "The card photo wasn't clear enough"
-        default: return "The corners were hard to place"
-        }
-    }
 
     /// "35 5/8 × 59 5/8" (no unit: the list says "in" once at the top).
     var sizeText: String {
@@ -169,15 +144,13 @@ enum WindowGroups {
     }
 }
 
-/// What a room row says: "Not started", "1 window measured", "2 windows · 1 to check".
+/// What a room row says: "Not started", "1 window measured", "2 windows measured".
 enum RoomSummary {
     static func line(for room: String, in rows: [WindowRow]) -> String {
         let mine = rows.filter { $0.room.caseInsensitiveCompare(room) == .orderedSame }
         guard !mine.isEmpty else { return "Not started" }
-        let checks = mine.filter { $0.flagged }.count
         let count = "\(mine.count) window\(mine.count == 1 ? "" : "s")"
-        if checks == 0 { return "\(count) measured · tap to add another" }
-        return "\(count) · \(checks) to check · tap to add another"
+        return "\(count) measured · tap to add another"
     }
 
     static func hasWindows(_ room: String, in rows: [WindowRow]) -> Bool {

@@ -65,7 +65,7 @@ struct WelcomeScreen: View {
                 .foregroundStyle(Theme.ink)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
-            Text("Windows or roof: see your price in minutes. A \(store.brand.name) expert confirms every size before anything is built.")
+            Text("Windows or roof: see your price in minutes.")
                 .font(.body)
                 .foregroundStyle(Theme.ink2)
                 .fixedSize(horizontal: false, vertical: true)

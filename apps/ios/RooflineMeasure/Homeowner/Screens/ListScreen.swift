@@ -1,8 +1,8 @@
 import RooflineCore
 import SwiftUI
 
-/// 10 Your windows (ios-hw-10): every measured window with its size, which are sure and which need a check, "Did we miss
-/// any?" against what homes like theirs have, and the way on to styles and the quote.
+/// 10 Your windows (ios-hw-10): every measured window with its size, "Did we miss any?" against what homes like theirs
+/// have, and the way on to the estimate.
 struct ListScreen: View {
     @Environment(HomeownerStore.self) private var store
     @State private var actionRow: WindowRow?
@@ -28,7 +28,7 @@ struct ListScreen: View {
                 ForEach(WindowGroups.group(rows, roomOrder: store.rooms)) { group in
                     Section {
                         ForEach(group.rows) { row in
-                            WindowListRow(row: row, action: { actionRow = row }, onAgain: { Task { await store.measureAgain(row) } })
+                            WindowListRow(row: row, action: { actionRow = row })
                                 .listRowBackground(rowBackground(highlighted: row.id == store.justSavedId))
                                 .animation(.easeOut(duration: 0.4), value: store.justSavedId)
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -77,7 +77,7 @@ struct ListScreen: View {
             Button("Remove this window", role: .destructive) { Task { await store.removeWindow(row.id) } }
             Button("Cancel", role: .cancel) {}
         } message: { row in
-            Text((row.flagged ? row.lookReason + ". " : "") + "Your current size is kept until you save the new one.")
+            Text("Your current size is kept until you save the new one.")
         }
         .sheet(isPresented: $askTotal) { TotalSheet(initial: total) { n in Task { await store.setTotalWindows(n) } } }
         .onAppear {
@@ -87,7 +87,7 @@ struct ListScreen: View {
 
     private var footerTitle: String {
         if store.hasBooking { return store.unstyledCount > 0 ? "Choose window styles" : "Back to My order" }
-        return "Choose window styles"
+        return "See my estimate"
     }
 
     /// The row's ground: the grouped row colour, with a green wash for the window just saved.
@@ -156,33 +156,19 @@ struct ListScreen: View {
     }
 }
 
-/// "6 ready · 1 needs a look" with a progress bar of how many are ready. "Ready for a quote" only when none needs a look.
+/// "6 windows measured": one calm line above the list.
 private struct SummaryRow: View {
     let rows: [WindowRow]
 
     var body: some View {
-        let checks = rows.filter { $0.flagged }.count
-        VStack(alignment: .leading, spacing: 10) {
-            AdaptiveStack(spacing: 4) {
-                Label {
-                    Text(Self.line(count: rows.count, checks: checks)).font(.headline).foregroundStyle(Theme.ink)
-                } icon: {
-                    FilledSymbol(name: checks == 0 ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
-                                 fill: checks == 0 ? Theme.okText : Theme.warnText)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                if checks == 0 { Text("Ready for a quote").font(.headline).foregroundStyle(Theme.okText) }
-            }
-            ProgressView(value: Double(rows.count - checks), total: Double(max(rows.count, 1)))
-                .tint(checks == 0 ? Theme.ok : Theme.warn)
+        Label {
+            Text("\(rows.count) measured").font(.headline).foregroundStyle(Theme.ink)
+        } icon: {
+            FilledSymbol(name: "checkmark.circle.fill", fill: Theme.okText)
         }
         .padding(.vertical, 4)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(checks == 0 ? "\(rows.count) windows ready. Ready for a quote." : "\(rows.count - checks) windows ready, \(checks) need a look.")
-    }
-
-    static func line(count: Int, checks: Int) -> String {
-        checks == 0 ? "\(count) ready" : "\(count - checks) ready · \(checks) need\(checks == 1 ? "s" : "") a look"
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(rows.count) window\(rows.count == 1 ? "" : "s") measured.")
     }
 }
 
@@ -205,40 +191,27 @@ private struct AddRow: View {
     }
 }
 
-/// A measured window as a row: its number, name and how it was measured, its size on the right. A window to look at again says
-/// why and has its button right there. Used by the list and by the status screen.
+/// A measured window as a row: its number, name and how it was measured, its size on the right. Used by the list and by the status screen.
 struct WindowListRow: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     let row: WindowRow
     var highlighted = false
     let action: () -> Void
-    var onAgain: () -> Void = {}
 
     private var large: Bool { typeSize.isAccessibilitySize }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             rowButton
-            // A window to look at again says why, and has its button right there
-            if row.flagged, case .failed = row.send {} else if row.flagged {
-                Button(action: onAgain) {
-                    Text("Measure again")
-                        .frame(minHeight: Theme.minTap, alignment: .leading)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .padding(.leading, 40)
-                .accessibilityLabel("Measure window \(row.number) again")
-            }
         }
         .background(highlighted ? Theme.okTint : Color.clear)
         .animation(.easeOut(duration: 0.4), value: highlighted)
     }
 
-    /// The window's number in a circle (the system's own numbered symbols to 50): orange when it needs a look.
+    /// The window's number in a circle (the system's own numbered symbols to 50).
     @ViewBuilder private var numberBadge: some View {
         if (1...50).contains(row.number) {
-            FilledSymbol(name: "\(row.number).circle.fill", fill: row.flagged ? Theme.warnText : Theme.ink2)
+            FilledSymbol(name: "\(row.number).circle.fill", fill: Theme.ink2)
                 .font(.title2)
                 .frame(width: 28)
         } else {
@@ -246,7 +219,7 @@ struct WindowListRow: View {
                 .font(.footnote.weight(.bold)).monospacedDigit()
                 .foregroundStyle(.white)
                 .frame(width: 28, height: 28)
-                .background(row.flagged ? Theme.warnText : Theme.ink2, in: Circle())
+                .background(Theme.ink2, in: Circle())
         }
     }
 
@@ -265,10 +238,6 @@ struct WindowListRow: View {
                     if let line = row.standardSizeLine {
                         Text(line).font(.footnote).foregroundStyle(Theme.ink2).lineLimit(nil)
                     }
-                    if let scan = row.scanLabel {
-                        Label(scan, systemImage: row.scanState == "measured" ? "checkmark.seal.fill" : (row.scanState == "checking" ? "hourglass" : "ruler"))
-                            .wc(13, .medium, relativeTo: .footnote).foregroundStyle(row.scanState == "measured" ? Theme.ok : Theme.warn).lineLimit(large ? nil : 2)
-                    }
                     // With large text the size goes under the name instead of beside it
                     if large { sizeView }
                 }
@@ -282,7 +251,7 @@ struct WindowListRow: View {
         }
         .buttonStyle(.borderless)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Window \(row.number), \(row.title). \(row.spokenSize). \(row.flagged ? "Needs a look. \(row.lookReason). " : "")\(statusWords)\(row.spokenWindowSize.map { ". \($0)" } ?? "")\(row.standardSizeLine.map { ". \($0)" } ?? "")\(row.scanLabel.map { ". \($0)" } ?? "")")
+        .accessibilityLabel("Window \(row.number), \(row.title). \(row.spokenSize). \(statusWords)\(row.spokenWindowSize.map { ". \($0)" } ?? "")\(row.standardSizeLine.map { ". \($0)" } ?? "")")
         .accessibilityHint("Opens options for this window")
         .accessibilityAddTraits(.isButton)
     }
@@ -319,12 +288,7 @@ struct WindowListRow: View {
             }
             .accessibilityHint(m)
         default:
-            if row.flagged {
-                Text("Needs a look · \(row.lookReason)").font(.subheadline.weight(.medium)).foregroundStyle(Theme.warnText)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Text(row.methodLine).font(.subheadline).foregroundStyle(Theme.ink2).lineLimit(nil)
-            }
+            Text(row.methodLine).font(.subheadline).foregroundStyle(Theme.ink2).lineLimit(nil)
         }
     }
 }
@@ -345,7 +309,7 @@ private struct TotalSheet: View {
             Text("How many windows does your home have?")
                 .font(.title2.weight(.bold)).foregroundStyle(Theme.ink).fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
-            Text("Count the ones you measured too. We'll price the rest from your home's size, and a rep checks every window anyway.")
+            Text("Count the ones you measured too. We'll price the rest from your home's size.")
                 .font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
             Stepper(value: $count, in: WindowTotal.min...WindowTotal.max) {
                 Text("\(count)")

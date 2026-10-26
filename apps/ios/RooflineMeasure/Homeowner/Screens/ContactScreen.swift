@@ -12,6 +12,8 @@ struct ContactScreen: View {
     @FocusState private var focus: ContactField?
 
     private var callback: Bool { store.requestStatus == .callback }
+    /// The interest form: a call from WinChoice (a doubtful home, or windows measured and priced).
+    private var call: Bool { callback || store.services.contains(.windows) }
 
     var body: some View {
         @Bindable var store = store
@@ -22,8 +24,12 @@ struct ContactScreen: View {
                 ContactFieldRow(label: "Last name", text: $store.contactDraft.lastName, content: .familyName, capitalization: .words, error: store.contactErrors[.lastName]) { focus = .phone }
                     .focused($focus, equals: .lastName)
             } header: {
-                HiListHeading(title: callback ? "A few details so we can call" : "Where should we send your quote?",
-                              subtitle: callback ? "A person calls you about your price. It takes a minute." : nil)
+                if call {
+                    HiListHeading(title: "Get a call from WinChoice",
+                                  subtitle: callback ? "A person calls you about your price. It takes a minute." : "Tell us how to reach you. A WinChoice person calls about your estimate.")
+                } else {
+                    HiListHeading(title: "Where should we send your quote?")
+                }
             }
             Section {
                 ContactFieldRow(label: "Mobile", text: phoneBinding, prompt: "(501) 555-0177", keyboard: .phonePad, content: .telephoneNumber, capitalization: .never, error: store.contactErrors[.phone], submitLabel: .next) { focus = .email }
@@ -32,6 +38,17 @@ struct ContactScreen: View {
                     .focused($focus, equals: .email)
                 ContactFieldRow(label: "ZIP code", text: $store.contactDraft.zip, keyboard: .numberPad, content: .postalCode, capitalization: .never, error: store.contactErrors[.zip], submitLabel: .done) { focus = nil }
                     .focused($focus, equals: .zip)
+            }
+            if call, store.features.bestTime {
+                Section {
+                    Picker("Best time to call", selection: $store.bestTime) {
+                        Text("Any time").tag(String?.none)
+                        ForEach(["morning", "afternoon", "evening"], id: \.self) { t in
+                            Text(t.capitalized).tag(String?.some(t))
+                        }
+                    }
+                    .frame(minHeight: Theme.minTap)
+                }
             }
             consent
             if let e = store.contactError {
@@ -56,7 +73,7 @@ struct ContactScreen: View {
                 Task { await store.submitContact() }
             }
         }
-        .hiNav(title: "Your details")
+        .hiNav(title: call ? "Call me" : "Your details")
         .task { await store.prepareContact() }
     }
 

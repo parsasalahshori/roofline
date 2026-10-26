@@ -180,3 +180,75 @@ private struct CallUsButton: View {
         .tint(Theme.ink)
     }
 }
+
+/// After the interest form on the estimate path: "Thanks, Tia. WinChoice will call you soon." with a way back to the new windows
+/// and "Done" (My order). The request stays here when the app is opened again.
+struct CallThanksScreen: View {
+    @Environment(HomeownerStore.self) private var store
+
+    private var firstName: String? {
+        let n = store.contactDraft.firstName.trimmingCharacters(in: .whitespaces)
+        return n.isEmpty ? nil : n
+    }
+
+    private var phone: String? {
+        let p = store.contactDraft.phone
+        return p.isEmpty ? nil : p
+    }
+
+    private var thanks: String { firstName.map { "Thanks, \($0)." } ?? "Thanks." }
+
+    private var estimateLine: String? {
+        guard let total = store.progress.tierTotal, let count = store.progress.tierWindowCount else { return nil }
+        return "\(count) window\(count == 1 ? "" : "s"), about \(Money.dollars(total))"
+    }
+
+    var body: some View {
+        List {
+            Section {
+                row(icon: .pin, title: store.address, detail: "Your home")
+                row(icon: .phone, title: phone ?? "The number you gave us", detail: "We only call about this request")
+                if let line = estimateLine { row(icon: .win, title: line, detail: "Your estimate") }
+            } header: {
+                JourneyHeader {
+                    FilledSymbol(name: "checkmark.circle.fill", fill: Theme.okText)
+                        .font(.system(size: 56))
+                    Text(thanks).font(.title.weight(.bold)).foregroundStyle(Theme.ink)
+                        .accessibilityAddTraits(.isHeader)
+                        .accessibilityIdentifier("thanks.title")
+                    JourneyLead("\(store.brand.name) will call you soon.")
+                        .accessibilityIdentifier("thanks.line")
+                }
+            }
+            JourneyListFooter()
+        }
+        .listStyle(.insetGrouped)
+        .hiNav(title: nil, showsBack: false)
+        .wcFooter {
+            WCPrimaryButton(title: "Done") { store.showStatus() }
+                .accessibilityIdentifier("thanks.done")
+            if !store.windowRows.isEmpty {
+                WCSecondaryButton(title: "See new windows in your home", icon: .win) { store.openVisualizerForFirstWindow(from: .quote) }
+                    .accessibilityIdentifier("thanks.visualize")
+            }
+        }
+    }
+
+    private func row(icon: WCIcon, title: String, detail: String) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: icon.symbol)
+                .symbolRenderingMode(.hierarchical)
+                .font(.title3)
+                .foregroundStyle(Theme.ink2)
+                .frame(width: 28)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.body.weight(.semibold)).foregroundStyle(Theme.ink)
+                Text(detail).font(.footnote).foregroundStyle(Theme.ink2)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+    }
+}

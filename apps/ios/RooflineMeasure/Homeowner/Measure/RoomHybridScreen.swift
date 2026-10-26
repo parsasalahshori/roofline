@@ -408,7 +408,7 @@ struct HybridWorkingView: View {
 
 // MARK: - Results
 
-/// What Measure and check found, per window: Measured (green), or "WinChoice will check this one" (amber, never a block); a window nobody measured
+/// What Measure and check found, per window: Measured; a window nobody measured
 /// further keeps Apple's size. A scanned window opens the guided scan's result screen (photos, corners, a mark can be moved).
 struct HybridResultsView: View {
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -437,7 +437,7 @@ struct HybridResultsView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.bottom, 4)
                 } footer: {
-                    Text("Tap a measured window to see its photos. We confirm every size at your visit.").foregroundStyle(Theme.ink2)
+                    Text("Tap a measured window to see its photos.").foregroundStyle(Theme.ink2)
                 }
                 if typeSize.isAccessibilitySize {
                     Section { WCScrollFooter() }
@@ -478,11 +478,11 @@ struct HybridResultsView: View {
     }
 
     private var summary: String {
-        let m = model.flow.measuredCount, c = model.flow.checkCount
+        // A scan that needed a second look is still a measured window to the homeowner
+        let m = model.flow.measuredCount + model.flow.checkCount
         var parts: [String] = []
         if m > 0 { parts.append("\(m) measured") }
-        if c > 0 { parts.append("\(c) for WinChoice to check") }
-        let apple = items.count - m - c
+        let apple = items.count - m
         if apple > 0 { parts.append("\(apple) with Apple's size") }
         return parts.joined(separator: ", ")
     }
@@ -526,15 +526,15 @@ struct HybridResultsView: View {
     }
 
     private func detailLine(_ o: HybridOutcome, fromScan: Bool) -> String {
-        // A scan that the gates did not pass and that disagreed with Apple's size too much: Apple's size stands, and someone checks
-        if o == .check && !fromScan { return "We kept Apple's size. Someone will check it against your photos." }
+        // A scan that the gates did not pass and that disagreed with Apple's size too much: Apple's size stands
+        if o == .check && !fromScan { return "We kept Apple's room-scan size" }
         return HybridWording.outcomeDetail(o)
     }
 
     private func outcomeSymbol(_ o: HybridOutcome) -> String {
         switch o {
         case .measured: return "checkmark.seal.fill"
-        case .check: return "exclamationmark.triangle.fill"
+        case .check: return "checkmark.seal.fill"
         case .appleSize: return "ruler"
         }
     }
@@ -542,7 +542,7 @@ struct HybridResultsView: View {
     private func outcomeColor(_ o: HybridOutcome) -> Color {
         switch o {
         case .measured: return Theme.okText
-        case .check: return Theme.warnText
+        case .check: return Theme.okText
         case .appleSize: return Theme.ink2
         }
     }

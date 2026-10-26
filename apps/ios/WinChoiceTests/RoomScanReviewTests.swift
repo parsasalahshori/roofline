@@ -82,7 +82,9 @@ final class RoomScanReviewTests: XCTestCase {
             XCTAssertTrue(line.hasPrefix("Apple's scan"), line)
             XCTAssertNil(line.range(of: "[0-9±]", options: .regularExpression), "no accuracy number in '\(line)'")
         }
-        XCTAssertEqual(ScanWording.confirmLine, "Apple's scan. We confirm every size at your visit.")
+        XCTAssertEqual(ScanWording.confirmLine, "Measured with Apple's room scan.")
+        XCTAssertFalse(ScanWording.confirmLine.lowercased().contains("visit"), "no visit or check wording after measuring")
+        XCTAssertEqual(ScanConfidence.check.word, "Estimated")
     }
 
     // MARK: What is saved

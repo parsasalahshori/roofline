@@ -472,7 +472,7 @@ private let homeownerFlowChecks: [Check] = [
         ctx.equal(ResumeRouter.target(saved: nil, hasSession: true, snapshot: measured), .list, "windows are on the list: open the list")
         ctx.equal(ResumeRouter.target(saved: .rooms, hasSession: true, snapshot: measured), .rooms)
         ctx.equal(ResumeRouter.target(saved: .quote, hasSession: true, snapshot: measured), .quote)
-        ctx.equal(ResumeRouter.target(saved: .quote, hasSession: true, snapshot: ResumeSnapshot(windowCount: 3, unstyledCount: 2)), .styles, "windows without a style cannot be priced")
+        ctx.equal(ResumeRouter.target(saved: .quote, hasSession: true, snapshot: ResumeSnapshot(windowCount: 3, unstyledCount: 2)), .list, "windows without a style go back to the list, whose button opens the estimate")
         ctx.equal(ResumeRouter.target(saved: .book, hasSession: true, snapshot: measured), .contact, "no booking before contact details")
         ctx.equal(ResumeRouter.target(saved: .book, hasSession: true, snapshot: ResumeSnapshot(windowCount: 3, hasContact: true)), .book)
         // Roof only: results, then straight to contact and booking

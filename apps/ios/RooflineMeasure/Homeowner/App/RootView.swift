@@ -34,10 +34,19 @@ private struct RootContent: View {
         switch store.root {
         case .launching: LaunchScreen()
         case .welcome: WelcomeScreen()
-        case .callbackSent: CallbackSentScreen()
+        case .callbackSent: CallSentRoute()
         case .booked: BookedScreen()
         case .status: StatusScreen()
         }
+    }
+}
+
+/// The call-back request is sent: the doubtful-home wording for a call-back request, else the thanks of the interest form.
+private struct CallSentRoute: View {
+    @Environment(HomeownerStore.self) private var store
+
+    var body: some View {
+        if store.requestStatus == .callback { CallbackSentScreen() } else { CallThanksScreen() }
     }
 }
 
@@ -54,7 +63,7 @@ private struct RouteScreen: View {
             case .address: AddressScreen()
             case .results: ResultsScreen()
             case .callback: CallbackScreen()
-            case .callbackSent: CallbackSentScreen()
+            case .callbackSent: CallSentRoute()
             case .coaching: CoachingScreen()
             case .rooms: RoomsScreen()
             case .list: ListScreen()

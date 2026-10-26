@@ -23,11 +23,11 @@ public enum HomeownerStep: String, Codable, CaseIterable, Sendable, Hashable {
     case rooms
     /// 10: every measured window, "Did we miss any?".
     case list
-    /// 09: a style and colour for each window.
+    /// 09: a style and colour for each window (optional: styles are also tried in "See it in your home").
     case styles
-    /// 11: Good / Better / Best.
+    /// 11: "Your estimate": the price range, Good / Better / Best, and the call-me and see-new-windows buttons.
     case quote
-    /// 12: who to send it to, and consent.
+    /// 12: the interest form ("Get a call from WinChoice"): who to call, and consent.
     case contact
     /// 13: pick a visit time, or ask for a call.
     case book
@@ -87,7 +87,8 @@ public enum ResumeRouter {
         let fallback: HomeownerStep = windows && hasWindows ? .list : .results
         guard let saved = saved, allowed.contains(saved) else { return fallback }
         switch saved {
-        case .quote where s.unstyledCount > 0: return .styles
+        // Windows still without a style: the list, whose button gives them the likeliest style and opens the estimate
+        case .quote where s.unstyledCount > 0: return .list
         case .book where !s.hasContact: return .contact
         default: return saved
         }

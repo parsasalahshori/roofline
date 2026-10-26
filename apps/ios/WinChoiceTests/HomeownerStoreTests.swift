@@ -272,8 +272,47 @@ final class HomeownerStoreTests: XCTestCase {
         await h.store.submitContact()
         calls = await h.fake.calls()
         XCTAssertTrue(calls.contains("POST contact"))
-        XCTAssertEqual(h.store.path.last, .step(.book))
+        XCTAssertTrue(calls.contains("POST book"), "the interest form asks WinChoice to call: no visit time is forced")
+        XCTAssertEqual(h.store.root, .callbackSent, "the thanks screen")
+        XCTAssertNotEqual(h.store.path.last, .step(.book))
+        XCTAssertEqual(h.store.view?.booking?.callMe, true)
         XCTAssertTrue(h.store.hasContact)
+    }
+
+    func testMeasureThenEstimateThenCallMeFormThenThanks() async throws {
+        let h = StoreHarness()
+        try await h.open(windows: [], step: .list)
+        await h.capture(room: "Kitchen")
+        await h.capture(room: "Bedroom 1")
+        XCTAssertEqual(h.store.unstyledCount, 2)
+        // Done adding windows: straight to the estimate, styles are not asked for
+        await h.store.continueFromList()
+        await h.settle()
+        await h.store.refresh()
+        XCTAssertEqual(h.store.path.last, .step(.quote))
+        XCTAssertFalse(h.store.path.contains(.step(.styles)), "the style picker does not stand in the way")
+        XCTAssertEqual(h.store.unstyledCount, 0)
+        let quote = try XCTUnwrap(h.store.quote)
+        XCTAssertEqual(quote.measuredCount, 2)
+        XCTAssertFalse(quote.tiers.isEmpty)
+        // "Have WinChoice call me": the interest form
+        h.store.requestCallFromEstimate()
+        XCTAssertEqual(h.store.path.last, .step(.contact))
+        await h.store.prepareContact()
+        h.store.contactDraft = HomeownerContact(firstName: "Tia", lastName: "Bell", phone: "(501) 555-0177", email: "tia.bell@example.com", zip: "72205", contactConsent: true)
+        await h.store.submitContact()
+        // Thanks: no visit-booking step in between
+        XCTAssertEqual(h.store.root, .callbackSent)
+        XCTAssertTrue(h.store.path.isEmpty)
+        XCTAssertEqual(h.store.view?.booking?.callMe, true)
+        XCTAssertNotEqual(h.store.requestStatus, .callback, "the thanks of the estimate path, not the doubtful-home screen")
+        // "See new windows in your home" from the estimate and from the thanks
+        h.store.openVisualizerForFirstWindow(from: .quote)
+        guard case .visualize(let id, _)? = h.store.path.last else { return XCTFail("the visualizer opens") }
+        XCTAssertEqual(id, h.store.windowRows.first?.id)
+        // Done: My order
+        h.store.showStatus()
+        XCTAssertEqual(h.store.root, .status)
     }
 
     func testAChangedConsentWordingReloadsTheWordsAndAsksAgain() async throws {
@@ -285,11 +324,11 @@ final class HomeownerStoreTests: XCTestCase {
         await h.fake.failNext(serverError(409, "consent_changed", "The wording on this screen was updated. Please go back and try again."))
         await h.store.submitContact()
         XCTAssertEqual(h.store.contactError, "The wording on this screen was updated. Please go back and try again.")
-        XCTAssertNotEqual(h.store.path.last, .step(.book))
+        XCTAssertNotEqual(h.store.root, .callbackSent)
         let after = await h.fake.calls().filter { $0 == "GET company" }.count
         XCTAssertEqual(after, before + 1, "the company's words are fetched again")
         await h.store.submitContact()
-        XCTAssertEqual(h.store.path.last, .step(.book), "sending again with the fresh words goes through")
+        XCTAssertEqual(h.store.root, .callbackSent, "sending again with the fresh words goes through")
     }
 
     func testAFieldTheServerRefusesLandsOnThatField() async throws {

@@ -215,7 +215,7 @@ struct FreezeFrameEditor: View {
                         .lineLimit(2).minimumScaleFactor(0.8)
                 }
                 if editing.needsCheck {
-                    Label("Needs a check: your photos differ", systemImage: WCIcon.alert.symbol)
+                    Label("Your photos differ a little", systemImage: WCIcon.alert.symbol)
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(Theme.tape)
                 }
@@ -248,7 +248,7 @@ struct FreezeFrameEditor: View {
         if let window = editing.windowSize { parts.append(TwoSizes.windowSpoken(window)) }
         if let standard = editing.standardSize { parts.append(standard.sentence) }
         parts.append(photosLine)
-        if editing.needsCheck { parts.append("Needs a check") }
+        if editing.needsCheck { parts.append("Your photos differ a little") }
         return parts.joined(separator: ". ")
     }
 
