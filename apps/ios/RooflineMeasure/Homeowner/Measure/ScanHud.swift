@@ -10,6 +10,8 @@ struct ScanHud: View {
     let windows: [RoomScanner.LiveWindow]
     let onCancel: () -> Void
     let onDone: () -> Void
+    /// The room-scan hybrid says what else the pan is collecting ("12 photos for the close-ups").
+    var detail: String?
 
     var body: some View {
         VStack(spacing: 10) {
@@ -24,8 +26,15 @@ struct ScanHud: View {
                 Spacer()
             }
             .padding(.horizontal, 12).padding(.top, 8)
-            HStack {
+            HStack(spacing: 8) {
                 countPill
+                if let detail = detail {
+                    Label(detail, systemImage: "camera.on.rectangle")
+                        .font(.footnote.weight(.semibold)).foregroundStyle(.white)
+                        .padding(.horizontal, 12).frame(minHeight: 40)
+                        .background(.regularMaterial, in: Capsule())
+                        .accessibilityIdentifier("scanPhotos")
+                }
                 Spacer()
             }
             .padding(.horizontal, 12)

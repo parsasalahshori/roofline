@@ -81,6 +81,10 @@ final class RoomScanner {
     private(set) var scanSeconds = 0
 
     @ObservationIgnored let captureView: RoomCaptureView
+    /// The room-scan hybrid: the windows RoomPlan is showing, as corners in the session's world, on every live update (main thread).
+    @ObservationIgnored var onLiveWindows: (([(id: UUID, corners: [Vec3])]) -> Void)?
+    /// The hybrid keeps the AR session running when the scan stops, so its close-ups are taken in the same world as the scan.
+    @ObservationIgnored private let keepSessionRunning: Bool
     @ObservationIgnored private let delegate = RoomCaptureDelegate()
     @ObservationIgnored private let sessionDelegate = RoomSessionDelegate()
     /// The newest whole room RoomPlan showed while scanning: what a scan that could not be finished falls back to.
@@ -108,9 +112,12 @@ final class RoomScanner {
     static let processingLimit: TimeInterval = 30
     static let failedText = "The scan didn't finish. Try again, a little more slowly, with every window in view."
 
-    init(mode: RoomScanMode = .wholeRoom) {
+    /// `arSession`: run the scan on this AR session (the hybrid owns it, to go on taking photos in its world after Apple's scan stops).
+    /// `keepSessionRunning`: Done stops RoomPlan's scan but does not pause that session.
+    init(mode: RoomScanMode = .wholeRoom, arSession: ARSession? = nil, keepSessionRunning: Bool = false) {
         self.mode = mode
-        captureView = RoomCaptureView(frame: .zero)
+        self.keepSessionRunning = keepSessionRunning && arSession != nil
+        captureView = arSession.map { RoomCaptureView(frame: .zero, arSession: $0) } ?? RoomCaptureView(frame: .zero)
         delegate.owner = self
         sessionDelegate.owner = self
         captureView.delegate = delegate
@@ -162,7 +169,12 @@ final class RoomScanner {
             store.add(Keyframe(jpeg: e.0, widthPx: e.1, heightPx: e.2, cameraTransform: Mat4(frame.camera.transform), intrinsics: CameraIntrinsics(frame.camera)), score: 1)
         }
         phase = .processing
-        captureView.captureSession.stop()
+        // (Checked, RoomPlan.swiftinterface: `stop(pauseARSession:)`. Done in the hybrid leaves the AR session running, in the same world.)
+        if keepSessionRunning {
+            captureView.captureSession.stop(pauseARSession: false)
+        } else {
+            captureView.captureSession.stop()
+        }
         watchdog?.invalidate()
         watchdog = Timer.scheduledTimer(withTimeInterval: Self.processingLimit, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.endWithoutRoom(tooLittle: false, message: nil) }
@@ -327,6 +339,9 @@ final class RoomScanner {
         }
         next.sort { $0.letter < $1.letter }
         if next != liveWindows { liveWindows = next }
+        if let hook = onLiveWindows {
+            hook(room.windows.compactMap { s in Self.shape(of: s, viewer: nil).map { (s.identifier, $0.corners) } })
+        }
     }
 
     /// The room from above: each wall as a segment on the floor, each window and door as a segment along its wall.

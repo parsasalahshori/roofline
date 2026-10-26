@@ -89,6 +89,9 @@ final class AccessibilityAuditTests: XCTestCase {
     func testCardIntro() throws { try audit("method", open: "card", caps: "card") }
     func testRoomScanReview() throws { try audit("method", open: "scan") }
     func testQuickScanReview() throws { try audit("method", open: "quickscan") }
+    func testHybridWindowList() throws { try audit("method", open: "hybrid-list") }
+    // (the results sample has three windows so that every row is clear of the pinned footer: a row half under it is read as low contrast)
+    func testHybridResults() throws { try audit("method", open: "hybrid-results3") }
 
     // MARK: Dark appearance
 
@@ -116,4 +119,5 @@ final class AccessibilityAuditTests: XCTestCase {
     func testBookLargestText() throws { try audit("book", largestText: true) }
     func testBookedLargestText() throws { try audit("booked", largestText: true) }
     func testStatusLargestText() throws { try audit("status", largestText: true) }
+    func testHybridWindowListLargestText() throws { try audit("method", open: "hybrid-list", largestText: true) }
 }

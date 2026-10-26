@@ -144,6 +144,6 @@ final class RoomScanReviewTests: XCTestCase {
         XCTAssertEqual(pro.methodTag(.quickScan).text, "Recommended for speed")
         XCTAssertEqual(pro.methodAccuracy(.quickScan).text, "Good for a quote")
         XCTAssertEqual(pro.methodAccuracy(.roomScan).text, "Good for a quote")
-        XCTAssertEqual(pro.defaultMethod, .quickScan, "demo: the quick scan is the one it starts on")
+        XCTAssertEqual(pro.defaultMethod, .roomCloseups, "the room scan with close-ups is the one it starts on (the quick scan is one tap away)")
     }
 }

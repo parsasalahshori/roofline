@@ -63,8 +63,9 @@ final class ScanRecorder: @unchecked Sendable {
 
     // MARK: Actions (call on the engine's queue)
 
-    func start(epoch: Int) {
-        guide = ScanGuide()
+    /// `closeupsOnly`: the room-scan hybrid, whose regular photos were taken while panning: the guide asks for the corners' close-ups from the first frame.
+    func start(epoch: Int, closeupsOnly: Bool = false) {
+        guide = ScanGuide(startAtCloseups: closeupsOnly)
         windowCorners = nil
         counter = 0
         epochAtStart = epoch
@@ -98,17 +99,7 @@ final class ScanRecorder: @unchecked Sendable {
         frameIndex += 1
         if frameIndex % 2 == 0 || stats == nil { stats = ScanImageStats.measure(frame.capturedImage) }
         let cam = frame.camera
-        var tracking: ScanObservation.Tracking
-        switch cam.trackingState {
-        case .normal: tracking = .normal
-        case .notAvailable: tracking = .unavailable
-        case .limited(let reason):
-            switch reason {
-            case .excessiveMotion: tracking = .excessiveMotion
-            case .insufficientFeatures: tracking = .insufficientFeatures
-            default: tracking = .limited
-            }
-        }
+        let tracking = Self.tracking(of: cam.trackingState)
         // (A scan cannot start before the wall is locked, but it is not lost if ARKit drops the plane: the world has not moved.)
         let o = ScanObservation(time: frame.timestamp, cameraTransform: Mat4(cam.transform), intrinsics: CameraIntrinsics(cam), tracking: tracking,
                                 meanLuma: stats?.luma, sharpness: stats?.sharp, windowCornersM: windowCorners)
@@ -144,12 +135,26 @@ final class ScanRecorder: @unchecked Sendable {
         post(newShots: shots)
     }
 
+    /// ARKit's tracking state as the guide's.
+    static func tracking(of state: ARCamera.TrackingState) -> ScanObservation.Tracking {
+        switch state {
+        case .normal: return .normal
+        case .notAvailable: return .unavailable
+        case .limited(let reason):
+            switch reason {
+            case .excessiveMotion: return .excessiveMotion
+            case .insufficientFeatures: return .insufficientFeatures
+            default: return .limited
+            }
+        }
+    }
+
     private func capture(_ frame: ARFrame, keep: ScanKeep, wall: Plane, lidar: Bool) -> ScanShot? {
         guard let up = FrameCapture.uprightJPEG(frame.capturedImage, quality: 0.85), let native = FrameCapture.nativeJPEG(frame.capturedImage, quality: 0.85) else { return nil }
         counter += 1
         let depth = (lidar && keep.kind == .regular) ? FrozenDepth(frame: frame) : nil
         let view = FrozenView(cameraTransform: Mat4(frame.camera.transform), intrinsics: CameraIntrinsics(frame.camera), wall: wall, depth: depth,
-                              photoWidthPx: Double(up.1), photoHeightPx: Double(up.2))
+                              photoWidthPx: Double(up.1), photoHeightPx: Double(up.2), depthSensorPhone: lidar)
         return ScanShot(id: "f\(counter)", kind: keep.kind, corner: keep.corner, nativeJPEG: native.0, uprightJPEG: up.0, nativeWidth: native.1, nativeHeight: native.2, view: view)
     }
 

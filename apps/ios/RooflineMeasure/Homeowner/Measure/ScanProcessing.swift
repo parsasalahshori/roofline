@@ -46,11 +46,15 @@ enum ScanProcessing {
     }
 
     /// The marks and the answer for a scan whose first estimate is `estimate` (TL, TR, BR, BL in the world, found in `shots[0]`).
-    static func build(shots: [ScanShot], estimate: [Vec3], keySource: MarkSource, scanId: String, windowId: String, images: ScanImages) -> Built? {
+    /// `radiusScale` widens the first search for a coarser first estimate (Apple's room scan), and `bootstrap` makes a better first rectangle from the
+    /// corners the first search confirmed when the scan does not pass (`ScanMarkMaker.run`).
+    static func build(shots: [ScanShot], estimate: [Vec3], keySource: MarkSource, scanId: String, windowId: String, images: ScanImages, radiusScale: Double = 1,
+                      bootstrap: Bool = false) -> Built? {
         guard let key = shots.first, estimate.count == 4 else { return nil }
         let wall = Plane.fit(estimate)?.facing(key.view.viewer) ?? key.view.wall
         let frames = shots.map { $0.frame }
-        let run = ScanMarkMaker.run(frames: frames, estimate: estimate, keyFrameId: key.id, keySource: keySource, wall: wall, snapper: snapper(shots: shots, images: images))
+        let run = ScanMarkMaker.run(frames: frames, estimate: estimate, keyFrameId: key.id, keySource: keySource, wall: wall, snapper: snapper(shots: shots, images: images),
+                                    radiusScale: radiusScale, bootstrap: bootstrap)
         var draft = ScanDraft(scanId: scanId, windowId: windowId, frames: frames, allMarks: run.all, wall: wall)
         // The marks that were not confirmed stay as hollow projections; the confirmed ones are what the maths used
         draft.allMarks = run.all.map { m in run.used.contains(where: { $0.frameId == m.frameId && $0.corner == m.corner && $0.x == m.x && $0.y == m.y }) ? m : hollow(m) }

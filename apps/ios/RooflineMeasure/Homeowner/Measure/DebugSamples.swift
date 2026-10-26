@@ -547,6 +547,9 @@ extension HomeownerStore {
         case "quickscan", "quickscan-live":
             method = .quickScan
             measureSession = MeasureSession(method: .quickScan, room: room, number: 4)
+        case "hybrid-pan", "hybrid-list", "hybrid-closeup", "hybrid-results", "hybrid-list3", "hybrid-results3":
+            method = .roomCloseups
+            measureSession = MeasureSession(method: .roomCloseups, room: room, number: 4)
         case "needs-iphone":
             method = .corners
             measureSession = MeasureSession(method: .corners, room: room, number: 4)

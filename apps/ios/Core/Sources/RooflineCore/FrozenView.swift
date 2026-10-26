@@ -85,8 +85,11 @@ public struct FrozenView: Equatable, Sendable {
     /// The upright photo the person sees and drags corners on (the native image turned a quarter clockwise, perhaps at another size).
     public var photoWidthPx: Double
     public var photoHeightPx: Double
+    /// The phone has a depth sensor even when this frame carries no depth readings (a close-up, or a frame taken while RoomPlan owned the session).
+    public var depthSensorPhone = false
 
-    public init(cameraTransform: Mat4, intrinsics: CameraIntrinsics, wall: Plane, depth: FrozenDepth?, photoWidthPx: Double, photoHeightPx: Double) {
+    public init(cameraTransform: Mat4, intrinsics: CameraIntrinsics, wall: Plane, depth: FrozenDepth?, photoWidthPx: Double, photoHeightPx: Double, depthSensorPhone: Bool = false) {
+        self.depthSensorPhone = depthSensorPhone
         self.cameraTransform = cameraTransform
         self.intrinsics = intrinsics
         self.wall = wall.facing(cameraTransform.translation)
@@ -96,7 +99,7 @@ public struct FrozenView: Equatable, Sendable {
     }
 
     public var viewer: Vec3 { cameraTransform.translation }
-    public var device: ArDevice { depth == nil ? .arkit : .arkitLidar }
+    public var device: ArDevice { depth == nil && !depthSensorPhone ? .arkit : .arkitLidar }
 
     /// How far a frame may stand from the wall's surface (metres): a sill, a casing, a frame set in a reveal. Depth readings further off
     /// than this are the glass behind the frame, or the room in front of it, not the frame.
