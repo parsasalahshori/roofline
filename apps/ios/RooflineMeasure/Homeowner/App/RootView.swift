@@ -67,6 +67,8 @@ private struct RouteScreen: View {
             }
         case .method(let room):
             MethodScreen(room: room)
+        case .visualize(let windowId, let origin):
+            VisualizeScreen(windowId: windowId, origin: origin)
         }
     }
 }

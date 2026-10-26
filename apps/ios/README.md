@@ -152,6 +152,35 @@ up at once, the window waits for its style (a style is required), then it is sen
 client waits a short `Retry-After` (up to 10 s) and tries once more, a longer one is kept on the item (`retryNotBefore`) and the outbox
 leaves it alone until then; the window list says so calmly in the server's own words.
 
+### See it in your home (the window visualizer)
+
+After measuring, each window can be tried with a new one on the homeowner's own photo of it (Medida's "Visualize"). A **See it in your
+home** button is on the style screen (`StylesScreen`, per window) and every window is listed under it on the quote screen
+(`QuoteScreen`, "See it in your home"); both open `Visualize/VisualizeScreen` (route `.visualize(windowId:from:)`).
+
+- **The collection** (`Core/WindowVisual.swift`): 17 kinds (double-hung, single-hung, 2-lite and 3-lite sliders, casement, casement pair,
+  awning, hopper, picture, picture + casements, bay, bow, garden, arch top, half-round, circle, specialty), 6 grids (none, colonial,
+  prairie, diamond, Queen Anne, top only), the brand's 6 frame colors (`WinChoice.json`, interior = exterior in v1) and 3 glasses
+  (clear, low-E with a faint tint, frosted) plus a "clean glass" switch. The names are plain industry names, not WinChoice's own.
+- **How a kind is quoted** (`VisualCatalog.mapping`): through the style keys the server's catalog offers, nothing new is sent. A kind uses
+  its own key when offered, else the offered tile that holds it (single-hung and 3-lite slider ride "opens up and down" and "slides
+  sideways"), else the catalog's `atVisit` tile ("bay, bow or odd shape": casement, awning, hopper, the combo, bay, bow, garden,
+  arch, half-round, circle, specialty). The screen says which ("Quoted as ..." or "Quoted at your visit").
+- **What stays on the phone**: grid, glass and clean-glass are in `HomeownerProgress.visuals` by window id (the contract has no field for
+  them; `frosted` is the "Bathroom window?" price adder and is not touched), the color in `colors` as before.
+- **Where the photo comes from**: the window's own JPEG and corners in the outbox (kept after the send). A style change on a sent window
+  replaces it by a copy; the copy keeps the JPEG on the phone and does not upload it again (`Outbox.enqueue` with an upload id). A window
+  with no usable photo (a window from another phone, a room-scan window with none) gets a drawn wall.
+- **Drawing** (`Visualize/`): `Core/WindowLayout.swift` gives every kind's parts in inches on a flat rectangle (frame ring round the
+  opening, sashes, glass, bars, hardware; bay, bow and garden are angled panels flat-projected inside it); `WindowPainter` paints it
+  with Core Graphics into a frame layer and a glass layer; `WindowCompositor` warps both onto the four corners with a perspective
+  transform (`Core/Homography.swift`) and lays them over the photo. Frame, sashes and bars go on opaque over the old ones; panes show
+  the photo's own view (or a soft sky with "clean glass"). The room's light (the wall just outside the window) sets how bright the
+  frame looks and the wall color for filling round arches and circles. The warped layers are cached by their choices, so a new color
+  redraws only the frame.
+- **DEBUG launch**: `-debugScenario visualize -debugOpen visualize [-debugPhoto <jpg> -debugCorners x,y,x,y,x,y,x,y -debugPhotoSize WxH
+  -debugWindowIn WxH] [-debugVisual casement,prairie,black,lowE,clean,compare=0.5]` (without `-debugPhoto` it shows the drawn wall).
+
 ### Brand
 
 `RooflineMeasure/Brand/WinChoice/WinChoice.json` (name, quote slug, colours, what the tiers include, the made-in line, the server
@@ -187,6 +216,7 @@ RooflineMeasure/Homeowner/
   Model/      WindowRow (server and phone windows as one list), progress, address place
   Screens/    01 to 15 and the call-back screens, the label sheet
   Measure/    the AR HUD, room scan screen and review, the card photo flow, the shared photo tap view
+  Visualize/  See it in your home: the screen, the painter, the compositor, the thumbnails
   Theme/      Chalk Line colours and type, components, icons (the mockups' SVG paths), illustrations
 RooflineMeasure/Brand/WinChoice/   WinChoice.json, Info.plist, PrivacyInfo.xcprivacy, Assets.xcassets
 WinChoiceTests/       app tests (hosted): the store over the fake server, the HTTP client over a stub, the outbox, rows and wording,

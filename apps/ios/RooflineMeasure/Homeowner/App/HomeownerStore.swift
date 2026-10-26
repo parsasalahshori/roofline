@@ -8,6 +8,12 @@ import SwiftUI
 enum Route: Hashable {
     case step(HomeownerStep)
     case method(room: String)
+    /// "See it in your home" for one window (`from`: the screen that opened it, which decides what a change refreshes).
+    case visualize(windowId: String, from: VisualizeOrigin)
+}
+
+enum VisualizeOrigin: String, Hashable {
+    case styles, quote
 }
 
 /// The screen at the bottom of the stack: the welcome, or a state of the whole app (booked, My order, call-back sent).
@@ -228,6 +234,8 @@ final class HomeownerStore {
             // A style chosen while the window's send was uncertain shows at once
             if let key = progress.pendingStyles[row.id] { r.style = key }
             r.windowFrame = progress.windowFrames[row.id]
+            r.look = progress.visuals[row.id]
+            r.colorKey = progress.colors[row.id]
             return r
         }
     }
@@ -281,6 +289,11 @@ final class HomeownerStore {
     @ObservationIgnored var debugRoute: Route?
     /// `-debugOpen`: a measuring screen to open over the scenario's screen.
     @ObservationIgnored var debugOpen: String?
+    /// `-debugPhoto`: a photo and its window corners on disk, shown for every window in "See it in your home" (the fake server keeps no photos).
+    @ObservationIgnored var debugVisualPhoto: VisualPhotoSource?
+    /// `-debugVisual`: what the screen opens with.
+    @ObservationIgnored var debugVisualWindowIn: (w: Double, h: Double)?
+    @ObservationIgnored var debugVisualLook: (look: WindowVisualLook, color: String, compare: Double)?
     @ObservationIgnored var debugCardSeed: DebugCardSeed?
     /// `-debugServer ... -debugE2E`: run after the app has opened (the scripted journey).
     @ObservationIgnored var debugAfterLaunch: ((HomeownerStore) async -> Void)?

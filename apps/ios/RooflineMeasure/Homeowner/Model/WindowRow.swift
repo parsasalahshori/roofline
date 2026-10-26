@@ -35,6 +35,9 @@ struct WindowRow: Identifiable, Equatable {
     /// Where the window's multi-frame scan is, in the server's words ("Being checked by WinChoice"); nil without a scan.
     var scanLabel: String? = nil
     var scanState: String? = nil
+    /// What the homeowner chose in "See it in your home" (kept on the phone), and the colour picked for the window.
+    var look: WindowVisualLook? = nil
+    var colorKey: String? = nil
 
     /// "Living room", or the name the homeowner gave ("Bedroom 1, front").
     var title: String {

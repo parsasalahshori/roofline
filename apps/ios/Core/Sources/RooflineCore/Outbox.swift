@@ -240,6 +240,8 @@ public actor Outbox {
         }
         var item = OutboxItem(window: window, measurementId: measurementId, address: address, jpegFileName: name, imageWidthPx: imageWidthPx, imageHeightPx: imageHeightPx)
         if held { item.held = true }
+        // A window that already names its upload (a copy of one the server has) keeps its photo here but does not send it again
+        if let up = window.uploadId, !up.isEmpty, jpeg != nil { item.uploadId = up }
         items.removeAll { $0.id == item.id }
         items.append(item)
         try persist()

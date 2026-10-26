@@ -38,7 +38,7 @@ final class AccessibilityAuditTests: XCTestCase {
                 print("AUDIT accepted: \(description)")
                 return true
             }
-            print("AUDIT issue: \(description)")
+            print("AUDIT issue: \(description) :: \(issue.detailedDescription)")
             return false
         }
     }
@@ -81,6 +81,7 @@ final class AccessibilityAuditTests: XCTestCase {
     func testList() throws { try audit("list") }
     func testStyles() throws { try audit("styles") }
     func testQuote() throws { try audit("quote") }
+    func testVisualize() throws { try audit("visualize", open: "visualize") }
     func testContact() throws { try audit("contact") }
     func testBook() throws { try audit("book") }
     func testBooked() throws { try audit("booked") }
@@ -100,6 +101,7 @@ final class AccessibilityAuditTests: XCTestCase {
     func testResultsDark() throws { try audit("results", dark: true) }
     func testListDark() throws { try audit("list", dark: true) }
     func testQuoteDark() throws { try audit("quote", dark: true) }
+    func testVisualizeDark() throws { try audit("visualize", open: "visualize", dark: true) }
     func testContactDark() throws { try audit("contact", dark: true) }
     func testBookedDark() throws { try audit("booked", dark: true) }
     func testStatusDark() throws { try audit("status", dark: true) }
@@ -115,6 +117,7 @@ final class AccessibilityAuditTests: XCTestCase {
     func testListLargestText() throws { try audit("list", largestText: true) }
     func testStylesLargestText() throws { try audit("styles", largestText: true) }
     func testQuoteLargestText() throws { try audit("quote", largestText: true) }
+    func testVisualizeLargestText() throws { try audit("visualize", open: "visualize", largestText: true) }
     func testContactLargestText() throws { try audit("contact", largestText: true) }
     func testBookLargestText() throws { try audit("book", largestText: true) }
     func testBookedLargestText() throws { try audit("booked", largestText: true) }

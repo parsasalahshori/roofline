@@ -34,11 +34,14 @@ struct HomeownerProgress: Codable, Equatable {
     var pendingStyles: [String: String] = [:]
     /// A photo-measured window's own frame (inside the opening that was sent), by window id: kept here because the server has no place for it.
     var windowFrames: [String: WindowFrameSize] = [:]
+    /// What the homeowner chose to see for a window in "See it in your home" (type, grid, glass), by window id. Kept on this phone: the
+    /// server's window carries a style (and the quote its price), never a grid or a glass.
+    var visuals: [String: WindowVisualLook] = [:]
 
     init() {}
 
     private enum Keys: String, CodingKey {
-        case step, rooms, tierKey, tierTotal, tierWindowCount, colors, bestTime, requestStatus, hasContact, hasBooking, windowCount, callbackReason, estimateWindows, estimateRoof, estimateRoofNote, floors, perimeterFt, lastMethod, pendingStyles, windowFrames
+        case step, rooms, tierKey, tierTotal, tierWindowCount, colors, bestTime, requestStatus, hasContact, hasBooking, windowCount, callbackReason, estimateWindows, estimateRoof, estimateRoofNote, floors, perimeterFt, lastMethod, pendingStyles, windowFrames, visuals
     }
 
     // Lenient: a progress record written by an older build still reads
@@ -64,6 +67,7 @@ struct HomeownerProgress: Codable, Equatable {
         lastMethod = try? c.decodeIfPresent(String.self, forKey: .lastMethod)
         pendingStyles = (try? c.decodeIfPresent([String: String].self, forKey: .pendingStyles)) ?? [:]
         windowFrames = (try? c.decodeIfPresent([String: WindowFrameSize].self, forKey: .windowFrames)) ?? [:]
+        visuals = (try? c.decodeIfPresent([String: WindowVisualLook].self, forKey: .visuals)) ?? [:]
     }
 }
 

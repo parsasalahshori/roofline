@@ -77,6 +77,20 @@ let outboxChecks: [Check] = [
         try await ob.clearDone()
         ctx.equal(await ob.items.count, 0)
     },
+    Check("Outbox: a copy of a window the server has keeps its photo on the phone and does not upload it again") { ctx in
+        let t = FakeTransport()
+        let ob = Outbox(directory: tempDir(), transport: t)
+        try await ob.load()
+        var w = sampleWindow()
+        w.uploadId = "up-already"
+        let item = try await ob.enqueue(window: w, measurementId: "m", address: "1 Main", jpeg: Data([0xFF, 0xD8, 0xFF]), imageWidthPx: 1440, imageHeightPx: 1920)
+        ctx.equal(item.nextStage, .window, "the photo is up already")
+        _ = await ob.syncAll()
+        ctx.equal(t.uploads, 0, "no second upload")
+        ctx.equal(t.saved[item.id]?.uploadId, "up-already")
+        let kept = await ob.items.first
+        ctx.expect(kept?.jpegFileName != nil, "the photo file stays for the visualizer")
+    },
     Check("Outbox: a RoomPlan window with no photo skips the upload and is sent with no upload id or corners") { ctx in
         let t = FakeTransport()
         let ob = Outbox(directory: tempDir(), transport: t)

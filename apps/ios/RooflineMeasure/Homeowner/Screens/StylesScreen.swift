@@ -20,7 +20,22 @@ struct StylesScreen: View {
             if let row = row {
                 List {
                     Section {
-                        windowRow(row)
+                        VStack(alignment: .leading, spacing: 12) {
+                            windowRow(row)
+                            Button {
+                                store.openVisualizer(row.id, from: .styles)
+                            } label: {
+                                Label("See it in your home", systemImage: "photo.on.rectangle")
+                                    .fontWeight(.semibold)
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.large)
+                            .tint(Theme.buttonFill)
+                            .accessibilityHint("Shows new windows on your own photo of this window")
+                            .accessibilityIdentifier("see-it-in-your-home")
+                        }
+                        .padding(.bottom, 4)
                     }
                     Section {
                         ForEach(store.styles) { style in

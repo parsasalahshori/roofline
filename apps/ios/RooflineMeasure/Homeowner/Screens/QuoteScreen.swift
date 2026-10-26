@@ -100,6 +100,7 @@ struct QuoteScreen: View {
         } footer: {
             Text("Colors and grids are chosen at your visit.").foregroundStyle(Theme.ink2)
         }
+        windowsSection
         if let financing = store.company.catalog.financing { financingSection(financing) }
         Section {
             Label {
@@ -116,6 +117,42 @@ struct QuoteScreen: View {
                 }
             }
         }
+    }
+
+    /// "See it in your home": each window with what was chosen for it (kept on the phone), a way to try a new one on its own photo.
+    @ViewBuilder private var windowsSection: some View {
+        let rows = store.windowRows
+        if !rows.isEmpty {
+            Section {
+                ForEach(rows) { row in
+                    Button { store.openVisualizer(row.id, from: .quote) } label: {
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(row.title).font(.body).foregroundStyle(Theme.ink)
+                                Text(visualLine(row)).font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer(minLength: 8)
+                            Image(systemName: "photo.on.rectangle").foregroundStyle(Theme.red).accessibilityHidden(true)
+                            Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(Theme.decor).accessibilityHidden(true)
+                        }
+                        .frame(minHeight: Theme.minTap)
+                        .contentShape(Rectangle())
+                    }
+                    .accessibilityHint("Shows new windows on your own photo")
+                }
+            } header: {
+                Text("See it in your home").foregroundStyle(Theme.ink2)
+            } footer: {
+                Text("Try other kinds, grids, colors and glass on your own photos.").foregroundStyle(Theme.ink2)
+            }
+        }
+    }
+
+    /// What a window shows under its name: the look chosen for it, else "Try a new window".
+    private func visualLine(_ row: WindowRow) -> String {
+        guard let look = row.look else { return "Try a new window" }
+        let label = store.brand.windowColors.first { $0.key == row.colorKey }?.label
+        return look.summary(colorLabel: label)
     }
 
     /// What every window includes: the company's own list, else the brand file's.

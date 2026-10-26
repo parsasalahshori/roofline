@@ -14,6 +14,7 @@ import RooflineCore
 ///                               -debugE2EPause <seconds> holds each main screen for a screenshot; run it with `xcrun simctl launch --console`)
 ///   -debugGo <step>             show a step of the saved request after opening (welcome service address results coaching rooms list styles quote contact book booked status)
 ///   -debugCaptureDir <path>     write each Capture's debug dump (photo, depth, camera, result) into this folder instead of sending it to the server
+///   -debugPhoto <jpg> -debugCorners x,y,... -debugVisual casement,prairie,black   (with -debugOpen visualize) "See it in your home" on a real photo
 ///   -debugOpen <name>           open a measuring screen over the scenario's: hud, hud-howto, freeze, freeze-clutter, freeze-off, freeze-two, freeze-ai, freeze-ai-wall, freeze-frame, guided-aim, guided-hud, guided-closeup, guided-working, guided-result, guided-result-check, label, label-frame, scan, quickscan, quickscan-live, hybrid-pan, hybrid-list, hybrid-closeup, hybrid-results, needs-iphone, needs-pro,
 ///                               card, card3, card4, window2, window4, windowdart (use with -debugScenario method)
 enum HomeownerDebug {
@@ -31,6 +32,14 @@ enum HomeownerDebug {
         var e2eAddress = "4810 Underwood Ave, Omaha, NE 68132"
         /// `-debugGo <step>`: after opening, show this step of the saved request (live or fake).
         var go: String?
+        /// `-debugPhoto <jpg> -debugCorners x,y,x,y,x,y,x,y [-debugPhotoSize WxH]`: the photo and window corners "See it in your home" shows.
+        var photo: String?
+        var corners: [Double] = []
+        var photoSize: (w: Int, h: Int)?
+        /// `-debugWindowIn 35.2x55.2`: the opening's size in inches, for a photo that is not the fake window's.
+        var windowIn: (w: Double, h: Double)?
+        /// `-debugVisual casement,prairie,black,lowE,clean,compare=0.5`: the kind, grid, colour, glass, clean glass and divider it opens with.
+        var visual: [String] = []
         /// `-debugE2EServices windows,roof` (any of them).
         var e2eServices: Set<HomeownerService> = [.windows, .roof]
         /// `-debugE2EPause <seconds>`: hold each main screen that long ("E2E show <screen>" is printed when it is up).
@@ -52,6 +61,11 @@ enum HomeownerDebug {
             if let a = value("-debugE2EAddress") { e2eAddress = a }
             go = value("-debugGo")
             e2ePause = value("-debugE2EPause").flatMap(Double.init) ?? 0
+            photo = value("-debugPhoto")
+            corners = (value("-debugCorners") ?? "").split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            if let s = value("-debugPhotoSize")?.split(separator: "x"), s.count == 2, let w = Int(s[0]), let h = Int(s[1]) { photoSize = (w, h) }
+            if let s = value("-debugWindowIn")?.split(separator: "x"), s.count == 2, let w = Double(s[0]), let h = Double(s[1]) { windowIn = (w, h) }
+            visual = (value("-debugVisual") ?? "").split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
             if let list = value("-debugE2EServices") {
                 e2eServices = Set(list.split(separator: ",").compactMap { HomeownerService(rawValue: String($0)) })
             }
@@ -108,6 +122,7 @@ enum HomeownerDebug {
         case "list7": session = await api.seed(windows: seven); step = .list
         case "list": session = await api.seed(windows: Array(seven.prefix(2))); step = .list
         case "styles": session = await api.seed(windows: seven); step = .styles
+        case "visualize": session = await api.seed(windows: Array(seven.prefix(3))); step = .styles
         case "quote": session = await api.seed(windows: seven); step = .quote
         case "contact":
             session = await api.seed(windows: seven)
@@ -129,6 +144,24 @@ enum HomeownerDebug {
                 progress.tierWindowCount = 7
                 store.progressStore.save(progress, requestId: session.requestId)
             }
+        }
+        if let photo = options.photo, options.corners.count == 8 {
+            let c = options.corners
+            store.debugVisualPhoto = VisualPhotoSource(url: URL(fileURLWithPath: photo), corners: (0..<4).map { Vec2(c[2 * $0], c[2 * $0 + 1]) },
+                                                       widthPx: options.photoSize?.w ?? 0, heightPx: options.photoSize?.h ?? 0)
+        }
+        store.debugVisualWindowIn = options.windowIn
+        if !options.visual.isEmpty {
+            var look = WindowVisualLook(), color = "white", compare = 0.0
+            for token in options.visual {
+                if let t = VisualWindowType(rawValue: token) { look.type = t }
+                else if let g = VisualGrid(rawValue: token) { look.grid = g }
+                else if let g = VisualGlass(rawValue: token) { look.glass = g }
+                else if token == "clean" { look.cleanGlass = true }
+                else if token.hasPrefix("compare="), let v = Double(token.dropFirst(8)) { compare = v }
+                else { color = token }
+            }
+            store.debugVisualLook = (look, color, compare)
         }
         store.debugStep = step
         store.debugRoute = name == "method" ? .method(room: "Bedroom 1") : nil

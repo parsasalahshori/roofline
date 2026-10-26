@@ -577,6 +577,9 @@ extension HomeownerStore {
         case "windowauto":
             debugCardSeed = DebugCardSeed(step: .card, cardCount: 0, windowCount: 0, auto: true, thenWindow: true)
             startCard(room)
+        case "visualize":
+            // "See it in your home" for the first window (`-debugPhoto`, `-debugCorners`, `-debugVisual` set what it shows)
+            if let id = windowRows.first?.id { path.append(.visualize(windowId: id, from: .styles)) }
         case "windowdart":
             debugCardSeed = DebugCardSeed(step: .window, cardCount: 4, windowCount: 4, dart: true)
             startCard(room)

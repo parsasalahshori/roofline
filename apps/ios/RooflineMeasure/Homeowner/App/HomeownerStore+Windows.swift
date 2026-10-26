@@ -321,10 +321,19 @@ extension HomeownerStore {
         copy.style = key
         if let color = progress.colors[windowId] { progress.colors[copy.id] = color }
         if let frame = progress.windowFrames[windowId] { progress.windowFrames[copy.id] = frame }
+        // The copy keeps what was chosen for it, and its photo (for "See it in your home") when this phone has it
+        if let look = progress.visuals[windowId] { progress.visuals[copy.id] = look }
+        var keptPhoto: (data: Data, widthPx: Int, heightPx: Int)?
+        if let old = outboxItems.first(where: { $0.id == windowId }), let url = await outbox.jpegURL(for: old), let data = try? Data(contentsOf: url) {
+            keptPhoto = (data, old.imageWidthPx, old.imageHeightPx)
+        }
         do {
-            _ = try await outbox.enqueue(window: copy, measurementId: s.requestId, address: s.address, jpeg: nil, imageWidthPx: 0, imageHeightPx: 0, held: false)
+            // The photo is already on the server (the copy carries its upload id), so it is kept here only, not sent again
+            _ = try await outbox.enqueue(window: copy, measurementId: s.requestId, address: s.address, jpeg: keptPhoto?.data, imageWidthPx: keptPhoto?.widthPx ?? 0, imageHeightPx: keptPhoto?.heightPx ?? 0, held: false)
             await outbox.syncAll()
             accept(try await api.deleteWindow(s, windowId: windowId))
+            // The old window's own record goes now that its copy holds the photo (else it would show as a second window)
+            try? await outbox.remove(id: windowId)
         } catch let e as HomeownerAPIError {
             notice = Notice(text: e.message)
         } catch {
