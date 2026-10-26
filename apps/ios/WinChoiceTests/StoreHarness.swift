@@ -36,6 +36,7 @@ final class SwitchableAPI: HomeownerAPI, @unchecked Sendable {
     func view(_ s: HomeownerSession) async throws -> HomeownerRequestView { try gate(); return try await fake.view(s) }
     func uploadPhoto(_ s: HomeownerSession, jpeg: Data) async throws -> WindowPhotoUpload { try gate(); return try await fake.uploadPhoto(s, jpeg: jpeg) }
     func addWindow(_ s: HomeownerSession, window: PhotoWindowInput) async throws -> HomeownerRequestView { try gate(); return try await fake.addWindow(s, window: window) }
+    func setLook(_ s: HomeownerSession, windowId: String, look: HomeownerWindowLookBody) async throws -> HomeownerRequestView { try gate(); return try await fake.setLook(s, windowId: windowId, look: look) }
     func deleteWindow(_ s: HomeownerSession, windowId: String) async throws -> HomeownerRequestView { try gate(); return try await fake.deleteWindow(s, windowId: windowId) }
     func setEstimatedTotal(_ s: HomeownerSession, total: Int?) async throws -> HomeownerRequestView { try gate(); return try await fake.setEstimatedTotal(s, total: total) }
     func fileContact(_ s: HomeownerSession, contact: HomeownerContact) async throws -> HomeownerRequestView { try gate(); return try await fake.fileContact(s, contact: contact) }
@@ -90,7 +91,7 @@ final class StoreHarness {
     }
 
     /// A saved request with the windows given, opened the way the app opens it on a launch.
-    func open(windows: [FakeWindowSpec] = [], contact: Bool = false, booked: Bool = false, step: HomeownerStep? = nil, services: [HomeownerService] = [.windows, .roof]) async throws {
+    func open(windows: [FakeWindowSpec] = [], contact: Bool = false, booked: Bool = false, step: HomeownerStep? = nil, services: [HomeownerService] = [.windows]) async throws {
         let session = await fake.seed(services: services, windows: windows, contact: contact, booked: booked)
         try vault.save(session)
         if let step = step {

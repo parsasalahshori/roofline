@@ -7,8 +7,6 @@ import Foundation
 public enum HomeownerStep: String, Codable, CaseIterable, Sendable, Hashable {
     /// 01: the welcome, with one Measure button (the root, never on the back stack).
     case welcome
-    /// 01b: what to measure, windows or roof (one service per request).
-    case service
     /// 02: the address and its pin.
     case address
     /// 03: what we found about the home, per service.
@@ -25,8 +23,10 @@ public enum HomeownerStep: String, Codable, CaseIterable, Sendable, Hashable {
     case list
     /// 09: a style and colour for each window (optional: styles are also tried in "See it in your home").
     case styles
-    /// 11: "Your estimate": the price range, Good / Better / Best, and the call-me and see-new-windows buttons.
+    /// 11: "Your estimate": the price banner, "Customize your windows" under it, then Good / Better / Best.
     case quote
+    /// 11b: "Your windows are ready": each window's picture and look, the updated price, and "Get my estimate" (to the interest form).
+    case ready
     /// 12: the interest form ("Get a call from WinChoice"): who to call, and consent.
     case contact
     /// 13: pick a visit time, or ask for a call.
@@ -43,7 +43,6 @@ public enum HomeownerStep: String, Codable, CaseIterable, Sendable, Hashable {
 /// What is known about the request when the app opens, to decide where to resume.
 public struct ResumeSnapshot: Equatable, Sendable {
     public var requestStatus: HomeownerRequestStatus
-    public var services: Set<HomeownerService>
     /// Windows measured so far: on the server plus saved on the phone.
     public var windowCount: Int
     /// Windows saved on the phone that still need a style.
@@ -53,10 +52,9 @@ public struct ResumeSnapshot: Equatable, Sendable {
     /// The contact form was sent.
     public var hasContact: Bool
 
-    public init(requestStatus: HomeownerRequestStatus = .ready, services: Set<HomeownerService> = [.windows], windowCount: Int = 0,
+    public init(requestStatus: HomeownerRequestStatus = .ready, windowCount: Int = 0,
                 unstyledCount: Int = 0, hasBooking: Bool = false, hasContact: Bool = false) {
         self.requestStatus = requestStatus
-        self.services = services
         self.windowCount = windowCount
         self.unstyledCount = unstyledCount
         self.hasBooking = hasBooking
@@ -73,22 +71,17 @@ public enum ResumeRouter {
         if s.hasBooking { return saved == .booked ? .booked : .status }
         if s.requestStatus == .callback { return saved == .callbackSent ? .callbackSent : .callback }
 
-        let windows = s.services.contains(.windows)
         let hasWindows = s.windowCount > 0
-        var allowed: Set<HomeownerStep> = [.results]
-        if windows {
-            allowed.formUnion([.coaching, .rooms])
-            if hasWindows {
-                allowed.formUnion([.list, .styles, .quote, .contact, .book])
-            }
-        } else {
-            allowed.formUnion([.contact, .book])
+        var allowed: Set<HomeownerStep> = [.results, .coaching, .rooms]
+        if hasWindows {
+            allowed.formUnion([.list, .styles, .quote, .ready, .contact, .book])
         }
-        let fallback: HomeownerStep = windows && hasWindows ? .list : .results
+        let fallback: HomeownerStep = hasWindows ? .list : .results
         guard let saved = saved, allowed.contains(saved) else { return fallback }
         switch saved {
         // Windows still without a style: the list, whose button gives them the likeliest style and opens the estimate
         case .quote where s.unstyledCount > 0: return .list
+        case .ready where s.unstyledCount > 0: return .list
         case .book where !s.hasContact: return .contact
         default: return saved
         }
@@ -97,17 +90,10 @@ public enum ResumeRouter {
 
 public enum HomeownerFlow {
     /// The back stack that leads to `step` (without the welcome, which is the root): back from the list goes to the rooms,
-    /// back from the rooms to the tips, and so on, back to the windows-or-roof choice. Terminal screens have no stack.
-    public static func path(to step: HomeownerStep, services: Set<HomeownerService>) -> [HomeownerStep] {
-        guard step != .service else { return [.service] }
-        let rest = pathAfterService(to: step, services: services)
-        return rest.isEmpty ? [] : [.service] + rest
-    }
-
-    private static func pathAfterService(to step: HomeownerStep, services: Set<HomeownerService>) -> [HomeownerStep] {
-        let windows = services.contains(.windows)
+    /// back from the rooms to the tips, and so on, back to the address. Terminal screens have no stack.
+    public static func path(to step: HomeownerStep) -> [HomeownerStep] {
         switch step {
-        case .welcome, .service, .booked, .status, .callbackSent: return []
+        case .welcome, .booked, .status, .callbackSent: return []
         case .address: return [.address]
         case .callback: return [.address, .callback]
         case .results: return [.address, .results]
@@ -116,22 +102,21 @@ public enum HomeownerFlow {
         case .list: return [.address, .results, .coaching, .rooms, .list]
         case .styles: return [.address, .results, .coaching, .rooms, .list, .styles]
         case .quote: return [.address, .results, .coaching, .rooms, .list, .quote]
-        case .contact: return windows ? [.address, .results, .coaching, .rooms, .list, .quote, .contact] : [.address, .results, .contact]
-        case .book: return windows ? [.address, .results, .coaching, .rooms, .list, .quote, .contact, .book] : [.address, .results, .contact, .book]
+        case .ready: return [.address, .results, .coaching, .rooms, .list, .quote, .ready]
+        case .contact: return [.address, .results, .coaching, .rooms, .list, .quote, .contact]
+        case .book: return [.address, .results, .coaching, .rooms, .list, .quote, .contact, .book]
         }
     }
 
-    /// The first screen after the results: windows go on to the tips, roof straight to the contact form.
-    public static func afterResults(services: Set<HomeownerService>) -> HomeownerStep {
-        services.contains(.windows) ? .coaching : .contact
-    }
+    /// The first screen after the results: the measuring tips.
+    public static let afterResults: HomeownerStep = .coaching
 
-    /// Dots at the top of the first screens (01b, 02, 03, 04 of the storyboard): how far along, out of 4. Zero: no dots.
+    /// Dots at the top of the first screens (02, 03, 04 of the storyboard): how far along, out of 3. Zero: no dots.
     public static func progressDots(_ step: HomeownerStep) -> Int {
         switch step {
-        case .service: return 1
-        case .address: return 2
-        case .results, .coaching: return 3
+        case .address: return 1
+        case .results: return 2
+        case .coaching: return 3
         default: return 0
         }
     }

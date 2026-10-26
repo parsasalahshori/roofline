@@ -3,6 +3,7 @@ import type { LngLat } from './roof.ts';
 import type { WindowStyle } from './window-order.ts';
 import type { ArDevice, ArQuad, Quad } from './window-photo-math.ts';
 import { DEFAULT_WINDOW_CATALOG, catalogWindowCents, type PublicCatalogFacts, tileOfStyle, TIER_RANK_WORDS, type WindowCatalog } from './window-catalog.ts';
+import type { WindowLook } from './window-look.ts';
 import { type RoomPlanConfidence, WINDOW_SIZE_CLASSES, type WindowSizeClass, type WindowTier } from './windows.ts';
 
 /*
@@ -206,6 +207,8 @@ export type HomeownerWindow = HomeownerWindowInput & {
   styleLabel: string;
   /** Present once the window has a multi-frame scan (POST .../scans): where the scan is, in words to show. */
   scan?: HomeownerWindowScan;
+  /** The look the homeowner chose for this window (PATCH .../windows/:windowId/look), once they did. */
+  look?: WindowLook;
 };
 
 /** What the homeowner is told about a window's scan (docs/windows/scan-contract.md): checking, measured, or visit_required. */

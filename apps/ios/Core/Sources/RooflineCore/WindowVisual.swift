@@ -183,6 +183,30 @@ public struct WindowVisualLook: Codable, Equatable, Sendable {
     }
 }
 
+extension WindowVisualLook {
+    /// "Casement · Prairie · Black · Low-E": the whole look in one line (kind, grid, frame colour, glass), as the ready screen shows it.
+    public func oneLine(colorLabel: String?) -> String {
+        [type.title, grid.title, colorLabel ?? "", glass.title].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+}
+
+/// PATCH /requests/:id/windows/:windowId/look: the look the homeowner customized for one window. The server keeps it with the
+/// window and shows it to the staff; it never changes the price. Exactly these four keys (the server refuses any other).
+public struct HomeownerWindowLookBody: Codable, Equatable, Sendable {
+    public var kind: VisualWindowType
+    public var grid: VisualGrid
+    public var glass: VisualGlass
+    /// The brand's key for the frame colour ("white", "black").
+    public var color: String
+
+    public init(look: WindowVisualLook, colorKey: String) {
+        kind = look.type
+        grid = look.grid
+        glass = look.glass
+        color = colorKey
+    }
+}
+
 /// How a kind of window is quoted through the existing contract (a style key the catalog offers, nothing more is sent).
 public struct VisualStyleMapping: Equatable, Sendable {
     /// The key the existing flow sends as the window's `style`.

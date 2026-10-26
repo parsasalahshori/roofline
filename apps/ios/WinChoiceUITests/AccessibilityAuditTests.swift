@@ -61,7 +61,7 @@ final class AccessibilityAuditTests: XCTestCase {
         // The method screen on a depth-sensor phone lists four ways: the fourth card's text sits partly under the pinned footer until the
         // screen is scrolled (checked by eye, scrolled), and the audit cannot name that node.
         if screen == "method", issue.compactDescription == "Contrast nearly passed", issue.element == nil { return true }
-        // An element that has no frame and no label after the audit changed the text size (the roof price moves from beside
+        // An element that has no frame and no label after the audit changed the text size (a price moves from beside
         // its name to under it): the audit cannot say which one it is.
         if screen.hasPrefix("results"), issue.auditType == .textClipped, issue.element == nil { return true }
         return false
@@ -70,7 +70,6 @@ final class AccessibilityAuditTests: XCTestCase {
     // MARK: Default text size
 
     func testWelcome() throws { try audit("welcome") }
-    func testService() throws { try audit("service") }
     func testAddress() throws { try audit("address") }
     func testResults() throws { try audit("results") }
     func testCallback() throws { try audit("callback") }
@@ -81,6 +80,8 @@ final class AccessibilityAuditTests: XCTestCase {
     func testList() throws { try audit("list") }
     func testStyles() throws { try audit("styles") }
     func testQuote() throws { try audit("quote") }
+    func testCustomize() throws { try audit("customize") }
+    func testReady() throws { try audit("ready") }
     func testVisualize() throws { try audit("visualize", open: "visualize") }
     func testContact() throws { try audit("contact") }
     func testBook() throws { try audit("book") }
@@ -97,10 +98,10 @@ final class AccessibilityAuditTests: XCTestCase {
     // MARK: Dark appearance
 
     func testWelcomeDark() throws { try audit("welcome", dark: true) }
-    func testServiceDark() throws { try audit("service", dark: true) }
     func testResultsDark() throws { try audit("results", dark: true) }
     func testListDark() throws { try audit("list", dark: true) }
     func testQuoteDark() throws { try audit("quote", dark: true) }
+    func testReadyDark() throws { try audit("ready", dark: true) }
     func testVisualizeDark() throws { try audit("visualize", open: "visualize", dark: true) }
     func testContactDark() throws { try audit("contact", dark: true) }
     func testBookedDark() throws { try audit("booked", dark: true) }
@@ -109,7 +110,6 @@ final class AccessibilityAuditTests: XCTestCase {
     // MARK: Largest accessibility text size
 
     func testWelcomeLargestText() throws { try audit("welcome", largestText: true) }
-    func testServiceLargestText() throws { try audit("service", largestText: true) }
     func testAddressLargestText() throws { try audit("address", largestText: true) }
     func testResultsLargestText() throws { try audit("results", largestText: true) }
     func testRoomsLargestText() throws { try audit("rooms", largestText: true) }
@@ -117,6 +117,7 @@ final class AccessibilityAuditTests: XCTestCase {
     func testListLargestText() throws { try audit("list", largestText: true) }
     func testStylesLargestText() throws { try audit("styles", largestText: true) }
     func testQuoteLargestText() throws { try audit("quote", largestText: true) }
+    func testReadyLargestText() throws { try audit("ready", largestText: true) }
     func testVisualizeLargestText() throws { try audit("visualize", open: "visualize", largestText: true) }
     func testContactLargestText() throws { try audit("contact", largestText: true) }
     func testBookLargestText() throws { try audit("book", largestText: true) }

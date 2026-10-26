@@ -10,9 +10,9 @@ import RooflineCore
 ///   -debugCaps lidar|corners|card|none   what this phone claims it can measure with (the simulator has no camera)
 ///   -debugLatency <seconds>     how long each fake call takes
 ///   -debugE2E                   with -debugServer: walk the whole journey with synthetic windows and print "E2E ..." lines to stderr
-///                               (-debugE2EAddress "<address>" and -debugE2EServices windows,roof pick what it asks for,
+///                               (-debugE2EAddress "<address>" picks what it asks for,
 ///                               -debugE2EPause <seconds> holds each main screen for a screenshot; run it with `xcrun simctl launch --console`)
-///   -debugGo <step>             show a step of the saved request after opening (welcome service address results coaching rooms list styles quote contact book booked status)
+///   -debugGo <step>             show a step of the saved request after opening (welcome address results coaching rooms list styles quote ready contact book booked status)
 ///   -debugCaptureDir <path>     write each Capture's debug dump (photo, depth, camera, result) into this folder instead of sending it to the server
 ///   -debugPhoto <jpg> -debugCorners x,y,... -debugVisual casement,prairie,black   (with -debugOpen visualize) "See it in your home" on a real photo
 ///   -debugOpen <name>           open a measuring screen over the scenario's: hud, hud-howto, freeze, freeze-clutter, freeze-off, freeze-two, freeze-ai, freeze-ai-wall, freeze-frame, guided-aim, guided-hud, guided-closeup, guided-working, guided-result, guided-result-check, label, label-frame, scan, quickscan, quickscan-live, hybrid-pan, hybrid-list, hybrid-closeup, hybrid-results, needs-iphone, needs-pro,
@@ -40,8 +40,8 @@ enum HomeownerDebug {
         var windowIn: (w: Double, h: Double)?
         /// `-debugVisual casement,prairie,black,lowE,clean,compare=0.5`: the kind, grid, colour, glass, clean glass and divider it opens with.
         var visual: [String] = []
-        /// `-debugE2EServices windows,roof` (any of them).
-        var e2eServices: Set<HomeownerService> = [.windows, .roof]
+        /// `-debugE2EServices windows`.
+        var e2eServices: Set<HomeownerService> = [.windows]
         /// `-debugE2EPause <seconds>`: hold each main screen that long ("E2E show <screen>" is printed when it is up).
         var e2ePause = 0.0
 
@@ -97,13 +97,11 @@ enum HomeownerDebug {
         var step: HomeownerStep?
         switch name {
         case "welcome": session = nil
-        case "service": session = nil; step = .service
         case "address":
             session = nil
             store.addressText = "305 Ridgeway Dr, Little Rock, AR"
             step = .address
         case "results": session = await api.seed(); step = .results
-        case "roofonly": session = await api.seed(services: [.roof]); step = .results
         case "callback":
             session = await api.seed(address: "2210 Leavenworth St, Little Rock, AR", services: [.windows])
             // The mockup shows the number typed and "Afternoon" picked
@@ -129,6 +127,10 @@ enum HomeownerDebug {
         case "styles": session = await api.seed(windows: seven); step = .styles
         case "visualize": session = await api.seed(windows: Array(seven.prefix(3))); step = .styles
         case "quote": session = await api.seed(windows: seven); step = .quote
+        case "customize": session = await api.seed(windows: seven); step = .quote; store.debugCustomize = true
+        case "ready":
+            session = await api.seed(windows: Array(seven.prefix(4)))
+            step = .ready
         case "contact":
             session = await api.seed(windows: seven)
             // The mockup shows the form filled in, the first box ticked and the text box not
@@ -142,11 +144,24 @@ enum HomeownerDebug {
         if let session = session {
             try? store.vault.save(session)
             // What the homeowner picked on the quote screen, for the screens after it
-            if ["quote", "contact", "book", "booked", "status", "thanks"].contains(name) {
+            if ["quote", "customize", "ready", "contact", "book", "booked", "status", "thanks"].contains(name) {
                 var progress = HomeownerProgress()
                 progress.tierKey = "better"
                 progress.tierTotal = 5600
                 progress.tierWindowCount = 7
+                if name == "ready", let ids = try? await api.view(session).windows.map({ $0.id }) {
+                    // The looks the homeowner chose, for the ready screen
+                    let looks: [(WindowVisualLook, String)] = [
+                        (WindowVisualLook(type: .casement, grid: .prairie, glass: .lowE), "black"),
+                        (WindowVisualLook(type: .doubleHung, grid: .colonial, glass: .clear), "white"),
+                        (WindowVisualLook(type: .picture, grid: .none, glass: .lowE), "bronze"),
+                        (WindowVisualLook(type: .slider2, grid: .topOnly, glass: .frosted), "beige"),
+                    ]
+                    for (i, id) in ids.enumerated() {
+                        progress.visuals[id] = looks[i % looks.count].0
+                        progress.colors[id] = looks[i % looks.count].1
+                    }
+                }
                 store.progressStore.save(progress, requestId: session.requestId)
             }
         }

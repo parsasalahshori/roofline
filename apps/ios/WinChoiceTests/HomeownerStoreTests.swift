@@ -11,19 +11,17 @@ final class HomeownerStoreTests: XCTestCase {
     func testNewRequestIsSavedAndTheResultsAreShown() async throws {
         let h = StoreHarness()
         await h.store.loadCompany()
-        h.store.selectedServices = [.windows, .roof]
         h.store.addressText = "305 Ridgeway Dr, Little Rock, AR 72205"
-        h.store.selectedServices = [.windows, .roof]
-        h.store.continueFromWelcome()
-        XCTAssertEqual(h.store.path.last, .step(.address))
+        h.store.startMeasuring()
+        XCTAssertEqual(h.store.path.last, .step(.address), "Measure goes straight to the address: windows are the only thing to measure")
         await h.store.confirmAddress()
         let saved = try XCTUnwrap(h.store.session)
         XCTAssertEqual(h.vault.load()?.requestId, saved.requestId, "the request id and token are kept for the next launch")
         XCTAssertEqual(h.store.path.last, .step(.results))
         XCTAssertEqual(h.store.requestStatus, .ready)
         XCTAssertNotNil(h.store.windowEstimate)
-        XCTAssertNotNil(h.store.roofEstimate)
-        XCTAssertNotNil(h.store.home?.outline, "the roof outline for the map")
+        XCTAssertNotNil(h.store.home?.outline, "the home's outline for the map")
+        XCTAssertEqual(h.store.services, [.windows])
     }
 
     func testAnApartmentGoesToTheCallBackBranchAndOnePhoneNumberIsEnough() async throws {
@@ -31,7 +29,7 @@ final class HomeownerStoreTests: XCTestCase {
         await h.store.loadCompany()
         h.store.selectedServices = [.windows]
         h.store.addressText = "2210 Leavenworth St Apt 5, Little Rock, AR"
-        h.store.continueFromWelcome()
+        h.store.startMeasuring()
         await h.store.confirmAddress()
         XCTAssertEqual(h.store.requestStatus, .callback)
         XCTAssertEqual(h.store.path.last, .step(.callback))
@@ -51,8 +49,7 @@ final class HomeownerStoreTests: XCTestCase {
         let h = StoreHarness()
         await h.store.loadCompany()
         h.store.addressText = "305 Ridgeway Dr, Little Rock, AR 72205"
-        h.store.selectedServices = [.windows, .roof]
-        h.store.continueFromWelcome()
+        h.store.startMeasuring()
         await h.store.confirmAddress()
         let first = h.store.session?.requestId
         XCTAssertNotNil(first)
@@ -90,8 +87,7 @@ final class HomeownerStoreTests: XCTestCase {
         let h = StoreHarness(vault: RefusingVault())
         await h.store.loadCompany()
         h.store.addressText = "305 Ridgeway Dr, Little Rock, AR 72205"
-        h.store.selectedServices = [.windows, .roof]
-        h.store.continueFromWelcome()
+        h.store.startMeasuring()
         await h.store.confirmAddress()
         XCTAssertNotNil(h.store.session)
         XCTAssertNotNil(h.store.notice, "the homeowner is told the request cannot be reopened later")
@@ -279,7 +275,7 @@ final class HomeownerStoreTests: XCTestCase {
         XCTAssertTrue(h.store.hasContact)
     }
 
-    func testMeasureThenEstimateThenCallMeFormThenThanks() async throws {
+    func testMeasureThenEstimateThenSkipToTheFormThenThanks() async throws {
         let h = StoreHarness()
         try await h.open(windows: [], step: .list)
         await h.capture(room: "Kitchen")
@@ -295,7 +291,7 @@ final class HomeownerStoreTests: XCTestCase {
         let quote = try XCTUnwrap(h.store.quote)
         XCTAssertEqual(quote.measuredCount, 2)
         XCTAssertFalse(quote.tiers.isEmpty)
-        // "Have WinChoice call me": the interest form
+        // "Skip and get my estimate": the interest form, with nothing customized
         h.store.requestCallFromEstimate()
         XCTAssertEqual(h.store.path.last, .step(.contact))
         await h.store.prepareContact()
@@ -306,13 +302,115 @@ final class HomeownerStoreTests: XCTestCase {
         XCTAssertTrue(h.store.path.isEmpty)
         XCTAssertEqual(h.store.view?.booking?.callMe, true)
         XCTAssertNotEqual(h.store.requestStatus, .callback, "the thanks of the estimate path, not the doubtful-home screen")
-        // "See new windows in your home" from the estimate and from the thanks
-        h.store.openVisualizerForFirstWindow(from: .quote)
-        guard case .visualize(let id, _)? = h.store.path.last else { return XCTFail("the visualizer opens") }
-        XCTAssertEqual(id, h.store.windowRows.first?.id)
-        // Done: My order
-        h.store.showStatus()
-        XCTAssertEqual(h.store.root, .status)
+        let calls = await h.fake.calls()
+        XCTAssertFalse(calls.contains { $0.hasSuffix("look") }, "nothing was customized, so no look is sent: \(calls)")
+    }
+
+    // MARK: Customize your windows
+
+    private func twoWindowsOnTheEstimate() async throws -> StoreHarness {
+        let h = StoreHarness()
+        try await h.open(windows: [], step: .list)
+        await h.capture(room: "Kitchen")
+        await h.capture(room: "Bedroom 1")
+        await h.store.continueFromList()
+        await h.settle()
+        await h.store.refresh()
+        XCTAssertEqual(h.store.path.last, .step(.quote))
+        return h
+    }
+
+    func testCustomizeWalksTheWindowsOneByOneThenShowsTheReadyScreen() async throws {
+        let h = try await twoWindowsOnTheEstimate()
+        let ids = h.store.windowRows.map { $0.id }
+        XCTAssertEqual(ids.count, 2)
+        h.store.startCustomizing()
+        XCTAssertEqual(h.store.path.last, .visualize(windowId: ids[0], from: .customize))
+        XCTAssertEqual(h.store.customizePlace(of: ids[0])?.number, 1)
+        XCTAssertEqual(h.store.customizePlace(of: ids[0])?.count, 2)
+        // Next keeps the first window's choice on the phone and shows the second
+        let first = WindowVisualLook(type: .casement, grid: .prairie, glass: .lowE)
+        await h.store.customizeNext(after: ids[0], look: first, colorKey: "black")
+        XCTAssertEqual(h.store.path.last, .visualize(windowId: ids[1], from: .customize))
+        XCTAssertEqual(h.store.progress.visuals[ids[0]], first)
+        XCTAssertEqual(h.store.progress.colors[ids[0]], "black")
+        // Done on the last window: the ready screen, with the estimate behind it (the walk is gone from the stack)
+        let second = WindowVisualLook(type: .picture, grid: .none, glass: .frosted)
+        await h.store.customizeNext(after: ids[1], look: second, colorKey: "white")
+        XCTAssertEqual(h.store.path.last, .step(.ready))
+        XCTAssertEqual(h.store.path.suffix(2), [.step(.quote), .step(.ready)])
+        XCTAssertFalse(h.store.path.contains { if case .visualize = $0 { return true } else { return false } })
+        XCTAssertEqual(h.store.progress.step, .ready)
+        XCTAssertNotNil(h.store.quote)
+        // Each window now has the style its kind is quoted under
+        XCTAssertEqual(h.store.windowRows.compactMap { $0.style }.count, 2)
+        // "Get my estimate": the interest form
+        h.store.requestCallFromEstimate()
+        XCTAssertEqual(h.store.path.last, .step(.contact))
+    }
+
+    func testTheCustomizedLooksReachTheCRMBeforeTheContactIsFiled() async throws {
+        let h = try await twoWindowsOnTheEstimate()
+        h.store.startCustomizing()
+        let ids = h.store.windowRows.map { $0.id }
+        let first = WindowVisualLook(type: .casement, grid: .prairie, glass: .lowE)
+        await h.store.customizeNext(after: ids[0], look: first, colorKey: "black")
+        await h.store.customizeAll(look: WindowVisualLook(type: .picture, grid: .colonial, glass: .clear), colorKey: "bronze")
+        XCTAssertEqual(h.store.path.last, .step(.ready))
+        // "Use for all": the same look for both windows, and sent to the server (the windows may have new ids after the style change)
+        let held = await h.fake.looks(for: try XCTUnwrap(h.store.requestId))
+        XCTAssertEqual(held.count, 2)
+        XCTAssertEqual(Set(held.values.map { $0.kind }), [.picture])
+        XCTAssertEqual(Set(held.values.map { $0.grid }), [.colonial])
+        XCTAssertEqual(Set(held.values.map { $0.color }), ["bronze"])
+        let serverIds = Set((h.store.view?.windows ?? []).map { $0.id })
+        XCTAssertEqual(Set(held.keys), serverIds, "each look is on a window the server holds")
+        XCTAssertEqual(Set(h.store.progress.looksSent.keys), serverIds, "the phone remembers what was sent")
+        // The contact: a look that changed since goes first, then the details
+        let id = try XCTUnwrap(h.store.windowRows.first?.id)
+        h.store.keepLook(WindowVisualLook(type: .awning, grid: .diamond, glass: .frosted), colorKey: "beige", for: id)
+        h.store.requestCallFromEstimate()
+        await h.store.prepareContact()
+        h.store.contactDraft = HomeownerContact(firstName: "Tia", lastName: "Bell", phone: "(501) 555-0177", email: "tia.bell@example.com", zip: "72205", contactConsent: true)
+        await h.store.submitContact()
+        XCTAssertEqual(h.store.root, .callbackSent)
+        let calls = await h.fake.calls()
+        let lookCalls = calls.indices.filter { calls[$0].hasSuffix("look") }
+        let contactCall = try XCTUnwrap(calls.firstIndex(of: "POST contact"))
+        XCTAssertFalse(lookCalls.isEmpty)
+        XCTAssertTrue(lookCalls.allSatisfy { $0 < contactCall }, "every look is sent before the contact is filed: \(calls)")
+        let after = await h.fake.looks(for: try XCTUnwrap(h.store.requestId))
+        XCTAssertEqual(after[id]?.kind, .awning, "the changed look replaced the one before")
+    }
+
+    func testALookThatCannotBeSentHoldsTheContactBackUntilThePhoneIsOnline() async throws {
+        let h = try await twoWindowsOnTheEstimate()
+        let id = try XCTUnwrap(h.store.windowRows.first?.id)
+        h.store.keepLook(WindowVisualLook(type: .bay, grid: .none, glass: .clear), colorKey: "white", for: id)
+        h.store.requestCallFromEstimate()
+        await h.store.prepareContact()
+        h.store.contactDraft = HomeownerContact(firstName: "Tia", lastName: "Bell", phone: "(501) 555-0177", email: "tia.bell@example.com", zip: "72205", contactConsent: true)
+        h.api.offline = true
+        await h.store.submitContact()
+        XCTAssertEqual(h.store.contactError, LiveHomeownerAPI.offlineMessage)
+        XCTAssertNotEqual(h.store.root, .callbackSent)
+        h.api.offline = false
+        await h.store.submitContact()
+        XCTAssertEqual(h.store.root, .callbackSent, "online again: the look goes, then the contact")
+        let held = await h.fake.looks(for: try XCTUnwrap(h.store.requestId))
+        XCTAssertEqual(held[id]?.kind, .bay)
+    }
+
+    func testTheChosenLooksSurviveARestart() async throws {
+        let h = try await twoWindowsOnTheEstimate()
+        let id = try XCTUnwrap(h.store.windowRows.first?.id)
+        h.store.keepLook(WindowVisualLook(type: .hopper, grid: .topOnly, glass: .lowE), colorKey: "sandstone", for: id)
+        h.store.progress.looksSent[id] = HomeownerWindowLookBody(look: WindowVisualLook(type: .hopper, grid: .topOnly, glass: .lowE), colorKey: "sandstone")
+        h.store.saveProgress()
+        let saved = h.progress.load(requestId: try XCTUnwrap(h.store.requestId))
+        XCTAssertEqual(saved.visuals[id]?.type, .hopper)
+        XCTAssertEqual(saved.colors[id], "sandstone")
+        XCTAssertEqual(saved.looksSent[id]?.grid, .topOnly)
     }
 
     func testAChangedConsentWordingReloadsTheWordsAndAsksAgain() async throws {
@@ -406,13 +504,12 @@ final class HomeownerStoreTests: XCTestCase {
         XCTAssertFalse(h.store.features.bestTime)
     }
 
-    func testMeasureThenAServiceGoesToTheAddressWithThatServiceOnly() async throws {
+    func testMeasureGoesStraightToTheAddressForWindowsOnly() async throws {
         let h = StoreHarness()
         h.store.startMeasuring()
-        XCTAssertEqual(h.store.path.last, .step(.service), "Measure opens the windows-or-roof choice")
-        h.store.chooseService(.roof)
-        XCTAssertEqual(h.store.selectedServices, [.roof], "one service per request")
-        XCTAssertEqual(h.store.path.last, .step(.address))
+        XCTAssertEqual(h.store.path.last, .step(.address), "no what-to-measure choice: this app measures windows")
+        XCTAssertEqual(h.store.path.count, 1)
+        XCTAssertEqual(h.store.services, [.windows])
     }
 
     // MARK: Resume
@@ -422,7 +519,7 @@ final class HomeownerStoreTests: XCTestCase {
         try await h.open(windows: FakeWindowSpec.mockupSeven, step: .styles)
         XCTAssertEqual(h.store.root, .welcome)
         XCTAssertEqual(h.store.path.last, .step(.styles))
-        XCTAssertEqual(h.store.path.first, .step(.service), "the back stack leads home, through the windows-or-roof choice")
+        XCTAssertEqual(h.store.path.first, .step(.address), "the back stack leads home, through the address")
     }
 
     func testAReturningHomeownerWithNoWindowsLandsOnTheResults() async throws {
@@ -685,13 +782,12 @@ final class HomeownerStoreTests: XCTestCase {
         XCTAssertEqual(h.store.methodTag(.corners).text, "About 3/8 inch · good for a quote")
     }
 
-    // MARK: Changing the address or the services
+    // MARK: Changing the address
 
     func testGoingBackToChangeTheAddressStartsANewQuoteAndKeepsTheName() async throws {
         let h = StoreHarness()
         await h.store.loadCompany()
-        h.store.selectedServices = [.roof]
-        h.store.continueFromWelcome()
+        h.store.startMeasuring()
         h.store.addressText = "305 Ridgeway Dr, Little Rock, AR 72205"
         await h.store.confirmAddress()
         let first = try XCTUnwrap(h.store.session?.requestId)
@@ -708,28 +804,10 @@ final class HomeownerStoreTests: XCTestCase {
         XCTAssertNil(h.store.pendingAddressChange, "nothing measured, so no question")
     }
 
-    func testChangingTheServicesForTheSameAddressStartsANewQuote() async throws {
-        let h = StoreHarness()
-        await h.store.loadCompany()
-        h.store.selectedServices = [.roof]
-        h.store.continueFromWelcome()
-        h.store.addressText = "305 Ridgeway Dr, Little Rock, AR 72205"
-        await h.store.confirmAddress()
-        let first = try XCTUnwrap(h.store.session?.requestId)
-        h.store.pop()
-        h.store.pop()
-        h.store.selectedServices = [.windows]
-        h.store.continueFromWelcome()
-        await h.store.confirmAddress()
-        XCTAssertNotEqual(h.store.session?.requestId, first)
-        XCTAssertEqual(h.store.session?.services, [.windows])
-    }
-
     func testANewAddressAfterMeasuringAsksBeforeDroppingTheWindows() async throws {
         let h = StoreHarness()
         await h.store.loadCompany()
-        h.store.selectedServices = [.windows]
-        h.store.continueFromWelcome()
+        h.store.startMeasuring()
         h.store.addressText = "305 Ridgeway Dr, Little Rock, AR 72205"
         await h.store.confirmAddress()
         let first = try XCTUnwrap(h.store.session?.requestId)
@@ -750,8 +828,7 @@ final class HomeownerStoreTests: XCTestCase {
     func testDeleteAllDataClearsTheRequestWindowsAndProgressButKeepsTheServer() async throws {
         let h = StoreHarness()
         await h.store.loadCompany()
-        h.store.selectedServices = [.windows]
-        h.store.continueFromWelcome()
+        h.store.startMeasuring()
         h.store.addressText = "305 Ridgeway Dr, Little Rock, AR 72205"
         await h.store.confirmAddress()
         await h.capture(room: "Kitchen")

@@ -23,8 +23,8 @@ final class HomeReveal {
 
 // MARK: - Shapes
 
-/// The roof's outline as a closed line through `points`, drawn as far round as `progress` (0...1) says.
-struct RoofTraceShape: Shape {
+/// The home's outline as a closed line through `points`, drawn as far round as `progress` (0...1) says.
+struct OutlineTraceShape: Shape {
     var points: [CGPoint]
     var progress: Double
 
@@ -43,8 +43,8 @@ struct RoofTraceShape: Shape {
     }
 }
 
-/// The roof's outline, closed, for the soft fill.
-struct RoofAreaShape: Shape {
+/// The home's outline, closed, for the soft fill.
+struct OutlineAreaShape: Shape {
     var points: [CGPoint]
 
     func path(in rect: CGRect) -> Path {
@@ -57,8 +57,8 @@ struct RoofAreaShape: Shape {
     }
 }
 
-/// Everything but the roof (fill it with the even-odd rule): a dimmer over the ground around the house.
-struct AroundRoofShape: Shape {
+/// Everything but the home (fill it with the even-odd rule): a dimmer over the ground around the house.
+struct AroundOutlineShape: Shape {
     var points: [CGPoint]
 
     func path(in rect: CGRect) -> Path {
@@ -72,7 +72,7 @@ struct AroundRoofShape: Shape {
 }
 
 /// A small dot on each corner the line has reached.
-struct RoofCornersShape: Shape {
+struct OutlineCornersShape: Shape {
     var points: [CGPoint]
     var fractions: [Double]
     var progress: Double
@@ -94,7 +94,7 @@ struct RoofCornersShape: Shape {
 }
 
 /// The bright dot at the front of the line while it is being drawn.
-struct RoofPenShape: Shape {
+struct OutlinePenShape: Shape {
     var points: [CGPoint]
     var progress: Double
     var radius: CGFloat = 5
@@ -183,23 +183,23 @@ struct HomeHeroMap: View {
 
     private var outlineLayers: some View {
         ZStack {
-            AroundRoofShape(points: points)
+            AroundOutlineShape(points: points)
                 .fill(Theme.scrim.opacity(0.34), style: FillStyle(eoFill: true))
                 .opacity(fill)
-            RoofAreaShape(points: points)
+            OutlineAreaShape(points: points)
                 .fill(Theme.red.opacity(0.30))
                 .opacity(fill)
-            RoofTraceShape(points: points, progress: progress)
+            OutlineTraceShape(points: points, progress: progress)
                 .stroke(Color.white.opacity(0.92), style: StrokeStyle(lineWidth: 6.5, lineCap: .round, lineJoin: .round))
-            RoofTraceShape(points: points, progress: progress)
+            OutlineTraceShape(points: points, progress: progress)
                 .stroke(Theme.red, style: StrokeStyle(lineWidth: 3.2, lineCap: .round, lineJoin: .round))
-            RoofCornersShape(points: points, fractions: fractions, progress: progress)
+            OutlineCornersShape(points: points, fractions: fractions, progress: progress)
                 .fill(Color.white)
-            RoofCornersShape(points: points, fractions: fractions, progress: progress, radius: 2)
+            OutlineCornersShape(points: points, fractions: fractions, progress: progress, radius: 2)
                 .fill(Theme.red)
-            RoofPenShape(points: points, progress: progress, radius: 9)
+            OutlinePenShape(points: points, progress: progress, radius: 9)
                 .fill(Theme.red.opacity(0.35))
-            RoofPenShape(points: points, progress: progress, radius: 4.5)
+            OutlinePenShape(points: points, progress: progress, radius: 4.5)
                 .fill(Color.white)
         }
         .allowsHitTesting(false)

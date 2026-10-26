@@ -47,6 +47,11 @@ struct LiveHomeownerAPI: HomeownerAPI {
         return try decode(HomeownerRequestView.self, from: try await send("POST", "requests/\(s.requestId)/windows", token: s.token, json: body))
     }
 
+    func setLook(_ s: HomeownerSession, windowId: String, look: HomeownerWindowLookBody) async throws -> HomeownerRequestView {
+        let body = try JSONEncoder().encode(look)
+        return try decode(HomeownerRequestView.self, from: try await send("PATCH", "requests/\(s.requestId)/windows/\(windowId)/look", token: s.token, json: body))
+    }
+
     func deleteWindow(_ s: HomeownerSession, windowId: String) async throws -> HomeownerRequestView {
         try decode(HomeownerRequestView.self, from: try await send("DELETE", "requests/\(s.requestId)/windows/\(windowId)", token: s.token))
     }

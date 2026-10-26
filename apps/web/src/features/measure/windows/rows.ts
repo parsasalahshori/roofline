@@ -5,6 +5,7 @@ import {
   type PhotoWindow,
   type PhotoWindowInput,
   type WindowCounts,
+  type WindowLook,
   type WindowPhotoMeasurement,
   type WindowPhotoScale,
   type WindowSizeClass,
@@ -56,6 +57,8 @@ export type WindowRow = {
   style?: WindowStyle;
   /** Frosted (bathroom) glass: the homeowner answered "Bathroom window?" yes. */
   frosted?: boolean;
+  /** The look the homeowner chose in the app's Customize step (kind, grid, glass, colour), when they did. */
+  look?: WindowLook;
 };
 
 /** The method, and the grade it gives, for a photographed window's scale. */
@@ -187,6 +190,7 @@ export function buildRows(src: RowSources): WindowRow[] {
       was: null,
       ...(g.members[0]!.style !== undefined && { style: g.members[0]!.style }),
       ...(g.members.some((m) => m.frosted === true) && { frosted: true }),
+      ...(g.members.find((m) => m.look !== undefined)?.look !== undefined && { look: g.members.find((m) => m.look !== undefined)!.look! }),
     });
   }
 

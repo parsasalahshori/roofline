@@ -2,7 +2,7 @@ import RooflineCore
 import SwiftUI
 
 /// 01 Welcome: what the app does, the way Apple's own "What's New" sheets say it: the name, three feature rows with a
-/// symbol each, and one prominent Measure button. What to measure (windows or roof) is the next screen.
+/// symbol each, and one prominent Measure button.
 struct WelcomeScreen: View {
     @Environment(HomeownerStore.self) private var store
     @State private var showServerSetting = false
@@ -16,8 +16,8 @@ struct WelcomeScreen: View {
                 VStack(alignment: .leading, spacing: 26) {
                     WelcomeFeature(symbol: WCIcon.lidar.symbol, title: "Your iPhone does the measuring",
                                    line: "Point it at a window and it finds the size in about a minute.")
-                    WelcomeFeature(symbol: WCIcon.roof.symbol, title: "Roofs measured from above",
-                                   line: "Type your address and we size your roof from satellite pictures.")
+                    WelcomeFeature(symbol: "paintpalette", title: "Try new windows on your own photo",
+                                   line: "Pick the type, grid, color and glass, and see it in your home.")
                     WelcomeFeature(symbol: "dollarsign.circle", title: "A price range right away",
                                    line: "Good, Better and Best, before anyone comes to your home.")
                 }
@@ -60,12 +60,12 @@ struct WelcomeScreen: View {
                 .foregroundStyle(Theme.ink2)
                 .accessibilityLabel("Settings")
             }
-            Text("Measure your home from your phone.")
+            Text("Measure your windows from your phone.")
                 .font(.largeTitle.weight(.bold))
                 .foregroundStyle(Theme.ink)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
-            Text("Windows or roof: see your price in minutes.")
+            Text("Windows: see your price in minutes.")
                 .font(.body)
                 .foregroundStyle(Theme.ink2)
                 .fixedSize(horizontal: false, vertical: true)

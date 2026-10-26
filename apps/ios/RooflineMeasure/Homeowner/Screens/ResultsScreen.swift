@@ -1,18 +1,14 @@
 import RooflineCore
 import SwiftUI
 
-/// 03 Results (ios-hw-03): "Here's your home": the house from above, then one card per service the homeowner picked. Windows are
-/// next (blue); the roof is a price range from above; a roof the satellite pictures cannot show says so instead of a price. Roof only: straight on
-/// to the contact form.
+/// 03 Results (ios-hw-03): "Here's your home": the house from above, then what comes next (measuring the windows).
 struct ResultsScreen: View {
     @Environment(HomeownerStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @State private var reveal = HomeReveal()
 
-    private var includesWindows: Bool { store.services.contains(.windows) }
-
-    /// The roof's outline as a satellite hero: only when the server gave a usable outline and the phone could reach it.
+    /// The home's outline on a map hero: only when the server gave a usable outline and the phone could reach it.
     /// Otherwise (no outline, an old request that came from disk, offline) today's small static card, with no error.
     private var heroGeometry: HomeOutlineGeometry? {
         store.offline ? nil : HomeOutlineGeometry(outline: store.home?.outline)
@@ -30,14 +26,9 @@ struct ResultsScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                StepProgress(step: 3)
+                StepProgress(step: 2)
                 if let g = heroGeometry { heroCard(g) } else { homeCard }
-                if store.services.contains(.windows) { windowsCard.revealed(cardsVisible, order: 0, reduceMotion: reduceMotion) }
-                if store.services.contains(.roof) { roofCard.revealed(cardsVisible, order: store.services.contains(.windows) ? 1 : 0, reduceMotion: reduceMotion) }
-                // Roof only: this is the result page (windows get theirs on the quote, after measuring)
-                if !includesWindows, store.services.contains(.roof) {
-                    EstimateCallCard(service: .roof).revealed(cardsVisible, order: 1, reduceMotion: reduceMotion)
-                }
+                windowsCard.revealed(cardsVisible, order: 0, reduceMotion: reduceMotion)
                 if store.offline {
                     InfoPanel(icon: .info, text: "You're offline. We'll refresh this when you're back.").wcPanel()
                 }
@@ -51,13 +42,13 @@ struct ResultsScreen: View {
         .background(Theme.ground.ignoresSafeArea())
         .hiNav(title: "Here's your home", display: .large)
         .wcFooter {
-            WCPrimaryButton(title: includesWindows ? "Measure my windows" : "Continue", icon: includesWindows ? nil : .arrow) { store.continueFromResults() }
+            WCPrimaryButton(title: "Measure my windows") { store.continueFromResults() }
         }
     }
 
     // MARK: Cards
 
-    /// The hero: their house from above with the roof drawn round it, the address and the size under it.
+    /// The hero: their house from above with its outline drawn round it, the address and the size under it.
     private func heroCard(_ g: HomeOutlineGeometry) -> some View {
         VStack(spacing: 0) {
             GeometryReader { geo in
@@ -69,7 +60,7 @@ struct ResultsScreen: View {
             }
             .frame(height: 250)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("A satellite view of your home with your roof outlined.")
+            .accessibilityLabel("A view of your home from above with its outline drawn on it.")
             AdaptiveStack(alignment: .center, spacing: 8) {
                 addressText
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -101,7 +92,7 @@ struct ResultsScreen: View {
     /// Today's small card, for a home with no outline to draw (or a phone that is offline).
     private var homeCard: some View {
         HStack(spacing: 16) {
-            RoofThumb(outline: store.home?.outline.map { HomeownerOutlineShape(points: $0.points) })
+            HomeThumb(outline: store.home?.outline.map { HomeownerOutlineShape(points: $0.points) })
                 .frame(width: 96, height: 70)
             VStack(alignment: .leading, spacing: 0) {
                 addressText
@@ -128,7 +119,7 @@ struct ResultsScreen: View {
             parts.append(city)
         }
         if let f = store.home?.floorsText { parts.append(f) }
-        if let ft = store.progress.perimeterFt ?? store.home?.outline.flatMap({ RoofOutline.perimeterFeet($0) }) { parts.append("about \(ft) ft of outside wall") }
+        if let ft = store.progress.perimeterFt ?? store.home?.outline.flatMap({ HomeFootprint.perimeterFeet($0) }) { parts.append("about \(ft) ft of outside wall") }
         return parts.joined(separator: " · ")
     }
 
@@ -171,60 +162,6 @@ struct ResultsScreen: View {
         }
         return Text(attributed).font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
     }
-
-    private var roofName: some View {
-        HStack(spacing: 14) {
-            Image(systemName: WCIcon.roof.symbol)
-                .symbolRenderingMode(.hierarchical)
-                .font(.title2)
-                .foregroundStyle(Theme.red)
-                .frame(width: 32)
-                .accessibilityHidden(true)
-            Text("Roof").font(.headline).foregroundStyle(Theme.ink)
-        }
-    }
-
-    private var roofCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // The price sits beside the name when it fits, under it when it does not (large text), never cut or squeezed
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) {
-                    roofName
-                    Spacer(minLength: 8)
-                    roofPrice.fixedSize()
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    roofName
-                    roofPrice.fixedSize()
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    roofName
-                    roofPrice.lineLimit(2)
-                }
-            }
-            Text(roofBody).font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
-                .padding(.leading, 46)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .wcCard()
-        .accessibilityElement(children: .combine)
-    }
-
-    @ViewBuilder private var roofPrice: some View {
-        if let r = store.roofEstimate {
-            Text(Money.range(r.low, r.high)).font(.title3.weight(.heavy)).monospacedDigit().foregroundStyle(Theme.ink)
-        }
-    }
-
-    private var roofBody: String {
-        if let note = store.roofNote { return note.message }
-        guard let r = store.roofEstimate else { return "We price your roof at your free visit." }
-        if let sq = r.squares, sq > 0 { return "About \(Self.squares(sq)) squares, measured from above. Exact price at your free visit." }
-        return "Measured from above. Exact price at your free visit."
-    }
-
-    private static func squares(_ s: Double) -> String { s == s.rounded() ? "\(Int(s))" : String(format: "%.1f", s) }
 }
 
 /// Dollars as the mockups write them: "$9,800", and a range "$9,800–12,100".

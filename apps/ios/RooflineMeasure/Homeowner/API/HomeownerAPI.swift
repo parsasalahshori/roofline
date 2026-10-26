@@ -30,6 +30,9 @@ protocol HomeownerAPI: Sendable {
     func uploadPhoto(_ s: HomeownerSession, jpeg: Data) async throws -> WindowPhotoUpload
     /// POST /requests/:id/windows (idempotent on the window id)
     func addWindow(_ s: HomeownerSession, window: PhotoWindowInput) async throws -> HomeownerRequestView
+    /// PATCH /requests/:id/windows/:windowId/look: the look the homeowner customized (kind, grid, glass, colour). The server keeps it with the
+    /// window, shows it to the staff and puts it in the lead; it never changes the price. Sending it again replaces it.
+    func setLook(_ s: HomeownerSession, windowId: String, look: HomeownerWindowLookBody) async throws -> HomeownerRequestView
     /// DELETE /requests/:id/windows/:windowId
     func deleteWindow(_ s: HomeownerSession, windowId: String) async throws -> HomeownerRequestView
     /// PATCH /requests/:id {estimatedTotalOverride}; nil takes it back to the address estimate
@@ -53,6 +56,11 @@ protocol HomeownerAPI: Sendable {
 }
 
 extension HomeownerAPI {
+    /// A server (or a test double) without the look route: the look stays on the phone.
+    func setLook(_ s: HomeownerSession, windowId: String, look: HomeownerWindowLookBody) async throws -> HomeownerRequestView {
+        throw HomeownerAPIError(status: 404, message: "We couldn't find that.", code: "not_found")
+    }
+
     /// A server (or a test double) that does not look for windows: the caller carries on by hand.
     func detectWindows(_ s: HomeownerSession, jpeg: Data, timeout: TimeInterval) async throws -> WindowDetection {
         throw HomeownerAPIError(status: 503, message: "Finding windows automatically isn't available right now.", code: "detector_unavailable")

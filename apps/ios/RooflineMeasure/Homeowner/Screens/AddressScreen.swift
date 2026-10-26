@@ -16,13 +16,9 @@ struct AddressScreen: View {
     private var showCard: Bool { store.addressPlace != nil || store.addressLocked || (hasAddress && !focused) }
 
     /// The question this screen asks, and why: the lead under the title.
-    private var question: String { store.services.contains(.windows) ? "Where are the windows?" : "Where's your home?" }
+    private var question: String { "Where are the windows?" }
 
-    private var subtitle: String {
-        store.services.contains(.windows)
-            ? "So we send the right local rep and check what your home's windows usually look like."
-            : "So we can measure your roof from above and send the right local rep."
-    }
+    private var subtitle: String { "So we send the right local rep and check what your home's windows usually look like." }
 
     private var showingSuggestions: Bool { !suggestions.isEmpty && focused }
 
@@ -40,7 +36,7 @@ struct AddressScreen: View {
                         JourneyLead(question, heading: true)
                         JourneyLead(subtitle)
                     }
-                    StepProgress(step: 2)
+                    StepProgress(step: 1)
                 }
             }
             if !showingSuggestions {

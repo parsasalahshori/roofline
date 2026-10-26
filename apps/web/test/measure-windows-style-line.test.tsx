@@ -64,4 +64,26 @@ describe("the staff windows table shows a homeowner window's style choice and fr
     );
     expect(document.querySelector('[data-window-style]')).toHaveTextContent('Stays shut');
   });
+
+  it("shows the look the homeowner customized (kind, grid, color, glass) in one line, and nothing for a window without one", () => {
+    render(
+      <WindowsTable
+        rows={[
+          row('a', { name: 'Kitchen', look: { kind: 'casement', grid: 'prairie', glass: 'lowE', color: 'black' } }),
+          row('b', { name: 'Den', tag: 'W2', look: { kind: 'doubleHung', grid: 'none', glass: 'clear', color: 'white' } }),
+          row('c', { name: 'Hall', tag: 'W3' }),
+        ]}
+        selectedKey={null}
+        onSelect={noop}
+        actions={actions as never}
+        summary="3 windows"
+        covers="all-sides"
+        countsOpen={false}
+        onCountsOpen={noop}
+      />,
+    );
+    const lines = document.querySelectorAll('[data-window-look]');
+    expect([...lines].map((l) => l.textContent)).toEqual(['Casement · Prairie grid · Black · Low-E glass', 'Double-hung · No grid · White · Clear glass']);
+    expect(screen.getByText('Hall').closest('td')!.querySelector('[data-window-look]')).toBeNull();
+  });
 });

@@ -49,6 +49,7 @@ import {
   toE164,
   WINDOW_STYLES,
   type WindowAdjustments,
+  WindowLookSchema,
   cardProblem,
   publicFactsOf,
 } from '@roofline/shared';
@@ -575,7 +576,12 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
         if (same !== undefined) {
           // A window whose size an accepted scan set (scale, and the photo corners of a room-scan window) is compared without those
           const scanned = (await scansForRequest(tx, ctx, request.id)).some((s) => s.windowId === input.id && s.status === 'measured');
-          const bare = (w: PhotoWindowInput) => (scanned ? { ...w, scale: null, uploadId: null, corners: null } : w);
+          // (the look is the homeowner's later choice, set by its own call: a window sent again without it is still the same window)
+          const bare = (w: PhotoWindowInput) => {
+            const rest: Partial<PhotoWindowInput> = { ...w };
+            delete rest.look;
+            return scanned ? { ...rest, scale: null, uploadId: null, corners: null } : rest;
+          };
           if (canonicalJson(bare(same)) !== canonicalJson(bare(input))) throw new AppError(409, 'A different window with this id is already saved. Give the new window its own id.', 'id').coded('window_id_taken');
           return { created: false, view: await buildRequestView(tx, ctx, current) };
         }
@@ -588,6 +594,34 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
       });
       if (result === null) throw new AppError(409, "We can't take windows for this request.").coded('callback_only');
       res.status(result.created ? 201 : 200).json(result.view);
+    }),
+  );
+
+  // The look the homeowner chose for one of their windows ("Customize your windows"): kind, grid, glass, colour. Descriptive only:
+  // it is kept with the window and shown to staff, and never changes the price. Sent again, it replaces the one before.
+  router.patch(
+    '/:slug/requests/:id/windows/:windowId/look',
+    route(async (req, res) => {
+      const { ctx, request } = authed(res);
+      requireWindows(request);
+      const windowId = typeof req.params.windowId === 'string' ? req.params.windowId : '';
+      if (!WINDOW_ID.test(windowId)) throw new AppError(404, MESSAGES.notFound);
+      const look = parse(WindowLookSchema, req.body);
+      await auth.budget(request.id, 'windows');
+      const now = clock.now();
+      const out = await withTenant(pools, ctx, async (tx) => {
+        const locked = await getHomeownerRequest(tx, ctx, request.id, { lock: true });
+        if (locked === null || locked.windowMeasurementId === null) return null;
+        const found = await getWindowMeasurement(tx, ctx, locked.windowMeasurementId, { lock: true });
+        const list = found?.adjustments.photoWindows ?? [];
+        // Only the homeowner's own windows: a window a rep added to the address is not theirs to describe.
+        if (found === null || !list.some((w) => w.id === windowId && w.source === HOMEOWNER_APP_SOURCE)) throw new AppError(404, 'We could not find that window.').coded('window_not_found');
+        const next: WindowAdjustments = { ...found.adjustments, photoWindows: list.map((w) => (w.id === windowId ? { ...w, look } : w)) };
+        await updateWindowMeasurement(tx, ctx, found.id, { adjustments: next }, now);
+        return buildRequestView(tx, ctx, locked);
+      });
+      if (out === null) throw new AppError(404, 'We could not find that window.').coded('window_not_found');
+      res.json(out);
     }),
   );
 

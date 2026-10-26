@@ -3,7 +3,7 @@ import SwiftUI
 /// The app's icon names, each drawn as an SF Symbol. The old hand-drawn set is gone; the cases stay so call sites compile.
 /// Every symbol exists in SF Symbols 5 (iOS 17), the app's minimum.
 enum WCIcon: String, CaseIterable {
-    case home, win, roof, gutter, factory, arrow, check, chevLeft, chevRight, pin, lock, lidar, target, cube, plus, alert, ruler
+    case home, win, gutter, factory, arrow, check, chevLeft, chevRight, pin, lock, lidar, target, cube, plus, alert, ruler
     case upload, calendar, truck, message, undo, close, phone, camera, clock, refresh, info
 
     /// The SF Symbol this icon is drawn with.
@@ -11,7 +11,6 @@ enum WCIcon: String, CaseIterable {
         switch self {
         case .home: return "house.fill"
         case .win: return "window.vertical.closed"
-        case .roof: return "house"
         case .gutter: return "drop"
         case .factory: return "building.2"
         case .arrow: return "arrow.right"

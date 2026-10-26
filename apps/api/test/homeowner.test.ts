@@ -1051,6 +1051,58 @@ describe("the company's own catalog", () => {
   });
 });
 
+describe('the look of a window (Customize your windows)', () => {
+  const LOOK = { kind: 'casement', grid: 'prairie', glass: 'lowE', color: 'black' } as const;
+  const patch = (s: Started, windowId: string, body: unknown) => send('patch', `/requests/${s.id}/windows/${windowId}/look`, body, { token: s.token });
+
+  test('is kept with the window, comes back in the view, and a window sent again is still the same window', async () => {
+    const s = await start();
+    const first = await addAr(s, 'w1', 36, 48);
+    expect(first.res.status).toBe(201);
+    expect((first.res.body as HomeownerRequestView).windows[0]!.look).toBeUndefined();
+    const res = await patch(s, 'w1', LOOK);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect((res.body as HomeownerRequestView).windows[0]!.look).toEqual(LOOK);
+    const [row] = await q(`select m.adjustments from homeowner_requests r join window_measurements m on m.id = r.window_measurement_id where r.id = $1`, [s.id]);
+    expect(row!.adjustments.photoWindows[0]).toMatchObject({ id: 'w1', source: 'homeowner-app', look: LOOK });
+    // The app may send the window once more (a retry): 200, the look stays
+    const again = await send('post', `/requests/${s.id}/windows`, first.body, { token: s.token });
+    expect(again.status, JSON.stringify(again.body)).toBe(200);
+    expect((await view(s)).windows[0]!.look).toEqual(LOOK);
+    // A new look replaces the old one
+    expect((await patch(s, 'w1', { ...LOOK, kind: 'picture', grid: 'none', glass: 'clear' })).status).toBe(200);
+    expect((await view(s)).windows[0]!.look).toEqual({ kind: 'picture', grid: 'none', glass: 'clear', color: 'black' });
+  });
+
+  test('is checked: strict keys, known values, the homeowner\'s own window, the token', async () => {
+    const s = await start();
+    await addAr(s, 'w1', 36, 48);
+    for (const bad of [{ ...LOOK, extra: 1 }, { ...LOOK, kind: 'roof' }, { ...LOOK, grid: 'plaid' }, { ...LOOK, glass: 'tinted' }, { ...LOOK, color: 'Not A Key' }, { ...LOOK, color: '' }, { kind: 'casement' }, {}]) {
+      const res = await patch(s, 'w1', bad);
+      expect(res.status, JSON.stringify([bad, res.body])).toBe(400);
+    }
+    expect((await patch(s, 'nope', LOOK)).status).toBe(404);
+    expect((await patch(s, 'has space', LOOK)).status).toBe(404);
+    expect((await send('patch', `/requests/${s.id}/windows/w1/look`, LOOK, { token: 'x'.repeat(43) })).status).toBe(401);
+    expect((await view(s)).windows[0]!.look).toBeUndefined();
+  });
+
+  test('reaches the CRM: the lead the contact step files says how each window was customized', async () => {
+    const s = await start();
+    await addAr(s, 'w1', 36, 48, { room: 'Kitchen' });
+    await addAr(s, 'w2', 30, 60, { room: 'Den' });
+    expect((await patch(s, 'w1', LOOK)).status).toBe(200);
+    expect((await patch(s, 'w2', { kind: 'doubleHung', grid: 'none', glass: 'clear', color: 'white' })).status).toBe(200);
+    const res = await send('post', `/requests/${s.id}/contact`, contactBody(), { token: s.token });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    const [line] = await q(`select summary from activities where company_id = $1 and kind = 'job.created' and summary like 'Homeowner app request%'`, [t.seed.a.companyId]);
+    expect(line!.summary).toContain('Windows as customized: Kitchen 36 x 48 (Casement · Prairie grid · Black · Low-E glass); Den 30 x 60 (Double-hung · No grid · White · Clear glass)');
+    // Still on the measurement the staff open
+    const [row] = await q(`select m.adjustments from homeowner_requests r join window_measurements m on m.id = r.window_measurement_id where r.id = $1`, [s.id]);
+    expect(row!.adjustments.photoWindows.map((w: { look: unknown }) => w.look)).toEqual([LOOK, { kind: 'doubleHung', grid: 'none', glass: 'clear', color: 'white' }]);
+  });
+});
+
 describe('contact: the lead and the consent', () => {
   async function ready(): Promise<Started> {
     const s = await start();

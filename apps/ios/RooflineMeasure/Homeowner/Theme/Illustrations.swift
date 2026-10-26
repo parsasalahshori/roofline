@@ -89,29 +89,19 @@ struct AddressMap: View {
 
 // MARK: - The home from above
 
-/// The roof as a small picture (ios-hw-03): dark ground, the roof's shape in grey with a tape-yellow edge and hip lines.
-/// With the server's outline it is that outline; without, a plain hip roof.
-struct RoofThumb: View {
+/// The home as a small picture seen from above (ios-hw-03): dark ground, the home's outline in grey with a tape-yellow edge.
+/// With the server's outline it is that outline; without, a plain rectangle.
+struct HomeThumb: View {
     var outline: HomeownerOutlineShape?
 
     var body: some View {
         Canvas { ctx, size in
             let ground = Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 10)
             ctx.fill(ground, with: .color(Color(light: 0x4A5A44, dark: 0x38452F)))
-            let roof = outline?.path(in: CGRect(x: size.width * 0.17, y: size.height * 0.17, width: size.width * 0.66, height: size.height * 0.66))
+            let shape = outline?.path(in: CGRect(x: size.width * 0.17, y: size.height * 0.17, width: size.width * 0.66, height: size.height * 0.66))
                 ?? Path(CGRect(x: size.width * 0.18, y: size.height * 0.22, width: size.width * 0.64, height: size.height * 0.56))
-            ctx.fill(roof, with: .color(Color(white: 0.5, opacity: 0.85)))
-            ctx.stroke(roof, with: .color(Theme.tape), lineWidth: 1.6)
-            // Hip lines from each corner toward the ridge
-            let b = roof.boundingRect
-            var hips = Path()
-            let ridgeL = CGPoint(x: b.minX + b.width * 0.32, y: b.midY), ridgeR = CGPoint(x: b.maxX - b.width * 0.32, y: b.midY)
-            hips.move(to: CGPoint(x: b.minX, y: b.minY)); hips.addLine(to: ridgeL)
-            hips.move(to: CGPoint(x: b.minX, y: b.maxY)); hips.addLine(to: ridgeL)
-            hips.move(to: CGPoint(x: b.maxX, y: b.minY)); hips.addLine(to: ridgeR)
-            hips.move(to: CGPoint(x: b.maxX, y: b.maxY)); hips.addLine(to: ridgeR)
-            hips.move(to: ridgeL); hips.addLine(to: ridgeR)
-            ctx.stroke(hips, with: .color(Color(white: 0.3, opacity: 0.8)), lineWidth: 1)
+            ctx.fill(shape, with: .color(Color(white: 0.5, opacity: 0.85)))
+            ctx.stroke(shape, with: .color(Theme.tape), lineWidth: 1.6)
         }
         .accessibilityHidden(true)
     }

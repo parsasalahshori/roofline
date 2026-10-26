@@ -15,11 +15,13 @@ device checks (`Shared/`). The homeowner app's design is `~/RooflineWork/design/
 
 ### The journey
 
-Welcome (what are you looking for) > Address (map pin) > Results (roof price, window count) > Tips > Rooms > Method >
-**Measure** > Label sheet (room and name) > Windows list ("Did we miss any?") > Style per window > Quote (Good / Better / Best) >
-Contact (consent) > Visit time (or "Call me to pick a time") > Booked (Add to Calendar) > My order (status, windows, messages).
-Branches: an apartment, duplex or address the server will not price goes to **Call-back** (03b: a phone number, then the contact
-form, then "We'll call you"); a roof-only request skips the window screens. It resumes where the homeowner left off
+Welcome > Address (map pin) > Results (window count) > Tips > Rooms > Method >
+**Measure** > Label sheet (room and name) > Windows list ("Did we miss any?") > Your estimate (price banner, **Customize your
+windows**, or "Skip and get my estimate") > Customize (the visualizer, "Window 2 of 5", Back / Next / Use for all) > **Your windows
+are ready** (each window's picture and look, the updated price, "Get my estimate") > Contact (consent; the looks go to the CRM first,
+`PATCH .../windows/:id/look`) > Thanks ("WinChoice will call you with your estimate") > My order. The app is windows only: no roof,
+no what-to-measure choice. Branches: an apartment, duplex or address the server will not price goes to **Call-back** (03b: a phone
+number, then the contact form, then "We'll call you"). It resumes where the homeowner left off
 (the request id and bearer token are in the **Keychain**, the last screen and rooms in UserDefaults).
 
 The results screen opens with the home from above (`Screens/HomeHero.swift`, `HomeOutlineGeometry.swift`): Apple's satellite

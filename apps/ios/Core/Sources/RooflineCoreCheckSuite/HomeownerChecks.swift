@@ -170,12 +170,10 @@ private let homeownerApiChecks: [Check] = [
     },
     Check("Homeowner API: the contract's request view decodes, and a bad item is skipped, not fatal") { ctx in
         let view = try decodeView(contractView)
-        ctx.equal(view.request.services, [.windows, .roof])
+        ctx.equal(view.request.services, [.windows], "WinChoice is windows only: a roof in the answer is dropped")
         ctx.expect(view.request.contacted, "contactFiled")
         ctx.equal(view.request.estimatedTotalOverride, nil)
         ctx.equal(view.request.estimate?.windows?.likely, 14)
-        ctx.near(view.request.estimate?.roof?.low, 14000)
-        ctx.equal(view.request.estimate?.roofNote, nil)
         ctx.equal(view.request.home?.floors, 1.5)
         ctx.equal(view.request.home?.floorsText, "1 1/2 floors")
         ctx.equal(view.request.home?.outline?.points.count, 2)
@@ -230,12 +228,11 @@ private let homeownerApiChecks: [Check] = [
         ctx.equal(created.status, .callback)
         ctx.equal(created.callbackReason, "unit")
         ctx.equal(created.home.floors, nil)
-        ctx.expect(created.estimate.windows == nil && created.estimate.roof == nil)
-        ctx.equal(created.estimate.roofNote, nil)
+        ctx.expect(created.estimate.windows == nil)
         ctx.equal(created.services, [.windows])
         ctx.expect(created.expiresAt != nil)
-        let body = try json(HomeownerCreateBody(address: "305 Ridgeway Dr", services: [.roof, .windows]))
-        ctx.equal(body["services"] as? [String], ["windows", "roof"], "services are sent in the screen order")
+        let body = try json(HomeownerCreateBody(address: "305 Ridgeway Dr", services: [.windows]))
+        ctx.equal(body["services"] as? [String], ["windows"], "only windows are asked for")
         ctx.equal(Set(body.keys), ["address", "services"])
 
         let company = try JSONDecoder().decode(HomeownerCompany.self, from: Data("""
@@ -245,8 +242,8 @@ private let homeownerApiChecks: [Check] = [
           "windowStyles": [ { "key": "double-hung", "label": "Double-hung" }, { "bad": 1 } ], "trust": { "reviews": 4.9, "since": 2004 },
           "limits": { "maxWindows": 60, "maxPhotoBytes": 12582912, "maxRoomLength": 40, "maxLabelLength": 80, "tokenDays": 60 } }
         """.utf8))
-        ctx.equal(company.services, [.roof, .windows, .gutters], "an older server may still list gutters; they decode")
-        ctx.equal(HomeownerService.offered(company.services), [.roof, .windows], "but a homeowner is never offered them")
+        ctx.equal(company.services, [.windows], "an older server may still list a roof or gutters; they are dropped")
+        ctx.equal(HomeownerService.offered(company.services), [.windows], "a homeowner is only offered windows")
         ctx.equal(company.booking, false)
         ctx.equal(company.consent?.version, "2026-10-16")
         ctx.expect(company.consent?.text.contains("\"Send my request\"") == true)
@@ -475,41 +472,48 @@ private let homeownerFlowChecks: [Check] = [
         ctx.equal(ResumeRouter.target(saved: .quote, hasSession: true, snapshot: ResumeSnapshot(windowCount: 3, unstyledCount: 2)), .list, "windows without a style go back to the list, whose button opens the estimate")
         ctx.equal(ResumeRouter.target(saved: .book, hasSession: true, snapshot: measured), .contact, "no booking before contact details")
         ctx.equal(ResumeRouter.target(saved: .book, hasSession: true, snapshot: ResumeSnapshot(windowCount: 3, hasContact: true)), .book)
-        // Roof only: results, then straight to contact and booking
-        let roof = ResumeSnapshot(services: [.roof])
-        ctx.equal(ResumeRouter.target(saved: .coaching, hasSession: true, snapshot: roof), .results, "no measuring tips without windows")
-        ctx.equal(ResumeRouter.target(saved: .contact, hasSession: true, snapshot: roof), .contact)
-        ctx.equal(ResumeRouter.target(saved: .book, hasSession: true, snapshot: ResumeSnapshot(services: [.roof], hasContact: true)), .book)
-    },
-    Check("Homeowner API: a roof the satellite pictures cannot show comes with its sentence and no price; windows are unaffected") { ctx in
-        let view = try decodeView(#"{ "request": { "id": "r", "status": "ready", "services": ["windows", "roof"], "estimate": { "windows": { "low": 12, "high": 16, "likely": 14 }, "roof": null, "roofNote": { "reason": "satellite-unusable", "message": "We can't measure your roof from satellite images — the pictures of your home aren't clear or recent enough. We'll measure it at your free visit." } } } }"#)
-        ctx.equal(view.request.estimate?.roof, nil)
-        ctx.equal(view.request.estimate?.windows?.likely, 14)
-        ctx.equal(view.request.estimate?.roofNote?.reason, "satellite-unusable")
-        ctx.equal(view.request.estimate?.roofNote?.message, SatelliteCopy.message)
-        let called = try JSONDecoder().decode(HomeownerCreated.self, from: Data(#"{ "requestId": "r", "token": "t", "status": "callback", "callbackReason": "satellite-unusable", "home": { "address": "x", "floors": null, "outline": null }, "estimate": { "windows": null, "roof": null, "roofNote": { "reason": "satellite-unusable", "message": "m" } }, "services": ["roof"] }"#.utf8))
-        ctx.equal(called.callbackReason, "satellite-unusable")
-        ctx.equal(called.estimate.roofNote?.message, "m")
+        // The ready screen needs windows, and goes back to the list while any is without a style
+        ctx.equal(ResumeRouter.target(saved: .ready, hasSession: true, snapshot: fresh), .results, "no ready screen without a window")
+        ctx.equal(ResumeRouter.target(saved: .ready, hasSession: true, snapshot: measured), .ready)
+        ctx.equal(ResumeRouter.target(saved: .ready, hasSession: true, snapshot: ResumeSnapshot(windowCount: 3, unstyledCount: 1)), .list)
     },
     Check("HomeownerFlow: the back stack that leads to a screen") { ctx in
-        let w: Set<HomeownerService> = [.windows, .roof]
-        ctx.equal(HomeownerFlow.path(to: .welcome, services: w), [])
-        ctx.equal(HomeownerFlow.path(to: .service, services: w), [.service], "windows or roof comes first")
-        ctx.equal(HomeownerFlow.path(to: .results, services: w), [.service, .address, .results])
-        ctx.equal(HomeownerFlow.path(to: .rooms, services: w), [.service, .address, .results, .coaching, .rooms])
-        ctx.equal(HomeownerFlow.path(to: .list, services: w).last, .list)
-        ctx.equal(HomeownerFlow.path(to: .quote, services: w), [.service, .address, .results, .coaching, .rooms, .list, .quote])
-        ctx.equal(HomeownerFlow.path(to: .book, services: w).suffix(3), [.quote, .contact, .book])
-        ctx.equal(HomeownerFlow.path(to: .contact, services: [.roof]), [.service, .address, .results, .contact], "roof only skips the measuring")
-        ctx.equal(HomeownerFlow.path(to: .status, services: w), [], "My order has no back stack")
-        ctx.equal(HomeownerFlow.afterResults(services: [.windows]), .coaching)
-        ctx.equal(HomeownerFlow.afterResults(services: [.roof]), .contact)
-        ctx.equal(HomeownerFlow.progressDots(.service), 1)
-        ctx.equal(HomeownerFlow.progressDots(.address), 2)
-        ctx.equal(HomeownerFlow.progressDots(.results), 3)
+        ctx.equal(HomeownerFlow.path(to: .welcome), [])
+        ctx.equal(HomeownerFlow.path(to: .address), [.address], "Measure goes straight to the address")
+        ctx.equal(HomeownerFlow.path(to: .results), [.address, .results])
+        ctx.equal(HomeownerFlow.path(to: .rooms), [.address, .results, .coaching, .rooms])
+        ctx.equal(HomeownerFlow.path(to: .list).last, .list)
+        ctx.equal(HomeownerFlow.path(to: .quote), [.address, .results, .coaching, .rooms, .list, .quote])
+        ctx.equal(HomeownerFlow.path(to: .ready), [.address, .results, .coaching, .rooms, .list, .quote, .ready], "customizing sits between the estimate and the form")
+        ctx.equal(HomeownerFlow.path(to: .book).suffix(3), [.quote, .contact, .book])
+        ctx.equal(HomeownerFlow.path(to: .status), [], "My order has no back stack")
+        ctx.equal(HomeownerFlow.afterResults, .coaching)
+        ctx.equal(HomeownerFlow.progressDots(.address), 1)
+        ctx.equal(HomeownerFlow.progressDots(.results), 2)
         ctx.equal(HomeownerFlow.progressDots(.coaching), 3)
         ctx.equal(HomeownerFlow.progressDots(.list), 0)
         ctx.expect(HomeownerStep.booked.isTerminal && HomeownerStep.status.isTerminal && !HomeownerStep.list.isTerminal)
+    },
+    Check("Customize: the look sent to the CRM has exactly four keys, in the server's words, and reads as one line") { ctx in
+        let look = WindowVisualLook(type: .casement, grid: .prairie, glass: .lowE)
+        let body = try json(HomeownerWindowLookBody(look: look, colorKey: "black"))
+        ctx.equal(Set(body.keys), ["kind", "grid", "glass", "color"], "no other key: the server refuses one")
+        ctx.equal(body["kind"] as? String, "casement")
+        ctx.equal(body["grid"] as? String, "prairie")
+        ctx.equal(body["glass"] as? String, "lowE")
+        ctx.equal(body["color"] as? String, "black")
+        let other = try json(HomeownerWindowLookBody(look: WindowVisualLook(type: .pictureCasements, grid: .queenAnne, glass: .frosted), colorKey: "white"))
+        ctx.equal(other["kind"] as? String, "pictureCasements")
+        ctx.equal(other["grid"] as? String, "queenAnne")
+        ctx.equal(other["glass"] as? String, "frosted")
+        ctx.equal(look.oneLine(colorLabel: "Black"), "Casement · Prairie · Black · Low-E")
+        ctx.equal(WindowVisualLook().oneLine(colorLabel: "White"), "Double-hung · No grid · White · Clear")
+        ctx.equal(look.oneLine(colorLabel: nil), "Casement · Prairie · Low-E")
+        // Every kind, grid and glass the app can choose is a word the server accepts (WINDOW_LOOK_* in packages/shared)
+        let kinds = ["doubleHung", "singleHung", "slider2", "slider3", "casement", "casementPair", "awning", "hopper", "picture", "pictureCasements", "bay", "bow", "garden", "arch", "halfRound", "circle", "specialty"]
+        ctx.equal(VisualWindowType.allCases.map { $0.rawValue }, kinds)
+        ctx.equal(VisualGrid.allCases.map { $0.rawValue }, ["none", "colonial", "prairie", "diamond", "queenAnne", "topOnly"])
+        ctx.equal(VisualGlass.allCases.map { $0.rawValue }, ["clear", "lowE", "frosted"])
     },
     Check("WindowCountHint: 'Did we miss any?' against what homes like theirs have") { ctx in
         let e = HomeownerWindowEstimate(low: 7, high: 9, likely: 7)
@@ -530,16 +534,16 @@ private let homeownerFlowChecks: [Check] = [
     Check("Callback and order copy: plain words for each reason and each stage") { ctx in
         ctx.expect(CallbackCopy.reason("unit").lead.hasPrefix("This building looks like it has more than one home."))
         ctx.expect(CallbackCopy.reason("unit").rest.contains("apartments and duplexes"))
-        for code in ["unit", "address", "home", "busy", "not-rooftop", "roof-review", nil, "something-new"] {
+        for code in ["unit", "address", "home", "busy", "not-rooftop", "satellite-unusable", nil, "something-new"] {
             let r = CallbackCopy.reason(code)
             ctx.expect(!r.lead.isEmpty && !r.rest.isEmpty)
             ctx.expect(!(r.lead + r.rest).lowercased().contains("error"), "a call-back is not an error")
         }
-        // The satellite reason is the owner's one sentence, in two parts (the first is bold), and no roof price comes with it
-        let sat = CallbackCopy.reason("satellite-unusable")
-        ctx.equal(sat.lead + " " + sat.rest, SatelliteCopy.message)
-        ctx.equal(SatelliteCopy.message, "We can't measure your roof from satellite images — the pictures of your home aren't clear or recent enough. We'll measure it at your free visit.")
-        ctx.expect(CallbackCopy.reason("satellite-unusable").lead != CallbackCopy.reason("home").lead)
+        // No call-back wording mentions a roof or satellite pictures (WinChoice is windows only)
+        for code in ["unit", "address", "home", "busy", "satellite-unusable", "roof-review", nil] {
+            let r = CallbackCopy.reason(code)
+            ctx.expect(!(r.lead + r.rest).lowercased().contains("roof") && !(r.lead + r.rest).lowercased().contains("satellite"), "no roof words in the call-back copy")
+        }
         ctx.equal(CallbackCopy.button(bestTime: "afternoon"), "Call me this afternoon")
         ctx.equal(CallbackCopy.button(bestTime: nil), "Call me")
         ctx.equal(OrderTimeline.headline(.ordered), "Being built")

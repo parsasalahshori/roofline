@@ -11,7 +11,7 @@ import UIKit
 /// is up, so a script can take a screenshot of the app running on the real server's data.
 enum HomeownerE2E {
     @MainActor
-    static func run(store: HomeownerStore, address: String, services: Set<HomeownerService> = [.windows, .roof], pause: Double = 0) async {
+    static func run(store: HomeownerStore, address: String, services: Set<HomeownerService> = [.windows], pause: Double = 0) async {
         func say(_ line: String) { fputs("E2E \(line)\n", stderr) }
         func beat(_ screen: String) async {
             guard pause > 0 else { return }
@@ -42,7 +42,7 @@ enum HomeownerE2E {
         say("keychain saved=\(store.vault.load() != nil) notice=\(store.notice?.text ?? "none")")
         say("request \(session.requestId) status=\(store.requestStatus.rawValue) reason=\(store.callbackReason ?? "-") address=\(store.address)")
         await beat("results")
-        say("estimate windows=\(store.windowEstimate.map { "\($0.low)-\($0.high) likely \($0.likely)" } ?? "none") roof=\(store.roofEstimate.map { "$\($0.low)-\($0.high) \($0.squares.map { String($0) } ?? "?") sq" } ?? "none") roofNote=\(store.roofNote?.reason ?? "none") floors=\(store.home?.floors.map { String($0) } ?? "nil") outline=\(store.home?.outline == nil ? "none" : "yes")")
+        say("estimate windows=\(store.windowEstimate.map { "\($0.low)-\($0.high) likely \($0.likely)" } ?? "none") floors=\(store.home?.floors.map { String($0) } ?? "nil") outline=\(store.home?.outline == nil ? "none" : "yes")")
         let contact = HomeownerContact(firstName: "Alex", lastName: "Rivera", phone: "(402) 555-0147", email: "alex@example.com", zip: "68132", contactConsent: true, textConsent: false)
         guard store.requestStatus == .ready else {
             // The call-back branch: the phone number, then the contact form, then "we will call"
@@ -53,20 +53,6 @@ enum HomeownerE2E {
             say("call-back path: root=\(store.root) error=\(store.contactError ?? "none") booking=\(store.view?.booking.map { "callMe=\($0.callMe)" } ?? "none") done")
             return
         }
-        guard services.contains(.windows) else {
-            // Roof only: no windows, straight to the contact form and the visit
-            store.continueFromResults()
-            store.contactDraft = contact
-            await store.prepareContact()
-            await store.submitContact()
-            await store.loadSlots()
-            store.pickedSlot = store.slots?.slots.first
-            await store.bookPicked()
-            await store.loadStatus()
-            say("roof-only path: path=\(store.path) root=\(store.root) stage=\(store.status?.stage.rawValue ?? "none") done")
-            return
-        }
-
         // Three windows by the three methods, from one drawn photo
         let scene = SampleScene.photo
         let plain = PhotoPreparation.prepare(scene.image(withCard: false))

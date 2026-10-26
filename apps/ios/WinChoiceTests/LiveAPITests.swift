@@ -77,11 +77,11 @@ final class LiveAPITests: XCTestCase {
         XCTAssertEqual(StubURLProtocol.seen.last?.headers["Authorization"], "Bearer tok-123")
     }
 
-    func testNewRequestBodyHasTheAddressAndTheServicesInScreenOrder() async throws {
+    func testNewRequestBodyHasTheAddressAndWindowsOnly() async throws {
         StubURLProtocol.reply = { _ in
-            (201, [:], Data(#"{ "requestId": "r", "token": "t", "status": "ready", "home": { "address": "305 Ridgeway Dr" }, "estimate": {}, "services": ["windows", "roof"] }"#.utf8))
+            (201, [:], Data(#"{ "requestId": "r", "token": "t", "status": "ready", "home": { "address": "305 Ridgeway Dr" }, "estimate": {}, "services": ["windows"] }"#.utf8))
         }
-        let made = try await api().createRequest(address: "305 Ridgeway Dr, Little Rock, AR", services: [.roof, .windows])
+        let made = try await api().createRequest(address: "305 Ridgeway Dr, Little Rock, AR", services: [.windows])
         XCTAssertEqual(made.requestId, "r")
         let seen = try XCTUnwrap(StubURLProtocol.seen.last)
         XCTAssertEqual(seen.method, "POST")
@@ -89,7 +89,7 @@ final class LiveAPITests: XCTestCase {
         XCTAssertNil(seen.headers["Authorization"], "a new request has no token yet")
         let body = json(seen.body)
         XCTAssertEqual(body["address"] as? String, "305 Ridgeway Dr, Little Rock, AR")
-        XCTAssertEqual(body["services"] as? [String], ["windows", "roof"])
+        XCTAssertEqual(body["services"] as? [String], ["windows"])
     }
 
     func testAPhotoGoesUpAsRawJPEG() async throws {

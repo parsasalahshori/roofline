@@ -25,6 +25,7 @@ import {
   type WindowCatalog,
   SATELLITE_UNUSABLE_MESSAGE,
   sizeFromArPoints,
+  windowLookLine,
   windowSizeLabel,
   windowUncertaintyLabel,
 } from '@roofline/shared';
@@ -139,6 +140,7 @@ export function windowView(w: PhotoWindow, tiles: readonly StyleTile[], scan?: H
     uncertaintyLabel: windowUncertaintyLabel(uncertaintyIn),
     styleLabel: tileOfStyle(tiles, style).label,
     ...(scan !== undefined && { scan }),
+    ...(w.look !== undefined && { look: w.look }),
   };
 }
 
@@ -247,6 +249,18 @@ export function storedInput(w: HomeownerWindowInput): PhotoWindowInput {
   } as PhotoWindowInput;
 }
 
+/** The most windows the lead's summary lists one by one; the rest are counted (staff see all of them on the measurement). */
+const SUMMARY_WINDOWS = 20;
+
+/** "Windows: Kitchen 36 x 48 (Casement · Prairie grid · Black · Low-E glass); Den 30 x 60 (...)": only when the homeowner customized. */
+function windowLooksLine(products: readonly QuoteProduct[], view: HomeownerRequestView): string | null {
+  if (!products.includes('windows') || !view.windows.some((w) => w.look !== undefined)) return null;
+  const one = (w: HomeownerWindow) => `${w.label !== undefined && w.label !== '' ? `${w.room} ${w.label}` : w.room} ${w.sizeLabel}${w.look !== undefined ? ` (${windowLookLine(w.look)})` : ''}`;
+  const shown = view.windows.slice(0, SUMMARY_WINDOWS).map(one).join('; ');
+  const more = view.windows.length - SUMMARY_WINDOWS;
+  return `Windows as customized: ${shown}${more > 0 ? `; and ${more} more` : ''}`;
+}
+
 const dollars = (n: number): string => `$${n.toLocaleString('en-US')}`;
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 
@@ -271,6 +285,8 @@ export function leadSummary(products: readonly QuoteProduct[], view: HomeownerRe
     const rest = q.estimatedCount > 0 && q.measuredCount > 0 ? ` (${q.estimatedCount} estimated)` : '';
     parts.push(`${measured}${tierLine(q)} for ${plural(total, 'window', 'windows')}${rest}`);
   }
+  const looks = windowLooksLine(products, view);
+  if (looks !== null) parts.push(looks);
   const asked = `Asked about ${products.join(', ')}.`;
   const visit = products.includes('gutters') ? ' Gutters are priced at the visit.' : '';
   return parts.length > 0 ? `${asked} Shown: ${parts.join('; ')}.${visit}` : `${asked} No estimate was shown; call them.${visit}`;

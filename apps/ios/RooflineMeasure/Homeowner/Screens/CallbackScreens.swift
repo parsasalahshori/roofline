@@ -216,7 +216,7 @@ struct CallThanksScreen: View {
                     Text(thanks).font(.title.weight(.bold)).foregroundStyle(Theme.ink)
                         .accessibilityAddTraits(.isHeader)
                         .accessibilityIdentifier("thanks.title")
-                    JourneyLead("\(store.brand.name) will call you soon.")
+                    JourneyLead("\(store.brand.name) will call you with your estimate.")
                         .accessibilityIdentifier("thanks.line")
                 }
             }
@@ -227,10 +227,6 @@ struct CallThanksScreen: View {
         .wcFooter {
             WCPrimaryButton(title: "Done") { store.showStatus() }
                 .accessibilityIdentifier("thanks.done")
-            if !store.windowRows.isEmpty {
-                WCSecondaryButton(title: "See new windows in your home", icon: .win) { store.openVisualizerForFirstWindow(from: .quote) }
-                    .accessibilityIdentifier("thanks.visualize")
-            }
         }
     }
 

@@ -159,6 +159,15 @@ describe("a homeowner's window row", () => {
     expect(rows[1]!.style).toBeUndefined();
     expect(rows[1]!.frosted).toBeUndefined();
   });
+
+  it("carries the look the homeowner customized, and nothing when they did not", () => {
+    const look = { kind: 'casement' as const, grid: 'prairie' as const, glass: 'lowE' as const, color: 'black' };
+    const styled = { ...input('a', 'Kitchen', LIDAR), look };
+    const plain = input('b', 'Den', LIDAR);
+    const rows = buildRows(base({ inputs: [styled, plain], live: [sized(styled, 36, 48), sized(plain, 36, 48)] }));
+    expect(rows[0]!.look).toEqual(look);
+    expect(rows[1]!.look).toBeUndefined();
+  });
 });
 
 describe('the three grades', () => {

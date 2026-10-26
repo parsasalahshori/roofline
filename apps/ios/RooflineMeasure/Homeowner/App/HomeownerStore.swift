@@ -13,7 +13,10 @@ enum Route: Hashable {
 }
 
 enum VisualizeOrigin: String, Hashable {
-    case styles, quote
+    /// The style pass; the estimate and the ready screen (a window opened on its own: "Use this window" saves and goes back).
+    case styles, quote, ready
+    /// The "Customize your windows" walk: one window after another, "Window 2 of 5".
+    case customize
 }
 
 /// The screen at the bottom of the stack: the welcome, or a state of the whole app (booked, My order, call-back sent).
@@ -125,8 +128,8 @@ final class HomeownerStore {
 
     var root: RootScreen = .launching
     var path: [Route] = []
-    /// Nothing is picked until the homeowner taps a card: a pre-ticked card meant a tap on "Windows" unticked it.
-    var selectedServices: Set<HomeownerService> = []
+    /// WinChoice is windows only: every request asks for windows.
+    var selectedServices: Set<HomeownerService> = [.windows]
     var addressText = ""
     /// A new address waiting for the homeowner's yes, because windows were already measured at the old one.
     var pendingAddressChange: String?
@@ -156,6 +159,10 @@ final class HomeownerStore {
     var replaceTarget: String?
     /// The style pass (screen 09): which window it is on.
     var styleIndex = 0
+    /// The windows the "Customize your windows" walk goes through, in order (the ids when it started).
+    var customizeIds: [String] = []
+    /// The customized windows' styles are being applied and the estimate worked out again.
+    var applyingLooks = false
 
     /// Screen 11: the tier the homeowner is looking at.
     var selectedTier = "better"
@@ -222,11 +229,8 @@ final class HomeownerStore {
     var requestId: String? { session?.requestId }
     var hasRequest: Bool { session != nil }
 
-    /// The services of the request in hand (or of the welcome's picks before one exists).
-    var services: Set<HomeownerService> {
-        if let s = session, !s.services.isEmpty { return Set(s.services) }
-        return selectedServices
-    }
+    /// The services of the request: windows (the only thing this app measures).
+    var services: Set<HomeownerService> { [.windows] }
 
     var windowRows: [WindowRow] {
         WindowRows.merge(server: view?.windows ?? [], outbox: outboxItems.filter { $0.measurementId == requestId }).map { row in
@@ -264,9 +268,6 @@ final class HomeownerStore {
     var hasContact: Bool { view?.request.contacted ?? progress.hasContact }
     var hasBooking: Bool { view?.booking != nil || progress.hasBooking }
     var windowEstimate: HomeownerWindowEstimate? { estimate?.windows ?? view?.request.estimate?.windows }
-    var roofEstimate: HomeownerRoofEstimate? { estimate?.roof ?? view?.request.estimate?.roof }
-    /// The sentence shown in place of the roof price when the satellite pictures cannot be trusted, else nil.
-    var roofNote: HomeownerRoofNote? { estimate?.roofNote ?? view?.request.estimate?.roofNote }
     var quote: HomeownerQuote? { view?.quote }
     var nextWindowNumber: Int { windowCount + 1 }
 
@@ -298,6 +299,8 @@ final class HomeownerStore {
     @ObservationIgnored var debugAfterLaunch: ((HomeownerStore) async -> Void)?
     /// `-debugGo <step>`: where to show the saved request.
     @ObservationIgnored var debugGo: HomeownerStep?
+    /// `-debugGo customize`: start the "Customize your windows" walk once the estimate is up.
+    @ObservationIgnored var debugCustomize = false
     #endif
 
     // MARK: Start
@@ -320,6 +323,7 @@ final class HomeownerStore {
             if step == .status || step == .booked { await loadStatus() }
             if step == .book { await loadSlots() }
         }
+        if debugCustomize { startCustomizing() }
         if let open = debugOpen { openDebug(open) }
         if let after = debugAfterLaunch { await after(self) }
         #endif
@@ -365,7 +369,7 @@ final class HomeownerStore {
     }
 
     private func services(from s: HomeownerSession) {
-        selectedServices = Set(s.services)
+        selectedServices = [.windows]
     }
 
     func loadCompany() async {
@@ -422,8 +426,6 @@ final class HomeownerStore {
         progress.requestStatus = requestStatus
         progress.callbackReason = callbackReason
         progress.estimateWindows = windowEstimate
-        progress.estimateRoof = roofEstimate
-        progress.estimateRoofNote = roofNote
         progress.floors = home?.floors
         progressStore.save(progress, requestId: id)
     }
@@ -433,7 +435,6 @@ final class HomeownerStore {
     private func snapshot() -> ResumeSnapshot {
         ResumeSnapshot(
             requestStatus: view?.request.status ?? progress.requestStatus,
-            services: services,
             windowCount: max(windowCount, offline ? progress.windowCount : 0),
             unstyledCount: unstyledCount,
             hasBooking: hasBooking,
@@ -446,7 +447,7 @@ final class HomeownerStore {
         let target = ResumeRouter.target(saved: progress.step, hasSession: session != nil, snapshot: snapshot())
         go(to: target)
         if target == .status || target == .booked { Task { await self.loadStatus() } }
-        if let h = progress.estimateWindows, estimate?.windows == nil { estimate = HomeownerEstimate(windows: h, roof: progress.estimateRoof, roofNote: progress.estimateRoofNote) }
+        if let h = progress.estimateWindows, estimate?.windows == nil { estimate = HomeownerEstimate(windows: h) }
     }
 
     /// Shows a step as if the homeowner had walked there: the back stack is the steps before it.
@@ -474,7 +475,7 @@ final class HomeownerStore {
 
     /// The routes that lead to `step`. After a booking the root is My order and the stack starts at the rooms.
     func stack(to step: HomeownerStep) -> [Route] {
-        var steps = HomeownerFlow.path(to: step, services: services)
+        var steps = HomeownerFlow.path(to: step)
         if root != .welcome, root != .launching { steps = Array(steps.drop { $0 != .rooms }) }
         return steps.map { Route.step($0) }
     }

@@ -4,7 +4,7 @@ import { Router } from 'express';
 import busboy from 'busboy';
 import { z } from 'zod';
 import { appendWindowUpload, getLatestWindowMeasurementForProperty, getWindowCatalog, getWindowMeasurement, type StoredFacadePhoto, type StoredWindowUpload, updateWindowMeasurement, type WindowMeasurementChange, withTenant } from '@roofline/db';
-import { AR_DEVICES, cardProblem, type DoorRuler, HOMEOWNER_APP_SOURCE, type PhotoWindowInput, priceCatalogWindows, pricedWindowsOf, estimatedOf, ROOMPLAN_CONFIDENCES, RULER_KINDS, RULER_MAX_IN, RULER_MIN_IN, SHEET_MAX_OFFSET_IN, SHEET_MAX_POINTS, SHEET_PAPER_IN, WINDOW_PHOTO_REFERENCES, WINDOW_SIZE_CLASSES, WINDOW_STYLES, type WindowAdjustments, type WindowQuote, windowCounts } from '@roofline/shared';
+import { AR_DEVICES, WindowLookSchema, cardProblem, type DoorRuler, HOMEOWNER_APP_SOURCE, type PhotoWindowInput, priceCatalogWindows, pricedWindowsOf, estimatedOf, ROOMPLAN_CONFIDENCES, RULER_KINDS, RULER_MAX_IN, RULER_MIN_IN, SHEET_MAX_OFFSET_IN, SHEET_MAX_POINTS, SHEET_PAPER_IN, WINDOW_PHOTO_REFERENCES, WINDOW_SIZE_CLASSES, WINDOW_STYLES, type WindowAdjustments, type WindowQuote, windowCounts } from '@roofline/shared';
 import { arProblem, readImageInfo, roomPlanProblem, sheetProblem, sizePhotoWindow } from '../estimator/window-uploads.ts';
 import type { AppDeps } from '../app.ts';
 import { measureWindows } from '../estimator/measure-windows.ts';
@@ -153,6 +153,8 @@ const PhotoWindowSchema = z
     room: z.string().min(1).max(40).refine(noNul).optional(),
     style: z.enum(WINDOW_STYLES).optional(),
     frosted: z.boolean().optional(),
+    // The homeowner's chosen look (kept as it is stored; set by the homeowner API)
+    look: WindowLookSchema.optional(),
   })
   .strict()
   // Every kind but RoomPlan is sized on its photo: uploadId and corners are required. Corners need their photo.

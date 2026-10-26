@@ -59,7 +59,6 @@ private struct RouteScreen: View {
         case .step(let step):
             switch step {
             case .welcome: WelcomeScreen()
-            case .service: ServiceScreen()
             case .address: AddressScreen()
             case .results: ResultsScreen()
             case .callback: CallbackScreen()
@@ -69,6 +68,7 @@ private struct RouteScreen: View {
             case .list: ListScreen()
             case .styles: StylesScreen()
             case .quote: QuoteScreen()
+            case .ready: ReadyScreen()
             case .contact: ContactScreen()
             case .book: BookScreen()
             case .booked: BookedScreen()

@@ -98,11 +98,11 @@ extension WCNavBar where Trailing == EmptyView {
     }
 }
 
-/// "Step 2 of 4", small and secondary: the trailing item of the bar on the first screens. Under a title, `StepProgress` draws
+/// "Step 2 of 3", small and secondary: the trailing item of the bar on the first screens. Under a title, `StepProgress` draws
 /// the same words with a progress bar.
 struct StepDots: View {
     let filled: Int
-    var total = 4
+    var total = 3
 
     var body: some View {
         Text("Step \(filled) of \(total)")
@@ -114,10 +114,10 @@ struct StepDots: View {
     }
 }
 
-/// How far along, under a screen title: "Step 2 of 4" and a native linear `ProgressView`.
+/// How far along, under a screen title: "Step 2 of 3" and a native linear `ProgressView`.
 struct StepProgress: View {
     let step: Int
-    var total = 4
+    var total = 3
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -411,48 +411,6 @@ struct WCTag: View {
         .padding(.horizontal, 7)
         .padding(.vertical, 4)
         .background(colors.1, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
-    }
-}
-
-/// On a result screen (the window price, the roof's price range): the price is an estimate, and a call to the company gets
-/// an exact measurement, done in person. A grouped callout: an info symbol, the words, a bordered call button when the brand
-/// has a phone.
-struct EstimateCallCard: View {
-    @Environment(HomeownerStore.self) private var store
-    @Environment(\.openURL) private var openURL
-    let service: HomeownerService
-
-    private var line: String {
-        let name = store.brand.name
-        switch service {
-        case .roof: return "For a foolproof measurement, call us. A \(name) expert measures your roof in person, for free."
-        case .windows, .gutters: return "For a foolproof measurement, call us. A \(name) expert measures every window in person, for free, before anything is built."
-        }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: WCIcon.info.symbol)
-                    .font(.title3)
-                    .foregroundStyle(Theme.ink2)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("This is an estimate").font(.headline).foregroundStyle(.primary)
-                        .accessibilityAddTraits(.isHeader)
-                    Text(line).font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if let url = store.brand.phoneURL, let phone = store.brand.phone {
-                WCSecondaryButton(title: "Call \(phone)", icon: .phone) { openURL(url) }
-                    .accessibilityLabel("Call \(store.brand.name) at \(phone)")
-                    .accessibilityIdentifier("estimate.call")
-            }
-        }
-        .padding(16)
-        .wcCard()
-        .accessibilityElement(children: .contain)
     }
 }
 

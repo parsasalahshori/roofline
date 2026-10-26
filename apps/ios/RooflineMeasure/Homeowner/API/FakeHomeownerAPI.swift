@@ -14,7 +14,7 @@ actor FakeHomeownerAPI: HomeownerAPI {
         /// Seconds each call takes (a few tenths make the loading states visible; tests use 0).
         var latency: Double = 0
         /// Addresses that go to the call-back path: a substring and the reason.
-        var callbackRules: [(match: String, reason: String)] = [("leavenworth", "unit"), (" apt", "unit"), ("unit ", "unit"), ("#", "unit"), ("busy", "busy"), ("roof only faded photo", "satellite-unusable")]
+        var callbackRules: [(match: String, reason: String)] = [("leavenworth", "unit"), (" apt", "unit"), ("unit ", "unit"), ("#", "unit"), ("busy", "busy")]
         var pricePerWindow: [String: Double] = ["good": 600, "better": 800, "best": 1200]
         /// Today, for the open visit times (tests pin it).
         var now: @Sendable () -> Date = { Date() }
@@ -35,6 +35,7 @@ actor FakeHomeownerAPI: HomeownerAPI {
         var home: HomeownerHome
         var estimate: HomeownerEstimate
         var windows: [HomeownerWindow] = []
+        var looks: [String: HomeownerWindowLookBody] = [:]
         var uploads: [String: (w: Int, h: Int)] = [:]
         var override: Int?
         var contact: HomeownerContact?
@@ -56,7 +57,7 @@ actor FakeHomeownerAPI: HomeownerAPI {
     }
 
     static let defaultCompany = HomeownerCompany(
-        name: "WinChoice", brandColor: "#ED3A2B", phone: "+15015550100", services: [.windows, .roof], booking: true,
+        name: "WinChoice", brandColor: "#ED3A2B", phone: "+15015550100", services: [.windows], booking: true,
         privacyUrl: "https://winchoice.example/privacy", termsUrl: "https://winchoice.example/terms",
         consent: HomeownerConsent(
             version: "2026-10-16",
@@ -73,7 +74,7 @@ actor FakeHomeownerAPI: HomeownerAPI {
                 HomeownerCatalogTier(key: "best", label: "Renew", note: "Lifetime warranty"),
             ],
             included: ["Argon gas fill", "Low-E glass (Cardinal LoE366)", "ENERGY STAR® certified", "FlexScreen"],
-            offer: HomeownerOffer(title: "October special on windows and roofing. Ask about it at your visit.", termsUrl: "https://winchoice.com/promotional-terms-conditions/"),
+            offer: HomeownerOffer(title: "October special on windows. Ask about it at your visit.", termsUrl: "https://winchoice.com/promotional-terms-conditions/"),
             financing: HomeownerFinancing(text: "Financing available through our partner Skeps. Optional, with no obligation.", url: "https://winchoice.com/financing/")
         )
     )
@@ -93,7 +94,7 @@ actor FakeHomeownerAPI: HomeownerAPI {
 
     /// A request that already has windows, a contact and so on: the starting point of a screenshot or a test. The token is
     /// the fake's own ("fake-token-<id>"); the returned session works with every call.
-    func seed(address: String = "305 Ridgeway Dr, Little Rock, AR 72205", services: [HomeownerService] = [.windows, .roof],
+    func seed(address: String = "305 Ridgeway Dr, Little Rock, AR 72205", services: [HomeownerService] = [.windows],
               windows: [FakeWindowSpec] = [], contact: Bool = false, booked: Bool = false, slotIndex: Int = 2, callMe: Bool = false,
               stage: HomeownerStage? = nil, estimatedOverride: Int? = nil) -> HomeownerSession {
         let id = "fake-req-\(requests.count + 1)"
@@ -208,10 +209,25 @@ actor FakeHomeownerAPI: HomeownerAPI {
         return try render(r)
     }
 
+    func setLook(_ s: HomeownerSession, windowId: String, look: HomeownerWindowLookBody) async throws -> HomeownerRequestView {
+        try await enter("PATCH windows \(windowId) look")
+        var r = try stored(s)
+        guard r.windows.contains(where: { $0.id == windowId }) else {
+            throw HomeownerAPIError(status: 404, message: "We could not find that window.", code: "window_not_found")
+        }
+        r.looks[windowId] = look
+        requests[r.id] = r
+        return try render(r)
+    }
+
+    /// The looks the server holds for a request, by window id (for tests).
+    func looks(for requestId: String) -> [String: HomeownerWindowLookBody] { requests[requestId]?.looks ?? [:] }
+
     func deleteWindow(_ s: HomeownerSession, windowId: String) async throws -> HomeownerRequestView {
         try await enter("DELETE windows \(windowId)")
         var r = try stored(s)
         r.windows.removeAll { $0.id == windowId }
+        r.looks[windowId] = nil
         requests[r.id] = r
         return try render(r)
     }
@@ -318,17 +334,11 @@ actor FakeHomeownerAPI: HomeownerAPI {
         if let rule = config.callbackRules.first(where: { lower.contains($0.match) }) {
             return Stored(id: id, token: "fake-token-\(id)", address: address, services: services, status: .callback, callbackReason: rule.reason,
                           home: HomeownerHome(address: address, floors: nil, outline: nil),
-                          estimate: HomeownerEstimate(windows: nil, roof: nil, roofNote: rule.reason == "satellite-unusable" && services.contains(.roof) ? HomeownerRoofNote() : nil), createdAt: config.now())
+                          estimate: HomeownerEstimate(windows: nil), createdAt: config.now())
         }
-        // A home whose satellite pictures are old: windows are counted, the roof gets the sentence and no price
-        let satellite = lower.contains("faded photo") && services.contains(.roof)
-        let estimate = HomeownerEstimate(
-            windows: services.contains(.windows) ? HomeownerWindowEstimate(low: 7, high: 9, likely: 7) : nil,
-            roof: services.contains(.roof) && !satellite ? HomeownerRoofEstimate(low: 9800, high: 12100, squares: 23) : nil,
-            roofNote: satellite ? HomeownerRoofNote() : nil
-        )
-        // A real house's roof ring as the server gives it (longitude, latitude): the footprint of 120 Briar Rose, Irvine, taken from the
-        // local server, so the results screen's satellite hero has a real roof to draw round. (The address is the mockups' Little Rock
+        let estimate = HomeownerEstimate(windows: HomeownerWindowEstimate(low: 7, high: 9, likely: 7))
+        // A real house's outline ring as the server gives it (longitude, latitude): the footprint of 120 Briar Rose, Irvine, taken from the
+        // local server, so the results screen's hero has a real home to draw round. (The address is the mockups' Little Rock
         // one; only the picture is Irvine's.)
         let ring: [[Double]] = [
             [-117.710856, 33.68851], [-117.710884, 33.688482], [-117.710918, 33.688481], [-117.710931, 33.688468], [-117.710931, 33.688453],

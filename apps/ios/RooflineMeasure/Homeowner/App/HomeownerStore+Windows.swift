@@ -385,12 +385,6 @@ extension HomeownerStore {
         saveProgress()
     }
 
-    /// "Have WinChoice call me": the interest form (the contact step). The visit-booking step is not forced after it.
-    func requestCallFromEstimate() {
-        selectTier(selectedTier)
-        push(.contact)
-    }
-
     /// "See new windows in your home": the visualizer, on the first window (the others are one tap away on the estimate).
     func openVisualizerForFirstWindow(from origin: VisualizeOrigin) {
         guard let first = windowRows.first else { return }

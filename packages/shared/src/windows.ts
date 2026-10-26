@@ -7,6 +7,7 @@
 import type { Tier } from './proposals.ts';
 import type { WindowStyle } from './window-order.ts';
 import type { ArDevice, ArQuad, Quad } from './window-photo-math.ts';
+import type { WindowLook } from './window-look.ts';
 
 type LngLat = [number, number];
 
@@ -299,6 +300,8 @@ export type PhotoWindowInput = {
   style?: WindowStyle;
   /** Bathroom window: frosted (privacy) glass, which adds to the price. Absent: clear glass. */
   frosted?: boolean;
+  /** The look the homeowner chose in the app's Customize step (kind, grid, glass, colour). Descriptive: it never changes the price. */
+  look?: WindowLook;
 };
 
 /** The window a photographed window belongs to: its shared key, else its own id (one photo, one window). */

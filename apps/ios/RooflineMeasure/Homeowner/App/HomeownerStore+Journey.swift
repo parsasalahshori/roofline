@@ -8,34 +8,9 @@ import SwiftUI
 extension HomeownerStore {
     // MARK: Welcome (01)
 
-    /// The services the company offers a homeowner, in its order (windows and roof until the company answers; never gutters).
-    var offeredServices: [HomeownerService] {
-        let offered = company.services.isEmpty ? HomeownerService.allCases : company.services
-        return HomeownerService.offered(offered)
-    }
-
-    func toggle(_ service: HomeownerService) {
-        if selectedServices.contains(service) { selectedServices.remove(service) } else { selectedServices.insert(service) }
-    }
-
-    /// Welcome -> Measure: what to measure comes next.
+    /// Welcome -> Measure: straight to the address (WinChoice measures windows only).
     func startMeasuring() {
-        push(.service)
-        if !companyLoaded { Task { await loadCompany() } }
-    }
-
-    /// Windows or roof: one service per request, then the address.
-    func chooseService(_ service: HomeownerService) {
-        selectedServices = [service]
-        continueFromWelcome()
-    }
-
-    /// On to the address with the services picked (the windows-or-roof screen; tests set several at once).
-    func continueFromWelcome() {
-        guard !selectedServices.isEmpty else { return }
-        // Only what the company offers goes on
-        selectedServices.formIntersection(Set(offeredServices))
-        guard !selectedServices.isEmpty else { return }
+        selectedServices = [.windows]
         push(.address)
         if !companyLoaded { Task { await loadCompany() } }
     }
@@ -79,7 +54,7 @@ extension HomeownerStore {
     /// The request in hand is for exactly this address and these services, so going forward reuses it.
     private func sessionMatches(_ text: String) -> Bool {
         guard let s = session else { return false }
-        return s.address.caseInsensitiveCompare(text) == .orderedSame && Set(s.services) == selectedServices
+        return s.address.caseInsensitiveCompare(text) == .orderedSame
     }
 
     /// The homeowner said yes to starting over at a new address (their measured windows stay with the old one).
@@ -109,11 +84,11 @@ extension HomeownerStore {
         addressError = nil
         defer { creating = false }
         do {
-            let created = try await api.createRequest(address: text, services: Array(selectedServices))
+            let created = try await api.createRequest(address: text, services: [.windows])
             let saved = HomeownerSession(
                 requestId: created.requestId, token: created.token, slug: AppEnvironment.slug(brand: brand),
                 address: created.home.address.isEmpty ? text : created.home.address,
-                services: created.services.isEmpty ? Array(selectedServices).sorted() : created.services, createdAt: now(), expiresAt: created.expiresAt
+                services: [.windows], createdAt: now(), expiresAt: created.expiresAt
             )
             do {
                 try vault.save(saved)
@@ -126,7 +101,6 @@ extension HomeownerStore {
                 Task { try? await outbox.removeAll(measurementId: old.requestId); try? await scanOutbox.removeAll(measurementId: old.requestId) }
             }
             setSession(saved)
-            selectedServices = Set(saved.services)
             view = nil
             home = created.home
             estimate = created.estimate
@@ -137,7 +111,7 @@ extension HomeownerStore {
             status = nil
             slots = nil
             // The name and phone stay filled in: it is the same person, only the house changed
-            progress.perimeterFt = created.home.outline.flatMap { RoofOutline.perimeterFeet($0) }
+            progress.perimeterFt = created.home.outline.flatMap { HomeFootprint.perimeterFeet($0) }
             if created.status == .callback {
                 push(.callback)
             } else {
@@ -154,7 +128,7 @@ extension HomeownerStore {
     // MARK: Results (03) and the call-back branch (03b)
 
     func continueFromResults() {
-        push(HomeownerFlow.afterResults(services: services))
+        push(HomeownerFlow.afterResults)
     }
 
     /// 03b: the phone number goes on to the contact form, which the server needs before anyone can call.
@@ -194,20 +168,20 @@ extension HomeownerStore {
         contactError = nil
         defer { sendingContact = false }
         do {
+            // What the homeowner customized reaches the CRM with the lead: the looks go first (the lead's summary lists them)
+            guard await sendLooks() else {
+                contactError = LiveHomeownerAPI.offlineMessage
+                return
+            }
             var v = try await api.fileContact(s, contact: ContactValidation.prepared(draft))
             accept(v)
-            if requestStatus == .callback || services.contains(.windows) {
-                // The interest form is the end of the windows path: WinChoice calls (no visit time is asked for)
-                v = try await api.book(s, choice: .callMe(bestTime: bestTime))
-                accept(v)
-                Haptics.success()
-                root = .callbackSent
-                path = []
-                noteStep(.callbackSent)
-            } else {
-                push(.book)
-                Task { await loadSlots() }
-            }
+            // The interest form is the end of the journey: WinChoice calls (no visit time is asked for)
+            v = try await api.book(s, choice: .callMe(bestTime: bestTime))
+            accept(v)
+            Haptics.success()
+            root = .callbackSent
+            path = []
+            noteStep(.callbackSent)
         } catch let e as HomeownerAPIError {
             if e.isConsentChanged {
                 await loadCompany()
@@ -325,8 +299,8 @@ extension HomeownerStore {
     var quoteTotalForSelectedTier: Double? { quote?.tier(selectedTier)?.total }
 }
 
-/// The roof outline's length around, in feet, from its ring of longitude/latitude points ("about 128 ft of outside wall").
-enum RoofOutline {
+/// The home outline's length around, in feet, from its ring of longitude/latitude points ("about 128 ft of outside wall").
+enum HomeFootprint {
     static func perimeterFeet(_ outline: HomeownerOutline) -> Int? {
         let pts = outline.points
         guard pts.count >= 3 else { return nil }

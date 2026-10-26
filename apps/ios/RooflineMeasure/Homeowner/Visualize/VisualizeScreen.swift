@@ -18,6 +18,8 @@ struct VisualizeScreen: View {
 
     private var row: WindowRow? { store.windowRows.first { $0.id == windowId } }
     private var windowCount: Int { store.windowRows.count }
+    /// In the "Customize your windows" walk: which window this is ("Window 2 of 5").
+    private var place: (number: Int, count: Int)? { origin == .customize ? store.customizePlace(of: windowId) : nil }
 
     var body: some View {
         GeometryReader { geo in
@@ -47,7 +49,7 @@ struct VisualizeScreen: View {
         }
         }
         .background(Theme.ground)
-        .hiNav(title: row?.title ?? "Your window") {
+        .hiNav(title: place.map { "Window \($0.number) of \($0.count)" } ?? row?.title ?? "Your window") {
             if let after = model.after {
                 ShareLink(item: shareItem, preview: SharePreview("My new window", image: Image(uiImage: after))) {
                     Image(systemName: WCIcon.upload.symbol)
@@ -56,9 +58,13 @@ struct VisualizeScreen: View {
             }
         }
         .wcFooter {
-            WCPrimaryButton(title: "Use this window", isLoading: working) { Task { await use(all: false) } }
-            if windowCount > 1 {
-                WCSecondaryButton(title: "Use for all \(windowCount) windows", isEnabled: !working) { Task { await use(all: true) } }
+            if let place = place {
+                customizeButtons(place)
+            } else {
+                WCPrimaryButton(title: "Use this window", isLoading: working) { Task { await use(all: false) } }
+                if windowCount > 1 {
+                    WCSecondaryButton(title: "Use for all \(windowCount) windows", isEnabled: !working) { Task { await use(all: true) } }
+                }
             }
         }
         .sheet(isPresented: $showAll) {
@@ -66,6 +72,44 @@ struct VisualizeScreen: View {
                 model.set(type: type)
                 showAll = false
             }
+        }
+    }
+
+    // MARK: Customize walk
+
+    /// Back and Next (Done on the last window), and "Use for all" under them. Each keeps this window's choice on the phone first.
+    @ViewBuilder private func customizeButtons(_ place: (number: Int, count: Int)) -> some View {
+        let last = place.number == place.count
+        HStack(spacing: 12) {
+            if place.number > 1 {
+                WCSecondaryButton(title: "Back", isEnabled: !working) {
+                    store.keepLook(model.look, colorKey: model.colorKey, for: windowId)
+                    store.pop()
+                }
+                .frame(maxWidth: 120)
+                .accessibilityIdentifier("customize.back")
+            }
+            WCPrimaryButton(title: last ? "Done" : "Next", isLoading: working) {
+                Task {
+                    working = true
+                    await store.customizeNext(after: windowId, look: model.look, colorKey: model.colorKey)
+                    working = false
+                }
+            }
+            .accessibilityIdentifier("customize.next")
+        }
+        if place.count > 1 {
+            Button("Use for all \(place.count) windows") {
+                Task {
+                    working = true
+                    await store.customizeAll(look: model.look, colorKey: model.colorKey)
+                    working = false
+                }
+            }
+            .font(.subheadline.weight(.semibold))
+            .frame(minHeight: Theme.minTap)
+            .disabled(working)
+            .accessibilityIdentifier("customize.all")
         }
     }
 
@@ -272,7 +316,7 @@ struct VisualizeScreen: View {
             await store.useVisual(model.look, colorKey: model.colorKey, for: windowId)
         }
         // A changed style changes the price
-        if origin == .quote { await store.prepareQuote() }
+        if origin == .quote || origin == .ready { await store.prepareQuote() }
         working = false
         Haptics.success()
         store.pop()

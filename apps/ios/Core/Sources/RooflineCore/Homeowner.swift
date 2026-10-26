@@ -35,22 +35,17 @@ extension KeyedDecodingContainer {
 
 // MARK: - Services, company
 
-/// What the homeowner asked about. Declaration order is the screen order (windows first: it is the app's main journey).
+/// What the homeowner asked about. WinChoice is windows only; any other service a server lists (or an older saved answer holds)
+/// is dropped when it is read.
 public enum HomeownerService: String, Codable, CaseIterable, Sendable, Hashable, Comparable {
     case windows
-    case roof
-    /// Staff-only: gutters are never offered to a homeowner (the server refuses them). The case stays so an older
-    /// server's or saved answer still reads.
-    case gutters
 
     public static func < (a: HomeownerService, b: HomeownerService) -> Bool {
         (allCases.firstIndex(of: a) ?? 0) < (allCases.firstIndex(of: b) ?? 0)
     }
 
-    /// What a homeowner can pick: windows and roof, whatever else a server lists.
-    public static func offered(_ services: [HomeownerService]) -> [HomeownerService] {
-        services.filter { $0 != .gutters }
-    }
+    /// What a homeowner can pick: windows.
+    public static func offered(_ services: [HomeownerService]) -> [HomeownerService] { services }
 }
 
 /// One plain choice on the window-style step ("Opens up and down"). `key` is the style the app sends for a window that picks it.
@@ -449,72 +444,19 @@ public struct HomeownerWindowEstimate: Codable, Equatable, Sendable {
     }
 }
 
-public struct HomeownerRoofEstimate: Codable, Equatable, Sendable {
-    /// Whole dollars.
-    public var low: Double
-    public var high: Double
-    public var squares: Double?
-
-    public init(low: Double, high: Double, squares: Double? = nil) {
-        self.low = low
-        self.high = high
-        self.squares = squares
-    }
-
-    private enum Keys: String, CodingKey { case low, high, squares, lowCents, highCents }
-
-    public init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: Keys.self)
-        low = c.dollars(.low, cents: .lowCents) ?? 0
-        high = c.dollars(.high, cents: .highCents) ?? low
-        squares = c.soft(Double.self, .squares)
-    }
-
-    public func encode(to encoder: Encoder) throws {
-        var c = encoder.container(keyedBy: Keys.self)
-        try c.encode(low, forKey: .low)
-        try c.encode(high, forKey: .high)
-        try c.encodeIfPresent(squares, forKey: .squares)
-    }
-}
-
-/// Why the roof has no price: 'satellite-unusable', and the sentence for it (the server's own words).
-public struct HomeownerRoofNote: Codable, Equatable, Sendable {
-    public var reason: String
-    public var message: String
-
-    public init(reason: String = "satellite-unusable", message: String = SatelliteCopy.message) {
-        self.reason = reason
-        self.message = message
-    }
-}
-
-/// What a homeowner is told when the satellite pictures cannot be trusted to measure the roof.
-public enum SatelliteCopy {
-    public static let message = "We can't measure your roof from satellite images — the pictures of your home aren't clear or recent enough. We'll measure it at your free visit."
-}
-
 /// What was worked out from the address alone (no windows measured yet).
 public struct HomeownerEstimate: Codable, Equatable, Sendable {
     public var windows: HomeownerWindowEstimate?
-    public var roof: HomeownerRoofEstimate?
-    /// Present when the roof was asked about but the satellite pictures cannot be trusted: `roof` is nil and `message` is
-    /// the sentence to show in its place.
-    public var roofNote: HomeownerRoofNote?
 
-    public init(windows: HomeownerWindowEstimate? = nil, roof: HomeownerRoofEstimate? = nil, roofNote: HomeownerRoofNote? = nil) {
+    public init(windows: HomeownerWindowEstimate? = nil) {
         self.windows = windows
-        self.roof = roof
-        self.roofNote = roofNote
     }
 
-    private enum Keys: String, CodingKey { case windows, roof, roofNote }
+    private enum Keys: String, CodingKey { case windows }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         windows = c.soft(HomeownerWindowEstimate.self, .windows)
-        roof = c.soft(HomeownerRoofEstimate.self, .roof)
-        roofNote = c.soft(HomeownerRoofNote.self, .roofNote)
     }
 }
 

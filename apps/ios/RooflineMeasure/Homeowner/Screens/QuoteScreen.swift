@@ -1,12 +1,12 @@
 import RooflineCore
 import SwiftUI
 
-/// 11 Your estimate: what the homeowner's windows come to, at the end of measuring. A price range with Good, Better and Best, the
-/// windows listed with their sizes (each opens "See it in your home" on its own photo), and two buttons: "Have WinChoice call me"
-/// (the interest form) and "See new windows in your home". A native grouped list; Share is a plain toolbar `ShareLink`.
+/// 11 Your estimate: what the homeowner's windows come to, at the end of measuring. The price banner, "Customize your windows" under
+/// it (the visualizer, window by window) with a small "Skip and get my estimate" (the interest form), then Good, Better and Best and
+/// the windows listed with their sizes (each opens "See it in your home" on its own photo). A native grouped list; Share is a plain
+/// toolbar `ShareLink`.
 struct QuoteScreen: View {
     @Environment(HomeownerStore.self) private var store
-    @Environment(\.dynamicTypeSize) private var typeSize
 
     private var quote: HomeownerQuote? { store.quote }
 
@@ -33,22 +33,9 @@ struct QuoteScreen: View {
                                   subtitle: store.offline ? "You're offline. Your windows are saved on this phone and send when you're back." : "Something got in the way. Try again in a moment.")
                 }
             }
-            // With accessibility text sizes the footer's buttons are not pinned: they end the list
-            if typeSize.isAccessibilitySize {
-                Section { WCScrollFooter() }
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-            }
         }
         .listStyle(.insetGrouped)
         .refreshable { await store.prepareQuote() }
-        .wcFooter {
-            WCPrimaryButton(title: "Have WinChoice call me", isEnabled: quote?.tiers.isEmpty == false) { store.requestCallFromEstimate() }
-                .accessibilityIdentifier("estimate.callMe")
-            WCSecondaryButton(title: "See new windows in your home", icon: .win, isEnabled: store.windowRows.first != nil) { store.openVisualizerForFirstWindow(from: .quote) }
-                .accessibilityIdentifier("estimate.visualize")
-            FinePrint(text: store.brand.quoteFootnote)
-        }
         .hiNav(title: "Your estimate", display: .large)
         .toolbar {
             if quote != nil {
@@ -65,12 +52,7 @@ struct QuoteScreen: View {
 
     // MARK: Sections
 
-    /// The lowest and highest level, "$9,800 to $14,300".
-    private func range(_ q: HomeownerQuote) -> String? {
-        let totals = q.tiers.map { $0.total }
-        guard let lo = totals.min(), let hi = totals.max() else { return nil }
-        return lo == hi ? Money.dollars(lo) : "\(Money.dollars(lo)) to \(Money.dollars(hi))"
-    }
+    private func range(_ q: HomeownerQuote) -> String? { q.rangeText }
 
     @ViewBuilder private func loaded(_ q: HomeownerQuote) -> some View {
         Section {
@@ -87,6 +69,7 @@ struct QuoteScreen: View {
             .padding(.vertical, 6)
             .accessibilityElement(children: .combine)
         }
+        customizeSection
         Section {
             ForEach(q.tiers) { tier in
                 TierRow(tier: tier, windowCount: q.windowCount, selected: store.selectedTier == tier.key) { store.selectTier(tier.key) }
@@ -121,6 +104,25 @@ struct QuoteScreen: View {
                     Image(systemName: WCIcon.info.symbol).foregroundStyle(Theme.ink2)
                 }
             }
+        }
+    }
+
+    /// Under the banner: "Customize your windows" (the main step) and, small, "Skip and get my estimate" (straight to the interest form).
+    private var customizeSection: some View {
+        Section {
+            VStack(spacing: 6) {
+                WCPrimaryButton(title: "Customize your windows", icon: .win, iconLeading: true, isEnabled: store.windowRows.first != nil) { store.startCustomizing() }
+                    .accessibilityIdentifier("estimate.customize")
+                Button("Skip and get my estimate") { store.requestCallFromEstimate() }
+                    .font(.subheadline)
+                    .frame(minHeight: Theme.minTap)
+                    .accessibilityIdentifier("estimate.skip")
+            }
+            .frame(maxWidth: .infinity)
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 0, trailing: 0))
+        } footer: {
+            Text(store.brand.quoteFootnote).font(.footnote).foregroundStyle(Theme.ink2)
         }
     }
 

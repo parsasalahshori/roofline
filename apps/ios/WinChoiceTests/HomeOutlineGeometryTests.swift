@@ -194,7 +194,7 @@ final class HomeOutlineGeometryTests: XCTestCase {
     func testThePerimeterAgreesWithTheScreensFeet() throws {
         let g = try geometry(briarRose)
         let outline = HomeownerOutline(center: [g.centerLon, g.centerLat], ring: briarRose.map { [$0.lon, $0.lat] })
-        let feet = try XCTUnwrap(RoofOutline.perimeterFeet(outline))
+        let feet = try XCTUnwrap(HomeFootprint.perimeterFeet(outline))
         XCTAssertEqual(Double(feet), g.perimeterMeters * 3.28084, accuracy: 8)
     }
 

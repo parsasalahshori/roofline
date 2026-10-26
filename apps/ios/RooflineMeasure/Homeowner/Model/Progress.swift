@@ -24,8 +24,6 @@ struct HomeownerProgress: Codable, Equatable {
     /// The company's callback reason, for the call-back screen after a restart.
     var callbackReason: String?
     var estimateWindows: HomeownerWindowEstimate?
-    var estimateRoof: HomeownerRoofEstimate?
-    var estimateRoofNote: HomeownerRoofNote?
     var floors: Double?
     var perimeterFt: Int?
     /// How the homeowner measured the last window: the method screen is shown for the first window only, then this one is used.
@@ -37,11 +35,14 @@ struct HomeownerProgress: Codable, Equatable {
     /// What the homeowner chose to see for a window in "See it in your home" (type, grid, glass), by window id. Kept on this phone: the
     /// server's window carries a style (and the quote its price), never a grid or a glass.
     var visuals: [String: WindowVisualLook] = [:]
+    /// The look the server last accepted for a window, by window id: what is in `visuals` and `colors` but not here is still to be sent
+    /// (it goes before the contact form, and again whenever the phone is online with something unsent).
+    var looksSent: [String: HomeownerWindowLookBody] = [:]
 
     init() {}
 
     private enum Keys: String, CodingKey {
-        case step, rooms, tierKey, tierTotal, tierWindowCount, colors, bestTime, requestStatus, hasContact, hasBooking, windowCount, callbackReason, estimateWindows, estimateRoof, estimateRoofNote, floors, perimeterFt, lastMethod, pendingStyles, windowFrames, visuals
+        case step, rooms, tierKey, tierTotal, tierWindowCount, colors, bestTime, requestStatus, hasContact, hasBooking, windowCount, callbackReason, estimateWindows, floors, perimeterFt, lastMethod, pendingStyles, windowFrames, visuals, looksSent
     }
 
     // Lenient: a progress record written by an older build still reads
@@ -60,14 +61,13 @@ struct HomeownerProgress: Codable, Equatable {
         windowCount = (try? c.decodeIfPresent(Int.self, forKey: .windowCount)) ?? 0
         callbackReason = try? c.decodeIfPresent(String.self, forKey: .callbackReason)
         estimateWindows = try? c.decodeIfPresent(HomeownerWindowEstimate.self, forKey: .estimateWindows)
-        estimateRoof = try? c.decodeIfPresent(HomeownerRoofEstimate.self, forKey: .estimateRoof)
-        estimateRoofNote = try? c.decodeIfPresent(HomeownerRoofNote.self, forKey: .estimateRoofNote)
         floors = try? c.decodeIfPresent(Double.self, forKey: .floors)
         perimeterFt = try? c.decodeIfPresent(Int.self, forKey: .perimeterFt)
         lastMethod = try? c.decodeIfPresent(String.self, forKey: .lastMethod)
         pendingStyles = (try? c.decodeIfPresent([String: String].self, forKey: .pendingStyles)) ?? [:]
         windowFrames = (try? c.decodeIfPresent([String: WindowFrameSize].self, forKey: .windowFrames)) ?? [:]
         visuals = (try? c.decodeIfPresent([String: WindowVisualLook].self, forKey: .visuals)) ?? [:]
+        looksSent = (try? c.decodeIfPresent([String: HomeownerWindowLookBody].self, forKey: .looksSent)) ?? [:]
     }
 }
 

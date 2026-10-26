@@ -22,6 +22,7 @@ final class ServerSwitchAPI: HomeownerAPI, @unchecked Sendable {
     func view(_ s: HomeownerSession) async throws -> HomeownerRequestView { try await current.view(s) }
     func uploadPhoto(_ s: HomeownerSession, jpeg: Data) async throws -> WindowPhotoUpload { try await current.uploadPhoto(s, jpeg: jpeg) }
     func addWindow(_ s: HomeownerSession, window: PhotoWindowInput) async throws -> HomeownerRequestView { try await current.addWindow(s, window: window) }
+    func setLook(_ s: HomeownerSession, windowId: String, look: HomeownerWindowLookBody) async throws -> HomeownerRequestView { try await current.setLook(s, windowId: windowId, look: look) }
     func deleteWindow(_ s: HomeownerSession, windowId: String) async throws -> HomeownerRequestView { try await current.deleteWindow(s, windowId: windowId) }
     func setEstimatedTotal(_ s: HomeownerSession, total: Int?) async throws -> HomeownerRequestView { try await current.setEstimatedTotal(s, total: total) }
     func fileContact(_ s: HomeownerSession, contact: HomeownerContact) async throws -> HomeownerRequestView { try await current.fileContact(s, contact: contact) }

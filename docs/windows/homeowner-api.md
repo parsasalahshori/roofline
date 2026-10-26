@@ -109,6 +109,7 @@ A rare `409 conflict` (a clash while the address was being saved: try again) and
 3. Windows: `POST .../uploads` (a photo), `POST .../windows` (a measured window), repeat. `GET .../requests/:id` any time.
    A window can then get a multi-frame scan: `POST .../uploads` for each frame, then `POST .../scans` (see below).
 4. `PATCH .../requests/:id` if the homeowner says how many windows they have.
+4b. `PATCH .../windows/:windowId/look` for each window the homeowner customized (before the contact, so the lead lists it).
 5. `POST .../contact` -> the lead exists on the company's side (the consent is stored here).
 6. `GET .../slots`, then `POST .../book` with `slotStart` or `callMe`.
 7. `GET .../status` for the progress screen.
@@ -580,6 +581,26 @@ RooflineCore checks the same JSON fixtures, `packages/shared/test/fixtures/windo
 request that went to the call-back path. Only the homeowner's own windows can be removed this way. The photo it stood on
 stays on the request (it still counts toward the 90).
 
+## PATCH /requests/:id/windows/:windowId/look
+
+The look the homeowner chose in the app's "Customize your windows" step. Descriptive only: it is kept with the window (in
+the window's entry on the address's measurement, so no migration), shown to staff, and put in the lead; it never changes
+the price (the window's `style` does). Sent again, it replaces the look before.
+
+```json
+{ "kind": "casement", "grid": "prairie", "glass": "lowE", "color": "black" }
+```
+
+- Exactly these four keys; an unknown key or value is `400 invalid_request` (`WINDOW_LOOK_*` in `packages/shared/src/window-look.ts`).
+  `kind`: doubleHung, singleHung, slider2, slider3, casement, casementPair, awning, hopper, picture, pictureCasements, bay, bow,
+  garden, arch, halfRound, circle, specialty. `grid`: none, colonial, prairie, diamond, queenAnne, topOnly. `glass`: clear,
+  lowE, frosted. `color`: the company's key for the frame colour (`^[a-z0-9][a-z0-9_-]{0,31}$`, "white", "black").
+- `200` with the view; each window in it carries `look` once set. `404 window_not_found` for a window the homeowner did not
+  send; `409 callback_only` / `windows_not_requested` as for the other window calls.
+- Sending the window again (`POST .../windows`, a retry) after its look was set is still the same window (`200`).
+- Changing a window's style makes the app replace it with a copy under a new id, so the app sends looks last, on the ids the
+  server holds, and again before the contact if a look changed or an earlier try did not get through.
+
 ## PATCH /requests/:id
 
 Body `{ "estimatedTotalOverride": 18 }`: the homeowner says "I have 18 windows" (1 to 80 in all, measured ones included).
@@ -690,6 +711,9 @@ Coaching text for the card screen:
   "Homeowner app" and a timeline line like: "Homeowner app request. Asked about windows, roof. Shown: Roof about 26.5
   squares, $12,900 to $16,500; 3 windows measured in the app (2 to check): Good $8,750, Better $11,650, Best $17,450 for 14
   windows (11 estimated)."
+- When the homeowner customized their windows, the timeline line also says how: "Windows as customized: Kitchen 36 x 48
+  (Casement · Prairie grid · Black · Low-E glass); Den 30 x 60 (...)" (the first 20 windows). On **Measure windows** each
+  homeowner window shows its look under its style, in one line.
 - The owner's **Today** list shows "Call the homeowner about their app request" until a visit is booked.
 - Booking a time adds the inspection to the calendar and a line on the timeline; "call me" adds a line and keeps the reminder.
 - The progress the app shows (`measured`, `ordered`) is what the company did at the address after the request came in.
