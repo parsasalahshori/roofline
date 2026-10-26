@@ -401,6 +401,29 @@ final class HomeownerStoreTests: XCTestCase {
         XCTAssertEqual(held[id]?.kind, .bay)
     }
 
+    func testTheReadyThumbnailIsDrawnFromTheWindowsSavedLook() async throws {
+        let h = try await twoWindowsOnTheEstimate()
+        let id = try XCTUnwrap(h.store.windowRows.first?.id)
+        let casement = WindowVisualLook(type: .casement, grid: .prairie, glass: .lowE)
+        h.store.keepLook(casement, colorKey: "black", for: id)
+        let spec = h.store.thumbnailSpec(for: id)
+        XCTAssertEqual(spec.look, casement, "the renderer is given the saved look, not the style's starting one")
+        XCTAssertEqual(spec.colorKey, "black")
+        XCTAssertEqual(spec.colorHex, h.store.brand.windowColors.first { $0.key == "black" }?.hex)
+        let photo = await h.store.visualPhoto(for: id)
+        let maybeDrawn = await ThumbnailRenderer.image(for: spec, source: photo)
+        let drawn = try XCTUnwrap(maybeDrawn)
+        XCTAssertEqual(ThumbnailRenderer.lastLook, casement, "the drawing was made from that look")
+        // A different look gives a different picture, and a window with no photo still gets a drawn thumbnail of its look
+        var other = spec
+        other.look = WindowVisualLook(type: .doubleHung, grid: .colonial, glass: .clear)
+        let hung = try XCTUnwrap(ThumbnailRenderer.render(other, source: photo))
+        XCTAssertNotEqual(drawn.pngData(), hung.pngData())
+        XCTAssertEqual(ThumbnailRenderer.lastLook, other.look)
+        let wall = try XCTUnwrap(ThumbnailRenderer.render(spec, source: nil))
+        XCTAssertEqual(wall.size, CGSize(width: 216, height: 216))
+    }
+
     func testTheChosenLooksSurviveARestart() async throws {
         let h = try await twoWindowsOnTheEstimate()
         let id = try XCTUnwrap(h.store.windowRows.first?.id)

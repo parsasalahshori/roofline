@@ -24,7 +24,7 @@ struct ReadyScreen: View {
                         Text(q.rangeText ?? Money.dollars(tier.total)).font(.largeTitle.weight(.bold)).monospacedDigit().foregroundStyle(Theme.ink)
                             .minimumScaleFactor(0.6).lineLimit(2)
                             .accessibilityIdentifier("ready.range")
-                        Text("For \(q.windowCount) window\(q.windowCount == 1 ? "" : "s"), installed, old windows hauled away, with the look you chose.")
+                        Text(bannerLine(q))
                             .font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
                     } else if store.loadingQuote || store.applyingLooks {
                         HStack(spacing: 12) {
@@ -52,7 +52,8 @@ struct ReadyScreen: View {
             JourneyListFooter()
         }
         .listStyle(.insetGrouped)
-        .hiNav(title: nil)
+        .contentMargins(.top, 0, for: .scrollContent)
+        .hiNav(title: "Your estimate")
         .wcFooter {
             WCPrimaryButton(title: "Get my estimate", isEnabled: store.quote?.tiers.isEmpty == false) { store.requestCallFromEstimate() }
                 .accessibilityIdentifier("ready.getEstimate")
@@ -61,6 +62,16 @@ struct ReadyScreen: View {
         .task {
             if store.quote == nil { await store.prepareQuote() }
         }
+    }
+}
+
+extension ReadyScreen {
+    /// "For 4 windows, installed…", and when the estimate also counts windows not measured yet, how many and why (the list shows the measured ones).
+    fileprivate func bannerLine(_ q: HomeownerQuote) -> String {
+        let n = store.windowRows.count
+        let base = "For \(n) window\(n == 1 ? "" : "s"), installed, old windows hauled away, with the look you chose."
+        guard q.estimatedCount > 0 else { return base }
+        return base + " The price also counts \(q.estimatedCount) more window\(q.estimatedCount == 1 ? "" : "s") not measured yet, priced from your home's size."
     }
 }
 
@@ -105,15 +116,14 @@ private struct ReadyRow: View {
     }
 }
 
-/// The window's "after" picture: its own photo with the chosen window drawn in, small. Drawn once off the main thread (a drawn wall when the
-/// photo is not on this phone).
+/// The window's "after" picture: its own photo with the window it was customized to drawn in, small (a drawn wall when the photo is not
+/// on this phone). Rendered by `ThumbnailRenderer`, the visualizer's own drawing path, from the window's saved look.
 private struct ReadyThumbnail: View {
     @Environment(HomeownerStore.self) private var store
     let windowId: String
     @State private var image: UIImage?
 
-    private var look: WindowVisualLook { store.startingLook(for: windowId) }
-    private var colorKey: String { store.startingColorKey(for: windowId) }
+    private var spec: ThumbnailSpec { store.thumbnailSpec(for: windowId) }
 
     var body: some View {
         ZStack {
@@ -125,30 +135,72 @@ private struct ReadyThumbnail: View {
             }
         }
         .accessibilityHidden(true)
-        .task(id: "\(windowId)|\(look.type.rawValue)|\(look.grid.rawValue)|\(look.glass.rawValue)|\(colorKey)") { await draw() }
+        .task(id: spec) {
+            let spec = self.spec
+            let source = await store.visualPhoto(for: windowId)
+            image = await ThumbnailRenderer.image(for: spec, source: source)
+        }
+    }
+}
+
+/// What a window's thumbnail is drawn from: its saved look (or the kind its style stands for), the frame colour, and its size.
+struct ThumbnailSpec: Hashable {
+    var windowId: String
+    var look: WindowVisualLook
+    var colorKey: String
+    var colorHex: String
+    var widthIn: Double?
+    var heightIn: Double?
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(windowId)
+        hasher.combine(look.type)
+        hasher.combine(look.grid)
+        hasher.combine(look.glass)
+        hasher.combine(look.cleanGlass)
+        hasher.combine(colorKey)
+    }
+}
+
+extension HomeownerStore {
+    func thumbnailSpec(for windowId: String) -> ThumbnailSpec {
+        let key = startingColorKey(for: windowId)
+        let row = windowRows.first { $0.id == windowId }
+        return ThumbnailSpec(windowId: windowId, look: startingLook(for: windowId), colorKey: key,
+                             colorHex: brand.windowColors.first { $0.key == key }?.hex ?? "#F7F7F4", widthIn: row?.widthIn, heightIn: row?.heightIn)
+    }
+}
+
+/// Draws a window's "after" picture small: the same `VisualizeWorker.prepare` and `WindowCompositor.after` the visualizer uses, once per
+/// (window, look, colour), off the main thread, and kept. `lastLook` records the look the newest drawing was made from (for tests).
+enum ThumbnailRenderer {
+    private static let cache = NSCache<NSString, UIImage>()
+    nonisolated(unsafe) static var lastLook: WindowVisualLook?
+
+    static func cacheKey(_ spec: ThumbnailSpec, source: VisualPhotoSource?) -> NSString {
+        "\(spec.windowId)|\(spec.look.type.rawValue)|\(spec.look.grid.rawValue)|\(spec.look.glass.rawValue)|\(spec.look.cleanGlass)|\(spec.colorKey)|\(source?.url.lastPathComponent ?? "wall")" as NSString
     }
 
-    private func draw() async {
-        let row = store.windowRows.first { $0.id == windowId }
-        let source = await store.visualPhoto(for: windowId)
-        let look = self.look
-        let hex = store.brand.windowColors.first { $0.key == colorKey }?.hex ?? "#F7F7F4"
-        let (w, h) = (row?.widthIn, row?.heightIn)
-        let made = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-            guard let prepared = VisualizeWorker.prepare(source: source, widthIn: w, heightIn: h, aspect: 1),
-                  let after = prepared.compositor.after(look: look, colorHex: hex) else { return nil }
-            // Small: a row's picture is 72 points
-            let side: CGFloat = 216
-            let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side))
-            return renderer.image { _ in UIImage(cgImage: after).draw(in: Self.fill(CGSize(width: after.width, height: after.height), side: side)) }
-        }.value
-        if let made = made { image = made }
+    static func image(for spec: ThumbnailSpec, source: VisualPhotoSource?) async -> UIImage? {
+        let key = cacheKey(spec, source: source)
+        if let hit = cache.object(forKey: key) { return hit }
+        let made = await Task.detached(priority: .userInitiated) { render(spec, source: source) }.value
+        if let made = made { cache.setObject(made, forKey: key) }
+        return made
     }
 
-    /// The picture scaled to cover a square.
-    private static func fill(_ size: CGSize, side: CGFloat) -> CGRect {
-        let k = max(side / max(size.width, 1), side / max(size.height, 1))
-        let (w, h) = (size.width * k, size.height * k)
-        return CGRect(x: (side - w) / 2, y: (side - h) / 2, width: w, height: h)
+    /// The drawing itself (synchronous): a square, 216 px.
+    static func render(_ spec: ThumbnailSpec, source: VisualPhotoSource?) -> UIImage? {
+        lastLook = spec.look
+        guard let prepared = VisualizeWorker.prepare(source: source, widthIn: spec.widthIn, heightIn: spec.heightIn, aspect: 1),
+              let after = prepared.compositor.after(look: spec.look, colorHex: spec.colorHex) else { return nil }
+        let side: CGFloat = 216
+        let k = max(side / CGFloat(max(after.width, 1)), side / CGFloat(max(after.height, 1)))
+        let (w, h) = (CGFloat(after.width) * k, CGFloat(after.height) * k)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { _ in
+            UIImage(cgImage: after).draw(in: CGRect(x: (side - w) / 2, y: (side - h) / 2, width: w, height: h))
+        }
     }
 }
