@@ -312,6 +312,10 @@ final class HomeownerStore {
     /// Opens the app: the saved request (if any), the company, where to resume.
     func bootstrap() async {
         await startOutbox()
+        if UserDefaults.standard.bool(forKey: Self.deleteOnLaunchKey) {
+            UserDefaults.standard.set(false, forKey: Self.deleteOnLaunchKey)
+            await deleteAllData()
+        }
         startMonitor()
         // A reinstalled app finds the old Keychain item (the Keychain outlives the app): it starts fresh
         let defaults = UserDefaults.standard
@@ -532,6 +536,39 @@ final class HomeownerStore {
             notice = Notice(text: m, kind: .info)
         }
     }
+
+    // MARK: Delete all data (Settings)
+
+    /// Settings → "Delete All My Data", and the iOS Settings app switch: everything this app keeps on the phone goes (the saved
+    /// request and its Keychain item, windows and photos waiting to upload, scans and their frames, saved progress, the how-to
+    /// "seen" flags, temporary files). The tester's server address and company stay, so the app still reaches the server. Requests
+    /// already sent stay on the server; this only clears the phone.
+    func deleteAllData() async {
+        let windowIds = Set(await outbox.items.map(\.measurementId))
+        let scanIds = Set(await scanOutbox.items.map(\.measurementId))
+        for id in windowIds { try? await outbox.removeAll(measurementId: id) }
+        for id in scanIds { try? await scanOutbox.removeAll(measurementId: id) }
+        for id in windowIds.union(scanIds) {
+            pendingDisk.clear(requestId: id)
+            progressStore.clear(requestId: id)
+        }
+        pendingDisk.clearAll()
+        forgetRequest(message: nil)
+        let fm = FileManager.default
+        for dir in [fm.temporaryDirectory] + fm.urls(for: .cachesDirectory, in: .userDomainMask) {
+            for f in (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [] { try? fm.removeItem(at: f) }
+        }
+        let keep: Set<String> = [ServerSetting.key, ServerSetting.slugKey, "winchoice.installed"]
+        let defaults = UserDefaults.standard
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("winchoice.") && !keep.contains(key) {
+            defaults.removeObject(forKey: key)
+        }
+        outboxItems = await outbox.items
+        notice = Notice(text: "Everything this app had saved on your phone is deleted.", kind: .info)
+    }
+
+    /// The iOS Settings app's "Delete All Data on Next Launch" switch (Settings.bundle): honoured once, then switched back off.
+    static let deleteOnLaunchKey = "winchoice.settings.deleteAllDataOnLaunch"
 
     // MARK: Outbox
 

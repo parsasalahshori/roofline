@@ -6,6 +6,7 @@ import SwiftUI
 struct WelcomeScreen: View {
     @Environment(HomeownerStore.self) private var store
     @State private var showServerSetting = false
+    @State private var showSettings = false
 
     var body: some View {
         // It scrolls when the text is large (it sits still when everything fits)
@@ -39,15 +40,26 @@ struct WelcomeScreen: View {
         }
         .hiNav(title: nil, showsBack: false)
         .sheet(isPresented: $showServerSetting) { ServerSettingSheet() }
+        .sheet(isPresented: $showSettings) { AppSettingsSheet() }
     }
 
     /// The name, one line on what the app is for, and a sentence under it.
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(store.brand.wordmark)
-                .wcWordmark(.title2)
-                .foregroundStyle(Theme.ink)
-                .accessibilityAddTraits(.isHeader)
+            HStack(alignment: .center) {
+                Text(store.brand.wordmark)
+                    .wcWordmark(.title2)
+                    .foregroundStyle(Theme.ink)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer()
+                Button { showSettings = true } label: {
+                    Image(systemName: "gearshape")
+                        .font(.title3)
+                        .frame(width: 44, height: 44)
+                }
+                .foregroundStyle(Theme.ink2)
+                .accessibilityLabel("Settings")
+            }
             Text("Measure your home from your phone.")
                 .font(.largeTitle.weight(.bold))
                 .foregroundStyle(Theme.ink)
@@ -90,6 +102,75 @@ private struct WelcomeFeature: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// Settings: delete everything the app keeps on this phone (to start again with brand-new information), the tester's server,
+/// and the version. An inset-grouped Form, the way Apple's own settings look.
+struct AppSettingsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(HomeownerStore.self) private var store
+    @State private var confirmDelete = false
+    @State private var deleting = false
+    @State private var showServer = false
+
+    private var version: String {
+        let info = Bundle.main.infoDictionary
+        return "\(info?["CFBundleShortVersionString"] as? String ?? "") (\(info?["CFBundleVersion"] as? String ?? ""))"
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Button(role: .destructive) { confirmDelete = true } label: {
+                        if deleting {
+                            HStack { ProgressView(); Text("Deleting…") }
+                        } else {
+                            Label("Delete All My Data", systemImage: "trash")
+                        }
+                    }
+                    .disabled(deleting)
+                } header: {
+                    Text("Your data")
+                } footer: {
+                    Text("Removes your saved request, measured windows and photos, and everything else this app keeps on your phone, so you can start again. Anything already sent to \(store.brand.name) stays with them.")
+                }
+                if BuildEnvironment.isTesterBuild {
+                    Section {
+                        Button { showServer = true } label: {
+                            LabeledContent("Server", value: ServerSetting.saved ?? "Built-in")
+                        }
+                        .foregroundStyle(Theme.ink)
+                    } header: {
+                        Text("Testing")
+                    }
+                }
+                Section {
+                    LabeledContent("Version", value: version)
+                }
+            }
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+            .confirmationDialog("Delete all your data on this phone?", isPresented: $confirmDelete, titleVisibility: .visible) {
+                Button("Delete All My Data", role: .destructive) {
+                    deleting = true
+                    Task {
+                        await store.deleteAllData()
+                        deleting = false
+                        dismiss()
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This can't be undone.")
+            }
+            .sheet(isPresented: $showServer) { ServerSettingSheet() }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 

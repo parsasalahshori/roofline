@@ -705,4 +705,31 @@ final class HomeownerStoreTests: XCTestCase {
         XCTAssertNotEqual(h.store.session?.requestId, first)
         XCTAssertNil(h.store.pendingAddressChange)
     }
+
+    // MARK: Settings: delete all data
+
+    func testDeleteAllDataClearsTheRequestWindowsAndProgressButKeepsTheServer() async throws {
+        let h = StoreHarness()
+        await h.store.loadCompany()
+        h.store.selectedServices = [.windows]
+        h.store.continueFromWelcome()
+        h.store.addressText = "305 Ridgeway Dr, Little Rock, AR 72205"
+        await h.store.confirmAddress()
+        await h.capture(room: "Kitchen")
+        XCTAssertNotNil(h.store.session)
+        XCTAssertGreaterThan(h.store.windowCount, 0)
+        UserDefaults.standard.set(true, forKey: "winchoice.howto.test")
+        UserDefaults.standard.set("https://example.test", forKey: ServerSetting.key)
+        await h.store.deleteAllData()
+        XCTAssertNil(h.store.session, "the saved request is gone")
+        XCTAssertNil(h.vault.load(), "the Keychain item is gone")
+        XCTAssertEqual(h.store.windowCount, 0, "no measured windows left")
+        let left = await h.store.outbox.items
+        XCTAssertTrue(left.isEmpty, "nothing waiting to upload")
+        XCTAssertFalse(UserDefaults.standard.bool(forKey: "winchoice.howto.test"), "how-to flags reset")
+        XCTAssertEqual(UserDefaults.standard.string(forKey: ServerSetting.key), "https://example.test", "the tester's server stays")
+        XCTAssertEqual(h.store.root, .welcome)
+        XCTAssertNotNil(h.store.notice)
+        UserDefaults.standard.removeObject(forKey: ServerSetting.key)
+    }
 }

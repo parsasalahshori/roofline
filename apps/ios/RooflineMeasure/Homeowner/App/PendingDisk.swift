@@ -60,6 +60,12 @@ struct PendingDisk {
         }
     }
 
+    /// Every pending window of every request (Settings → Delete All My Data).
+    func clearAll() {
+        try? FileManager.default.removeItem(at: directory)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+
     func clear(requestId: String) {
         try? FileManager.default.removeItem(at: recordURL(requestId))
         try? FileManager.default.removeItem(at: photoURL(requestId))
