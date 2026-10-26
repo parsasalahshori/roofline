@@ -20,13 +20,17 @@ enum RootScreen: Equatable {
 }
 
 /// How a window gets measured (screen 06). `quickScan` and `roomScan` are both Apple's room scan (RoomPlan): the quick one is one
-/// wall (point at the wall with the window, pan a few seconds, Done), the other walks the whole room.
+/// wall (point at the wall with the window, pan a few seconds, Done), the other walks the whole room. Both give Apple's sizes only.
+/// `roomCloseups` is the room scan plus the window scan: pan the room, take close-ups of each window's corners, then Measure and check.
 enum MeasureMethod: String, CaseIterable, Identifiable {
-    case corners, roomScan, card, quickScan
+    case corners, roomScan, card, quickScan, roomCloseups
     var id: String { rawValue }
 
-    /// The two ways that use Apple's room scan (and so need the depth sensor).
+    /// The two ways that give Apple's room-scan sizes only (and so need the depth sensor).
     var isRoomPlan: Bool { self == .roomScan || self == .quickScan }
+
+    /// Every way that runs Apple's room scan (they all need the depth sensor).
+    var usesRoomPlan: Bool { isRoomPlan || self == .roomCloseups }
 }
 
 /// A message to the homeowner that is not a screen: a failed call, a window that could not be sent.

@@ -119,20 +119,75 @@ public enum ScanMarkMaker {
 
     /// The whole of it: marks from `estimate` (a rectangle's four corners), the outliers pruned, solved; then once more from the solved rectangle
     /// with a smaller search, kept when it is better (fewer gates failing, then a lower reprojection error).
-    public static func run(frames: [ScanFrame], estimate: [Vec3], keyFrameId: String?, keySource: MarkSource, wall: Plane?, snapper: Snapper, secondPass: Bool = true) -> Run {
-        let first = marks(corners: estimate, frames: frames, keyFrameId: keyFrameId, keySource: keySource, radiusM: firstRadiusM, closeupRadiusM: firstCloseupRadiusM, snapper: snapper)
+    /// `radiusScale`: widens the FIRST search (Apple's room scan is a coarser first estimate than the single-photo finders: a few centimetres
+    /// per side); the second pass, which starts from the solved rectangle, is not widened.
+    /// `bootstrap`: when that does not pass, a better first rectangle is made from the corners the first search DID confirm
+    /// (`improvedEstimate`) and the whole thing is run once more from it; the better of the two answers is kept.
+    public static func run(frames: [ScanFrame], estimate: [Vec3], keyFrameId: String?, keySource: MarkSource, wall: Plane?, snapper: Snapper, secondPass: Bool = true,
+                           radiusScale: Double = 1, bootstrap: Bool = false) -> Run {
+        let first = marks(corners: estimate, frames: frames, keyFrameId: keyFrameId, keySource: keySource, radiusM: firstRadiusM * radiusScale,
+                          closeupRadiusM: firstCloseupRadiusM * radiusScale, snapper: snapper)
         let used1 = pruned(frames: frames, marks: evidence(first), wall: wall)
         let sol1 = WindowScanSolver.solve(frames: frames, marks: used1, wall: wall)
         var best = Run(all: first, used: used1, solution: sol1, refined: false)
-        guard secondPass, let rect = sol1.cornersM else { return best }
-        let second = marks(corners: rect, frames: frames, keyFrameId: keyFrameId, keySource: keySource, radiusM: secondRadiusM, closeupRadiusM: secondCloseupRadiusM, snapper: snapper)
-        let used2 = pruned(frames: frames, marks: evidence(second), wall: wall)
-        let sol2 = WindowScanSolver.solve(frames: frames, marks: used2, wall: wall)
-        let better = (sol2.fit != nil && sol1.fit == nil)
-            || (sol2.fit != nil && (sol2.quality.hardFailures.count < sol1.quality.hardFailures.count
-                || (sol2.quality.hardFailures.count == sol1.quality.hardFailures.count && sol2.quality.reprojRmsPx <= sol1.quality.reprojRmsPx)))
-        if better { best = Run(all: second, used: used2, solution: sol2, refined: true) }
-        return best
+        if secondPass, let rect = sol1.cornersM {
+            let second = marks(corners: rect, frames: frames, keyFrameId: keyFrameId, keySource: keySource, radiusM: secondRadiusM, closeupRadiusM: secondCloseupRadiusM, snapper: snapper)
+            let used2 = pruned(frames: frames, marks: evidence(second), wall: wall)
+            let sol2 = WindowScanSolver.solve(frames: frames, marks: used2, wall: wall)
+            if isBetter(sol2, than: sol1) { best = Run(all: second, used: used2, solution: sol2, refined: true) }
+        }
+        guard bootstrap, best.solution.status != .measured,
+              let better = improvedEstimate(estimate: estimate, marks: used1, frames: frames, wall: wall) else { return best }
+        let again = run(frames: frames, estimate: better, keyFrameId: keyFrameId, keySource: keySource, wall: wall, snapper: snapper, secondPass: secondPass, radiusScale: radiusScale)
+        return isBetter(again.solution, than: best.solution) ? again : best
+    }
+
+    /// `a` is a better answer than `b`: it has a rectangle where `b` has none, else fewer gates failing, else the lower reprojection error.
+    public static func isBetter(_ a: ScanSolution, than b: ScanSolution) -> Bool {
+        if a.fit != nil, b.fit == nil { return true }
+        if a.fit == nil { return false }
+        let fa = a.quality.hardFailures.count, fb = b.quality.hardFailures.count
+        return fa < fb || (fa == fb && a.quality.reprojRmsPx <= b.quality.reprojRmsPx)
+    }
+
+    /// How far (metres) a triangulated corner may be from the estimate's before it is not believed (a mark that found the wrong edge).
+    public static let bootstrapMaxMoveM = 0.10
+    /// A corner counts as found when its marks agree within this many pixels (RMS) and the photos' rays make at least this angle.
+    public static let bootstrapMaxRmsPx = 2.5
+    public static let bootstrapMinAngleDeg = 3.0
+
+    /// A better first rectangle, from the marks the first search confirmed. A corner seen in two or more photos with a real baseline is
+    /// triangulated; the corners found must be near the estimate. Two OPPOSITE corners complete the whole rectangle (a window is level and plumb:
+    /// the top-left and bottom-right say where the other two are); with all four found they are used as they are. Nil when that is not
+    /// enough (or nothing moved), so the first answer stands.
+    public static func improvedEstimate(estimate: [Vec3], marks: [ScanMark], frames: [ScanFrame], wall: Plane?) -> [Vec3]? {
+        guard estimate.count == 4 else { return nil }
+        var found: [Int: (point: Vec3, rms: Double)] = [:]
+        for c in 0..<4 {
+            let mine = marks.filter { $0.corner == c }
+            guard mine.count >= 2 else { continue }
+            let rays = mine.compactMap { m in frames.first { $0.frameId == m.frameId }.flatMap { WindowScanSolver.ray(frame: $0, x: m.x, y: m.y) } }
+            guard rays.count >= 2, WindowScanSolver.maxAngleDeg(rays) >= bootstrapMinAngleDeg, let p = WindowScanSolver.triangulate(rays),
+                  let res = WindowScanSolver.residuals(of: mine, frames: frames), !res.isEmpty else { continue }
+            let rms = (res.reduce(0) { $0 + $1 * $1 } / Double(res.count)).squareRoot()
+            if rms <= bootstrapMaxRmsPx, p.distance(to: estimate[c]) <= bootstrapMaxMoveM { found[c] = (p, rms) }
+        }
+        if found.count == 4 { return (0..<4).map { found[$0]!.point } }
+        let diagonals = [(0, 2), (1, 3)].filter { found[$0.0] != nil && found[$0.1] != nil }
+        guard let diagonal = diagonals.min(by: { (found[$0.0]!.rms + found[$0.1]!.rms) < (found[$1.0]!.rms + found[$1.1]!.rms) }),
+              let n = (wall ?? Plane.fit(estimate))?.normal, let along0 = Vec3.up.cross(n).normalized else { return nil }
+        // Level (along) and plumb (up in the wall) directions, turned the way the estimate's own corners run
+        let along = (estimate[1] - estimate[0]).dot(along0) >= 0 ? along0 : -along0
+        guard let up0 = n.cross(along).normalized else { return nil }
+        let up = (estimate[0] - estimate[3]).dot(up0) >= 0 ? up0 : -up0
+        let a = found[diagonal.0]!.point, b = found[diagonal.1]!.point
+        let w = (b - a).dot(along), h = (b - a).dot(up)
+        if diagonal == (0, 2) {
+            // TL and BR: TR is level with TL and above BR; BL is plumb under TL and level with BR
+            return [a, a + along * w, a + along * w + up * h, a + up * h]
+        }
+        // TR and BL: TL is level with TR and above BL; BR is plumb under TR and level with BL
+        return [a + along * w, a, a + up * h, a + along * w + up * h]
     }
 }
 

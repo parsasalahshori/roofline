@@ -19,6 +19,7 @@ struct MeasureHost: View {
                     switch session.method {
                     case .corners: ArMeasureScreen(session: session).id(attempt)
                     case .roomScan, .quickScan: RoomScanScreen(session: session).id(attempt)
+                    case .roomCloseups: RoomHybridScreen(session: session).id(attempt)
                     case .card: CardPhotoFlow(session: session).id(attempt)
                     }
                 }

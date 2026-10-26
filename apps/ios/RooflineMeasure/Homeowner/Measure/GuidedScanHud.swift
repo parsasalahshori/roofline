@@ -61,13 +61,14 @@ struct ScanPill: View {
 /// The round close button of a camera screen: a material circle, 44 pt.
 private struct ScanCloseButton: View {
     let action: () -> Void
+    var label = "Close"
     var body: some View {
         Button(action: action) {
             Image(systemName: "xmark").font(.body.weight(.semibold)).foregroundStyle(.primary)
                 .frame(width: 44, height: 44).background(.ultraThinMaterial, in: Circle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Close")
+        .accessibilityLabel(label)
     }
 }
 
@@ -137,19 +138,26 @@ struct ScanCaptureOverlay: View {
     let onNext: () -> Void
     let onSkip: () -> Void
     let onStop: () -> Void
+    /// The room-scan hybrid's close-up step: only the four corners are asked for (the regular photos were taken while panning), "Done" ends the
+    /// window's close-ups, and the camera picture has the pan photos' size even before a close-up has been kept.
+    var closeupsOnly = false
+    var stopTitle = "Stop"
+    var stopEnabled: Bool?
+    var photoSize: CGSize?
+    var closeTitle = "Close"
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var step: ScanStep? { ui.step }
-    private var coach: ScanCoach { step?.coach ?? ScanCoach(.sweep) }
+    private var coach: ScanCoach { step?.coach ?? ScanCoach(closeupsOnly ? .sweepDone : .sweep) }
     private var text: String { ScanCopy.text(coach) }
-    private var inCloseups: Bool { step?.phase == .closeups }
+    private var inCloseups: Bool { closeupsOnly || step?.phase == .closeups }
     private var regular: Int { step?.regularKept ?? 0 }
     private var target: ScanGuideConfig { ScanGuideConfig() }
     /// 0 ... 1 over the whole scan: half for the regular photos, half for the corners.
     private var progress: Double {
         let r = min(1, Double(regular) / Double(target.targetRegular))
         let c = Double(step?.closeupsDone ?? 0) / 4
-        return (r + c) / 2
+        return closeupsOnly ? c : (r + c) / 2
     }
 
     var body: some View {
@@ -157,11 +165,17 @@ struct ScanCaptureOverlay: View {
             targetMark
             VStack(spacing: 10) {
                 HStack {
-                    ScanCloseButton(action: onClose)
+                    ScanCloseButton(action: onClose, label: closeTitle)
                     Spacer()
-                    Button("Stop", action: onStop).buttonStyle(.bordered).controlSize(.regular).frame(minHeight: 44)
-                        .disabled(regular < ScanLimits.minFrames)
-                        .accessibilityHint("Measures from the photos taken so far")
+                    if closeupsOnly {
+                        Text(title).font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+                            .padding(.horizontal, 12).padding(.vertical, 8).background(.ultraThinMaterial, in: Capsule())
+                            .accessibilityLabel(title.capitalized)
+                        Spacer()
+                    }
+                    Button(stopTitle, action: onStop).buttonStyle(.bordered).controlSize(.regular).frame(minHeight: 44)
+                        .disabled(!(stopEnabled ?? (regular >= ScanLimits.minFrames)))
+                        .accessibilityHint(closeupsOnly ? "Goes back to the list of windows with the close-ups taken so far" : "Measures from the photos taken so far")
                 }
                 .padding(.horizontal, 12)
                 ScanPill(symbol: ScanCoachLook.symbol(coach), text: text, tint: ScanCoachLook.tint(coach), busy: coach.code == .findingWindow)
@@ -199,7 +213,7 @@ struct ScanCaptureOverlay: View {
                 }
             }
             .padding(.horizontal, 14).padding(.vertical, 6).background(.ultraThinMaterial, in: Capsule())
-        } else {
+        } else if !closeupsOnly {
             HStack(spacing: 6) {
                 ForEach(0..<target.targetRegular, id: \.self) { i in
                     Circle().fill(i < regular ? Color.white : Color.white.opacity(0.3)).frame(width: 9, height: 9)
@@ -220,11 +234,11 @@ struct ScanCaptureOverlay: View {
 
     /// The ring on the corner being asked for when it is on the screen; a big arrow toward it when it is not.
     @ViewBuilder private var targetMark: some View {
-        if inCloseups, let t = step?.target, let photo = shots.first?.view {
+        if inCloseups, let t = step?.target, let photo = photoSize ?? shots.first.map({ CGSize(width: $0.view.photoWidthPx, height: $0.view.photoHeightPx) }) {
             GeometryReader { geo in
                 let size = geo.size
                 // The camera picture fills the screen (aspect fill): one photo pixel is this many points
-                let scale = max(size.width / max(photo.photoWidthPx, 1), size.height / max(photo.photoHeightPx, 1))
+                let scale = max(size.width / max(photo.width, 1), size.height / max(photo.height, 1))
                 if let o = t.offsetPortrait {
                     let p = CGPoint(x: size.width / 2 + o.x * scale, y: size.height / 2 + o.y * scale)
                     let onScreen = p.x > 40 && p.x < size.width - 40 && p.y > 120 && p.y < size.height - 190

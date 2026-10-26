@@ -126,6 +126,10 @@ struct ScanResultView: View {
     let onUse: () -> Void
     let onAgain: () -> Void
     let onClose: () -> Void
+    /// The room-scan hybrid shows each window's result with other words: "Done" instead of "Use this size", and no "Scan again".
+    var useTitle = "Use this size"
+    var againTitle: String? = "Scan again"
+    var navTitle = "Your window"
     @State private var thumbs = ScanThumbs()
     @State private var editing: ScanShot?
 
@@ -138,7 +142,7 @@ struct ScanResultView: View {
                 cornersSection
                 photosSection
             }
-            .navigationTitle("Your window")
+            .navigationTitle(navTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Close", action: onClose) }
@@ -307,11 +311,13 @@ struct ScanResultView: View {
 
     private var actions: some View {
         VStack(spacing: 10) {
-            Button(action: onUse) { Text("Use this size").frame(maxWidth: .infinity) }
+            Button(action: onUse) { Text(useTitle).frame(maxWidth: .infinity) }
                 .buttonStyle(.borderedProminent).controlSize(.large).disabled(model.size == nil)
-                .accessibilityHint("Keeps this window and goes on to name it")
-            Button(action: onAgain) { Text("Scan again").frame(maxWidth: .infinity) }
-                .buttonStyle(.bordered).controlSize(.large)
+                .accessibilityHint(againTitle == nil ? "" : "Keeps this window and goes on to name it")
+            if let again = againTitle {
+                Button(action: onAgain) { Text(again).frame(maxWidth: .infinity) }
+                    .buttonStyle(.bordered).controlSize(.large)
+            }
         }
         .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
         .background(.bar)

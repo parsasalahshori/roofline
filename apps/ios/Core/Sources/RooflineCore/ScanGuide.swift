@@ -15,6 +15,9 @@ public struct ScanGuideConfig: Equatable, Sendable {
     public var targetRegular = 6
     public var maxRegular = 8
     public var minBaselineM = 0.15
+    /// 0: a regular photo must be `minBaselineM` from every other. Above 0: it also counts as a new view when the camera looks this many degrees
+    /// away from each of them (the room-scan pan turns on the spot more than it moves; the close-ups supply the baseline then).
+    public var minTurnDeg = 0.0
     /// Steady enough to be sharp: the camera's speed (m/s) and turning rate (degrees/s) for a regular photo, and for a close-up.
     public var maxSpeedMps = 0.15
     public var maxTurnDps = 25.0
@@ -236,6 +239,7 @@ public struct ScanGuide: Sendable {
     public private(set) var phase: ScanStep.Phase = .sweep
     /// Where the regular photos were taken from, and the id order they were kept in.
     public private(set) var keptPositions: [Vec3] = []
+    private var keptForwards: [Vec3] = []
     public private(set) var closeupDone = [false, false, false, false]
     public private(set) var closeupTaken = [false, false, false, false]
     public private(set) var current = 0
@@ -255,11 +259,15 @@ public struct ScanGuide: Sendable {
     private var sharpSamples = 0
     private var tooEarly = false
     private var lastCoach = ScanCoach(.sweep)
+    /// The room-scan hybrid starts at the close-ups: the regular photos were taken while panning, so the first frame goes straight to corner 1.
+    private var pendingCloseups = false
 
     public static let corners = [0, 1, 2, 3]
 
-    public init(config: ScanGuideConfig = ScanGuideConfig()) {
+    /// `startAtCloseups`: skip the sweep (its photos were taken another way) and ask for the corners' close-ups from the first frame.
+    public init(config: ScanGuideConfig = ScanGuideConfig(), startAtCloseups: Bool = false) {
         self.config = config
+        self.pendingCloseups = startAtCloseups
     }
 
     public var regularKept: Int { keptPositions.count }
@@ -276,6 +284,11 @@ public struct ScanGuide: Sendable {
         lastTime = o.time
         if startedAt == nil { startedAt = o.time }
         if phaseStartedAt == nil { phaseStartedAt = o.time }
+        if pendingCloseups {
+            pendingCloseups = false
+            enterCloseups(at: o.time)
+            lastCoach = ScanCoach(.sweepDone)
+        }
         switch phase {
         case .sweep: return sweepStep(o)
         case .closeups: return closeupStep(o, dt: dt)
@@ -287,7 +300,7 @@ public struct ScanGuide: Sendable {
     public mutating func manualKeep(_ o: ScanObservation) -> ScanKeep? {
         switch phase {
         case .sweep:
-            guard regularKept < config.maxRegular, keptPositions.allSatisfy({ $0.distance(to: o.cameraTransform.translation) >= config.minBaselineM / 3 }) else { return nil }
+            guard regularKept < config.maxRegular, isNewView(o, baselineM: config.minBaselineM / 3) else { return nil }
             return keepRegular(o, manual: true)
         case .closeups:
             guard current < 4 else { return nil }
@@ -370,7 +383,6 @@ public struct ScanGuide: Sendable {
 
     private mutating func sweepStep(_ o: ScanObservation) -> ScanStep {
         let t = o.time
-        let position = o.cameraTransform.translation
         let elapsed = t - (phaseStartedAt ?? t)
         let base = ScanCoach(tooEarly ? .stoppedTooEarly : .sweep)
         var coach = base
@@ -388,7 +400,7 @@ public struct ScanGuide: Sendable {
             coach = ScanCoach(.sweepDone)
         } else if t - lastKeepAt < config.minKeepGapS {
             coach = lastCoach
-        } else if keptPositions.allSatisfy({ $0.distance(to: position) >= config.minBaselineM }) {
+        } else if isNewView(o, baselineM: config.minBaselineM) {
             keep = keepRegular(o, manual: false)
             tooEarly = false
         } else {
@@ -408,6 +420,18 @@ public struct ScanGuide: Sendable {
         return step(o, coach: coach, keep: keep, target: nil)
     }
 
+    /// The frame shows the window from somewhere new: `baselineM` from every kept photo, or (when the config asks for it) turned away from each.
+    private func isNewView(_ o: ScanObservation, baselineM: Double) -> Bool {
+        let position = o.cameraTransform.translation
+        let forward = (-o.cameraTransform.column(2)).normalized ?? Vec3(0, 0, -1)
+        for (p, f) in zip(keptPositions, keptForwards) {
+            if p.distance(to: position) >= baselineM { continue }
+            if config.minTurnDeg > 0, acos(max(-1, min(1, f.dot(forward)))) * 180 / .pi >= config.minTurnDeg { continue }
+            return false
+        }
+        return true
+    }
+
     private func windowInView(_ corners: [Vec3], _ o: ScanObservation) -> Bool {
         guard corners.count == 4 else { return true }
         let k = o.intrinsics
@@ -421,6 +445,7 @@ public struct ScanGuide: Sendable {
 
     private mutating func keepRegular(_ o: ScanObservation, manual: Bool) -> ScanKeep {
         keptPositions.append(o.cameraTransform.translation)
+        keptForwards.append((-o.cameraTransform.column(2)).normalized ?? Vec3(0, 0, -1))
         lastKeepAt = o.time
         return ScanKeep(kind: .regular, manual: manual)
     }

@@ -18,6 +18,7 @@ struct MethodScreen: View {
             Section {
                 // Apple's room scan first on a phone with a depth sensor: the quickest way, one wall or the whole room
                 if store.capabilities.roomScan {
+                    MethodRow(method: .roomCloseups, selected: store.method == .roomCloseups) { store.method = .roomCloseups }
                     MethodRow(method: .quickScan, selected: store.method == .quickScan) { store.method = .quickScan }
                     MethodRow(method: .roomScan, selected: store.method == .roomScan) { store.method = .roomScan }
                 }
@@ -50,7 +51,7 @@ struct MethodScreen: View {
         }
         .hiNav(title: "\(room) · window \(windowNumberInRoom)")
         .onAppear {
-            if !store.isAvailable(store.method) { store.method = store.defaultMethod }
+            store.selectStartingMethod()
         }
     }
 }
@@ -69,6 +70,7 @@ private struct MethodRow: View {
         case .corners: return "Tap the 4 corners"
         case .roomScan: return "Scan the whole room"
         case .quickScan: return "Quick scan (Apple)"
+        case .roomCloseups: return "Scan the room, then close-ups"
         case .card: return "Photo with a bank card"
         }
     }
@@ -78,6 +80,7 @@ private struct MethodRow: View {
         case .corners: return "Point your phone at the window and tap each corner of the frame."
         case .roomScan: return "Walk slowly around the room. We find every window in it."
         case .quickScan: return "Point at the wall with the window and pan for a few seconds. We find the windows on it."
+        case .roomCloseups: return "Pan the room to find the windows, take a close-up of each corner, then tap Measure and check."
         case .card: return "Hold any bank card flat on the glass and take one photo. Works on any iPhone."
         }
     }
@@ -85,7 +88,7 @@ private struct MethodRow: View {
     private var unavailable: String {
         switch method {
         case .corners: return "Needs an iPhone with a camera."
-        case .roomScan, .quickScan: return "Needs an iPhone with a depth sensor (a Pro model)."
+        case .roomScan, .quickScan, .roomCloseups: return "Needs an iPhone with a depth sensor (a Pro model)."
         case .card: return "Needs an iPhone with a camera."
         }
     }
@@ -97,6 +100,7 @@ private struct MethodRow: View {
             case .corners: Image(systemName: WCIcon.target.symbol).font(.title3).foregroundStyle(Theme.ink)
             case .roomScan: Image(systemName: WCIcon.cube.symbol).font(.title3).foregroundStyle(Theme.ink)
             case .quickScan: Image(systemName: WCIcon.lidar.symbol).font(.title3).foregroundStyle(Theme.ink)
+            case .roomCloseups: Image(systemName: "viewfinder.rectangular").font(.title3).foregroundStyle(Theme.ink)
             case .card: BankCardGlyph(width: 28)
             }
         }
@@ -125,6 +129,8 @@ private struct MethodRow: View {
                         if method.isRoomPlan {
                             // Apple's scan gives a quote-grade size, not a number of inches: the visit settles the exact one
                             Text("\(accuracy.text). We confirm the exact size at your visit.").font(.footnote).foregroundStyle(Theme.ink2)
+                        } else if method == .roomCloseups {
+                            Text("We check every size. A window you skip keeps Apple's size.").font(.footnote).foregroundStyle(Theme.ink2)
                         } else if tag.text != accuracy.text {
                             Text("Accuracy: \(accuracy.text)").font(.footnote).foregroundStyle(Theme.ink2)
                         }
@@ -147,7 +153,7 @@ private struct MethodRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title). \(detail) \(available ? store.methodTag(method).text + (method.isRoomPlan ? ". " + accuracy.text + "." : ". Accuracy: " + accuracy.text) : unavailable)")
+        .accessibilityLabel("\(title). \(detail) \(available ? store.methodTag(method).text + (method.isRoomPlan ? ". " + accuracy.text + "." : (method == .roomCloseups ? ". We check every size. A window you skip keeps Apple's size." : ". Accuracy: " + accuracy.text)) : unavailable)")
         .accessibilityValue(selected && available ? "Selected" : "")
         .accessibilityAddTraits(.isButton)
     }

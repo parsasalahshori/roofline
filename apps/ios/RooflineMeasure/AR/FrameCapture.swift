@@ -34,6 +34,18 @@ enum FrameCapture {
         return (data, Int(image.extent.width), Int(image.extent.height))
     }
 
+    /// The upright portrait copy of a NATIVE (landscape) JPEG, as `uprightJPEG(_:)` would have made it from the camera's own buffer. The room
+    /// scan keeps only the native JPEG of each pan photo (half the memory) and turns the few a window uses when the scan is measured.
+    static func uprightJPEG(fromNative jpeg: Data, quality: CGFloat = 0.85) -> (Data, Int, Int)? {
+        guard let image = CIImage(data: jpeg)?.oriented(.right) else { return nil }
+        let options: [CIImageRepresentationOption: Any] = [
+            CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): quality,
+        ]
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let data = context.jpegRepresentation(of: image, colorSpace: space, options: options) else { return nil }
+        return (data, Int(image.extent.width), Int(image.extent.height))
+    }
+
     /// The camera's own landscape image as a JPEG with no orientation tag: what a scan uploads (the server's frames are the native image).
     static func nativeJPEG(_ pixelBuffer: CVPixelBuffer, quality: CGFloat = 0.85) -> (Data, Int, Int)? {
         let image = CIImage(cvPixelBuffer: pixelBuffer)

@@ -50,7 +50,7 @@ extension HomeownerStore {
     func isAvailable(_ m: MeasureMethod) -> Bool {
         switch m {
         case .corners: return capabilities.corners
-        case .roomScan, .quickScan: return capabilities.roomScan
+        case .roomScan, .quickScan, .roomCloseups: return capabilities.roomScan
         case .card: return capabilities.camera
         }
     }
@@ -59,11 +59,17 @@ extension HomeownerStore {
     var defaultMethod: MeasureMethod {
         // With a depth sensor, the corners are the most exact. Without one, AR is only about 3/8 inch (1% scale error, no depth check
         // on the wall), the bank card is a real ruler in the photo (about 1/4 to 1/2 inch, checked like the server): recommend that.
-        // Demo: Apple's quick scan is the fastest to show on a depth-sensor phone (the photo method is one tap away)
-        if capabilities.roomScan { return .quickScan }
+        // The room scan with close-ups is the most exact way on a depth-sensor phone; Apple's quick scan (sizes only) is one tap away
+        if capabilities.roomScan { return .roomCloseups }
         if capabilities.corners && capabilities.depthSensor { return .corners }
         if capabilities.camera { return .card }
         return .corners
+    }
+
+    /// The method screen opens on the recommended way the first time (no way remembered), and after that on the one in use; a way this phone
+    /// cannot do is never selected.
+    func selectStartingMethod() {
+        if lastMethod == nil || !isAvailable(method) { method = defaultMethod }
     }
 
     /// "About 1/4 inch · best": what each method says about itself.
@@ -74,6 +80,8 @@ extension HomeownerStore {
                                             : (SizeWording.accuracyRange(lowIn: 0.375, highIn: 0.375), false)
         // Apple publishes no size accuracy for its room scan, so none is claimed here: it is a quote-grade size, confirmed at the visit
         case .roomScan, .quickScan: return ("Good for a quote", false)
+        // Measured from photos and close-ups with the app's own checks; no number of inches is claimed before it has been tried on real windows
+        case .roomCloseups: return ("Close-ups of every corner", true)
         case .card: return (SizeWording.accuracyRange(lowIn: 0.25, highIn: 0.5), false)
         }
     }
@@ -85,6 +93,7 @@ extension HomeownerStore {
             return capabilities.depthSensor ? ("Most exact (recommended)", true) : ("\(methodAccuracy(m).text) · good for a quote", false)
         case .roomScan: return ("Every window in the room", false)
         case .quickScan: return ("Recommended for speed", false)
+        case .roomCloseups: return ("Most exact (recommended)", true)
         case .card: return capabilities.depthSensor ? ("Works on any iPhone", false) : ("Recommended for your iPhone", true)
         }
     }

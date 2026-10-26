@@ -28,9 +28,9 @@ round it on the map's own projection (`MapProxy`), then the cards. About 2.5 s, 
 holds back the price (the pinned button is there throughout). With no outline, or when the phone is offline, it is the small static
 card as before.
 
-Four ways to measure, each saved as one window:
+Five ways to measure, each saved as one window (**Scan the room, then close-ups** is described after the guided scan below and is listed first; the two Apple-only room scans are unchanged):
 
-- **Quick scan (Apple)** (RoomPlan, depth-sensor iPhones; listed first on the method screen, "Recommended for speed"): point at the wall with
+- **Quick scan (Apple)** (RoomPlan, depth-sensor iPhones; listed after the room scan with close-ups on the method screen, "Recommended for speed"): point at the wall with
   the window, pan a few seconds, Done (the button waits 3 s, `ScanProgress`). While it runs, RoomCaptureView outlines the windows and a bar
   says "2 windows found" with each one's size so far (`ScanHud`, fed by the capture session's `didUpdate`). The review lists each window
   with its photo and outline, its size to the eighth and "Apple's scan · fairly sure"; a wrong one can be left out, the room named. If the
@@ -208,7 +208,7 @@ xcrun simctl launch booted com.premjeetech.winchoice.measure -debugFake -debugSc
 ```
 
 The simulator has no camera, AR or RoomPlan: the measuring screens show a designed "needs an iPhone" page, and DEBUG builds can
-open them over a drawn window photo (`-debugOpen hud|hud-howto|freeze|freeze-clutter|freeze-off|freeze-two|label|scan|quickscan|quickscan-live|card|card3|card4|window2|window4|windowdart`, with
+open them over a drawn window photo (`-debugOpen hud|hud-howto|freeze|freeze-clutter|freeze-off|freeze-two|label|scan|quickscan|quickscan-live|hybrid-pan|hybrid-list|hybrid-closeup|hybrid-results|card|card3|card4|window2|window4|windowdart`, with
 `-debugScenario method`). Unsigned simulator builds also have no Keychain: the app says it cannot save the request for later and carries on.
 
 **DEBUG-only launch arguments** (`Homeowner/App/HomeownerDebug.swift`, compiled out of Release):
@@ -253,10 +253,47 @@ without a word. The server's per-window `scan.label` ("Being checked by WinChoic
 guided-hud | guided-closeup | guided-working | guided-result | guided-result-check` over a drawn window (`Measure/DebugScanSamples.swift`; the result runs the
 real marks pipeline on the drawn photos).
 
+### Scan the room, then close-ups (room scan + window scan, `MeasureMethod.roomCloseups`)
+
+The owner's order: **pan** the room, take **close-ups**, tap **Measure and check**. It is recommended (and the default) on depth-sensor iPhones; "Quick scan (Apple)" and
+"Scan the whole room" stay exactly as they were (Apple's sizes only, quote-grade, `RoomScanScreen`). Code: `Measure/RoomHybridScreen.swift` (screens), `RoomHybridModel.swift`
+(model, builder), `AR/RoomHybridCamera.swift` (camera), Core `RoomHybrid.swift` (the decisions: `HybridFlow`, `HybridEstimate`, `PanFrameKeeper`, `PanFrameSelector`,
+`WorldWatch`, `HybridRules`, `HybridWording`), `HomeownerStore+RoomHybrid.swift` (saving).
+
+1. **Pan.** Apple's `RoomCaptureView` with its window outlines and the "N windows found" bar (`ScanHud`, mode `.panForCloseups`: Done is open from the start). It runs on an
+   `ARSession` the hybrid made (`RoomCaptureView(frame:arSession:)`). While it runs, `PanRecorder` reads `ARSession.currentFrame` 20 times a second (RoomPlan owns the session's
+   delegate) and keeps regular photos with the guided scan's own rules: one `ScanGuide` per window RoomPlan is showing (`PanFrameKeeper`), so a photo is kept when it is steady,
+   sharp, lit, the whole window is in view and it is at least 15 cm (or 8 degrees of turn: a pan on the spot) from that window's other photos. Per photo: the NATIVE JPEG, camera
+   pose, lens and, when the session gives it, the depth. Pan photos are shared between windows; at most 120 are kept.
+2. **List.** Apple's windows (Apple-style `List`: thumbnail, "Window A", Apple's size, room, "Apple's scan, fairly sure", close-up status). Each window's photos are picked from the
+   pool with its final place (`PanFrameSelector`: whole window in view, sharpest and most front-on first, 15 cm apart, at most 8). A window the pan hardly saw (fewer than 2
+   photos) keeps Apple's size and takes no close-ups. Swipe: Skip (keeps Apple's size) / Leave out.
+3. **Close-ups** of a window, in any order: the guided scan's close-up step (`ScanCaptureOverlay(closeupsOnly:)`, `ScanGuide(startAtCloseups:)`, `ScanRecorder`): an arrow or ring to
+   the top-left, top-right, bottom-right, bottom-left corner, taken by itself when centred, 0.4 to 0.8 m away, steady and sharp; the shutter, Skip, Redo, haptics; Done goes back to
+   the list with a checkmark (2 or more close-ups, the contract's `no_closeups` threshold). **Same world as the pan**: Apple's Done is `stop(pauseARSession: false)`, so the session
+   goes on tracking and the close-ups are in the pan's coordinates, with no registration. `RoomHybridCamera.ensureRunning()` resumes the session without a reset if RoomPlan paused it.
+   `WorldWatch` (a jump no hand makes, tracking lost for 8 s) and the app going to the background mark the world as moved: no more close-ups are taken (those already taken
+   stay valid, being in the old world with everything else) and the list says so.
+4. **Measure and check** (enabled when a window has close-ups): per window, Apple's window (transform and dimensions, or `polygonCorners` when good: `RoomWindowShape`) is the scan's
+   FIRST ESTIMATE (`HybridEstimate`; moved onto the frame's face when the key photo has depth), projected into every photo and snapped (`ScanMarkMaker`), triangulated, the seven
+   gates. Apple's window is a coarse estimate (a few centimetres a side), so the first search is 1.6 times wider than the guided scan's (`HybridRules.firstSearchScale`) and, when the
+   scan does not pass, `ScanMarkMaker.improvedEstimate` completes a better rectangle from two OPPOSITE corners the photos did confirm (a window is level and plumb) and runs once
+   more (`bootstrap`). Results: Measured (green) or "WinChoice will check this one" (amber, never a block; a scan that failed the gates AND is more than 12% from Apple's size
+   keeps Apple's size); a window without close-ups keeps Apple's size. Tapping a scanned window opens the guided scan's result screen (photos, corners, a mark can be moved).
+5. **Save**: `saveRoomHybrid` puts each window through the outbox (`ar` scale from the scan, else Apple's `roomplan` scale) and stages and arms its scan in the scan outbox
+   (`POST .../scans` after the window), so frames upload, staff see it in Scan review, and the Mac refines it (COLMAP + AI).
+
+DEBUG: `-debugScenario method -debugCaps lidar -debugOpen hybrid-pan | hybrid-list | hybrid-closeup | hybrid-results` (`Measure/DebugHybridSamples.swift`; the results run the real
+marks pipeline on drawn photos from "Apple's" window, 1.4 cm too big a side).
+
+**Only a real iPhone can show**: that RoomPlan's windows share the AR session's world (the existing room scan already assumes it), that the session really goes on after
+`stop(pauseARSession: false)` (and what RoomCaptureView does to it when it leaves the screen), how well `CornerSnap` finds real window corners from Apple's estimate, how many
+photos a real pan keeps per window, and the thresholds (`PanFrameKeeper.panConfig`, `HybridRules`).
+
 ### Tests
 
 ```sh
-cd apps/ios/Core && ./scripts/check.sh                       # the logic, plain swiftc, 133 checks (or `swift run -q RooflineCoreChecks`)
+cd apps/ios/Core && ./scripts/check.sh                       # the logic, plain swiftc, 202 checks (or `swift run -q RooflineCoreChecks`)
 cd apps/ios && xcodebuild test -project RooflineMeasure.xcodeproj -scheme WinChoice \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' CODE_SIGNING_ALLOWED=NO
 xcodebuild test -project RooflineMeasure.xcodeproj -scheme WinChoiceUITests \

@@ -5,8 +5,10 @@ import Foundation
 // every rule here is checked on a Mac; the app turns a `CapturedRoom.Surface` into a `ScanSurface` and back.
 
 /// How a room scan is run: the whole room, or the quick "one wall" scan (point at the wall with the window, pan, tap Done).
+/// `panForCloseups` is the room-scan hybrid's pan: the same Apple scan, run while the phone also keeps regular photos of each window for the
+/// close-ups and the measuring that follow.
 public enum RoomScanMode: String, Sendable, Equatable {
-    case wholeRoom, oneWall
+    case wholeRoom, oneWall, panForCloseups
 }
 
 /// A window surface as RoomPlan reports it, as plain numbers.
@@ -229,7 +231,7 @@ public struct ScanProgress: Equatable, Sendable {
     /// whole-room scan has always let the person stop whenever they like.
     public static let quickScanMinSeconds = 3.0
 
-    public var canFinish: Bool { mode == .wholeRoom || seconds >= Self.quickScanMinSeconds }
+    public var canFinish: Bool { mode != .oneWall || seconds >= Self.quickScanMinSeconds }
 
     public var doneTitle: String { canFinish ? "Done scanning" : "Keep panning…" }
 
@@ -241,6 +243,9 @@ public struct ScanProgress: Equatable, Sendable {
         case .oneWall:
             if windowsFound > 0 { return "Got it. Tap Done, or pan on to catch more." }
             return canFinish ? "Keep panning slowly until the window shows up." : "Point at the wall with the window. Pan slowly."
+        case .panForCloseups:
+            if windowsFound > 0 { return "Keep going, a step to one side as you pan, with each whole window in view. Then tap Done." }
+            return "Pan slowly round the room. Keep each whole window in view."
         }
     }
 

@@ -170,6 +170,17 @@ final class GuidedScanModel {
         stage = .result
     }
 
+    /// The room-scan hybrid hands over one window's finished scan, so the result screen and the mark editor work on it as on a guided scan's.
+    /// `apple`: Apple's size for the window, shown when the scan's maths gave no rectangle.
+    func adopt(shots all: [ScanShot], estimate: [Vec3], draft built: ScanDraft, apple: (widthIn: Double, heightIn: Double)) {
+        shots = all
+        windowCorners = estimate
+        keySource = .projected
+        draft = built
+        estimateSize = apple
+        stage = .result
+    }
+
     /// The person put a corner of one photo somewhere else: the answer is worked out again from the marks.
     func moveMark(shotId: String, corner: Int, toNative p: Vec2) {
         guard let d = draft else { return }
