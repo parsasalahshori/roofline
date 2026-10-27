@@ -1,34 +1,16 @@
 import RooflineCore
 import SwiftUI
 
-/// 03 Results (ios-hw-03): "Here's your home": the house from above, then what comes next (measuring the windows).
+/// 03 Results (ios-hw-03): "Here's your home": the address, then what comes next (measuring the windows).
 struct ResultsScreen: View {
     @Environment(HomeownerStore.self) private var store
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
-    @State private var reveal = HomeReveal()
-
-    /// The home's outline on a map hero: only when the server gave a usable outline and the phone could reach it.
-    /// Otherwise (no outline, an old request that came from disk, offline) today's small static card, with no error.
-    private var heroGeometry: HomeOutlineGeometry? {
-        store.offline ? nil : HomeOutlineGeometry(outline: store.home?.outline)
-    }
-
-    /// The reveal plays once per request; coming back to this screen shows the finished picture.
-    private var alreadyRevealed: Bool {
-        guard let id = store.session?.requestId else { return false }
-        return store.revealedRequestId == id
-    }
-
-    private var cardsVisible: Bool { heroGeometry == nil || alreadyRevealed || reveal.stage == .done }
-    private var revealing: Bool { heroGeometry != nil && !alreadyRevealed && reveal.stage != .done }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 StepProgress(step: 2)
-                if let g = heroGeometry { heroCard(g) } else { homeCard }
-                windowsCard.revealed(cardsVisible, order: 0, reduceMotion: reduceMotion)
+                homeCard
+                windowsCard
                 if store.offline {
                     InfoPanel(icon: .info, text: "You're offline. We'll refresh this when you're back.").wcPanel()
                 }
@@ -36,8 +18,6 @@ struct ResultsScreen: View {
             }
             .padding(.horizontal, Theme.gutter)
             .padding(.bottom, 24)
-            // A tap anywhere on the screen skips the reveal to the finished picture (a button still gets its tap too)
-            .simultaneousGesture(TapGesture().onEnded { if revealing { reveal.skip() } })
         }
         .background(Theme.ground.ignoresSafeArea())
         .hiNav(title: "Here's your home", display: .large)
@@ -47,30 +27,6 @@ struct ResultsScreen: View {
     }
 
     // MARK: Cards
-
-    /// The hero: their house from above with its outline drawn round it, the address and the size under it.
-    private func heroCard(_ g: HomeOutlineGeometry) -> some View {
-        VStack(spacing: 0) {
-            GeometryReader { geo in
-                if geo.size.width > 40 {
-                    HomeHeroMap(geometry: g, size: geo.size, animated: !alreadyRevealed && !reduceMotion && !voiceOver, reveal: reveal) {
-                        store.revealedRequestId = store.session?.requestId
-                    }
-                }
-            }
-            .frame(height: 250)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("A view of your home from above with its outline drawn on it.")
-            AdaptiveStack(alignment: .center, spacing: 8) {
-                addressText
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                changeButton
-            }
-            .padding(.leading, 16).padding(.trailing, 8).padding(.vertical, 8)
-        }
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
-    }
 
     /// The street and, under it, "Irvine, CA · 2 floors · about 190 ft of outside wall".
     private var addressText: some View {
@@ -89,11 +45,15 @@ struct ResultsScreen: View {
             .accessibilityLabel("Change address")
     }
 
-    /// Today's small card, for a home with no outline to draw (or a phone that is offline).
+    /// The home: a house symbol, the address and the size under it, and Change.
     private var homeCard: some View {
         HStack(spacing: 16) {
-            HomeThumb(outline: store.home?.outline.map { HomeownerOutlineShape(points: $0.points) })
-                .frame(width: 96, height: 70)
+            Image(systemName: "house.fill")
+                .font(.title2)
+                .foregroundStyle(Theme.red)
+                .frame(width: 56, height: 56)
+                .background(Theme.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 0) {
                 addressText
                 changeButton
@@ -180,16 +140,5 @@ enum Money {
 
     static func range(_ low: Double, _ high: Double) -> String {
         low.rounded() == high.rounded() ? dollars(low) : "\(dollars(low))–\(grouped(high))"
-    }
-}
-
-
-/// The cards under the hero come in once it has finished: a short fade and rise, one after the other.
-private extension View {
-    func revealed(_ visible: Bool, order: Int, reduceMotion: Bool) -> some View {
-        opacity(visible ? 1 : 0)
-            .offset(y: visible || reduceMotion ? 0 : 14)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.35).delay(Double(order) * 0.09), value: visible)
-            .accessibilityHidden(!visible)
     }
 }

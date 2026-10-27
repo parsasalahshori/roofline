@@ -87,50 +87,6 @@ struct AddressMap: View {
     }
 }
 
-// MARK: - The home from above
-
-/// The home as a small picture seen from above (ios-hw-03): dark ground, the home's outline in grey with a tape-yellow edge.
-/// With the server's outline it is that outline; without, a plain rectangle.
-struct HomeThumb: View {
-    var outline: HomeownerOutlineShape?
-
-    var body: some View {
-        Canvas { ctx, size in
-            let ground = Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 10)
-            ctx.fill(ground, with: .color(Color(light: 0x4A5A44, dark: 0x38452F)))
-            let shape = outline?.path(in: CGRect(x: size.width * 0.17, y: size.height * 0.17, width: size.width * 0.66, height: size.height * 0.66))
-                ?? Path(CGRect(x: size.width * 0.18, y: size.height * 0.22, width: size.width * 0.64, height: size.height * 0.56))
-            ctx.fill(shape, with: .color(Color(white: 0.5, opacity: 0.85)))
-            ctx.stroke(shape, with: .color(Theme.tape), lineWidth: 1.6)
-        }
-        .accessibilityHidden(true)
-    }
-}
-
-/// A closed outline of points given as (longitude, latitude), fitted into a rectangle (north up).
-struct HomeownerOutlineShape {
-    var points: [(lon: Double, lat: Double)]
-
-    func path(in rect: CGRect) -> Path? {
-        guard points.count >= 3 else { return nil }
-        let lons = points.map { $0.lon }, lats = points.map { $0.lat }
-        guard let minLon = lons.min(), let maxLon = lons.max(), let minLat = lats.min(), let maxLat = lats.max(), maxLon > minLon, maxLat > minLat else { return nil }
-        // Longitude degrees are shorter than latitude degrees away from the equator
-        let k = cos(((minLat + maxLat) / 2) * .pi / 180)
-        let spanX = (maxLon - minLon) * k, spanY = maxLat - minLat
-        let scale = min(rect.width / spanX, rect.height / spanY)
-        let ox = rect.midX - spanX * scale / 2, oy = rect.midY - spanY * scale / 2
-        var p = Path()
-        for (i, pt) in points.enumerated() {
-            let x = ox + (pt.lon - minLon) * k * scale
-            let y = oy + (maxLat - pt.lat) * scale
-            if i == 0 { p.move(to: CGPoint(x: x, y: y)) } else { p.addLine(to: CGPoint(x: x, y: y)) }
-        }
-        p.closeSubpath()
-        return p
-    }
-}
-
 // MARK: - Window styles
 
 /// The line drawing of each window style (ios-hw-09), 48 x 52 units, in the current foreground colour.
