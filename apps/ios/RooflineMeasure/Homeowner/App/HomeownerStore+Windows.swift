@@ -359,8 +359,8 @@ extension HomeownerStore {
             let key = suggestedStyle(for: row)?.keys.first ?? styles.first?.key
             if let key = key { await setStyle(key, for: row.id) }
         }
-        path = stack(to: .quote)
-        noteStep(.quote)
+        path = stack(to: .ready)
+        noteStep(.ready)
         await prepareQuote()
     }
 
@@ -404,14 +404,14 @@ extension HomeownerStore {
         }
     }
 
-    /// From the list: after booking, a changed list goes back to My order once everything is styled; otherwise straight to the
-    /// estimate. Styles are optional (they are tried in "See it in your home"): a window without one takes the likeliest for its shape.
+    /// From the list: after booking, a changed list goes back to My order once everything is styled; otherwise "Customize your
+    /// windows" (each window in the visualizer, then the ready screen with the price and "Get my estimate").
     func continueFromList() async {
         if hasBooking {
             if unstyledCount > 0 { styleIndex = 0; push(.styles) } else { await syncWindows(); showStatus() }
             return
         }
-        await finishStyles()
+        startCustomizing()
     }
 }
 

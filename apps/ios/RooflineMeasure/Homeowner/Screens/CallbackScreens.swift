@@ -199,8 +199,8 @@ struct CallThanksScreen: View {
     private var thanks: String { firstName.map { "Thanks, \($0)." } ?? "Thanks." }
 
     private var estimateLine: String? {
-        guard let total = store.progress.tierTotal, let count = store.progress.tierWindowCount else { return nil }
-        return "\(count) window\(count == 1 ? "" : "s"), about \(Money.dollars(total))"
+        let count = store.windowRows.count
+        return count > 0 ? "\(count) window\(count == 1 ? "" : "s") with the look you chose" : nil
     }
 
     var body: some View {

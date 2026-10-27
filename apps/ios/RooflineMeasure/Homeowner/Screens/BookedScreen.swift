@@ -102,12 +102,7 @@ struct BookedScreen: View {
         return question + call
     }
 
-    private var savedLine: String {
-        guard let key = store.progress.tierKey, let total = store.progress.tierTotal else { return "Your quote is saved." }
-        let label = store.quote?.tier(key)?.label ?? key.capitalized
-        let count = store.progress.tierWindowCount ?? store.windowCount
-        return "Your quote is saved: \(label), \(count) window\(count == 1 ? "" : "s"), \(Money.dollars(total))."
-    }
+    private var savedLine: String { "Your windows and the looks you chose are saved." }
 
     private func tip(_ text: String) -> some View {
         Label {

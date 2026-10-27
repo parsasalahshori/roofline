@@ -18,8 +18,8 @@ struct WelcomeScreen: View {
                                    line: "Point it at a window and it finds the size in about a minute.")
                     WelcomeFeature(symbol: "paintpalette", title: "Try new windows on your own photo",
                                    line: "Pick the type, grid, color and glass, and see it in your home.")
-                    WelcomeFeature(symbol: "dollarsign.circle", title: "A price range right away",
-                                   line: "Good, Better and Best, before anyone comes to your home.")
+                    WelcomeFeature(symbol: "phone", title: "A free estimate",
+                                   line: "Send your windows and a WinChoice person calls you with your estimate.")
                 }
                 WCScrollFooter()
             }
@@ -65,7 +65,7 @@ struct WelcomeScreen: View {
                 .foregroundStyle(Theme.ink)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
-            Text("Windows: see your price in minutes.")
+            Text("Measure, pick your new windows, get a free estimate.")
                 .font(.body)
                 .foregroundStyle(Theme.ink2)
                 .fixedSize(horizontal: false, vertical: true)

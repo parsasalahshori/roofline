@@ -102,9 +102,9 @@ public enum HomeownerFlow {
         case .list: return [.address, .results, .coaching, .rooms, .list]
         case .styles: return [.address, .results, .coaching, .rooms, .list, .styles]
         case .quote: return [.address, .results, .coaching, .rooms, .list, .quote]
-        case .ready: return [.address, .results, .coaching, .rooms, .list, .quote, .ready]
-        case .contact: return [.address, .results, .coaching, .rooms, .list, .quote, .contact]
-        case .book: return [.address, .results, .coaching, .rooms, .list, .quote, .contact, .book]
+        case .ready: return [.address, .results, .coaching, .rooms, .list, .ready]
+        case .contact: return [.address, .results, .coaching, .rooms, .list, .ready, .contact]
+        case .book: return [.address, .results, .coaching, .rooms, .list, .ready, .contact, .book]
         }
     }
 

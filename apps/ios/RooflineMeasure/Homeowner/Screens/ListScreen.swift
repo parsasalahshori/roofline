@@ -87,7 +87,7 @@ struct ListScreen: View {
 
     private var footerTitle: String {
         if store.hasBooking { return store.unstyledCount > 0 ? "Choose window styles" : "Back to My order" }
-        return "See my estimate"
+        return "Customize your windows"
     }
 
     /// The row's ground: the grouped row colour, with a green wash for the window just saved.

@@ -2,9 +2,9 @@ import RooflineCore
 import SwiftUI
 import UIKit
 
-/// 11b Your windows are ready: the end of "Customize your windows". A banner with the updated price, each window's picture (the "after"
-/// image on its own photo) with its look in one line, and "Get my estimate", which goes on to the interest form. A window can be
-/// opened again to change it.
+/// 11b Your windows are ready: the end of "Customize your windows". A banner (no price: a person calls with the estimate), each
+/// window's picture (the "after" image on its own photo) with its look in one line, and "Get my estimate", which goes on to the
+/// interest form. A window can be opened again to change it.
 struct ReadyScreen: View {
     @Environment(HomeownerStore.self) private var store
 
@@ -18,18 +18,12 @@ struct ReadyScreen: View {
                             .accessibilityAddTraits(.isHeader)
                             .accessibilityIdentifier("ready.title")
                     }
-                    if let q = store.quote, !q.tiers.isEmpty {
-                        let tier = q.tier(store.selectedTier) ?? q.tiers[0]
-                        Text("Estimated price").font(.subheadline).foregroundStyle(Theme.ink2).padding(.top, 4)
-                        Text(q.rangeText ?? Money.dollars(tier.total)).font(.largeTitle.weight(.bold)).monospacedDigit().foregroundStyle(Theme.ink)
-                            .minimumScaleFactor(0.6).lineLimit(2)
-                            .accessibilityIdentifier("ready.range")
-                        Text(bannerLine(q))
-                            .font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
-                    } else if store.loadingQuote || store.applyingLooks {
+                    Text("Send your choices to \(store.brand.name) and a person calls you with your estimate.")
+                        .font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
+                    if store.applyingLooks {
                         HStack(spacing: 12) {
                             ProgressView()
-                            Text("Updating your estimate…").font(.subheadline).foregroundStyle(Theme.ink2)
+                            Text("Saving your choices…").font(.subheadline).foregroundStyle(Theme.ink2)
                         }
                     }
                 }
@@ -53,9 +47,9 @@ struct ReadyScreen: View {
         }
         .listStyle(.insetGrouped)
         .contentMargins(.top, 0, for: .scrollContent)
-        .hiNav(title: "Your estimate")
+        .hiNav(title: "Your windows")
         .wcFooter {
-            WCPrimaryButton(title: "Get my estimate", isEnabled: store.quote?.tiers.isEmpty == false) { store.requestCallFromEstimate() }
+            WCPrimaryButton(title: "Get my estimate", isEnabled: !store.applyingLooks) { store.requestCallFromEstimate() }
                 .accessibilityIdentifier("ready.getEstimate")
             FinePrint(text: store.brand.quoteFootnote)
         }
@@ -65,30 +59,11 @@ struct ReadyScreen: View {
     }
 }
 
-extension ReadyScreen {
-    /// "For 4 windows, installed…", and when the estimate also counts windows not measured yet, how many and why (the list shows the measured ones).
-    fileprivate func bannerLine(_ q: HomeownerQuote) -> String {
-        let n = store.windowRows.count
-        let base = "For \(n) window\(n == 1 ? "" : "s"), installed, old windows hauled away, with the look you chose."
-        guard q.estimatedCount > 0 else { return base }
-        return base + " The price also counts \(q.estimatedCount) more window\(q.estimatedCount == 1 ? "" : "s") not measured yet, priced from your home's size."
-    }
-}
-
 extension HomeownerStore {
     /// "Casement · Prairie · Black · Low-E": what the window will be, in one line (the starting look for a window nothing was chosen for).
     func lookLine(for windowId: String) -> String {
         let key = startingColorKey(for: windowId)
         return startingLook(for: windowId).oneLine(colorLabel: brand.windowColors.first { $0.key == key }?.label)
-    }
-}
-
-extension HomeownerQuote {
-    /// The lowest and highest level, "$9,800 to $14,300".
-    var rangeText: String? {
-        let totals = tiers.map { $0.total }
-        guard let lo = totals.min(), let hi = totals.max() else { return nil }
-        return lo == hi ? Money.dollars(lo) : "\(Money.dollars(lo)) to \(Money.dollars(hi))"
     }
 }
 

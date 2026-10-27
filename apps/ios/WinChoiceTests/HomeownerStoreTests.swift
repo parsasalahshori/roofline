@@ -160,7 +160,7 @@ final class HomeownerStoreTests: XCTestCase {
         await h.store.finishStyles()
         await h.settle()
         await h.store.refresh()
-        XCTAssertEqual(h.store.path.last, .step(.quote))
+        XCTAssertEqual(h.store.path.last, .step(.ready))
         XCTAssertEqual(h.store.path.dropLast().last, .step(.list), "back from the quote is the list, not the style pass")
         XCTAssertEqual(h.store.unstyledCount, 0, "a window left without a style takes the likeliest one for its shape")
         let quote = try XCTUnwrap(h.store.quote)
@@ -281,11 +281,11 @@ final class HomeownerStoreTests: XCTestCase {
         await h.capture(room: "Kitchen")
         await h.capture(room: "Bedroom 1")
         XCTAssertEqual(h.store.unstyledCount, 2)
-        // Done adding windows: straight to the estimate, styles are not asked for
-        await h.store.continueFromList()
+        // The estimate (reached back from the ready screen): styles are not asked for
+        await h.store.finishStyles()
         await h.settle()
         await h.store.refresh()
-        XCTAssertEqual(h.store.path.last, .step(.quote))
+        XCTAssertEqual(h.store.path.last, .step(.ready))
         XCTAssertFalse(h.store.path.contains(.step(.styles)), "the style picker does not stand in the way")
         XCTAssertEqual(h.store.unstyledCount, 0)
         let quote = try XCTUnwrap(h.store.quote)
@@ -313,11 +313,23 @@ final class HomeownerStoreTests: XCTestCase {
         try await h.open(windows: [], step: .list)
         await h.capture(room: "Kitchen")
         await h.capture(room: "Bedroom 1")
-        await h.store.continueFromList()
+        await h.store.finishStyles()
         await h.settle()
         await h.store.refresh()
-        XCTAssertEqual(h.store.path.last, .step(.quote))
+        XCTAssertEqual(h.store.path.last, .step(.ready))
         return h
+    }
+
+    func testTheListGoesStraightToCustomizeYourWindows() async throws {
+        let h = StoreHarness()
+        try await h.open(windows: [], step: .list)
+        await h.capture(room: "Kitchen")
+        await h.capture(room: "Bedroom 1")
+        let ids = h.store.windowRows.map { $0.id }
+        await h.store.continueFromList()
+        XCTAssertEqual(h.store.path.last, .visualize(windowId: ids[0], from: .customize))
+        XCTAssertEqual(h.store.customizePlace(of: ids[0])?.count, 2)
+        XCTAssertFalse(h.store.path.contains(.step(.quote)), "the estimate comes after customizing")
     }
 
     func testCustomizeWalksTheWindowsOneByOneThenShowsTheReadyScreen() async throws {
@@ -338,7 +350,7 @@ final class HomeownerStoreTests: XCTestCase {
         let second = WindowVisualLook(type: .picture, grid: .none, glass: .frosted)
         await h.store.customizeNext(after: ids[1], look: second, colorKey: "white")
         XCTAssertEqual(h.store.path.last, .step(.ready))
-        XCTAssertEqual(h.store.path.suffix(2), [.step(.quote), .step(.ready)])
+        XCTAssertEqual(h.store.path.suffix(2), [.step(.list), .step(.ready)])
         XCTAssertFalse(h.store.path.contains { if case .visualize = $0 { return true } else { return false } })
         XCTAssertEqual(h.store.progress.step, .ready)
         XCTAssertNotNil(h.store.quote)
