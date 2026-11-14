@@ -185,17 +185,19 @@ export function backofficeRoutes(deps: AppDeps): Router {
       if (job === null) return null;
       const catalog = await getProductCatalog(tx, ctx);
       let designs: Parameters<typeof createBackofficeQuote>[2]['designs'] = [];
+      let skippedMeasured: number | undefined;
       if (body.importMeasured === true || body.windowMeasurementId !== undefined) {
         const imported = await importMeasuredDesigns(tx, ctx, job.propertyId, body.windowMeasurementId?.toLowerCase(), catalog, now);
         if ('problem' in imported) throw new AppError(422, imported.problem === 'no-measurement' ? NO_MEASUREMENT : WRONG_ADDRESS);
         designs = imported.designs;
+        skippedMeasured = imported.skippedQuoteGrade;
       }
       const row = await createBackofficeQuote(tx, ctx, { jobId: job.id, tier: body.tier ?? 'better', designs, accessories: autoAccessories(catalog), catalogVersion: catalog.version }, now);
-      return row === null ? null : { id: row.id, catalog };
+      return row === null ? null : { id: row.id, catalog, skippedMeasured };
     });
     if (created === null) throw new AppError(404, MESSAGES.notFound);
     const { quote, catalog } = await loadQuote(ctx, created.id);
-    res.status(201).json(toQuoteView(quote, catalog));
+    res.status(201).json({ ...toQuoteView(quote, catalog), ...(created.skippedMeasured !== undefined && { skippedMeasured: created.skippedMeasured }) });
   });
 
   router.get('/quotes/:id', async (req, res) => {

@@ -201,6 +201,8 @@ export type BackofficeQuote = {
   discountNeedsApproval: boolean;
   /** The order this quote became when it was accepted (additive to the contract); null before. */
   orderId?: string | null;
+  /** Only on the POST /quotes answer when measured sizes were imported: windows left out because they were measured only to quote grade (homeowner app, room scan, card). */
+  skippedMeasured?: number;
   createdAt: string;
   updatedAt: string;
 };

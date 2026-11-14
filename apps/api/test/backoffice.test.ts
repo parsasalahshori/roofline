@@ -249,6 +249,32 @@ describe('quotes', () => {
     const other = await jobFor(owner, { n: 2 });
     expect((await owner.post(`${BASE}/quotes`).send({ jobId: other.jobId, windowMeasurementId: m.id })).status).toBe(422);
   });
+
+  it('leave out quote-grade windows (room scan) when importing, and say how many', async () => {
+    const owner = await who.as('owner');
+    const HOUSE: Ring = [[-96.0, 41.25], [-95.9997, 41.25], [-95.9997, 41.2502], [-96.0, 41.2502], [-96.0, 41.25]];
+    const INSIDE: LngLat = [-95.99985, 41.2501];
+    await seedFootprintFixture(t.deps.pools, [{ sourceRef: 'house-1', ring: HOUSE }]);
+    const ids = await jobFor(owner);
+    await sql(`update properties set geom = ST_SetSRID(ST_MakePoint($1::float8, $2::float8), 4326) where id = $3`, [INSIDE[0], INSIDE[1], ids.propertyId]);
+    const created = await owner.post('/api/window-measurements').send({ propertyId: ids.propertyId });
+    const m = created.body as WindowMeasurementView;
+    const photo = windowPhoto();
+    const up = await owner.post(`/api/window-measurements/${m.id}/uploads`).attach('photo', Buffer.from(photo.bytes), 'w.jpg');
+    expect(up.status).toBe(201);
+    const patched = await owner.patch(`/api/window-measurements/${m.id}`).send({
+      photoWindows: [{ id: 'p1', uploadId: up.body.id, label: 'Kitchen', corners: photo.window, scale: { kind: 'reference', reference: 'letter', corners: photo.paper } }],
+    });
+    expect(patched.status, JSON.stringify(patched.body)).toBe(200);
+    const added = await owner.post(`/api/window-measurements/${m.id}/photo-windows`).send({ id: 'r1', label: 'Living', scale: { kind: 'roomplan', widthM: 0.9144, heightM: 1.524, confidence: 'high' } });
+    expect(added.status, JSON.stringify(added.body)).toBe(201);
+
+    const q = await newQuote(owner, ids.jobId, { importMeasured: true });
+    expect(q.designs.map((d) => d.label)).toEqual(['Kitchen']);
+    expect(q.skippedMeasured).toBe(1);
+    // A quote that imports nothing carries no count.
+    expect((await newQuote(owner, ids.jobId)).skippedMeasured).toBeUndefined();
+  });
 });
 
 describe('accepting a quote', () => {
