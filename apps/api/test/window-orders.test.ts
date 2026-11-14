@@ -119,6 +119,32 @@ describe('POST /api/window-measurements/:id/order', () => {
   });
 });
 
+describe('POST /api/window-measurements/:id/order again, after the measurement changed', () => {
+  it('keeps a confirmation while the sizes are the same and clears it when the measured size changes', async () => {
+    const owner = await who.as('owner');
+    const m = await houseWithPhotoWindows(owner, 1);
+    const order = await draft(owner, m.id);
+    const patched = await owner.patch(`/api/window-orders/${order.id}`).send({ lines: [{ id: 'p1', style: 'double-hung', confirmed: true }] });
+    expect(patched.status).toBe(200);
+    expect(patched.body.lines[0].confirmed).toBe(true);
+    // The same measurement again: still confirmed
+    const same = await owner.post(`/api/window-measurements/${m.id}/order`);
+    expect(same.status).toBe(200);
+    expect(same.body.lines[0]).toMatchObject({ confirmed: true, style: 'double-hung' });
+    // The window re-measured a little narrower: the person has not seen these sizes
+    const photo = windowPhoto();
+    const [a, b, c, d] = photo.window;
+    const narrower = [a, [b[0] - (b[0] - a[0]) * 0.1, b[1]], [c[0] - (c[0] - d[0]) * 0.1, c[1]], d];
+    const w = m.photoWindows![0]!;
+    const re = await owner.patch(`/api/window-measurements/${m.id}`).send({ photoWindows: [{ id: 'p1', uploadId: w.uploadId, label: 'Kitchen', corners: narrower, scale: { kind: 'reference', reference: 'letter', corners: photo.paper } }] });
+    expect(re.status, JSON.stringify(re.body)).toBe(200);
+    const again = await owner.post(`/api/window-measurements/${m.id}/order`);
+    expect(again.status).toBe(200);
+    expect(again.body.lines[0].measured[0].widthIn).toBeLessThan(order.lines[0]!.measured[0]!.widthIn);
+    expect(again.body.lines[0]).toMatchObject({ confirmed: false, style: 'double-hung' });
+  });
+});
+
 describe('PATCH /api/window-orders/:id', () => {
   it('saves options per line and the PO number, and validates them', async () => {
     const owner = await who.as('owner');
