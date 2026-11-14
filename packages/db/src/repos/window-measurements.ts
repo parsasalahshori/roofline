@@ -141,6 +141,31 @@ export async function updateWindowMeasurement(
 }
 
 /**
+ * Takes these photos (by upload id) off a window measurement the member may see, and answers the rows removed so their
+ * bytes can be deleted. A photo another of the company's measurements also holds (a request's windows are copied onto
+ * the address's measurement with the same stored bytes) leaves this row but is not answered: its bytes must stay.
+ * Locks the measurement; empty when the member may not see it.
+ */
+export async function removeWindowUploads(tx: Tx, ctx: TenantContext, id: string, uploadIds: ReadonlySet<string>, now: Date): Promise<StoredWindowUpload[]> {
+  if (uploadIds.size === 0) return [];
+  const found = await getWindowMeasurement(tx, ctx, id, { lock: true });
+  if (found === null) return [];
+  const gone = (found.uploads ?? []).filter((u) => uploadIds.has(u.id));
+  if (gone.length === 0) return [];
+  await tx
+    .update(windowMeasurements)
+    .set({ uploads: (found.uploads ?? []).filter((u) => !uploadIds.has(u.id)), updatedAt: now })
+    .where(and(eq(windowMeasurements.id, id), eq(windowMeasurements.companyId, ctx.companyId)));
+  const keys = gone.map((u) => u.key);
+  const shared = await tx.execute(sql`
+    select distinct u->>'key' as key
+      from window_measurements m, jsonb_array_elements(m.uploads) u
+     where m.company_id = ${ctx.companyId} and m.id <> ${id} and u->>'key' in (${sql.join(keys.map((k) => sql`${k}`), sql`, `)})`);
+  const kept = new Set(shared.rows.map((r) => String(r.key)));
+  return gone.filter((u) => !kept.has(u.key));
+}
+
+/**
  * Adds one uploaded photo to a window measurement the member may see, atomically (two uploads at once both land), unless
  * it already holds `max`: then 'full'. Null when the member may not see it (or it does not exist).
  */

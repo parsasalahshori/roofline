@@ -78,6 +78,7 @@ const APP_TENANT_DELETE_TABLES = [
   'blocked_numbers',
   'door_exclusions',
   'storm_photos',
+  'window_scans',
 ] as const;
 /**
  * Tenant tables app_tenant may only select from and insert into: no UPDATE and no DELETE. conversation_turns is
@@ -420,7 +421,7 @@ describe('grants', () => {
     truncate: false,
   });
 
-  test('app_tenant: S/I/U on tenant tables, S/I only on audit_log, agent_task_events, time_recounts and conversation_turns, S/I/D on blocked_numbers, and DELETE only on opt_outs, calendar_busy_blocks, calendar_event_links, calendar_connections, blocked_numbers, door_exclusions and storm_photos', async () => {
+  test('app_tenant: S/I/U on tenant tables, S/I only on audit_log, agent_task_events, time_recounts and conversation_turns, S/I/D on blocked_numbers, and DELETE only on opt_outs, calendar_busy_blocks, calendar_event_links, calendar_connections, blocked_numbers, door_exclusions, storm_photos and window_scans', async () => {
     const deletable = new Set<string>(APP_TENANT_DELETE_TABLES);
     const expected = TENANT_TABLES.map((t) =>
       // proposal_signatures: UPDATE only on the three columns attaching the signed PDF writes (Ruling EQ)
@@ -676,8 +677,8 @@ describe('grants', () => {
     expect(await tablePrivileges('app_system', ['homeowner_requests'])).toEqual([privs('homeowner_requests', false, false, false, false)]);
   });
 
-  test('window scans: app_tenant has SELECT, INSERT and UPDATE on window_scans, no DELETE; app_system nothing', async () => {
-    expect(await tablePrivileges('app_tenant', ['window_scans'])).toEqual([privs('window_scans', true, true, true, false)]);
+  test('window scans: app_tenant has SELECT, INSERT, UPDATE and DELETE on window_scans (DELETE only for a deleted window\'s scans, 0050); app_system nothing', async () => {
+    expect(await tablePrivileges('app_tenant', ['window_scans'])).toEqual([privs('window_scans', true, true, true, true)]);
     expect(await tablePrivileges('app_system', ['window_scans'])).toEqual([privs('window_scans', false, false, false, false)]);
   });
 

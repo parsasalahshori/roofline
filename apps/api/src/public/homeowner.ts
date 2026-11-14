@@ -7,6 +7,7 @@ import {
   appendWindowUpload,
   createHomeownerRequest,
   createQuoteRequest,
+  deleteWindowScansForWindow,
   ensureHomeownerMeasurement,
   getFiledLead,
   getHomeownerRequest,
@@ -16,6 +17,8 @@ import {
   getWindowMeasurement,
   linkHomeownerLead,
   markHomeownerCallMe,
+  removeWindowUploads,
+  scanFrameUploadIds,
   scansForRequest,
   quoteCompany,
   setHomeownerWindowCount,
@@ -60,6 +63,7 @@ import { bookedTimes, bookVisit, offeredSlots, officeAlert, startFollowUp } from
 import { quoteIpHash } from '../quote/guards.ts';
 import { estimateForHomeowner } from '../quote/homeowner-estimate.ts';
 import { canonicalJson, HEIC_MESSAGE, readUpload } from '../routes/window-measurements.ts';
+import { cloudKeyOf, maskKeyOf } from '../scans/refine/run.ts';
 import { assertKnownFields, emailField, noNul, parse } from '../validate.ts';
 import { authed, authenticate, HOMEOWNER_LIMITS, HOMEOWNER_UNKNOWN_REQUEST, newHomeownerToken, hashHomeownerToken, RateLimitedError, rateLimited } from './homeowner-auth.ts';
 import { registerDetectRoutes } from './homeowner-detect.ts';
@@ -633,25 +637,37 @@ export function publicHomeownerRoutes(deps: AppDeps): Router {
       const windowId = typeof req.params.windowId === 'string' ? req.params.windowId : '';
       if (!WINDOW_ID.test(windowId)) throw new AppError(404, MESSAGES.notFound);
       const now = clock.now();
+      const freed: string[] = [];
       const out = await withTenant(pools, ctx, async (tx) => {
         const locked = await getHomeownerRequest(tx, ctx, request.id, { lock: true });
         if (locked === null) return null;
         if (locked.windowMeasurementId !== null) {
           const found = await getWindowMeasurement(tx, ctx, locked.windowMeasurementId, { lock: true });
           const list = found?.adjustments.photoWindows ?? [];
+          const taken = list.find((w) => w.id === windowId && w.source === HOMEOWNER_APP_SOURCE);
           // Only the homeowner's own windows: a window a rep added to the address is not theirs to take away.
-          if (found !== null && list.some((w) => w.id === windowId && w.source === HOMEOWNER_APP_SOURCE)) {
+          if (found !== null && taken !== undefined) {
             const next: WindowAdjustments = {
               ...found.adjustments,
               photoWindows: list.filter((w) => w.id !== windowId),
               excludedWindowIds: found.adjustments.excludedWindowIds.filter((w) => w !== windowId),
             };
             await updateWindowMeasurement(tx, ctx, found.id, { adjustments: next }, now);
+            // The window's photos go with it (its own photo and its scans' frames), so they stop counting against the
+            // request's photo cap; a photo another window or scan still uses stays.
+            const scans = await deleteWindowScansForWindow(tx, ctx, locked.id, windowId, now);
+            const used = new Set<string>([...(next.photoWindows ?? []).flatMap((w) => (w.uploadId === undefined ? [] : [w.uploadId])), ...(await scanFrameUploadIds(tx, ctx, locked.id))]);
+            const gone = new Set([...(taken.uploadId === undefined ? [] : [taken.uploadId]), ...scans.flatMap((r) => r.frames.map((f) => f.uploadId))].filter((id) => !used.has(id)));
+            for (const u of await removeWindowUploads(tx, ctx, found.id, gone, now)) freed.push(u.key);
+            // What the refinement stored for those scans (masks, point cloud)
+            for (const r of scans) freed.push(cloudKeyOf(ctx.companyId, r.id), ...r.frames.map((f) => maskKeyOf(ctx.companyId, r.id, f.frameId)));
           }
         }
         return buildRequestView(tx, ctx, locked);
       });
       if (out === null) throw new AppError(401, HOMEOWNER_UNKNOWN_REQUEST).coded('unauthorized');
+      // The bytes go after the rows are gone for good (a failed delete leaves an orphan object, never a row pointing at nothing)
+      for (const key of freed) await deps.objectStore.delete(key).catch((e: unknown) => deps.logError?.(e, 'homeowner-window-delete'));
       res.json(out);
     }),
   );

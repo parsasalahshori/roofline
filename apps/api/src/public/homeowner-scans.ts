@@ -1,6 +1,8 @@
 import express, { type Router } from 'express';
 import { z } from 'zod';
 import {
+  countScansOfRequest,
+  countUnfinishedRefinements,
   createWindowScan,
   ensureHomeownerMeasurement,
   getHomeownerRequest,
@@ -10,7 +12,21 @@ import {
   type WindowScanRow,
   withTenant,
 } from '@roofline/db';
-import { computeScanResult, HOMEOWNER_APP_SOURCE, SCAN_GATE_CODES, SCAN_LIMITS, SCAN_MARK_SOURCES, scanFrameProblem, scanResultOf, type ScanFrame, type ScanMark, type ScanResult } from '@roofline/shared';
+import {
+  computeScanResult,
+  HOMEOWNER_APP_SOURCE,
+  HOMEOWNER_MAX_SCANS_PER_REQUEST,
+  HOMEOWNER_MAX_SCANS_PER_WINDOW,
+  HOMEOWNER_MAX_UNFINISHED_REFINES,
+  SCAN_GATE_CODES, SCAN_LIMITS,
+  SCAN_MARK_SOURCES,
+  scanFrameProblem,
+  scanResultOf,
+  type ScanFrame,
+  type ScanMark,
+  type ScanResult,
+} from '@roofline/shared';
+import { rateLimited } from './homeowner-auth.ts';
 import type { AppDeps } from '../app.ts';
 import { applyMeasuredScan, scanSizeProblem } from '../estimator/window-scan-apply.ts';
 import { AppError } from '../errors.ts';
@@ -35,6 +51,10 @@ export const SCAN_SLA_MS = SCAN_LIMITS.slaHours * 60 * 60 * 1000;
 const SCAN_MESSAGE = 'Please scan this window again.';
 const PHOTO_UNKNOWN_MESSAGE = 'A photo of this scan is not part of this request. Please scan the window again.';
 const WINDOW_UNKNOWN_MESSAGE = 'Please send the window before its scan.';
+const SCANS_FULL_WINDOW_MESSAGE = `This window has ${HOMEOWNER_MAX_SCANS_PER_WINDOW} scans already. We will check it at your free visit.`;
+const SCANS_FULL_REQUEST_MESSAGE = 'This request has all the scans it can hold.';
+/** A refinement that has not moved for this long is a dead job and no longer holds one of the company's slots. */
+const REFINE_STALE_MS = 6 * 60 * 60 * 1000;
 const MARK_OUTSIDE_MESSAGE = 'A corner mark is outside its photo. Please scan the window again.';
 
 const WINDOW_ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -163,6 +183,12 @@ export function registerScanRoutes(router: Router, o: { deps: AppDeps; budget: T
         if (found === null) return null;
         const window = (found.adjustments.photoWindows ?? []).find((w) => w.id === body.windowId && w.source === HOMEOWNER_APP_SOURCE);
         if (window === undefined) throw new AppError(409, WINDOW_UNKNOWN_MESSAGE, 'windowId').coded('window_unknown');
+        // A new scan (not a resend, handled above) must fit: per window, per request, and the company's queue of refinements
+        const counts = await countScansOfRequest(tx, ctx, locked.id, body.windowId);
+        if (counts.window >= HOMEOWNER_MAX_SCANS_PER_WINDOW) throw new AppError(409, SCANS_FULL_WINDOW_MESSAGE, 'windowId').coded('scans_full');
+        if (counts.request >= HOMEOWNER_MAX_SCANS_PER_REQUEST) throw new AppError(409, SCANS_FULL_REQUEST_MESSAGE).coded('scans_full');
+        // The phone treats a 429 as "later" and keeps the scan; a 409 would make it give up on the scan
+        if (refine && (await countUnfinishedRefinements(tx, ctx, new Date(now.getTime() - REFINE_STALE_MS))) >= HOMEOWNER_MAX_UNFINISHED_REFINES) throw rateLimited(false, 300);
         const uploads = found.uploads ?? [];
         const frames: ScanFrame[] = body.frames.map((f) => ({ ...f, uploadId: f.uploadId.toLowerCase() }) as ScanFrame);
         if (!frames.every((f) => uploads.some((u) => u.id === f.uploadId))) throw new AppError(400, PHOTO_UNKNOWN_MESSAGE, 'frames');

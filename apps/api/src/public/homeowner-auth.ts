@@ -2,7 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Request, RequestHandler } from 'express';
 import { ipKeyGenerator, MemoryStore, type Options } from 'express-rate-limit';
 import { getHomeownerRequest, type HomeownerRequestRow, type TenantContext, withTenant } from '@roofline/db';
-import { HOMEOWNER_TOKEN_RE, type InstantQuoteSettings } from '@roofline/shared';
+import { HOMEOWNER_MAX_UPLOADS, HOMEOWNER_TOKEN_RE, type InstantQuoteSettings } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { AppError } from '../errors.ts';
 import { createAllowance } from '../rate-limit.ts';
@@ -32,7 +32,8 @@ export const HOMEOWNER_LIMITS = {
   slotsPerIpPerHour: 60,
   failedAuthPerIpPerHour: 30,
   tokenPerMinute: 120,
-  uploadsPerTokenPerHour: 60,
+  /** A scanned window is about 13 photos; a whole house is HOMEOWNER_MAX_UPLOADS (the cap a request holds), so the hour's count is no tighter than that. */
+  uploadsPerTokenPerHour: HOMEOWNER_MAX_UPLOADS,
   windowsPerTokenPerHour: 120,
   /** A scan is a few per window; a person measuring a whole house with retakes stays well inside. */
   scansPerTokenPerHour: 120,

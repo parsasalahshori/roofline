@@ -539,3 +539,80 @@ describe('staff: the review queue', () => {
     expect((await send('post', other, `/requests/${other.id}/scans`, body, BOLT)).status).toBe(409);
   });
 });
+
+/* ------------------------------------------------------------------------------------------------------------------ */
+
+describe('limits: scans per window and per request, and a deleted window frees its photos', () => {
+  const NEW_SCAN = '6d1e8b63-2e4d-4b64-8e5f-1b7b6f1a2b02';
+  /** `n` more scans stored for the first one's request (copies of it, each with its own scan id), of its window or of `windowId`. */
+  const copies = async (n: number, windowId: string | null = null) =>
+    q(
+      `insert into window_scans (company_id, homeowner_request_id, scan_id, window_id, frames, marks, marks_original, phone_result, server_result, status, sla_due_at, history, created_at, updated_at)
+       select company_id, homeowner_request_id, gen_random_uuid()::text, coalesce($2, window_id), frames, marks, marks_original, phone_result, server_result, status, sla_due_at, history, created_at, updated_at
+         from window_scans, generate_series(1, $1) where scan_id = '5c0d7a52-1d3c-4a53-9d4e-0a6a5e0f1a01'`,
+      [n, windowId],
+    );
+  const scanRows = async () => (await q(`select count(*)::int as n from window_scans`))[0]!.n as number;
+
+  test('a window holds 3 scans: the fourth is a 409 scans_full, and an old scan sent again is still answered', async () => {
+    const { s, body, res } = await scanned('clean-34x55');
+    expect(res.status).toBe(201);
+    await copies(2);
+    const fourth = await postScan(s, { ...(await scanBody(s, fixture('clean-34x55'))), scanId: NEW_SCAN });
+    expect(fourth.status, JSON.stringify(fourth.body)).toBe(409);
+    expect(fourth.body).toMatchObject({ code: 'scans_full', field: 'windowId' });
+    expect(await scanRows()).toBe(3);
+    // The phone's retry of the first scan is the scan it already has
+    expect((await postScan(s, body)).status).toBe(200);
+    // Another window of the request has its own three
+    await addWindow(s, 'w2');
+    expect((await postScan(s, { ...(await scanBody(s, fixture('clean-34x55'))), scanId: NEW_SCAN, windowId: 'w2' })).status).toBe(201);
+  });
+
+  test('a request holds 150 scans, whichever the window: the 151st is a 409 scans_full', async () => {
+    const { s } = await scanned('clean-34x55');
+    await copies(149, 'elsewhere');
+    expect(await scanRows()).toBe(150);
+    await addWindow(s, 'w2');
+    const over = await postScan(s, { ...(await scanBody(s, fixture('clean-34x55'))), scanId: NEW_SCAN, windowId: 'w2' });
+    expect(over.status, JSON.stringify(over.body)).toBe(409);
+    expect(over.body.code).toBe('scans_full');
+    expect(await scanRows()).toBe(150);
+  });
+
+  test('deleting a window deletes its scans and frees its photos (the bytes too); another window keeps its own', async () => {
+    const { s, res } = await scanned('clean-34x55');
+    expect(res.status).toBe(201);
+    await addWindow(s, 'w2');
+    const before = (await q(`select uploads from window_measurements where company_id = $1`, [t.seed.a.companyId]))[0]!.uploads as { id: string; key: string }[];
+    expect(before).toHaveLength(9 + 1 + 1);
+    const w2Photo = (await q(`select adjustments->'photoWindows'->1->>'uploadId' as u from window_measurements where company_id = $1`, [t.seed.a.companyId]))[0]!.u as string;
+    const keyOf = (id: string) => before.find((u) => u.id === id)!.key;
+    for (const u of before) expect(await t.objectStore.get(u.key)).not.toBeNull();
+
+    const del = await send('delete', s, `/requests/${s.id}/windows/w1`);
+    expect(del.status, JSON.stringify(del.body)).toBe(200);
+    expect(await scanRows()).toBe(0);
+    const after = (await q(`select uploads from window_measurements where company_id = $1`, [t.seed.a.companyId]))[0]!.uploads as { id: string; key: string }[];
+    expect(after.map((u) => u.id)).toEqual([w2Photo]);
+    for (const u of before) expect(await t.objectStore.get(u.key) === null, u.id).toBe(u.id !== w2Photo);
+    expect(await t.objectStore.get(keyOf(w2Photo))).not.toBeNull();
+    // A retried delete is harmless
+    expect((await send('delete', s, `/requests/${s.id}/windows/w1`)).status).toBe(200);
+  });
+
+  test("a photo that another measurement of the company also holds keeps its bytes when the window goes", async () => {
+    const s = await start();
+    await addWindow(s);
+    const [m] = await q(`select id, uploads from window_measurements where company_id = $1`, [t.seed.a.companyId]);
+    const up = (m!.uploads as { id: string; key: string }[])[0]!;
+    // The address's own measurement holds a copy of the row (adoptHomeownerWindows does this for the windows' photos)
+    await q(
+      `insert into window_measurements select (jsonb_populate_record(null::window_measurements, to_jsonb(w) || jsonb_build_object('id', gen_random_uuid()))).* from window_measurements w where id = $1`,
+      [m!.id],
+    );
+    expect((await send('delete', s, `/requests/${s.id}/windows/w1`)).status).toBe(200);
+    expect((await q(`select uploads from window_measurements where id = $1`, [m!.id]))[0]!.uploads).toEqual([]);
+    expect(await t.objectStore.get(up.key)).not.toBeNull();
+  });
+});

@@ -11,6 +11,7 @@ import { insertFootprints } from '@roofline/db/system';
 import { WINCHOICE_CATALOG } from '../src/scripts/demo-winchoice-catalog.ts';
 import {
   DEFAULT_WINDOW_TIERS,
+  HOMEOWNER_MAX_UPLOADS,
   HOMEOWNER_TOKEN_DAYS,
   type HomeownerCreated,
   type HomeownerRequestView,
@@ -703,15 +704,15 @@ describe('photos', () => {
     }
   });
 
-  test('a request holds 90 photos and 250 MB: past either, a 409 and the bytes are removed', async () => {
+  test('a request holds HOMEOWNER_MAX_UPLOADS photos and 250 MB: past either, a 409 and the bytes are removed', async () => {
     const s = await start();
     await upload(s);
     const fake = (n: number, bytes: number) => Array.from({ length: n }, (_, i) => ({ id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, widthPx: 10, heightPx: 10, focal35mm: null, takenAt: null, key: `k/${i}`, kind: 'jpeg', orientation: 1, bytes, uploadedAt: NOW.toISOString() }));
-    await q(`update window_measurements set uploads = $2::jsonb where company_id = $1`, [t.seed.a.companyId, JSON.stringify(fake(89, 100))]);
+    await q(`update window_measurements set uploads = $2::jsonb where company_id = $1`, [t.seed.a.companyId, JSON.stringify(fake(HOMEOWNER_MAX_UPLOADS - 1, 100))]);
     const stored = (await t.objectStore.get('probe')) === null;
     expect(stored).toBe(true);
-    const ninetieth = await request(t.app).post(`${base()}/requests/${s.id}/uploads`).set(auth(s)).set('Content-Type', 'image/jpeg').send(Buffer.from(greyJpeg(3024, 4032)));
-    expect(ninetieth.status).toBe(201);
+    const last = await request(t.app).post(`${base()}/requests/${s.id}/uploads`).set(auth(s)).set('Content-Type', 'image/jpeg').send(Buffer.from(greyJpeg(3024, 4032)));
+    expect(last.status).toBe(201);
     const over = await request(t.app).post(`${base()}/requests/${s.id}/uploads`).set(auth(s)).set('Content-Type', 'image/jpeg').send(Buffer.from(greyJpeg(3024, 4032)));
     expect(over.status).toBe(409);
     expect(over.body.code).toBe('uploads_full');
