@@ -5,7 +5,7 @@
   "slug": "winchoice",
   "server": {
     "debug": "http://localhost:4500",
-    "release": ""
+    "release": "https://roofline-api.onrender.com"
   },
   "colors": {
     "red": "#ED3A2B",

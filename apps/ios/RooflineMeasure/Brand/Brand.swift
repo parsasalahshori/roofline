@@ -59,8 +59,8 @@ struct Brand: Decodable, Equatable {
         return e164.flatMap { URL(string: "tel:\($0)") }
     }
 
-    /// The server for this build configuration (Debug: the local demo; Release: set in the JSON, or entered on the phone in
-    /// a TestFlight build). Nil when there is none.
+    /// The server for this build configuration (Debug: the local demo; Release: the demo server named in the JSON, which a
+    /// TestFlight tester can replace on the phone). Nil when there is none.
     var serverURL: String? {
         #if DEBUG
         let s = server.debug ?? server.release
@@ -85,7 +85,7 @@ struct Brand: Decodable, Equatable {
 
     static let fallback = Brand(
         name: "WinChoice", appStoreName: "WinChoice", wordmark: "WinChoice", slug: "summit-ridge",
-        server: Server(debug: "http://localhost:4500", release: ""),
+        server: Server(debug: "http://localhost:4500", release: "https://roofline-api.onrender.com"),
         colors: Colors(red: "#ED3A2B", redDark: "#FF5A4B", navy: "#112337", navyDeep: "#061F3F", blue: "#155EAB", blueDark: "#6EA8EF"),
         madeIn: "Vinyl windows made in Mountain Pine, Arkansas", factoryPlace: "Mountain Pine, Arkansas",
         glassNote: "Every window comes with LoE366 glass with argon and a FlexScreen.",
@@ -105,16 +105,21 @@ struct Brand: Decodable, Equatable {
     )
 }
 
-/// Where the build runs, for the few things that differ (the hidden server setting is for testers only).
+/// Where the build runs, for the few things that differ (the hidden server setting and the debug capture dump are for testers only).
 enum BuildEnvironment {
-    /// A Debug build, or one installed from TestFlight (its receipt is called sandboxReceipt). Never the App Store.
+    /// The name of the receipt file TestFlight (and the sandbox) installs; the App Store's is called "receipt".
+    static let testFlightReceiptName = "sandboxReceipt"
+
+    /// True for a build installed from TestFlight (its receipt is called sandboxReceipt). A pure function so a test can feed it
+    /// the App Store's receipt name. An App Store build is never a tester build, whatever its brand file says.
+    static func isTestFlightReceipt(named name: String?) -> Bool { name == testFlightReceiptName }
+
+    /// A Debug build, or one installed from TestFlight. Never the App Store.
     static var isTesterBuild: Bool {
         #if DEBUG
         return true
         #else
-        // TestFlight, or an Xcode-installed Release build of a brand with no server in its file (the tester must be able to set one)
-        if Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" { return true }
-        return (Brand.current.server.release ?? "").isEmpty
+        return isTestFlightReceipt(named: Bundle.main.appStoreReceiptURL?.lastPathComponent)
         #endif
     }
 }
