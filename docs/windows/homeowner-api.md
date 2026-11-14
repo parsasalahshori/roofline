@@ -53,7 +53,7 @@ on our side. Please try again." }`). Decode `code` as optional, and for a code y
 | 404 | `not_found` | An unknown slug (or a page turned off) on `GET /company`, `POST /requests` and, before the token is looked at, any `/requests/:id/...` call; the contact form, slots or booking on a turned-off page; a malformed window id on `DELETE`; a path or method that is not in this document (that answer is `{ "error": "We couldn't find that.", "code": "not_found" }`). |
 | 409 | `window_id_taken` | `POST .../windows` with an id already used for a **different** window. |
 | 409 | `windows_full` | The request already has 60 windows. |
-| 409 | `uploads_full` | The request already has 400 photos or 250 MB of photos. |
+| 409 | `uploads_full` | The request already has 400 photos or 400 MB of photos. |
 | 409 | `callback_only` | A windows call (upload, window, count) on a request that went to the call-back path (`status: "callback"`). |
 | 409 | `windows_not_requested` | A windows call on a request that did not ask for `windows`. |
 | 409 | `contact_needed` | `POST .../book` before `POST .../contact`. |

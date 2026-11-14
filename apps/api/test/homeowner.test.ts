@@ -704,7 +704,7 @@ describe('photos', () => {
     }
   });
 
-  test('a request holds HOMEOWNER_MAX_UPLOADS photos and 250 MB: past either, a 409 and the bytes are removed', async () => {
+  test('a request holds HOMEOWNER_MAX_UPLOADS photos and 400 MB: past either, a 409 and the bytes are removed', async () => {
     const s = await start();
     await upload(s);
     const fake = (n: number, bytes: number) => Array.from({ length: n }, (_, i) => ({ id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, widthPx: 10, heightPx: 10, focal35mm: null, takenAt: null, key: `k/${i}`, kind: 'jpeg', orientation: 1, bytes, uploadedAt: NOW.toISOString() }));
@@ -716,7 +716,7 @@ describe('photos', () => {
     const over = await request(t.app).post(`${base()}/requests/${s.id}/uploads`).set(auth(s)).set('Content-Type', 'image/jpeg').send(Buffer.from(greyJpeg(3024, 4032)));
     expect(over.status).toBe(409);
     expect(over.body.code).toBe('uploads_full');
-    await q(`update window_measurements set uploads = $2::jsonb where company_id = $1`, [t.seed.a.companyId, JSON.stringify(fake(5, 60 * 1024 * 1024))]);
+    await q(`update window_measurements set uploads = $2::jsonb where company_id = $1`, [t.seed.a.companyId, JSON.stringify(fake(8, 50 * 1024 * 1024))]);
     const heavy = await request(t.app).post(`${base()}/requests/${s.id}/uploads`).set(auth(s)).set('Content-Type', 'image/jpeg').send(Buffer.from(greyJpeg(3024, 4032)));
     expect(heavy.status).toBe(409);
     expect(heavy.body.code).toBe('uploads_full');

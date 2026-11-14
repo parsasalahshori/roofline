@@ -26,7 +26,7 @@ export const HOMEOWNER_MAX_WINDOWS = 60;
  */
 export const HOMEOWNER_MAX_UPLOADS = 400;
 /** Most bytes of photos one request may hold. */
-export const HOMEOWNER_MAX_UPLOAD_BYTES_TOTAL = 250 * 1024 * 1024;
+export const HOMEOWNER_MAX_UPLOAD_BYTES_TOTAL = 400 * 1024 * 1024;
 /** One photo: 12 MB (the same limit as staff window photos). */
 export const HOMEOWNER_PHOTO_MAX_BYTES = 12 * 1024 * 1024;
 /** Most scans one window may have (the first, and two retakes). Past it: 409 `scans_full`. */
