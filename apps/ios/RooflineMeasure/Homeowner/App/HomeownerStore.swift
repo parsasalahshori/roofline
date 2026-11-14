@@ -588,6 +588,7 @@ final class HomeownerStore {
     // MARK: Outbox
 
     private func startOutbox() async {
+        // A file that cannot be read is kept aside by load() (outbox.json.bad, scans.json.bad), never overwritten: the app starts empty
         try? await outbox.load()
         await outbox.setObserver { [weak self] items in Task { @MainActor in self?.outboxChanged(items) } }
         await outbox.syncAll()

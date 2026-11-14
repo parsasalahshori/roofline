@@ -215,6 +215,33 @@ let outboxChecks: [Check] = [
         let back = try d.decode(OutboxItem.self, from: JSONSerialization.data(withJSONObject: legacy))
         ctx.equal(back.retryNotBefore, nil)
     },
+    Check("Outbox: a corrupt outbox.json is kept aside as outbox.json.bad, not overwritten by the next save") { ctx in
+        let dir = tempDir()
+        let file = dir.appendingPathComponent("outbox.json")
+        let bad = dir.appendingPathComponent("outbox.json.bad")
+        let garbage = Data("{ this is not an outbox".utf8)
+        try garbage.write(to: file)
+        let ob = Outbox(directory: dir, transport: FakeTransport())
+        var threw = false
+        do { try await ob.load() } catch { threw = true }
+        ctx.expect(threw, "the caller is told the saved file could not be read")
+        ctx.equal(await ob.items.count, 0)
+        ctx.expect(FileManager.default.fileExists(atPath: bad.path), "the unreadable file is kept")
+        ctx.equal(try? Data(contentsOf: bad), garbage, "byte for byte")
+        ctx.expect(!FileManager.default.fileExists(atPath: file.path), "and is no longer where the next save would overwrite it")
+        // New windows save normally and leave the kept file alone
+        _ = try await ob.enqueue(window: sampleWindow(), measurementId: "m", address: nil, jpeg: Data([1]), imageWidthPx: 10, imageHeightPx: 10)
+        ctx.equal(try? Data(contentsOf: bad), garbage)
+        let again = Outbox(directory: dir, transport: FakeTransport())
+        try await again.load()
+        ctx.equal(await again.items.count, 1)
+        // A second corruption does not destroy the first kept file's evidence either: it is kept under its own name
+        try garbage.write(to: file)
+        let third = Outbox(directory: dir, transport: FakeTransport())
+        do { try await third.load() } catch {}
+        let kept = (try? FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.hasPrefix("outbox.json.bad") }) ?? []
+        ctx.equal(kept.count, 2, "two bad files kept: \(kept)")
+    },
     Check("OutboxMachine: a refused photo upload is redone from scratch on Retry") { ctx in
         var i = OutboxItem(window: sampleWindow(), measurementId: "m", address: nil, jpegFileName: "x.jpg", imageWidthPx: 1, imageHeightPx: 1)
         i = OutboxMachine.failed(OutboxMachine.started(i, .photo), .photo, TransportError(status: 415, message: "HEIC"))

@@ -213,10 +213,29 @@ public actor Outbox {
         let data = try Data(contentsOf: fileURL)
         let d = JSONDecoder()
         d.dateDecodingStrategy = .iso8601
-        items = try d.decode([OutboxItem].self, from: data)
+        do {
+            items = try d.decode([OutboxItem].self, from: data)
+        } catch {
+            // An unreadable file is kept aside (outbox.json.bad), not left for the next save to overwrite; the outbox starts empty
+            items = []
+            Self.keepAside(fileURL)
+            throw error
+        }
         // An item caught mid-send by a killed app goes back to waiting (its step will be redone safely)
         items = items.map { var i = $0; if i.state == .sending { i.state = .waiting }; return i }
         observer?(items)
+    }
+
+    /// Renames a file that could not be read to `<name>.bad` (`.bad2`, `.bad3`... when one is already kept), so a later save cannot overwrite it.
+    static func keepAside(_ file: URL) {
+        let fm = FileManager.default
+        var target = file.appendingPathExtension("bad")
+        var n = 2
+        while fm.fileExists(atPath: target.path) {
+            target = file.appendingPathExtension("bad\(n)")
+            n += 1
+        }
+        try? fm.moveItem(at: file, to: target)
     }
 
     private func persist() throws {
