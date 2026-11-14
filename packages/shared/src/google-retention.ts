@@ -89,6 +89,8 @@ export type GoogleRetentionCounts = {
   windowRowsCleared: number;
   /** Street View photo objects deleted (from rows). */
   windowPhotosDeleted: number;
+  /** Instant-quote estimates past the retention days whose Solar-derived result (satellite facts, outline, ranges) was cleared. */
+  quoteEstimatesCleared: number;
   /** Objects under a Google prefix with no row naming them (or past the maximum age), deleted. */
   orphansDeleted: number;
   /** Deletes that failed (left for the next run). */
@@ -98,5 +100,5 @@ export type GoogleRetentionCounts = {
 };
 
 export function emptyRetentionCounts(): GoogleRetentionCounts {
-  return { measurementsCleared: 0, roofPhotosDeleted: 0, windowRowsCleared: 0, windowPhotosDeleted: 0, orphansDeleted: 0, failures: 0, companiesFailed: 0 };
+  return { measurementsCleared: 0, roofPhotosDeleted: 0, windowRowsCleared: 0, windowPhotosDeleted: 0, quoteEstimatesCleared: 0, orphansDeleted: 0, failures: 0, companiesFailed: 0 };
 }

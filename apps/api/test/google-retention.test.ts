@@ -224,6 +224,38 @@ describe('google-retention job', () => {
     expect((await sweepGoogleRetention(t.deps, now)).orphansDeleted).toBe(0);
   });
 
+  it('clears the Solar-derived result of instant-quote estimates past the retention days, keeps the row, and leaves young ones alone', async () => {
+    const result = {
+      roof: { low: 9000, high: 12000, sqFt: 2400 },
+      windows: { count: 12, range: { low: 5000, high: 7000 } },
+      gutters: { low: 800, high: 1200 },
+      outline: { center: INSIDE, ring: HOUSE },
+      satellite: { problems: ['imagery-old'], quality: 'MEDIUM', date: '2019-05-01', roofAsked: true },
+      callback: { reason: 'roof-review' },
+      lookup: { accuracy: 1, accuracyType: 'rooftop', unit: null },
+    };
+    const insert = (key: string, createdAt: Date) =>
+      ownerQuery<{ id: string }>(
+        `insert into quote_estimates (company_id, input_key, address, status, measured, result, expires_at, created_at, updated_at)
+         values ($1, $2, '4810 Underwood Ave, Omaha, NE', 'ready', true, $3::jsonb, $4, $5, $5) returning id`,
+        [t.seed.a.companyId, key, JSON.stringify(result), new Date(createdAt.getTime() + 30 * DAY), createdAt],
+      );
+    const [old] = await insert('old', at(-31));
+    const [young] = await insert('young', at(-29));
+    const counts = await sweepGoogleRetention(t.deps, NOW);
+    expect(counts.quoteEstimatesCleared).toBe(1);
+    const rows = await ownerQuery<{ id: string; status: string; measured: boolean; result: Record<string, unknown> }>(`select id, status, measured, result from quote_estimates where company_id = $1`, [t.seed.a.companyId]);
+    const cleared = rows.find((r) => r.id === old!.id)!;
+    // The row stays (requests point at it, the daily cap counts it); what Solar gave is gone
+    expect(cleared).toMatchObject({ status: 'ready', measured: true });
+    expect(cleared.result).toEqual({ roof: null, windows: null, gutters: null, outline: null, callback: result.callback, lookup: result.lookup, googleClearedAt: NOW.toISOString() });
+    expect(JSON.stringify(cleared.result)).not.toMatch(/imagery|MEDIUM|2019|ring/);
+    expect(rows.find((r) => r.id === young!.id)!.result).toEqual(result);
+    // Again: nothing more; and when the young one comes due it goes too
+    expect((await sweepGoogleRetention(t.deps, NOW)).quoteEstimatesCleared).toBe(0);
+    expect((await sweepGoogleRetention(t.deps, at(2))).quoteEstimatesCleared).toBe(1);
+  });
+
   it('records each run with its counts, and logs counts only', async () => {
     await measuredHome();
     const logs: string[] = [];

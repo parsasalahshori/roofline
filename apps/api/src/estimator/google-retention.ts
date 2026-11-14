@@ -1,6 +1,7 @@
 import {
   backfillMeasurementGoogleDeleteBy,
   backfillWindowPhotosDeleteBy,
+  clearExpiredQuoteEstimates,
   clearMeasurementGoogle,
   clearWindowPhotos,
   googleObjectKeysInUse,
@@ -25,6 +26,7 @@ import type { AppDeps } from '../app.ts';
  *  - a measurement's Solar answer (measurements.solar, buildingInsights as parsed) and its roof photo (the PNG cut from
  *    Data Layers' RGB, object `roof-photos/...`, named by measurements.roof_3d.photo);
  *  - a window measurement's Street View photos (objects `window-photos/...`, named by window_measurements.photos);
+ *  - an instant-quote estimate's result (quote_estimates.result: Solar's imagery facts, the outline and the ranges worked out from it);
  *  - any object under those prefixes no row names (an orphan: a Measure that stored a photo and then failed).
  * Kept: every number we worked out (outline, 3D faces and lines, pitch, totals, window boxes and sizes, wall line-ups)
  * and the company's own uploaded window photos. Raw Data Layers GeoTIFFs and buildingInsights JSON are never stored
@@ -35,6 +37,7 @@ import type { AppDeps } from '../app.ts';
  */
 
 const BATCH = 200;
+const DAY_MS = 86_400_000;
 /** An object no row names is left this long first: a Measure may have stored it and not saved its row yet. */
 export const ORPHAN_GRACE_MS = 60 * 60 * 1000;
 
@@ -118,6 +121,13 @@ export async function sweepCompanyGoogle(deps: AppDeps, companyId: string, now: 
       }
     }
     if (cleared === 0 || due.length < batch) break;
+  }
+
+  // Instant-quote estimates: what Solar gave (satellite facts, outline, ranges) goes with the retention days; the row stays.
+  for (;;) {
+    const n = await withTenant(deps.pools, ctx, (tx) => clearExpiredQuoteEstimates(tx, ctx, { createdAtOrBefore: new Date(cutoff.getTime() - GOOGLE_CONTENT_MAX_DAYS * DAY_MS), now, limit: batch }));
+    counts.quoteEstimatesCleared += n;
+    if (n < batch) break;
   }
 
   return withTenant(deps.pools, ctx, (tx) => googleObjectKeysInUse(tx, ctx));

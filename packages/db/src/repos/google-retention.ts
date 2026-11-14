@@ -1,6 +1,6 @@
 import { and, asc, eq, isNotNull, lte, sql } from 'drizzle-orm';
 import type { Roof3dSnapshot } from '@roofline/shared';
-import { measurements, type StoredFacadePhoto, windowMeasurements } from '../schema/index.ts';
+import { measurements, quoteEstimates, type StoredFacadePhoto, windowMeasurements } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 
 /*
@@ -134,6 +134,33 @@ export async function clearWindowPhotos(tx: Tx, ctx: TenantContext, id: string, 
     .where(and(eq(windowMeasurements.companyId, ctx.companyId), eq(windowMeasurements.id, id)))
     .returning({ id: windowMeasurements.id });
   return rows.length > 0;
+}
+
+/**
+ * Clears the result of up to `limit` of the company's instant-quote estimates made at or before `createdAtOrBefore` (the
+ * retention days ago): the result holds what Google Solar gave (the imagery's quality and date, the roof outline, the roof and
+ * window ranges worked out from it). The row stays (requests point at it, and it counts toward the daily cap); its
+ * result keeps only why it was a call back and the address lookup, and gets googleClearedAt = `now`. An estimate is not
+ * reused past its own 30 days, so nothing live reads what goes. Returns how many it cleared; a cleared row is skipped.
+ */
+export async function clearExpiredQuoteEstimates(tx: Tx, ctx: TenantContext, opts: { createdAtOrBefore: Date; now: Date; limit: number }): Promise<number> {
+  const at = opts.now.toISOString();
+  const due = tx
+    .select({ id: quoteEstimates.id })
+    .from(quoteEstimates)
+    .where(and(eq(quoteEstimates.companyId, ctx.companyId), lte(quoteEstimates.createdAt, opts.createdAtOrBefore), sql`NOT (${quoteEstimates.result} ? 'googleClearedAt')`))
+    .orderBy(asc(quoteEstimates.createdAt), asc(quoteEstimates.id))
+    .limit(opts.limit);
+  const rows = await tx
+    .update(quoteEstimates)
+    .set({
+      result: sql`jsonb_build_object('roof', 'null'::jsonb, 'windows', 'null'::jsonb, 'gutters', 'null'::jsonb, 'outline', 'null'::jsonb, 'googleClearedAt', ${at}::text)
+        || CASE WHEN ${quoteEstimates.result} ? 'callback' THEN jsonb_build_object('callback', ${quoteEstimates.result}->'callback') ELSE '{}'::jsonb END
+        || CASE WHEN ${quoteEstimates.result} ? 'lookup' THEN jsonb_build_object('lookup', ${quoteEstimates.result}->'lookup') ELSE '{}'::jsonb END`,
+    })
+    .where(and(eq(quoteEstimates.companyId, ctx.companyId), sql`${quoteEstimates.id} IN (${due})`))
+    .returning({ id: quoteEstimates.id });
+  return rows.length;
 }
 
 /** Every object key of Google content the company's rows still name (roof photos, Street View photos). */
