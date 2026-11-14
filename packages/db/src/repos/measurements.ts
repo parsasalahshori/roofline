@@ -274,7 +274,7 @@ export async function createMeasurement(tx: Tx, ctx: TenantContext, m: NewMeasur
     })
     .returning({ id: measurements.id });
 
-  const view = await getMeasurement(tx, ctx, row!.id);
+  const view = await getMeasurement(tx, ctx, row!.id, now);
   return view!;
 }
 
@@ -596,7 +596,7 @@ export async function updateMeasurement(
     })
     .where(and(eq(measurements.id, id), eq(measurements.companyId, ctx.companyId)));
 
-  return getMeasurement(tx, ctx, id);
+  return getMeasurement(tx, ctx, id, now);
 }
 
 /** Points an address at the footprint the estimator chose. No error when the member cannot see the address. */
