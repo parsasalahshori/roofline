@@ -99,15 +99,19 @@ struct VisualizeScreen: View {
             .accessibilityIdentifier("customize.next")
         }
         if place.count > 1 {
-            Button("Use for all \(place.count) windows") {
+            Button {
                 Task {
                     working = true
                     await store.customizeAll(look: model.look, colorKey: model.colorKey)
                     working = false
                 }
+            } label: {
+                // The 44 pt is the button's own size (inside its label): a frame around the Button leaves a tap area as tall as the words
+                Text("Use for all \(place.count) windows")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(minWidth: Theme.minTap, minHeight: Theme.minTap)
+                    .contentShape(Rectangle())
             }
-            .font(.subheadline.weight(.semibold))
-            .frame(minHeight: Theme.minTap)
             .disabled(working)
             .accessibilityIdentifier("customize.all")
         }
@@ -287,10 +291,11 @@ struct VisualizeScreen: View {
                     Text("Clean glass").font(.body)
                     Text("Hides your old bars and blinds with a soft sky.").font(.footnote).foregroundStyle(Theme.ink2)
                 }
+                // The padding is inside the label so the switch row itself is over 44 pt (it was 38)
+                .padding(.vertical, 6)
             }
             .tint(Theme.buttonFill)
             .padding(.horizontal, Theme.gutter)
-            .frame(minHeight: Theme.minTap)
             .disabled(model.look.glass == .frosted)
         }
     }

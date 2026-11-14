@@ -146,7 +146,9 @@ private struct MethodRow: View {
                     .padding(.top, 2)
                     .accessibilityHidden(true)
             }
-            .padding(.vertical, 4)
+            // Roomier rows: with the five ways of a depth-sensor phone the list runs under the pinned Start, and at 4 pt the fourth card's
+            // tag was cut by the bar's edge on a 6.3" screen (the audit read the cut text as low contrast); at 6 pt the fold falls between lines
+            .padding(.vertical, 6)
             .opacity(available ? 1 : 0.55)
             .contentShape(Rectangle())
         }
