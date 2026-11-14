@@ -25,6 +25,12 @@ final class SwitchableAPI: HomeownerAPI, @unchecked Sendable {
         set { lock.lock(); missing = newValue; lock.unlock() }
     }
     private var missing = false
+    /// The server refuses the contact (a request it no longer knows, say).
+    var fileContactError: HomeownerAPIError? {
+        get { lock.lock(); defer { lock.unlock() }; return contactRefusal }
+        set { lock.lock(); contactRefusal = newValue; lock.unlock() }
+    }
+    private var contactRefusal: HomeownerAPIError?
 
     private func gate() throws {
         // The live client turns every network failure into this one sentence
@@ -39,7 +45,11 @@ final class SwitchableAPI: HomeownerAPI, @unchecked Sendable {
     func setLook(_ s: HomeownerSession, windowId: String, look: HomeownerWindowLookBody) async throws -> HomeownerRequestView { try gate(); return try await fake.setLook(s, windowId: windowId, look: look) }
     func deleteWindow(_ s: HomeownerSession, windowId: String) async throws -> HomeownerRequestView { try gate(); return try await fake.deleteWindow(s, windowId: windowId) }
     func setEstimatedTotal(_ s: HomeownerSession, total: Int?) async throws -> HomeownerRequestView { try gate(); return try await fake.setEstimatedTotal(s, total: total) }
-    func fileContact(_ s: HomeownerSession, contact: HomeownerContact) async throws -> HomeownerRequestView { try gate(); return try await fake.fileContact(s, contact: contact) }
+    func fileContact(_ s: HomeownerSession, contact: HomeownerContact) async throws -> HomeownerRequestView {
+        try gate()
+        if let refusal = fileContactError { throw refusal }
+        return try await fake.fileContact(s, contact: contact)
+    }
     func slots(_ s: HomeownerSession) async throws -> HomeownerSlots { try gate(); return try await fake.slots(s) }
     func book(_ s: HomeownerSession, choice: HomeownerBookingChoice) async throws -> HomeownerRequestView { try gate(); return try await fake.book(s, choice: choice) }
     func status(_ s: HomeownerSession) async throws -> HomeownerStatus { try gate(); return try await fake.status(s) }

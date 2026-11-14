@@ -650,11 +650,10 @@ final class HomeownerStore {
         Task { await self.syncWindows() }
     }
 
-    func retry(_ windowId: String) {
-        Task {
-            try? await outbox.retry(id: windowId)
-            await syncWindows()
-        }
+    /// "Retry" on a window the server refused or that could not be sent: it goes again from the start.
+    func retry(_ windowId: String) async {
+        try? await outbox.retry(id: windowId)
+        await syncWindows()
     }
 
     func dismissNotice() { notice = nil }

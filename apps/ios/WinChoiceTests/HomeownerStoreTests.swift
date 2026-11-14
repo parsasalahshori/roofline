@@ -883,4 +883,146 @@ final class HomeownerStoreTests: XCTestCase {
         XCTAssertNotNil(h.store.notice)
         UserDefaults.standard.removeObject(forKey: ServerSetting.key)
     }
+
+    // MARK: Audit fixes
+
+    private func fillContactForm(_ h: StoreHarness) async {
+        h.store.requestCallFromEstimate()
+        await h.store.prepareContact()
+        h.store.contactDraft = HomeownerContact(firstName: "Tia", lastName: "Bell", phone: "(501) 555-0177", email: "tia.bell@example.com", zip: "72205", contactConsent: true)
+    }
+
+    /// A window the server refused (it shows Retry in the list): measured, then its send refused once.
+    private func oneRefusedWindow() async throws -> (h: StoreHarness, id: String) {
+        let h = StoreHarness()
+        try await h.open(windows: [], step: .list)
+        await h.capture(room: "Kitchen")
+        let id = try XCTUnwrap(h.store.windowRows.first?.id)
+        await h.fake.failNext(serverError(422, "window_unsizable", "The window corners cross over each other. Mark them in order."))
+        await h.store.setStyle("double-hung", for: id)
+        await h.settle()
+        XCTAssertEqual(h.store.failedItems.count, 1)
+        return (h, id)
+    }
+
+    func testAFailedWindowIsRetriedFromTheListAndGoesOut() async throws {
+        let (h, id) = try await oneRefusedWindow()
+        guard case .failed = h.store.windowRows[0].send else { return XCTFail("expected a failed window") }
+        await h.store.retry(id)
+        await h.settle()
+        await h.store.refresh()
+        XCTAssertEqual(h.store.failedItems.count, 0)
+        XCTAssertEqual(h.store.windowRows.first?.send, .sent, "the second try went through")
+        XCTAssertEqual(h.store.view?.windows.map { $0.id }, [id])
+    }
+
+    func testTheContactIsNotFiledWhileAWindowFailedToSendAndGoesOnceItIsRetried() async throws {
+        let (h, id) = try await oneRefusedWindow()
+        await fillContactForm(h)
+        await h.store.submitContact()
+        XCTAssertEqual(h.store.contactError?.contains("couldn't be sent"), true, "says which way out: Retry")
+        XCTAssertNotEqual(h.store.root, .callbackSent)
+        var calls = await h.fake.calls()
+        XCTAssertFalse(calls.contains("POST contact"), "the lead is not filed without the window: \(calls)")
+        await h.store.retry(id)
+        await h.settle()
+        await h.store.submitContact()
+        XCTAssertEqual(h.store.root, .callbackSent)
+        calls = await h.fake.calls()
+        XCTAssertTrue(calls.contains("POST contact"))
+        XCTAssertEqual(h.store.view?.windows.count, 1, "and the request has its window")
+    }
+
+    func testTheContactWaitsForAWindowStillOnThePhoneAndGoesWhenItIsOnline() async throws {
+        let h = StoreHarness()
+        try await h.open(windows: [], step: .list)
+        await h.capture(room: "Kitchen")
+        let id = try XCTUnwrap(h.store.windowRows.first?.id)
+        h.api.offline = true
+        await h.store.setStyle("double-hung", for: id)
+        await h.settle()
+        XCTAssertEqual(h.store.windowRows.first?.send, .waiting)
+        await fillContactForm(h)
+        await h.store.submitContact()
+        XCTAssertEqual(h.store.contactError?.contains("haven't all reached"), true)
+        h.api.offline = false
+        await h.store.submitContact()
+        XCTAssertEqual(h.store.root, .callbackSent, "online: the window goes first, then the contact")
+        XCTAssertEqual(h.store.view?.windows.count, 1)
+    }
+
+    func testAContactTheServerRefusesAsGoneKeepsTheMeasuredWindowsForTheNewRequest() async throws {
+        let h = try await twoWindowsOnTheEstimate()
+        let address = h.store.address
+        await fillContactForm(h)
+        h.api.fileContactError = serverError(404, "not_found", "We couldn't find your saved request.")
+        await h.store.submitContact()
+        XCTAssertNil(h.store.session, "the request is forgotten")
+        try await Task.sleep(nanoseconds: 100_000_000)   // a removal, if there were one, runs in a task of its own
+        let kept = await h.store.outbox.items
+        XCTAssertEqual(kept.count, 2, "both measured windows stay on the phone")
+        XCTAssertEqual(h.store.addressText, address, "the address is ready to confirm again")
+        XCTAssertTrue(h.store.notice?.text.contains("still on this phone") == true)
+    }
+
+    func testAStyleChangeThatCannotReachTheServerLeavesOneWindowAndAppliesLater() async throws {
+        let h = StoreHarness()
+        try await h.open(windows: Array(FakeWindowSpec.mockupSeven.prefix(2)))
+        let old = h.store.windowRows[0]
+        h.api.offline = true
+        await h.store.setStyle("arch", for: old.id)
+        await h.settle()
+        let waiting = await h.store.outbox.items
+        XCTAssertTrue(waiting.isEmpty, "no copy is left waiting to be sent next to the old window")
+        XCTAssertEqual(h.store.progress.pendingStyles[old.id], "arch", "the choice is kept")
+        XCTAssertEqual(h.store.windowRows.first { $0.id == old.id }?.style, "arch", "and shows at once")
+        h.api.offline = false
+        await h.store.syncWindows()
+        await h.settle()
+        await h.store.refresh()
+        XCTAssertEqual(h.store.windowRows.count, 2, "the same number of windows: no duplicate")
+        XCTAssertFalse(h.store.windowRows.contains { $0.id == old.id }, "the old one is gone")
+        XCTAssertEqual(h.store.windowRows.filter { $0.style == "arch" }.count, 1)
+        XCTAssertEqual(h.store.view?.windows.count, 2, "and so is the server")
+        XCTAssertTrue(h.store.progress.pendingStyles.isEmpty)
+    }
+
+    func testAStyleChangeRefusedOnTheServerSideDoesNotDuplicateEither() async throws {
+        let h = StoreHarness()
+        try await h.open(windows: Array(FakeWindowSpec.mockupSeven.prefix(2)))
+        let old = h.store.windowRows[0]
+        await h.fake.failNext(serverError(503, "unavailable", "WinChoice is busy. Try again in a minute."))
+        await h.store.setStyle("arch", for: old.id)
+        await h.settle()
+        await h.store.refresh()
+        XCTAssertEqual(h.store.view?.windows.count, 2)
+        XCTAssertEqual(h.store.view?.windows.filter { $0.input.style == "arch" }.count, 0, "nothing changed on the server yet")
+        await h.store.syncWindows()
+        await h.settle()
+        await h.store.refresh()
+        XCTAssertEqual(h.store.view?.windows.count, 2)
+        XCTAssertEqual(h.store.view?.windows.filter { $0.input.style == "arch" }.count, 1)
+    }
+
+    func testAddingAWindowAfterBookingEndsOnMyOrderNotOnAnotherContact() async throws {
+        let h = StoreHarness()
+        try await h.open(windows: Array(FakeWindowSpec.mockupSeven.prefix(2)), contact: true, booked: true)
+        XCTAssertTrue(h.store.hasBooking)
+        await h.capture(room: "Hall")
+        XCTAssertEqual(h.store.unstyledCount, 1)
+        await h.store.finishStyles()
+        await h.settle()
+        XCTAssertEqual(h.store.root, .status, "back to My order")
+        XCTAssertTrue(h.store.path.isEmpty)
+        XCTAssertFalse(h.store.path.contains(.step(.ready)))
+        XCTAssertEqual(h.store.unstyledCount, 0)
+        let calls = await h.fake.calls()
+        XCTAssertFalse(calls.contains("POST contact"), "no second contact is filed: \(calls)")
+        XCTAssertEqual(h.store.view?.windows.count, 3, "the new window reached the request")
+    }
+
+    func testTheLastStyleButtonSaysDoneAfterABookingAndEstimateBefore() {
+        XCTAssertEqual(StylesScreen.lastTitle(hasBooking: true), "Done")
+        XCTAssertEqual(StylesScreen.lastTitle(hasBooking: false), "See my estimate")
+    }
 }
