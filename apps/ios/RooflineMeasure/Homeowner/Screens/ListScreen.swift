@@ -28,7 +28,7 @@ struct ListScreen: View {
                 ForEach(WindowGroups.group(rows, roomOrder: store.rooms)) { group in
                     Section {
                         ForEach(group.rows) { row in
-                            WindowListRow(row: row, action: { actionRow = row })
+                            WindowListRow(row: row, action: { actionRow = row }, retry: { Task { await store.retry(row.id) } })
                                 .listRowBackground(rowBackground(highlighted: row.id == store.justSavedId))
                                 .animation(.easeOut(duration: 0.4), value: store.justSavedId)
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -197,12 +197,17 @@ struct WindowListRow: View {
     let row: WindowRow
     var highlighted = false
     let action: () -> Void
+    /// "Retry" under a window that could not be sent; nil where a row has no way to send it again (the status screen).
+    var retry: (() -> Void)?
 
     private var large: Bool { typeSize.isAccessibilitySize }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             rowButton
+            if case .failed = row.send, let retry {
+                retryButton(retry)
+            }
         }
         .background(highlighted ? Theme.okTint : Color.clear)
         .animation(.easeOut(duration: 0.4), value: highlighted)
@@ -254,6 +259,23 @@ struct WindowListRow: View {
         .accessibilityLabel("Window \(row.number), \(row.title). \(row.spokenSize). \(statusWords)\(row.spokenWindowSize.map { ". \($0)" } ?? "")\(row.standardSizeLine.map { ". \($0)" } ?? "")")
         .accessibilityHint("Opens options for this window")
         .accessibilityAddTraits(.isButton)
+    }
+
+    /// Under a failed window, in line with its name: a large bordered button (the same as "I have more"), so the target is over 44 pt.
+    private func retryButton(_ retry: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.tap()
+            retry()
+        } label: {
+            Label("Retry", systemImage: WCIcon.refresh.symbol)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .tint(Theme.ink)
+        .padding(.leading, large ? 0 : 40)
+        .padding(.bottom, 8)
+        .accessibilityLabel("Retry sending window \(row.number)")
+        .accessibilityIdentifier("retry-window-\(row.number)")
     }
 
     @ViewBuilder private var sizeView: some View {

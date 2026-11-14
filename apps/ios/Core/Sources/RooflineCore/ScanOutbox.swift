@@ -117,7 +117,14 @@ public actor ScanOutbox {
         }
         let d = JSONDecoder()
         d.dateDecodingStrategy = .iso8601
-        items = try d.decode([ScanItem].self, from: Data(contentsOf: fileURL))
+        do {
+            items = try d.decode([ScanItem].self, from: Data(contentsOf: fileURL))
+        } catch {
+            // Kept aside (scans.json.bad), not overwritten by the next save
+            items = []
+            Outbox.keepAside(fileURL)
+            throw error
+        }
         items = items.map { var i = $0; if i.state == .sending { i.state = .waiting }; return i }
         observer?(items)
     }

@@ -36,7 +36,22 @@ struct MeasureHost: View {
             }
             .environment(store)
         }
+        // A scan takes a while and nobody touches the screen: it must not dim or lock mid-measure (the rep app's measuring views do the same)
+        .keepsScreenAwake()
     }
+}
+
+/// While the view is on screen the phone does not auto-lock; when it goes, the setting is put back.
+struct KeepsScreenAwake: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
+            .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+    }
+}
+
+extension View {
+    func keepsScreenAwake() -> some View { modifier(KeepsScreenAwake()) }
 }
 
 /// Camera permission, asked before the AR session or the camera picker starts, so a refusal can say what to do.

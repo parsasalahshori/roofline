@@ -1115,6 +1115,21 @@ public struct HomeownerSession: Codable, Equatable, Sendable {
     /// The server's tokens last 60 days.
     public static let lifetimeDays = 60
 
+    private enum CodingKeys: String, CodingKey { case requestId, token, slug, address, services, createdAt, expiresAt }
+
+    /// A session saved by an older build may list services that no longer exist ("roof", "gutters"): those are dropped, like
+    /// `HomeownerCompany` does, so the saved request is not lost with them.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        requestId = try c.decode(String.self, forKey: .requestId)
+        token = try c.decode(String.self, forKey: .token)
+        slug = try c.decode(String.self, forKey: .slug)
+        address = try c.decode(String.self, forKey: .address)
+        services = (c.soft([String].self, .services) ?? []).compactMap(HomeownerService.init(rawValue:))
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        expiresAt = try c.decodeIfPresent(Date.self, forKey: .expiresAt)
+    }
+
     public func isExpired(now: Date = Date()) -> Bool {
         if let e = expiresAt { return now >= e }
         return now.timeIntervalSince(createdAt) > Double(Self.lifetimeDays) * 86_400

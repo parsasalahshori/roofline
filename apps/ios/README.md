@@ -344,8 +344,9 @@ VoiceOver on a phone, and how accurate each method is on real windows (`Field ac
 ### Release
 
 `SCHEME=WinChoice apps/ios/scripts/testflight.sh` (same prerequisites as below, with the app record for
-`com.premjeetech.winchoice.measure`). The Release server address in `WinChoice.json` is empty until the production server exists;
-TestFlight builds can enter one on the phone (hold the WinChoice wordmark on the welcome screen; Debug and TestFlight builds only), the App Store build needs it filled in.
+`com.premjeetech.winchoice.measure`). The Release server address in `WinChoice.json` is the always-on demo server (`https://roofline-api.onrender.com`; swap it when the production
+server exists). TestFlight builds can enter another on the phone (hold the WinChoice wordmark on the welcome screen; Debug and TestFlight builds only,
+decided by the receipt name `sandboxReceipt`), and a tester's saved server wins. The App Store build uses the JSON's address and shows no tester setting.
 
 ---
 

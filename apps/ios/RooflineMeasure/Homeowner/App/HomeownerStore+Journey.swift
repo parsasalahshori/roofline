@@ -167,6 +167,16 @@ extension HomeownerStore {
         sendingContact = true
         contactError = nil
         defer { sendingContact = false }
+        // The windows go first: a request is never filed without a window that has not reached the server (nothing to send, nothing asked)
+        if await unsentWindowsMessage(requestId: s.requestId) != nil || !progress.pendingStyles.isEmpty {
+            await syncWindows()
+            guard session != nil else { return }   // the server no longer knew the request: refresh() has said so and kept the windows
+            if let blocked = await unsentWindowsMessage(requestId: s.requestId) {
+                Haptics.warning()
+                contactError = blocked
+                return
+            }
+        }
         do {
             // What the homeowner customized reaches the CRM with the lead: the looks go first (the lead's summary lists them)
             guard await sendLooks() else {
@@ -189,13 +199,28 @@ extension HomeownerStore {
             } else if let f = e.field, let field = Self.contactField(f) {
                 contactErrors[field] = e.message
             } else if e.isUnauthorized || e.isGone {
-                forgetRequest(message: e.message)
+                // The request is gone, the measured windows are not: they stay on the phone and move to the new request
+                forgetRequest(message: e.message, keepWindows: true)
             } else {
                 contactError = e.message
             }
         } catch {
             contactError = LiveHomeownerAPI.offlineMessage
         }
+    }
+
+    /// Why the request cannot be filed yet, when a window of it has not reached the server (after a sync just tried): a window the server
+    /// refused needs Retry (or to be measured again); one still waiting needs a connection. Windows held for their style wait on the
+    /// person and are not counted here. Nil when every window is sent.
+    func unsentWindowsMessage(requestId: String) async -> String? {
+        let items = await outbox.items.filter { $0.measurementId == requestId && $0.state != .done && !$0.isHeld }
+        guard !items.isEmpty else { return nil }
+        if items.contains(where: { $0.state == .failed }) {
+            let n = items.filter { $0.state == .failed }.count
+            return n == 1 ? "One of your windows couldn't be sent. Go back to your windows, tap Retry on it (or measure it again), then send your request."
+                          : "\(n) of your windows couldn't be sent. Go back to your windows, tap Retry on each (or measure them again), then send your request."
+        }
+        return "Your windows haven't all reached \(brand.name) yet. Check your connection and try again in a moment."
     }
 
     static func contactField(_ name: String) -> ContactField? {

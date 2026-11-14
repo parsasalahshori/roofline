@@ -287,6 +287,15 @@ private let homeownerApiChecks: [Check] = [
         // A session saved before expiresAt existed still reads
         let oldJSON = #"{"requestId":"r","token":"t","slug":"x","address":"a","services":["windows"],"createdAt":0}"#
         ctx.expect((try? JSONDecoder().decode(HomeownerSession.self, from: Data(oldJSON.utf8))) != nil)
+        // A session saved by an older build lists services that are gone ("roof", "gutters"): they are dropped, the request is kept
+        let withGoneServices = #"{"requestId":"r","token":"t","slug":"x","address":"a","services":["roof","windows","gutters"],"createdAt":0}"#
+        let kept = try? JSONDecoder().decode(HomeownerSession.self, from: Data(withGoneServices.utf8))
+        ctx.equal(kept?.services, [.windows], "a saved request with removed services still reads, windows only")
+        ctx.equal(kept?.requestId, "r")
+        let onlyGone = #"{"requestId":"r","token":"t","slug":"x","address":"a","services":["roof"],"createdAt":0}"#
+        ctx.equal((try? JSONDecoder().decode(HomeownerSession.self, from: Data(onlyGone.utf8)))?.services, [])
+        let noServices = #"{"requestId":"r","token":"t","slug":"x","address":"a","createdAt":0}"#
+        ctx.expect((try? JSONDecoder().decode(HomeownerSession.self, from: Data(noServices.utf8))) != nil, "no services key at all still reads")
         ctx.expect(HomeownerAPIError(status: 401, message: "", code: "unauthorized").isUnauthorized)
         ctx.expect(HomeownerAPIError(status: 401, message: "", code: "token_expired").isTokenExpired)
         ctx.expect(HomeownerAPIError(status: 410, message: "").isGone && HomeownerAPIError(status: 404, message: "").isGone)

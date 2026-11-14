@@ -17,7 +17,7 @@ struct BookScreen: View {
         List {
             Section {
                 point("ruler", bold: "A rep re-measures every window", rest: " by hand, about 30 minutes.")
-                point("tag", bold: "Your price stays the same", rest: " unless a size changes, and you see why.")
+                point("tag", bold: "Your estimate stays the same", rest: " unless a size changes, and you see why.")
                 point("window.vertical.closed", bold: "Then we build your windows", rest: " and text you each step.")
             } header: {
                 HiListHeading(title: "Lock in your sizes")

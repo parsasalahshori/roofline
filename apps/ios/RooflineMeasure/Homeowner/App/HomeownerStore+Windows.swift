@@ -315,7 +315,10 @@ extension HomeownerStore {
             progress.pendingStyles[windowId] = nil
             return
         }
-        progress.pendingStyles[windowId] = nil
+        // The choice stays pending until the old window is really replaced: a failure on the way leaves it to be tried again on the
+        // next sync, and never leaves the old window and its copy both on the server
+        progress.pendingStyles[windowId] = key
+        saveProgress()
         var copy = existing.input
         copy.id = WindowIds.new()
         copy.style = key
@@ -328,17 +331,38 @@ extension HomeownerStore {
             keptPhoto = (data, old.imageWidthPx, old.imageHeightPx)
         }
         do {
-            // The photo is already on the server (the copy carries its upload id), so it is kept here only, not sent again
-            _ = try await outbox.enqueue(window: copy, measurementId: s.requestId, address: s.address, jpeg: keptPhoto?.data, imageWidthPx: keptPhoto?.widthPx ?? 0, imageHeightPx: keptPhoto?.heightPx ?? 0, held: false)
-            await outbox.syncAll()
-            accept(try await api.deleteWindow(s, windowId: windowId))
-            // The old window's own record goes now that its copy holds the photo (else it would show as a second window)
+            // The copy is saved on the phone first and HELD, so nothing can send it (a sync, the network coming back) while the old
+            // window is still on the server. The photo is already on the server (the copy carries its upload id): kept here, not sent again.
+            _ = try await outbox.enqueue(window: copy, measurementId: s.requestId, address: s.address, jpeg: keptPhoto?.data, imageWidthPx: keptPhoto?.widthPx ?? 0, imageHeightPx: keptPhoto?.heightPx ?? 0, held: true)
+            do {
+                accept(try await api.deleteWindow(s, windowId: windowId))
+            } catch {
+                // The old window is still there and the copy never went anywhere: drop the copy, keep the choice, try again later
+                try? await outbox.remove(id: copy.id)
+                throw error
+            }
+            // The old one is gone from the server: its copy may go now, and the old window's own record goes (else it would show as a second window)
+            progress.pendingStyles[windowId] = nil
+            saveProgress()
             try? await outbox.remove(id: windowId)
+            try? await outbox.release(id: copy.id)
+            await outbox.syncAll()
         } catch let e as HomeownerAPIError {
+            dropCopyDetails(copy.id)
+            if e.isNetwork { offline = true }
             notice = Notice(text: e.message)
         } catch {
+            dropCopyDetails(copy.id)
             notice = Notice(text: "This phone couldn't change that window's style. Please try again.")
         }
+    }
+
+    /// A style change that did not happen: what was prepared for its copy goes (the choice itself stays pending).
+    private func dropCopyDetails(_ id: String) {
+        progress.colors[id] = nil
+        progress.windowFrames[id] = nil
+        progress.visuals[id] = nil
+        saveProgress()
     }
 
     /// Style choices kept while a window's send was uncertain: tried again now (after a sync).
@@ -352,12 +376,18 @@ extension HomeownerStore {
         for row in windowRows where row.style != key { await setStyle(key, for: row.id) }
     }
 
-    /// The pass is done (or the homeowner left it): everything goes out, then the quote.
+    /// The pass is done (or the homeowner left it): everything goes out, then the estimate. After a booking the contact is already
+    /// filed, so the pass ends on My order (as the list does) and not on the ready screen, which leads to a second contact.
     func finishStyles() async {
         // A window left without a style takes the likeliest one for its shape: a window cannot go without
         for row in windowRows where row.style == nil {
             let key = suggestedStyle(for: row)?.keys.first ?? styles.first?.key
             if let key = key { await setStyle(key, for: row.id) }
+        }
+        if hasBooking {
+            await syncWindows()
+            showStatus()
+            return
         }
         path = stack(to: .ready)
         noteStep(.ready)

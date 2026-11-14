@@ -588,6 +588,7 @@ final class HomeownerStore {
     // MARK: Outbox
 
     private func startOutbox() async {
+        // A file that cannot be read is kept aside by load() (outbox.json.bad, scans.json.bad), never overwritten: the app starts empty
         try? await outbox.load()
         await outbox.setObserver { [weak self] items in Task { @MainActor in self?.outboxChanged(items) } }
         await outbox.syncAll()
@@ -649,11 +650,10 @@ final class HomeownerStore {
         Task { await self.syncWindows() }
     }
 
-    func retry(_ windowId: String) {
-        Task {
-            try? await outbox.retry(id: windowId)
-            await syncWindows()
-        }
+    /// "Retry" on a window the server refused or that could not be sent: it goes again from the start.
+    func retry(_ windowId: String) async {
+        try? await outbox.retry(id: windowId)
+        await syncWindows()
     }
 
     func dismissNotice() { notice = nil }

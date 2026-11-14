@@ -28,6 +28,17 @@ final class BrandAndBundleTests: XCTestCase {
         XCTAssertEqual((icons?["CFBundlePrimaryIcon"] as? [String: Any])?["CFBundleIconName"] as? String, "AppIcon", "the app has its icon")
     }
 
+    func testTheReleaseBuildHasAServerAndOnlyTestFlightIsATesterBuild() {
+        // A Release build with no server could never reach WinChoice: the file names the always-on demo server
+        XCTAssertEqual(Brand.current.server.release, "https://roofline-api.onrender.com")
+        XCTAssertNotNil(URL(string: Brand.current.server.release ?? ""))
+        XCTAssertEqual(Brand.fallback.server.release, Brand.current.server.release, "the packaging fallback points at the same server")
+        // The tester setting and the debug capture dump are for TestFlight only: the App Store's receipt is called "receipt"
+        XCTAssertTrue(BuildEnvironment.isTestFlightReceipt(named: "sandboxReceipt"))
+        XCTAssertFalse(BuildEnvironment.isTestFlightReceipt(named: "receipt"), "an App Store build is not a tester build")
+        XCTAssertFalse(BuildEnvironment.isTestFlightReceipt(named: nil))
+    }
+
     func testTheThemeIsTheSystemLookWithWinChoiceRedAsTheAccent() {
         // The accent: the brand red darkened from #ED3A2B (4.0:1 on white) to #CC2F23 (5.3:1 with white, 4.7:1 on the grouped grey),
         // so red text, links and white labels on red clear 4.5:1. Dark mode takes the brand's own lighter red for text.
@@ -76,6 +87,22 @@ final class BrandAndBundleTests: XCTestCase {
         }
         let api = (plist["NSPrivacyAccessedAPITypes"] as? [[String: Any]])?.compactMap { $0["NSPrivacyAccessedAPIType"] as? String } ?? []
         XCTAssertTrue(api.contains("NSPrivacyAccessedAPICategoryUserDefaults"))
+        // ProcessInfo.systemUptime (AR/RoomHybridCamera.swift) is the system boot time API: it needs its declared reason
+        let boot = (plist["NSPrivacyAccessedAPITypes"] as? [[String: Any]])?.first { $0["NSPrivacyAccessedAPIType"] as? String == "NSPrivacyAccessedAPICategorySystemBootTime" }
+        XCTAssertEqual(boot?["NSPrivacyAccessedAPITypeReasons"] as? [String], ["35F9.1"])
+    }
+
+    func testAMeasuringScreenKeepsThePhoneAwakeAndPutsItBack() {
+        UIApplication.shared.isIdleTimerDisabled = false
+        let window = UIWindow(frame: UIScreen.main.bounds)
+        window.rootViewController = UIHostingController(rootView: Color.clear.keepsScreenAwake())
+        window.makeKeyAndVisible()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        XCTAssertTrue(UIApplication.shared.isIdleTimerDisabled, "no auto-lock while measuring")
+        window.rootViewController = UIViewController()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        XCTAssertFalse(UIApplication.shared.isIdleTimerDisabled, "the setting is put back when the screen goes")
+        window.isHidden = true
     }
 
     func testTheStaffScreensAreNotInThisApp() {

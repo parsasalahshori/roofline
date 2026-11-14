@@ -124,6 +124,23 @@ enum HomeownerDebug {
         // accessibility audit reads as clipped text). `list7` is the long one.
         case "list7": session = await api.seed(windows: seven); step = .list
         case "list": session = await api.seed(windows: Array(seven.prefix(2))); step = .list
+        // Two windows on the server and a third the server refused (it waits on the phone with its Retry button); `contact-failed` is the
+        // form filled in, to see "Send my request" held back until that window is retried
+        case "list-failed", "contact-failed":
+            let seeded = await api.seed(windows: Array(seven.prefix(2)))
+            session = seeded
+            store.setSession(seeded)
+            let refused = PhotoWindowInput(id: WindowIds.new(), uploadId: nil, label: nil, windowKey: nil, corners: nil,
+                                           scale: .roomplan(RoomPlanScale(widthM: 1.2, heightM: 1.4, confidence: .medium)), room: "Bathroom", style: "double-hung")
+            _ = try? await store.outbox.enqueue(window: refused, measurementId: seeded.requestId, address: seeded.address, jpeg: nil, imageWidthPx: 0, imageHeightPx: 0)
+            await api.failNext(HomeownerAPIError(status: 422, message: "The window corners cross over each other. Mark them in order.", code: "window_unsizable"))
+            await store.outbox.syncAll()
+            if name == "contact-failed" {
+                store.contactDraft = HomeownerContact(firstName: "Tia", lastName: "Bell", phone: "(501) 555-0177", email: "tia.bell@example.com", zip: "72205", contactConsent: true, textConsent: false)
+                step = .contact
+            } else {
+                step = .list
+            }
         case "styles": session = await api.seed(windows: seven); step = .styles
         case "visualize": session = await api.seed(windows: Array(seven.prefix(3))); step = .styles
         case "quote": session = await api.seed(windows: seven); step = .quote

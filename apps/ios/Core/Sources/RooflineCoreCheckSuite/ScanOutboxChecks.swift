@@ -185,4 +185,15 @@ let scanOutboxChecks: [Check] = [
         ctx.equal(after.count, 0)
         ctx.equal(transport.uploads, 0)
     },
+    Check("ScanOutbox: a corrupt scans.json is kept aside as scans.json.bad") { ctx in
+        let dir = tempDir()
+        let garbage = Data("[{ not a scan".utf8)
+        try garbage.write(to: dir.appendingPathComponent("scans.json"))
+        let box = ScanOutbox(directory: dir, transport: FakeScanTransport(), now: { Date() })
+        var threw = false
+        do { try await box.load() } catch { threw = true }
+        ctx.expect(threw)
+        ctx.equal(try? Data(contentsOf: dir.appendingPathComponent("scans.json.bad")), garbage)
+        ctx.expect(!FileManager.default.fileExists(atPath: dir.appendingPathComponent("scans.json").path))
+    },
 ]

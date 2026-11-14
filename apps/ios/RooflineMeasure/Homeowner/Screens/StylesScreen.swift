@@ -148,10 +148,13 @@ struct StylesScreen: View {
     }
 
     private var nextTitle: String {
-        guard !isLast else { return "See my quote" }
+        guard !isLast else { return Self.lastTitle(hasBooking: store.hasBooking) }
         let next = rows[index + 1]
         return "Next: window \(index + 2) · \(next.room.isEmpty ? next.title : next.room)"
     }
+
+    /// The button on the last window: the estimate, or just "Done" after a booking (it goes back to My order).
+    static func lastTitle(hasBooking: Bool) -> String { hasBooking ? "Done" : "See my estimate" }
 
     /// Opens a window: its own style, else the suggestion.
     private func load() {
