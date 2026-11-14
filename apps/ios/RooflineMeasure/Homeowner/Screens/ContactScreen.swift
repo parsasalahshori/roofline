@@ -26,9 +26,9 @@ struct ContactScreen: View {
             } header: {
                 if call {
                     HiListHeading(title: "Get a call from WinChoice",
-                                  subtitle: callback ? "A person calls you about your price. It takes a minute." : "Tell us how to reach you. A WinChoice person calls about your estimate.")
+                                  subtitle: callback ? "A person calls you about your estimate. It takes a minute." : "Tell us how to reach you. A WinChoice person calls about your estimate.")
                 } else {
-                    HiListHeading(title: "Where should we send your quote?")
+                    HiListHeading(title: "Where should we send your request?")
                 }
             }
             Section {

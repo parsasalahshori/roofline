@@ -116,9 +116,9 @@ struct ResultsScreen: View {
             strong.inlinePresentationIntent = .stronglyEmphasized
             strong.foregroundColor = Theme.ink
             attributed += strong
-            attributed += AttributedString(". Measure them with your iPhone for an exact quote.")
+            attributed += AttributedString(". Measure them with your iPhone for an exact estimate.")
         } else {
-            attributed += AttributedString("Measure each window with your iPhone for an exact quote. We'll count as you go.")
+            attributed += AttributedString("Measure each window with your iPhone for an exact estimate. We'll count as you go.")
         }
         return Text(attributed).font(.subheadline).foregroundStyle(Theme.ink2).fixedSize(horizontal: false, vertical: true)
     }

@@ -44,7 +44,7 @@ struct AddressScreen: View {
                     mapRow
                     addressRow
                 } footer: {
-                    Label("We only use your address for this quote and your visit.", systemImage: WCIcon.lock.symbol)
+                    Label("We only use your address for this estimate and your visit.", systemImage: WCIcon.lock.symbol)
                         .font(.footnote)
                         .foregroundStyle(Theme.ink2)
                 }
@@ -67,7 +67,7 @@ struct AddressScreen: View {
             Button("Start over") { Task { await store.confirmAddressChange() } }
             Button("Keep my windows", role: .cancel) {}
         } message: {
-            Text("The \(store.windowCount) windows you measured are for your old address. A new address starts a new quote.")
+            Text("The \(store.windowCount) windows you measured are for your old address. A new address starts a new estimate.")
         }
         .onAppear {
             search.onResults = { suggestions = $0 }
