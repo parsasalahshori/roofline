@@ -283,23 +283,27 @@ export async function acceptBackofficeQuote(
   return { order: order!, event: event! };
 }
 
-/** Moves an order to a stage and writes the event. Null when the order is not found or not visible. */
+/**
+ * Moves an order to a stage and writes the event. Null when the order is not found or not visible. An order already in
+ * that stage is not moved: nothing is written and `event` is null (a double tap or a retried request must not add a second
+ * event or tell the customer again).
+ */
 export async function moveBackofficeOrder(
   tx: Tx,
   ctx: TenantContext,
   id: string,
   move: { stage: OrderStage; note: string; plannedFor: string | null },
   now: Date,
-): Promise<{ before: OrderStage; order: BackofficeOrderRow; event: BackofficeOrderEventRow } | null> {
+): Promise<{ before: OrderStage; order: BackofficeOrderRow; event: BackofficeOrderEventRow | null } | null> {
   const found = await getBackofficeOrder(tx, ctx, id);
   if (!found) return null;
   // Lock the row so two moves at once are written one after the other, each from the stage it saw.
   const [locked] = await tx.select().from(backofficeOrders).where(and(eq(backofficeOrders.id, id), eq(backofficeOrders.companyId, ctx.companyId))).limit(1).for('update');
   const before = locked!.stage;
-  const stageChanged = before !== move.stage;
+  if (before === move.stage) return { before, order: locked!, event: null };
   const [order] = await tx
     .update(backofficeOrders)
-    .set({ stage: move.stage, ...(stageChanged ? { stageChangedAt: now } : {}), updatedAt: now })
+    .set({ stage: move.stage, stageChangedAt: now, updatedAt: now })
     .where(and(eq(backofficeOrders.id, id), eq(backofficeOrders.companyId, ctx.companyId)))
     .returning();
   const [event] = await tx

@@ -402,6 +402,25 @@ describe('orders and stage moves', () => {
     expect(ids.customerId).toBeTruthy();
   });
 
+  it('moving an order to the stage it is already in writes no event and tells the customer nothing', async () => {
+    const owner = await who.as('owner');
+    const { order } = await acceptedOrder(owner, { consent: 'express' });
+    const move = { stage: 'install-scheduled', note: '', plannedFor: '2026-10-20', notify: true };
+    const first = await owner.patch(`${BASE}/orders/${order.id}/stage`).send(move);
+    expect(first.status, JSON.stringify(first.body)).toBe(200);
+    expect(first.body.events.map((e: { stage: string }) => e.stage)).toEqual(['sold', 'install-scheduled']);
+    expect(t.sms.sent).toHaveLength(1);
+    expect(t.mailer.sent).toHaveLength(1);
+    t.clock.advance(3 * 24 * 3600 * 1000);
+    // A second tap (or a retried request): the order as it is, no second event, no second message
+    const again = await owner.patch(`${BASE}/orders/${order.id}/stage`).send(move);
+    expect(again.status, JSON.stringify(again.body)).toBe(200);
+    expect(again.body).toEqual({ ...first.body, daysInStage: 3 });
+    expect(await sql(`select 1 from backoffice_order_events where order_id = $1`, [order.id])).toHaveLength(2);
+    expect(t.sms.sent).toHaveLength(1);
+    expect(t.mailer.sent).toHaveLength(1);
+  });
+
   it('marks a failed text without undoing the move', async () => {
     const owner = await who.as('owner');
     const { order } = await acceptedOrder(owner);

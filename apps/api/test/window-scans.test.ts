@@ -96,7 +96,7 @@ const nextIp = () => `198.51.100.${(ipCounter++ % 250) + 1}`;
 const base = (slug = ACME) => `/api/public/homeowner/${slug}`;
 
 type Started = { id: string; token: string };
-function send(method: 'get' | 'post', s: Started | null, path: string, body?: unknown, slug = ACME) {
+function send(method: 'get' | 'post' | 'delete', s: Started | null, path: string, body?: unknown, slug = ACME) {
   let req = request(t.app)[method](`${base(slug)}${path}`).set('X-Forwarded-For', nextIp());
   if (s !== null) req = req.set('Authorization', `Bearer ${s.token}`);
   return body === undefined ? req : req.send(body as object);
