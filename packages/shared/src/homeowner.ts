@@ -19,12 +19,22 @@ export const HOMEOWNER_TOKEN_DAYS = 60;
 export const HOMEOWNER_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 /** Most windows one request may hold (the same limit as a staff measurement's photographed windows). */
 export const HOMEOWNER_MAX_WINDOWS = 60;
-/** Most photos one request may hold (a few spare for retakes). */
-export const HOMEOWNER_MAX_UPLOADS = 90;
+/**
+ * Most photos one request may hold. The iPhone app uploads, for each scanned window, up to 8 pan or regular frames and 4
+ * corner close-ups (12 scan frames; ScanGuideConfig.maxRegular + 4) and the window's own photo: 13. Thirty scanned windows
+ * are 390; the rest is spare for retakes.
+ */
+export const HOMEOWNER_MAX_UPLOADS = 400;
 /** Most bytes of photos one request may hold. */
 export const HOMEOWNER_MAX_UPLOAD_BYTES_TOTAL = 250 * 1024 * 1024;
 /** One photo: 12 MB (the same limit as staff window photos). */
 export const HOMEOWNER_PHOTO_MAX_BYTES = 12 * 1024 * 1024;
+/** Most scans one window may have (the first, and two retakes). Past it: 409 `scans_full`. */
+export const HOMEOWNER_MAX_SCANS_PER_WINDOW = 3;
+/** Most scans one request may hold, whatever the window. Past it: 409 `scans_full`. */
+export const HOMEOWNER_MAX_SCANS_PER_REQUEST = 150;
+/** Most scan refinements one company may have waiting or running at once; past it a new scan is a 429 with Retry-After (the phone sends it again later). */
+export const HOMEOWNER_MAX_UNFINISHED_REFINES = 50;
 export const HOMEOWNER_ROOM_MAX = 40;
 export const HOMEOWNER_LABEL_MAX = 80;
 

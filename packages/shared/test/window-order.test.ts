@@ -249,6 +249,17 @@ describe('lines from photo windows', () => {
     expect(again).toMatchObject({ style: 'slider-2', location: 'Den', measured: [expect.objectContaining({ widthIn: 40 })] });
   });
 
+  it('refreshing with new sizes clears the confirmation; the same sizes keep it', () => {
+    const [first] = linesFromPhotoWindows([pw('p1', { quality: 'check' })], new Set());
+    const confirmed = applyLinePatches([first!], [{ id: 'p1', style: 'picture', confirmed: true }])!;
+    const [same] = linesFromPhotoWindows([pw('p1', { quality: 'check' })], new Set(), confirmed);
+    expect(same!.confirmed).toBe(true);
+    const [resized] = linesFromPhotoWindows([pw('p1', { quality: 'check', widthIn: 30 })], new Set(), confirmed);
+    expect(resized).toMatchObject({ confirmed: false, style: 'picture', measured: [expect.objectContaining({ widthIn: 30 })] });
+    const [noisier] = linesFromPhotoWindows([pw('p1', { quality: 'check', uncertaintyIn: { width: 0.9, height: 0.9 } })], new Set(), confirmed);
+    expect(noisier!.confirmed).toBe(false);
+  });
+
   it('a room-scan window (no photo) is a quote-only line with no thumbnail; another photo of it gives the thumbnail', () => {
     const scan = { id: 'r1', windowKey: 'den', widthIn: 36, heightIn: 60, quality: 'check' as const, uncertaintyIn: { width: 1, height: 1 }, scale: { kind: 'roomplan' } };
     const [only] = linesFromPhotoWindows([scan], new Set());

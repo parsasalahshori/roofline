@@ -173,6 +173,29 @@ async function scanned(fxName: string, o: { marks?: (fx: Fixture) => ScanMark[];
   return { s, fx, body, res, sam: sam as FakeWindowSegmenter };
 }
 
+describe('the company queue of refinements', () => {
+  test('a company with 50 refinements waiting or running is told to try later (429 Retry-After, nothing stored); a dead one stops counting', async () => {
+    const first = await scanned('clean-34x55');
+    expect(first.res.status).toBe(201);
+    await q(
+      `insert into window_scans (company_id, homeowner_request_id, scan_id, window_id, frames, marks, marks_original, phone_result, server_result, status, sla_due_at, history, refinement, created_at, updated_at)
+       select company_id, homeowner_request_id, gen_random_uuid()::text, 'x' || g, frames, marks, marks_original, phone_result, server_result, status, sla_due_at, history, refinement, created_at, updated_at
+         from window_scans, generate_series(1, 49) g`,
+    );
+    expect(await q(`select 1 from window_scans where refinement->>'state' = 'queued'`)).toHaveLength(50);
+    const s = first.s;
+    await send('post', s, `/requests/${s.id}/windows`, { id: 'w2', room: 'Den', style: 'double-hung', scale: { kind: 'roomplan', widthM: 0.9, heightM: 1.2, confidence: 'high' } });
+    const next = { ...(await scanBody(s, fixture('clean-34x55'))), scanId: '6d1e8b63-2e4d-4b64-8e5f-1b7b6f1a2b02', windowId: 'w2' };
+    const refused = await send('post', s, `/requests/${s.id}/scans`, next);
+    expect(refused.status, JSON.stringify(refused.body)).toBe(429);
+    expect(refused.headers['retry-after']).toBe('300');
+    expect(await q(`select 1 from window_scans where scan_id = $1`, [next.scanId])).toHaveLength(0);
+    // Jobs that never moved for hours no longer hold a slot
+    await q(`update window_scans set updated_at = $1 where scan_id <> $2`, [new Date(NOW.getTime() - 7 * 3600 * 1000), first.body.scanId]);
+    expect((await send('post', s, `/requests/${s.id}/scans`, next)).status).toBe(201);
+  });
+});
+
 describe('a scan with the refinement on', () => {
   test('is stored as processing: the phone gets the first result, the homeowner is told it is being checked, the window keeps its size, a job is queued', async () => {
     const { s, res } = await scanned('clean-34x55');

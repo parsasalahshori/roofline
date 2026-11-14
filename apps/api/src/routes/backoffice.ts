@@ -185,17 +185,19 @@ export function backofficeRoutes(deps: AppDeps): Router {
       if (job === null) return null;
       const catalog = await getProductCatalog(tx, ctx);
       let designs: Parameters<typeof createBackofficeQuote>[2]['designs'] = [];
+      let skippedMeasured: number | undefined;
       if (body.importMeasured === true || body.windowMeasurementId !== undefined) {
         const imported = await importMeasuredDesigns(tx, ctx, job.propertyId, body.windowMeasurementId?.toLowerCase(), catalog, now);
         if ('problem' in imported) throw new AppError(422, imported.problem === 'no-measurement' ? NO_MEASUREMENT : WRONG_ADDRESS);
         designs = imported.designs;
+        skippedMeasured = imported.skippedQuoteGrade;
       }
       const row = await createBackofficeQuote(tx, ctx, { jobId: job.id, tier: body.tier ?? 'better', designs, accessories: autoAccessories(catalog), catalogVersion: catalog.version }, now);
-      return row === null ? null : { id: row.id, catalog };
+      return row === null ? null : { id: row.id, catalog, skippedMeasured };
     });
     if (created === null) throw new AppError(404, MESSAGES.notFound);
     const { quote, catalog } = await loadQuote(ctx, created.id);
-    res.status(201).json(toQuoteView(quote, catalog));
+    res.status(201).json({ ...toQuoteView(quote, catalog), ...(created.skippedMeasured !== undefined && { skippedMeasured: created.skippedMeasured }) });
   });
 
   router.get('/quotes/:id', async (req, res) => {
@@ -425,6 +427,8 @@ export function backofficeRoutes(deps: AppDeps): Router {
     const moved = await withTenant(pools, ctx, async (tx) => {
       const result = await moveBackofficeOrder(tx, ctx, id, { stage: move.stage, note: move.note.trim(), plannedFor: move.plannedFor }, now);
       if (result === null) return null;
+      // Already in that stage: nothing was written, so there is nothing to tell the customer
+      if (result.event === null) return { result: null, customerId: null, template: undefined };
       const order = await getBackofficeOrder(tx, ctx, id);
       // The job follows the order to installed (the pipeline only allows it from won; a job elsewhere stays where it is).
       if (order !== null && (move.stage === 'installed' || move.stage === 'complete')) {
@@ -435,9 +439,9 @@ export function backofficeRoutes(deps: AppDeps): Router {
       return { result, customerId: order!.customerId, template: settings.templates.find((t) => t.stage === move.stage) };
     });
     if (moved === null) throw new AppError(404, MESSAGES.notFound);
-    if (move.notify) {
-      const event: BackofficeOrderEventRow = moved.result.event;
-      const notified = await notifyOrderMove(deps, ctx, { orderId: id, eventId: event.id, customerId: moved.customerId, plannedFor: move.plannedFor, template: moved.template });
+    if (move.notify && moved.result !== null) {
+      const event: BackofficeOrderEventRow = moved.result.event!;
+      const notified = await notifyOrderMove(deps, ctx, { orderId: id, eventId: event.id, customerId: moved.customerId!, plannedFor: move.plannedFor, template: moved.template });
       await withTenant(pools, ctx, (tx) => setOrderEventNotified(tx, ctx, event.id, notified));
     }
     const zone = await timeZoneOf(ctx);

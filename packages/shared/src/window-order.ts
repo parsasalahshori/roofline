@@ -527,11 +527,20 @@ export type OrderSourceWindow = {
   uncertaintyIn?: { width: number; height: number } | null;
 };
 
+/** Whether two lists of measurements are the same sizes (what the order size comes from; key order and photo ids do not matter). */
+const sameMeasured = (a: readonly MeasuredSize[], b: readonly MeasuredSize[]): boolean =>
+  a.length === b.length &&
+  a.every((m, i) => {
+    const n = b[i]!;
+    return m.widthIn === n.widthIn && m.heightIn === n.heightIn && m.quality === n.quality && (m.quoteOnly === true) === (n.quoteOnly === true) && m.uncertaintyIn?.width === n.uncertaintyIn?.width && m.uncertaintyIn?.height === n.uncertaintyIn?.height;
+  });
+
 const keyOf = (w: OrderSourceWindow): string => (w.windowKey !== undefined && w.windowKey !== '' ? w.windowKey : w.id);
 
 /**
  * Lines for a measurement's photo windows: one per window (photos sharing a windowKey are one window). Excluded photos
- * are left out. A line already in `previous` (same window) keeps the person's options; its measurements are refreshed.
+ * are left out. A line already in `previous` (same window) keeps the person's options; its measurements are refreshed,
+ * and its `confirmed` is cleared when they changed.
  */
 export function linesFromPhotoWindows(windows: readonly OrderSourceWindow[], excluded: ReadonlySet<string>, previous: readonly WindowOrderLine[] = []): WindowOrderLine[] {
   const byKey = new Map<string, OrderSourceWindow[]>();
@@ -552,7 +561,8 @@ export function linesFromPhotoWindows(windows: readonly OrderSourceWindow[], exc
     const label = photos.find((p) => (p.label ?? '').trim() !== '')?.label?.trim() ?? '';
     const uploadId = photos.find((p) => p.uploadId !== undefined)?.uploadId ?? null;
     const old = before.get(id);
-    if (old) return { ...old, photoWindowIds: photos.map((p) => p.id), uploadId, measured, location: old.location !== '' ? old.location : label, lockedSize: null };
+    // A "check" the person confirmed was a confirmation of the sizes they saw: new sizes need a new look.
+    if (old) return { ...old, photoWindowIds: photos.map((p) => p.id), uploadId, measured, location: old.location !== '' ? old.location : label, lockedSize: null, confirmed: sameMeasured(old.measured, measured) ? old.confirmed : false };
     return { id, photoWindowIds: photos.map((p) => p.id), uploadId, location: label !== '' ? label : `Window ${i + 1}`, measured, ...defaultLineOptions(), ...(photos.some((p) => p.frosted === true) && { obscure: true }) };
   });
 }

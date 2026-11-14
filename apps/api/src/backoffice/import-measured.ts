@@ -69,7 +69,8 @@ export function designFromLine(line: WindowOrderLine, size: { widthIn: number; h
   };
 }
 
-export type ImportResult = { windowMeasurementId: string; designs: WindowDesign[] } | { problem: 'no-measurement' | 'wrong-address' };
+/** `skippedQuoteGrade`: lines left out because every measurement is quote-grade (homeowner app, room scan, card). */
+export type ImportResult = { windowMeasurementId: string; designs: WindowDesign[]; skippedQuoteGrade: number } | { problem: 'no-measurement' | 'wrong-address' };
 
 /** The designs for a job's address. `measurementId` picks one measurement (it must be of that address); else the newest. */
 export async function importMeasuredDesigns(tx: Tx, ctx: TenantContext, propertyId: string, measurementId: string | undefined, catalog: ProductCatalog, now: Date): Promise<ImportResult> {
@@ -86,7 +87,14 @@ export async function importMeasuredDesigns(tx: Tx, ctx: TenantContext, property
   }
   const designs: WindowDesign[] = [];
   const used = new Set<string>();
+  let skippedQuoteGrade = 0;
   for (const line of lines) {
+    // Quote-grade sizes (homeowner app, room scan, card) are never on-site order sizes: a design marked 'measured' prints
+    // "On site" on the factory order, so these lines are left out (the same rule checkLine applies to an order).
+    if (line.measured.length > 0 && line.measured.every((m) => m.quoteOnly === true)) {
+      skippedQuoteGrade += 1;
+      continue;
+    }
     const size = checkLine(line, settings).order;
     if (size === null || size.widthIn <= 0 || size.heightIn <= 0) continue;
     const design = designFromLine(line, size, catalog, measurement.id);
@@ -94,5 +102,5 @@ export async function importMeasuredDesigns(tx: Tx, ctx: TenantContext, property
     used.add(design.id);
     designs.push(design);
   }
-  return { windowMeasurementId: measurement.id, designs };
+  return { windowMeasurementId: measurement.id, designs, skippedQuoteGrade };
 }

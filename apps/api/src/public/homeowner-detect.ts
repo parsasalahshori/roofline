@@ -1,4 +1,4 @@
-import { mkdir, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, rename, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { type Router } from 'express';
 import type { AppDeps } from '../app.ts';
@@ -27,7 +27,8 @@ import { route } from './quote-access.ts';
  *
  *   POST /:slug/requests/:id/debug-captures/:captureId/:file
  *     A tester build's dump of one Capture (photo, depth, camera, result) so a bad proposal can be replayed on a Mac. Only when
- *     DEBUG_CAPTURES_DIR is set; otherwise 404 `debug_captures_off`. Files only, no database.
+ *     DEBUG_CAPTURES_DIR is set (never in production); otherwise 404 `debug_captures_off`. Files go to <dir>/<request id>/<capture
+ *     id>/<file>, at most DEBUG_CAPTURES_MAX_BYTES_PER_REQUEST per request (413 `too_large`). Files only, no database.
  */
 
 /** What a frozen frame needs of a photo for finding a window is small: the app sends about 150 to 300 KB; more is refused. */
@@ -106,6 +107,19 @@ export const DEBUG_FILES: Readonly<Record<string, { max: number; json: boolean }
   'confidence.u8': { max: 1024 * 1024, json: false },
 };
 const CAPTURE_ID = /^[A-Za-z0-9][A-Za-z0-9-]{7,63}$/;
+/** All the capture files one request may leave on the disk (its folder is named by the request, so one token cannot reach another's). */
+export const DEBUG_CAPTURES_MAX_BYTES_PER_REQUEST = 200 * 1024 * 1024;
+
+/** The bytes of every file under a folder (0 when it is not there yet). */
+async function folderBytes(folder: string): Promise<number> {
+  let total = 0;
+  const entries = await readdir(folder, { withFileTypes: true }).catch(() => []);
+  for (const e of entries) {
+    const full = path.join(folder, e.name);
+    total += e.isDirectory() ? await folderBytes(full) : (await stat(full).catch(() => null))?.size ?? 0;
+  }
+  return total;
+}
 
 export function registerDetectRoutes(router: Router, o: { deps: AppDeps; budget: TokenBudget; now?: () => number }): void {
   const { deps, budget } = o;
@@ -206,10 +220,15 @@ export function registerDetectRoutes(router: Router, o: { deps: AppDeps; budget:
           throw new AppError(400, 'That file is not JSON.').coded('invalid_request');
         }
       }
-      const folder = path.join(dir, captureId);
+      // Under the request's own folder: two requests that send the same capture id write to different files.
+      const requestFolder = path.join(dir, request.id);
+      const folder = path.join(requestFolder, captureId);
+      const target = path.join(folder, file);
+      // A file sent again replaces the one before, so it does not count twice.
+      const replaced = (await stat(target).catch(() => null))?.size ?? 0;
+      if ((await folderBytes(requestFolder)) - replaced + bytes.length > DEBUG_CAPTURES_MAX_BYTES_PER_REQUEST) throw new AppError(413, 'This request has all the capture files it can hold.').coded('too_large');
       await mkdir(folder, { recursive: true });
       // Whole or not at all: a replay never reads half a file.
-      const target = path.join(folder, file);
       const temp = `${target}.${process.pid}.part`;
       await writeFile(temp, bytes);
       await rename(temp, target);

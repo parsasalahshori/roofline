@@ -53,7 +53,7 @@ on our side. Please try again." }`). Decode `code` as optional, and for a code y
 | 404 | `not_found` | An unknown slug (or a page turned off) on `GET /company`, `POST /requests` and, before the token is looked at, any `/requests/:id/...` call; the contact form, slots or booking on a turned-off page; a malformed window id on `DELETE`; a path or method that is not in this document (that answer is `{ "error": "We couldn't find that.", "code": "not_found" }`). |
 | 409 | `window_id_taken` | `POST .../windows` with an id already used for a **different** window. |
 | 409 | `windows_full` | The request already has 60 windows. |
-| 409 | `uploads_full` | The request already has 90 photos or 250 MB of photos. |
+| 409 | `uploads_full` | The request already has 400 photos or 250 MB of photos. |
 | 409 | `callback_only` | A windows call (upload, window, count) on a request that went to the call-back path (`status: "callback"`). |
 | 409 | `windows_not_requested` | A windows call on a request that did not ask for `windows`. |
 | 409 | `contact_needed` | `POST .../book` before `POST .../contact`. |
@@ -84,7 +84,7 @@ A rare `409 conflict` (a clash while the address was being saved: try again) and
   unknown request id; an expired token does not count). Past that, every `/requests/:id/...` call from that address is a
   429 (`Retry-After: 3600`) until the hour is over, even with a right token. `GET /company` and `POST /requests` are not
   affected.
-- Per request (token): 120 calls a minute; 60 photo uploads an hour; 120 window saves or deletes an hour; 120 scans an
+- Per request (token): 120 calls a minute; 400 photo uploads an hour; 120 window saves or deletes an hour; 120 scans an
   hour; 5
   `.../contact` an hour (counted once the form is valid, so a mistyped phone does not use one up); 20 `.../book` an hour;
   30 `.../slots` an hour. These count calls, including calls refused for another reason (a 409 or 422, an idempotent
@@ -96,7 +96,7 @@ A rare `409 conflict` (a clash while the address was being saved: try again) and
   until it is stored). A call over that is `429 rate_limited` with `Retry-After: 3` at once: nothing is read, nothing is
   stored, and the hour's count of uploads is not used. A photo that sends nothing for 20 seconds, or is not whole after
   3 minutes, is cut off (the connection closes). Upload photos one to three at a time.
-- What one request holds: 60 windows; 90 photos and 250 MiB of photos; one photo up to 12 MiB (a 12-megapixel JPEG at
+- What one request holds: 60 windows; 400 photos and 250 MiB of photos; one photo up to 12 MiB (a 12-megapixel JPEG at
   normal quality is 2 to 6 MB: there is no need to send more) and 120 megapixels.
 - Per company: the instant quote page's daily cap of measured addresses is shared with this API. When it is reached,
   `POST /requests` answers `status: "callback"`, `callbackReason: "busy"`. An address measured in the last 30 days costs
@@ -451,7 +451,7 @@ Neither downloads anything: a model that is not in the folder is reported as una
 
 The Debug and TestFlight builds of the app send each Capture's photo, depth map, camera and result here so a bad proposal can be
 replayed on a Mac (`apps/ios/Core`, `swift run RooflineReplay`). It exists only when the server has `DEBUG_CAPTURES_DIR`
-set (a folder; the files go to `<dir>/<captureId>/<file>`, no database); otherwise every call is `404 debug_captures_off`. The
+set (a folder; the files go to `<dir>/<request id>/<captureId>/<file>`, no database, at most 200 MiB per request, then `413 too_large`; the server refuses to start with it set in production); otherwise every call is `404 debug_captures_off`. The
 body is the file's raw bytes. `captureId` is 8 to 64 letters, digits or `-`; `file` is one of `capture.json`, `result.json`
 (JSON, up to 1 MiB), `photo.jpg` (up to 16 MiB), `depth.f32` (up to 2 MiB), `confidence.u8` (up to 1 MiB); `201` `{ ok, captureId,
 file, bytes }`. 600 files an hour per request. These are customers' photos when pointed at a live server: leave
@@ -573,13 +573,16 @@ RooflineCore checks the same JSON fixtures, `packages/shared/test/fixtures/windo
   `state` is `checking` (needs review, or being reviewed), `measured` ("Measured") or `visit_required` ("We will measure this
   one at your free visit"; the window is then `quality: "check"` with that sentence as its reason).
 - Errors: `400 invalid_request` (shape, a mark outside its photo, a frame that is not rigid), `409 window_unknown`,
-  `409 callback_only`, `413 too_large` (over 1 MB), `401`/`429` as everywhere. Nothing is stored by a refused call.
+  `409 callback_only`, `409 scans_full` (the window already has 3 scans, or the request 150), `413 too_large` (over 1 MB),
+  `401`/`429` as everywhere. A `429` also answers a new scan when the company already has 50 scan refinements waiting or
+  running (`Retry-After: 300`; the phone keeps the scan and sends it again). Nothing is stored by a refused call.
 
 ## DELETE /requests/:id/windows/:windowId
 
 `200` with the view without the window. A window that is not there is also `200` (a retried delete is harmless), also on a
-request that went to the call-back path. Only the homeowner's own windows can be removed this way. The photo it stood on
-stays on the request (it still counts toward the 90).
+request that went to the call-back path. Only the homeowner's own windows can be removed this way. Its photos go with it
+(its own photo and its scans' frames, unless another window or scan still uses one), and so do its scans, so they stop
+counting toward the request's 400 photos.
 
 ## PATCH /requests/:id/windows/:windowId/look
 

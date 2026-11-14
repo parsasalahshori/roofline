@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import type { StoredWindowUpload } from '../schema/tenant.ts';
 import type { ScanHistoryEvent, ScanStatus } from '@roofline/shared';
 import { homeownerRequests, quoteRequests, windowMeasurements, windowScans } from '../schema/index.ts';
@@ -83,13 +83,62 @@ export async function getWindowScanByScanId(tx: Tx, ctx: TenantContext, requestI
   return row ?? null;
 }
 
-/** What a request's scans say about its windows: for each window, its newest scan's status and (when measured) size. */
-export async function scansForRequest(tx: Tx, ctx: TenantContext, requestId: string): Promise<Pick<WindowScanRow, 'id' | 'windowId' | 'status' | 'serverResult' | 'createdAt'>[]> {
+/**
+ * What a request's scans say about its windows: for each window, its newest scan's status. (Only these columns: the
+ * frames, marks and results are large and every view of the request reads this.)
+ */
+export async function scansForRequest(tx: Tx, ctx: TenantContext, requestId: string): Promise<Pick<WindowScanRow, 'id' | 'windowId' | 'status' | 'createdAt'>[]> {
   return tx
-    .select({ id: windowScans.id, windowId: windowScans.windowId, status: windowScans.status, serverResult: windowScans.serverResult, createdAt: windowScans.createdAt })
+    .select({ id: windowScans.id, windowId: windowScans.windowId, status: windowScans.status, createdAt: windowScans.createdAt })
     .from(windowScans)
     .where(and(eq(windowScans.companyId, ctx.companyId), eq(windowScans.homeownerRequestId, requestId)))
     .orderBy(desc(windowScans.createdAt));
+}
+
+/** How many scans a request holds, and how many of them are of one window. */
+export async function countScansOfRequest(tx: Tx, ctx: TenantContext, requestId: string, windowId: string): Promise<{ request: number; window: number }> {
+  const [row] = await tx
+    .select({
+      request: sql<number>`count(*)`.mapWith(Number),
+      window: sql<number>`count(*) filter (where ${windowScans.windowId} = ${windowId})`.mapWith(Number),
+    })
+    .from(windowScans)
+    .where(and(eq(windowScans.companyId, ctx.companyId), eq(windowScans.homeownerRequestId, requestId)));
+  return { request: row?.request ?? 0, window: row?.window ?? 0 };
+}
+
+/**
+ * How many of the company's scans have a refinement waiting or running. A refinement last touched before `since` is a
+ * job that died: it no longer counts, so it cannot hold a slot for good.
+ */
+export async function countUnfinishedRefinements(tx: Tx, ctx: TenantContext, since: Date): Promise<number> {
+  const [row] = await tx
+    .select({ n: sql<number>`count(*)`.mapWith(Number) })
+    .from(windowScans)
+    .where(and(eq(windowScans.companyId, ctx.companyId), sql`${windowScans.refinement}->>'state' in ('queued', 'running')`, gte(windowScans.updatedAt, since)));
+  return row?.n ?? 0;
+}
+
+/**
+ * Deletes a window's scans (the homeowner took the window off), answering the rows so their photos can be freed. The audit
+ * trail keeps the ids only.
+ */
+export async function deleteWindowScansForWindow(tx: Tx, ctx: TenantContext, requestId: string, windowId: string, now: Date): Promise<WindowScanRow[]> {
+  const rows = await tx
+    .delete(windowScans)
+    .where(and(eq(windowScans.companyId, ctx.companyId), eq(windowScans.homeownerRequestId, requestId), eq(windowScans.windowId, windowId)))
+    .returning();
+  for (const row of rows) await audit(tx, ctx, { action: 'window_scan.delete', targetType: 'window_scan', targetId: row.id, before: { status: row.status, windowId }, ip: null, at: now });
+  return rows;
+}
+
+/** The ids of the photos that the request's scans use as frames. */
+export async function scanFrameUploadIds(tx: Tx, ctx: TenantContext, requestId: string): Promise<Set<string>> {
+  const result = await tx.execute(sql`
+    select distinct f->>'uploadId' as upload_id
+      from window_scans s, jsonb_array_elements(s.frames) f
+     where s.company_id = ${ctx.companyId} and s.homeowner_request_id = ${requestId}`);
+  return new Set(result.rows.map((r) => String(r.upload_id)));
 }
 
 export type WindowScanListRow = {

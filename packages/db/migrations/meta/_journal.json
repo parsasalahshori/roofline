@@ -351,6 +351,13 @@
       "when": 1792946809195,
       "tag": "0049_window_scan_refinement",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1794677357772,
+      "tag": "0050_window_scans_delete_grant",
+      "breakpoints": true
     }
   ]
 }

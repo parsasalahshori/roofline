@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -11,6 +11,7 @@ import { insertFootprints } from '@roofline/db/system';
 import { WINCHOICE_CATALOG } from '../src/scripts/demo-winchoice-catalog.ts';
 import {
   DEFAULT_WINDOW_TIERS,
+  HOMEOWNER_MAX_UPLOADS,
   HOMEOWNER_TOKEN_DAYS,
   type HomeownerCreated,
   type HomeownerRequestView,
@@ -703,15 +704,15 @@ describe('photos', () => {
     }
   });
 
-  test('a request holds 90 photos and 250 MB: past either, a 409 and the bytes are removed', async () => {
+  test('a request holds HOMEOWNER_MAX_UPLOADS photos and 250 MB: past either, a 409 and the bytes are removed', async () => {
     const s = await start();
     await upload(s);
     const fake = (n: number, bytes: number) => Array.from({ length: n }, (_, i) => ({ id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, widthPx: 10, heightPx: 10, focal35mm: null, takenAt: null, key: `k/${i}`, kind: 'jpeg', orientation: 1, bytes, uploadedAt: NOW.toISOString() }));
-    await q(`update window_measurements set uploads = $2::jsonb where company_id = $1`, [t.seed.a.companyId, JSON.stringify(fake(89, 100))]);
+    await q(`update window_measurements set uploads = $2::jsonb where company_id = $1`, [t.seed.a.companyId, JSON.stringify(fake(HOMEOWNER_MAX_UPLOADS - 1, 100))]);
     const stored = (await t.objectStore.get('probe')) === null;
     expect(stored).toBe(true);
-    const ninetieth = await request(t.app).post(`${base()}/requests/${s.id}/uploads`).set(auth(s)).set('Content-Type', 'image/jpeg').send(Buffer.from(greyJpeg(3024, 4032)));
-    expect(ninetieth.status).toBe(201);
+    const last = await request(t.app).post(`${base()}/requests/${s.id}/uploads`).set(auth(s)).set('Content-Type', 'image/jpeg').send(Buffer.from(greyJpeg(3024, 4032)));
+    expect(last.status).toBe(201);
     const over = await request(t.app).post(`${base()}/requests/${s.id}/uploads`).set(auth(s)).set('Content-Type', 'image/jpeg').send(Buffer.from(greyJpeg(3024, 4032)));
     expect(over.status).toBe(409);
     expect(over.body.code).toBe('uploads_full');
@@ -1899,10 +1900,42 @@ describe('POST /requests/:id/debug-captures/:captureId/:file (tester builds: the
     const second = await put(s, 'result.json', JSON.stringify({ source: 'ai' }));
     expect(second.status, JSON.stringify(second.body)).toBe(201);
     expect(second.body).toMatchObject({ captureId: id, file: 'result.json' });
-    expect(readdirSync(dir)).toEqual([id]);
-    expect(readdirSync(path.join(dir, id)).sort()).toEqual(['capture.json', 'confidence.u8', 'depth.f32', 'photo.jpg', 'result.json']);
-    expect(readFileSync(path.join(dir, id, 'depth.f32')).equals(depth)).toBe(true);
-    expect(JSON.parse(readFileSync(path.join(dir, id, 'result.json'), 'utf8'))).toEqual({ source: 'ai' });
+    // The request's own folder, then the capture's
+    expect(readdirSync(dir)).toEqual([s.id]);
+    expect(readdirSync(path.join(dir, s.id))).toEqual([id]);
+    expect(readdirSync(path.join(dir, s.id, id)).sort()).toEqual(['capture.json', 'confidence.u8', 'depth.f32', 'photo.jpg', 'result.json']);
+    expect(readFileSync(path.join(dir, s.id, id, 'depth.f32')).equals(depth)).toBe(true);
+    expect(JSON.parse(readFileSync(path.join(dir, s.id, id, 'result.json'), 'utf8'))).toEqual({ source: 'ai' });
+  });
+
+  test('two requests sending the same capture id do not overwrite each other', async () => {
+    (t.deps.config as { DEBUG_CAPTURES_DIR?: string }).DEBUG_CAPTURES_DIR = dir;
+    const a = await start();
+    const b = await start();
+    expect((await put(a, 'capture.json', JSON.stringify({ from: 'a' }))).status).toBe(201);
+    expect((await put(b, 'capture.json', JSON.stringify({ from: 'b' }))).status).toBe(201);
+    expect(JSON.parse(readFileSync(path.join(dir, a.id, id, 'capture.json'), 'utf8'))).toEqual({ from: 'a' });
+    expect(JSON.parse(readFileSync(path.join(dir, b.id, id, 'capture.json'), 'utf8'))).toEqual({ from: 'b' });
+  });
+
+  test('a request may leave 200 MB: past it a 413, a file sent again replaces its old bytes, and another request is not counted', async () => {
+    (t.deps.config as { DEBUG_CAPTURES_DIR?: string }).DEBUG_CAPTURES_DIR = dir;
+    const s = await start();
+    const other = await start();
+    // Sparse files: they count by size without taking the disk
+    mkdirSync(path.join(dir, s.id, 'older-capture'), { recursive: true });
+    writeFileSync(path.join(dir, s.id, 'older-capture', 'photo.jpg'), '');
+    truncateSync(path.join(dir, s.id, 'older-capture', 'photo.jpg'), 199 * 1024 * 1024);
+    const photo = Buffer.from(greyJpeg(1000, 1000));
+    expect(photo.length).toBeLessThan(1024 * 1024);
+    expect((await put(s, 'photo.jpg', photo)).status).toBe(201);
+    const over = await put(s, 'photo.jpg', Buffer.alloc(2 * 1024 * 1024, 1));
+    expect(over.status, JSON.stringify(over.body)).toBe(413);
+    expect(over.body.code).toBe('too_large');
+    expect(readFileSync(path.join(dir, s.id, id, 'photo.jpg')).equals(photo)).toBe(true);
+    // The same file again is a replacement, not an addition
+    expect((await put(s, 'photo.jpg', Buffer.from(greyJpeg(1000, 1000)))).status).toBe(201);
+    expect((await put(other, 'photo.jpg', Buffer.alloc(2 * 1024 * 1024, 1))).status).toBe(201);
   });
 
   test('only the five files, a safe id, JSON that is JSON, and the token', async () => {

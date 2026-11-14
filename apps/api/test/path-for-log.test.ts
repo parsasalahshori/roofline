@@ -25,3 +25,16 @@ describe('pathForLog, unsubscribe links', () => {
     expect(pathForLog('/users/abc')).toBe('/users/abc');
   });
 });
+
+describe('pathForLog, public proposal links', () => {
+  test('a /p/<token> link never reaches the log, with or without a sub-path', () => {
+    expect(pathForLog('/p/abcDEF123_-xyz')).toBe('/p/:token');
+    expect(pathForLog('/P/abcDEF123_-xyz/sign')).toBe('/P/:token/sign');
+  });
+
+  test('only the /p/ route is scrubbed', () => {
+    expect(pathForLog('/api/p/abc')).toBe('/api/p/abc');
+    expect(pathForLog('/properties/abc')).toBe('/properties/abc');
+    expect(pathForLog('/p')).toBe('/p');
+  });
+});
