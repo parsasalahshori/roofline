@@ -78,6 +78,7 @@ final class AccessibilityAuditTests: XCTestCase {
     func testRooms() throws { try audit("rooms") }
     func testMethod() throws { try audit("method") }
     func testList() throws { try audit("list") }
+    func testListWithAFailedWindow() throws { try audit("list-failed") }
     func testStyles() throws { try audit("styles") }
     func testQuote() throws { try audit("quote") }
     func testCustomize() throws { try audit("customize") }
@@ -115,6 +116,7 @@ final class AccessibilityAuditTests: XCTestCase {
     func testRoomsLargestText() throws { try audit("rooms", largestText: true) }
     func testMethodLargestText() throws { try audit("method", largestText: true) }
     func testListLargestText() throws { try audit("list", largestText: true) }
+    func testListWithAFailedWindowLargestText() throws { try audit("list-failed", largestText: true) }
     func testStylesLargestText() throws { try audit("styles", largestText: true) }
     func testQuoteLargestText() throws { try audit("quote", largestText: true) }
     func testReadyLargestText() throws { try audit("ready", largestText: true) }
