@@ -497,6 +497,24 @@ describe('F3 settings', () => {
     expect(loadConfig({ ...VALID, FAKE_PROVIDERS: '0' }).FAKE_PROVIDERS).toBe(false);
   });
 
+  test('DEBUG_CAPTURES_DIR (the tester capture dump) is refused in production and fine elsewhere', () => {
+    const message = problem({ ...VALID, DEBUG_CAPTURES_DIR: '/tmp/captures' });
+    expect(message).toContain('DEBUG_CAPTURES_DIR');
+    expect(message).toContain('refused in production');
+    expect(loadConfig({ ...VALID, NODE_ENV: 'development', DEBUG_CAPTURES_DIR: '/tmp/captures' }).DEBUG_CAPTURES_DIR).toBe('/tmp/captures');
+    expect(loadConfig(VALID).DEBUG_CAPTURES_DIR).toBeUndefined();
+  });
+
+  test('TURNSTILE_SECRET and TURNSTILE_SITE_KEY come together: half a pair is a config error naming both, not a silent no-check', () => {
+    expect(problem({ ...VALID, TURNSTILE_SECRET: 's' })).toMatch(/TURNSTILE_SITE_KEY[\s\S]*TURNSTILE_SECRET|TURNSTILE_SECRET[\s\S]*TURNSTILE_SITE_KEY/);
+    expect(problem({ ...VALID, TURNSTILE_SITE_KEY: 'k' })).toContain('TURNSTILE_SECRET');
+    expect(problem({ ...VALID, TURNSTILE_SITE_KEY: 'k' })).toContain('TURNSTILE_SITE_KEY');
+    // Blank counts as unset, so a blank half is still half
+    expect(problem({ ...VALID, TURNSTILE_SECRET: 's', TURNSTILE_SITE_KEY: ' ' })).toContain('TURNSTILE_SITE_KEY');
+    expect(loadConfig({ ...VALID, TURNSTILE_SECRET: 's', TURNSTILE_SITE_KEY: 'k' }).TURNSTILE_SITE_KEY).toBe('k');
+    expect(loadConfig(VALID).TURNSTILE_SECRET).toBeUndefined();
+  });
+
   test('DEMO_MODE is refused in production unless DEMO_MODE_ALLOW_PROD is set', () => {
     const message = problem({ ...VALID, DEMO_MODE: '1' });
     expect(message).toContain('DEMO_MODE');

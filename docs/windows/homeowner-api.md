@@ -451,7 +451,7 @@ Neither downloads anything: a model that is not in the folder is reported as una
 
 The Debug and TestFlight builds of the app send each Capture's photo, depth map, camera and result here so a bad proposal can be
 replayed on a Mac (`apps/ios/Core`, `swift run RooflineReplay`). It exists only when the server has `DEBUG_CAPTURES_DIR`
-set (a folder; the files go to `<dir>/<captureId>/<file>`, no database); otherwise every call is `404 debug_captures_off`. The
+set (a folder; the files go to `<dir>/<request id>/<captureId>/<file>`, no database, at most 200 MiB per request, then `413 too_large`; the server refuses to start with it set in production); otherwise every call is `404 debug_captures_off`. The
 body is the file's raw bytes. `captureId` is 8 to 64 letters, digits or `-`; `file` is one of `capture.json`, `result.json`
 (JSON, up to 1 MiB), `photo.jpg` (up to 16 MiB), `depth.f32` (up to 2 MiB), `confidence.u8` (up to 1 MiB); `201` `{ ok, captureId,
 file, bytes }`. 600 files an hour per request. These are customers' photos when pointed at a live server: leave

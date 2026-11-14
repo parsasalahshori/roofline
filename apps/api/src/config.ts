@@ -553,6 +553,13 @@ const ConfigSchema = z
         }
       }
     }
+    // Half a pair would leave the bot check silently off (turnstileOn needs both)
+    if (cfg.TURNSTILE_SECRET && !cfg.TURNSTILE_SITE_KEY) {
+      ctx.addIssue({ code: 'custom', path: ['TURNSTILE_SITE_KEY'], message: 'is required when TURNSTILE_SECRET is set: set both TURNSTILE_SECRET and TURNSTILE_SITE_KEY, or neither' });
+    }
+    if (cfg.TURNSTILE_SITE_KEY && !cfg.TURNSTILE_SECRET) {
+      ctx.addIssue({ code: 'custom', path: ['TURNSTILE_SECRET'], message: 'is required when TURNSTILE_SITE_KEY is set: set both TURNSTILE_SECRET and TURNSTILE_SITE_KEY, or neither' });
+    }
     if (cfg.NODE_ENV === 'production' && cfg.TRUST_PROXY === 0) {
       ctx.addIssue({
         code: 'custom',
@@ -572,6 +579,13 @@ const ConfigSchema = z
         code: 'custom',
         path: ['FAKE_PROVIDERS'],
         message: 'must not be set in production',
+      });
+    }
+    if (cfg.DEBUG_CAPTURES_DIR !== undefined && cfg.NODE_ENV === 'production') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['DEBUG_CAPTURES_DIR'],
+        message: 'is refused in production: it stores customers\' photos on the server\'s disk for testers',
       });
     }
     if (cfg.RELAY_PUBLIC_URL && cfg.NODE_ENV === 'production' && !cfg.RELAY_PUBLIC_URL.startsWith('wss:')) {
