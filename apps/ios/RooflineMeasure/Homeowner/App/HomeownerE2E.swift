@@ -110,6 +110,20 @@ enum HomeownerE2E {
         await store.setTotalWindows(18)
         say("after 'I have 18': estimated=\(store.quote?.estimatedCount ?? -1) hint=\(store.quote?.missingHint?.text ?? "none")")
 
+        // On a slow connection the uploads are still going: wait for them to settle (at most a minute)
+        for _ in 0..<60 {
+            await store.outbox.syncAll()
+            store.outboxChanged(await store.outbox.items)
+            let busy = store.windowRows.contains { if case .sending = $0.send { return true } else { return false } }
+            if !busy { break }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+        }
+        // A window the server refused holds the request back (the homeowner retries or removes it): remove it, as they would
+        for bad in store.windowRows where { if case .failed = bad.send { return true } else { return false } }() {
+            await store.removeWindow(bad.id)
+            say("removed the refused window \(bad.room)")
+        }
+
         // Contact, visit, status
         store.contactDraft = contact
         await store.prepareContact()
