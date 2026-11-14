@@ -87,6 +87,22 @@ final class BrandAndBundleTests: XCTestCase {
         }
         let api = (plist["NSPrivacyAccessedAPITypes"] as? [[String: Any]])?.compactMap { $0["NSPrivacyAccessedAPIType"] as? String } ?? []
         XCTAssertTrue(api.contains("NSPrivacyAccessedAPICategoryUserDefaults"))
+        // ProcessInfo.systemUptime (AR/RoomHybridCamera.swift) is the system boot time API: it needs its declared reason
+        let boot = (plist["NSPrivacyAccessedAPITypes"] as? [[String: Any]])?.first { $0["NSPrivacyAccessedAPIType"] as? String == "NSPrivacyAccessedAPICategorySystemBootTime" }
+        XCTAssertEqual(boot?["NSPrivacyAccessedAPITypeReasons"] as? [String], ["35F9.1"])
+    }
+
+    func testAMeasuringScreenKeepsThePhoneAwakeAndPutsItBack() {
+        UIApplication.shared.isIdleTimerDisabled = false
+        let window = UIWindow(frame: UIScreen.main.bounds)
+        window.rootViewController = UIHostingController(rootView: Color.clear.keepsScreenAwake())
+        window.makeKeyAndVisible()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        XCTAssertTrue(UIApplication.shared.isIdleTimerDisabled, "no auto-lock while measuring")
+        window.rootViewController = UIViewController()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        XCTAssertFalse(UIApplication.shared.isIdleTimerDisabled, "the setting is put back when the screen goes")
+        window.isHidden = true
     }
 
     func testTheStaffScreensAreNotInThisApp() {
