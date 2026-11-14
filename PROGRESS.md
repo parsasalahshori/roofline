@@ -23,7 +23,7 @@ budget: 2 audit agents + at most 2 fix agents; one full suite at the end
 | A2 | P1 | api | No cap on scans per window/request or on scan-refine jobs (COLMAP/SAM cost, review-queue spam) | fixed | public/homeowner-scans.ts:144 |
 | A3 | P1 | api | Homeowner API has no human/device check (fake leads, booking every slot) | needs-me (Turnstile/App Attest is a product decision) | public/homeowner.ts:404 |
 | A4 | P1 | api | Debug capture dump: no total cap, captureId not scoped to the request | fixed | public/homeowner-detect.ts:185 |
-| A5 | P1 | deploy | CONFIRMED via Render API: only roofline-api runs online, no worker -> Google 30-day cleanup, signed PDFs, follow-ups never run on Render | fixing at deploy (run the worker in the same container) | Render services list |
+| A5 | P1 | deploy | CONFIRMED via Render API: only roofline-api runs online, no worker -> Google 30-day cleanup, signed PDFs, follow-ups never run on Render | fixed: worker runs in the Render container (deploy/start.sh, node --import tsx) | Render services list |
 | A6 | P1 | api | 90-photo cap per request can run out mid-flow with many scanned windows; deleting a window frees nothing | fixed (13 frames/window; caps 400 photos, 400 MB) | shared/homeowner.ts:23 |
 | B1 | P2 | api | quote_estimates keeps Solar-derived data past 30 days | fixed | quote/estimate.ts:269 |
 | B2 | P2 | api | Re-measured window keeps confirmed:true | fixed | shared/window-order.ts:535 |
@@ -53,8 +53,19 @@ budget: 2 audit agents + at most 2 fix agents; one full suite at the end
 - size cap raised to 400 MB (b72380d2). Full suite running: ~/RooflineWork/logs/audit-final.log
 
 ## next
-- full suite green -> ff real-lookups (autosync pushes) -> Mac 4500/4600 -> Render (image + migrate 0050 + worker in container) -> Vercel -> TestFlight -> verify
+- Owner: accept the Apple Developer agreement, then upload the built archive (apps/ios/build/WinChoice.xcarchive, build 2611141858, made at 3be48d13) or re-run testflight.sh.
+- Owner: delete the expired benchmark Google data (~/RooflineWork/roof-bench, past 30 days since Nov 10) or say to keep the benchmark off.
+- Owner: Render memory is ~420 of 512 MB with the worker; Standard plan removes the risk.
+- Owner decisions: A3 (bot/device check on the homeowner API), deleting a window now deletes its reviewed scans, F10/F13, B4/B6/B7/B8.
 
 ## status
-state: in-progress
-needs-me:
+state: converged (deploy done except TestFlight upload)
+needs-me: Apple agreement (TestFlight upload blocked: FORBIDDEN.REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED)
+
+## green evidence (2026-11-14, head 384f4333; server code = 3be48d13)
+- typecheck, lint, web build: OK. shared 2072/2072, web 2672/2672, db 704/704, api 5110 pass + the 3 known failures.
+- iOS: core 217 checks 0 failures; unit 174/174; a11y 50/50 twice (iPhone 17 Pro); rep app builds.
+- roof bench: NOT RUN (benchmark Google data expired Nov 10; the script refuses). No roof code changed (0 diff lines).
+- E2E walk (simulator, -debugE2E): contact filed=true against local 4600 and against Render.
+- Deployed: real-lookups pushed; Mac 4500 + 4600 restarted (company 200, migration 0050 applied, preload check passed);
+  Render image :3be48d13-b live (health 200, worker started, google-retention ran); Render DB migrated; Vercel roofline-measure live (styled, /health 200).
