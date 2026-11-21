@@ -707,6 +707,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   //     entry, a dormer), a hip end merged into the long slopes. Fitted on the height map as shapes; their planes are
   //     locked like the other primitives'.
   let shapes: FittedShape[] = [];
+  let shapePieces: ReturnType<typeof buildTopology> | undefined;
   if (primPrm.enabled && (primPrm.ridgeRoofs || primPrm.hipEnds)) {
     const lock = (ps: readonly Plane[], kind: FittedKind | null) => ps.forEach((p) => (kind !== null ? locked.set(p, kind) : locked.delete(p)));
     const rebuild = (f: { labels: Int32Array; planes: Plane[] }, settled: boolean) => {
@@ -717,6 +718,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     if (done !== null) {
       ({ faces, planes } = done);
       shapes = done.fitted;
+      shapePieces = done.pieces;
       lineRows = opts.lineFeatures !== undefined ? [] : undefined;
       topo = buildTopology(g, s, faces.labels, planes, outline, dsm, settlePrm, opts.debug, lineRows);
     }
@@ -728,7 +730,8 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   //     follows the boundary's pixels, and a narrow face's polygon can come out narrower for it).
   if (settlePrm !== topoPrm) {
     const pieceRows: LineFeatures[] | undefined = opts.lineFeatures !== undefined ? [] : undefined;
-    const pieces = buildTopology(g, s, faces.labels, planes, outline, dsm, topoPrm, opts.debug, pieceRows);
+    // (With shapes fitted, that topology was drawn to check them: the same faces, planes and parameters.)
+    const pieces = shapePieces !== undefined && pieceRows === undefined ? shapePieces : buildTopology(g, s, faces.labels, planes, outline, dsm, topoPrm, opts.debug, pieceRows);
     // A polygon's mean width: twice its area over its perimeter.
     const widthOf = (ring: readonly XY[]): number => {
       let perimeter = 0;

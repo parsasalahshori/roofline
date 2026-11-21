@@ -186,8 +186,8 @@ export type ShapeInput = {
  * The shapes fitted on the settled faces (see the head of this file). `lock` marks planes as fitted (and unmarks them:
  * a refit must leave a fitted plane as it is); `build` refits and draws the topology of a set of faces, with the walls
  * typed once for their length (`settled`) or piece by piece, as they are drawn in the end: a shape is judged on the
- * latter. Returns null when nothing is fitted, else the faces with the shapes in, their planes as `build` gave them,
- * and what was fitted.
+ * latter. Returns null when nothing is fitted, else the faces with the shapes in, their planes and their topology
+ * (walls piece by piece) as `build` gave them, and what was fitted.
  */
 export function fitShapes(
   inp: ShapeInput,
@@ -196,7 +196,7 @@ export function fitShapes(
   lock: (planes: readonly Plane[], kind: ShapeKind | null) => void,
   build: (f: Faces, settled: boolean) => { planes: Plane[]; topo: Topology },
   debug?: (msg: string) => void,
-): { faces: Faces; planes: Plane[]; fitted: FittedShape[] } | null {
+): { faces: Faces; planes: Plane[]; pieces: Topology; fitted: FittedShape[] } | null {
   if (!prm.ridgeRoofs && !prm.hipEnds) return null;
   const { g, s, dsm, roof, tree, outline, faces, planes, topo } = inp;
   const n = g.w * g.h;
@@ -290,11 +290,13 @@ export function fitShapes(
     return f.fromPixels || w.area < lim.tinyFaceM2 || w.width < prm.shapeFaceWidthM;
   };
   const badBefore = new Set<Plane>();
-  for (const before of [topo, build({ labels, planes: [...planes] }, false).topo]) {
+  const noteBad = (before: Topology) =>
     before.faces.forEach((f, k) => {
       if (poor(f)) badBefore.add(planes[k]!);
     });
-  }
+  noteBad(topo);
+  // The faces as they stand, walls piece by piece: drawn only when a face comes out badly beside a shape.
+  let piecesBefore = false;
   let shapes = found;
   for (let round = 0; round < 3 && shapes.length > 0; round++) {
     const { faces: next, applied } = apply(shapes);
@@ -307,10 +309,19 @@ export function fitShapes(
     const fittedSet = new Set(applied.flatMap((a) => a.planes));
     // Faces beside a shape that came out badly, though they were drawn well before.
     const spoiled = new Set<number>();
-    built.topo.faces.forEach((f, k) => {
-      const p = next.planes[k]!;
-      if (!fittedSet.has(p) && !badBefore.has(p) && poor(f)) spoiled.add(k);
-    });
+    const findSpoiled = () => {
+      spoiled.clear();
+      built.topo.faces.forEach((f, k) => {
+        const p = next.planes[k]!;
+        if (!fittedSet.has(p) && !badBefore.has(p) && poor(f)) spoiled.add(k);
+      });
+    };
+    findSpoiled();
+    if (spoiled.size > 0 && !piecesBefore) {
+      piecesBefore = true;
+      noteBad(build({ labels, planes: [...planes] }, false).topo);
+      findSpoiled();
+    }
     const beside = (ks: readonly number[]): boolean => built.topo.lines.some((l) => l.faces.some((f) => ks.includes(f)) && l.faces.some((f) => spoiled.has(f)));
     const bad: Applied[] = [];
     for (const a of prm.shapeCheck ? applied : []) {
@@ -338,7 +349,7 @@ export function fitShapes(
     }
     if (bad.length === 0) {
       for (const a of applied) debug?.(`shape: ${name(a.shape)}: fitted, ${a.planes.length} faces at ${a.shape.pitchX12.toFixed(1)}/12 over ${a.shape.areaM2.toFixed(1)} m2`);
-      return { faces: next, planes: built.planes, fitted: applied.map((a) => ({ kind: a.shape.kind, at: a.shape.at, pitchX12: a.shape.pitchX12, areaM2: a.shape.areaM2, faces: a.planes.length })) };
+      return { faces: next, planes: built.planes, pieces: built.topo, fitted: applied.map((a) => ({ kind: a.shape.kind, at: a.shape.at, pitchX12: a.shape.pitchX12, areaM2: a.shape.areaM2, faces: a.planes.length })) };
     }
     unlock();
     const out = new Set(bad.map((a) => a.shape));

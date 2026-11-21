@@ -48,6 +48,14 @@ const PAST_END_M = 3;
 const EDGE_M = 0.8;
 /** Two faces' planes meet in a ridge where they are within this of each other in height (metres). */
 const MEET_M = 0.25;
+/**
+ * A face is the other slope of a ridge roof (the one the plane search found) when it faces the tent's way on that side
+ * within 30 degrees, at the tent's pitch within PARTNER_X12 (x/12), and stands within PARTNER_RIDGE_M (metres) of the
+ * ridge's height on the ridge.
+ */
+const PARTNER_COS = Math.cos((30 * Math.PI) / 180);
+const PARTNER_X12 = 4;
+const PARTNER_RIDGE_M = 0.35;
 
 /**
  * The roof's directions (radians, 0 to pi): its pitched faces' slope directions mod 90 degrees, gathered by plan area
@@ -482,13 +490,43 @@ export function findRidgeRoofs(scene: ShapeScene, prm: ShapeParams, debug?: (msg
     // A slope the faces already explain as well as the tent keeps its faces (the plane search found that slope of
     // the small roof and not the other); the evidence is weighed on the slopes that are new.
     const sides: ShapeProposal['sides'] = [];
-    if (L.gain / L.n >= prm.ridgeSideGainM) sides.push({ px: Int32Array.from(left), plane: { a: q * fr.ex, b: q * fr.ey, c: zr - q * u0 }, gain: L.gain / L.n });
-    if (R.gain / R.n >= prm.ridgeSideGainM) sides.push({ px: Int32Array.from(right), plane: { a: -q * fr.ex, b: -q * fr.ey, c: zr + q * u0 }, gain: R.gain / R.n });
+    const vm = t.v0 + (t.runL.length * s) / 2;
+    const ridgeAt = { x: u0 * fr.ex + vm * fr.dx, y: u0 * fr.ey + vm * fr.dy };
+    // The other slope's pitch and the ridge's height, when the plane search found that slope: a gable's two slopes
+    // share their pitch and their ridge, and a plane fitted on a whole slope is the better witness of both (the tent
+    // is fitted on what the height map left of a small roof, and reads a little low and shallow).
+    let pitch = q;
+    let top = zr;
+    const fresh0: { px: number[]; sign: number; gain: number }[] = [];
+    for (const [px, sum, sign] of [
+      [left, L, 1],
+      [right, R, -1],
+    ] as const) {
+      if (sum.gain / sum.n >= prm.ridgeSideGainM) {
+        fresh0.push({ px, sign, gain: sum.gain / sum.n });
+        continue;
+      }
+      // The slope that keeps its faces must be this roof's other slope: mostly one face, facing the tent's way there
+      // at about its pitch, and at the ridge's height on the ridge. A slope explained by something else (the main
+      // slope running through, a face of another roof) leaves no ridge roof, only a lone face beside it.
+      const count = new Map<number, number>();
+      for (const i of px) count.set(labels[i]!, (count.get(labels[i]!) ?? 0) + 1);
+      const [k, most] = [...count].sort((x, y) => y[1] - x[1] || x[0] - y[0])[0]!;
+      const own = planes[k]!;
+      const slope = Math.hypot(own.a, own.b);
+      const facing = slope > 1e-6 ? (sign * (own.a * fr.ex + own.b * fr.ey)) / slope : 0;
+      const atRidge = own.a * ridgeAt.x + own.b * ridgeAt.y + own.c;
+      if (most < 0.5 * px.length || facing < PARTNER_COS || Math.abs(slope - q) * 12 > PARTNER_X12 || Math.abs(atRidge - zr) > PARTNER_RIDGE_M) {
+        return `one slope is not this roof's (the faces there: ${(slope * 12).toFixed(1)}/12, ${((Math.acos(Math.max(-1, Math.min(1, facing))) * 180) / Math.PI).toFixed(0)} deg off, ${(atRidge - zr).toFixed(2)} m from the ridge)`;
+      }
+      pitch = slope;
+      top = atRidge;
+    }
+    for (const f of fresh0) sides.push({ px: Int32Array.from(f.px), plane: { a: f.sign * pitch * fr.ex, b: f.sign * pitch * fr.ey, c: top - f.sign * pitch * u0 }, gain: f.gain });
     const fresh = sides.reduce((acc, side) => acc + side.px.length, 0);
     const gain = fresh > 0 ? sides.reduce((acc, side) => acc + side.gain * side.px.length, 0) / fresh : 0;
     if (gain < prm.shapeGainM || fresh * s * s < prm.shapeMinM2 / 2) return `the faces explain the heights nearly as well (gain ${gain.toFixed(2)} m over ${(fresh * s * s).toFixed(1)} m2 of new slope)`;
-    const vm = t.v0 + (t.runL.length * s) / 2;
-    return { kind: 'ridge-roof', at: { x: u0 * fr.ex + vm * fr.dx, y: u0 * fr.ey + vm * fr.dy }, pitchX12: q * 12, sides, gain, areaM2: fresh * s * s };
+    return { kind: 'ridge-roof', at: ridgeAt, pitchX12: pitch * 12, sides, gain, areaM2: fresh * s * s };
   }
 
   return found;
