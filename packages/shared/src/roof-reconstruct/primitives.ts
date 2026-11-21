@@ -14,7 +14,8 @@
 //   never above it: a dormer stands above its slope and stays) become one face on that plane; a level face along the
 //   ridge on both sides of it (the ridge's blunt top in the height map) is dissolved into the two slopes. A far side
 //   already at the clean pitch and facing is left exactly as it was.
-// - The stack (mergeStacks), where there is no clean slope across a ridge to mirror (a hip roof's faces): an upper,
+// - The stack (mergeStacks; off by default, see PrimitiveParams.stacks), where there is no clean slope across a ridge
+//   to mirror (a hip roof's faces): an upper,
 //   steeper face lying over a lower, shallower one facing the same way, no wall between them, a crest above and the
 //   roof's edge below, become one face on the plane through crest and eave, when that chord comes to the roof's own
 //   pitch (its other faces') and the upper strip does not. An upper face at the roof's pitch over a shallower one is a
@@ -27,7 +28,12 @@ import { adjacency, compact, dissolve, type Faces, interiorFit, pixelX, pixelY, 
 export type PrimitiveParams = {
   /** Off: the faces stand as the plane search left them. */
   enabled: boolean;
-  /** The gable fit (fitGables) and the stacked-strip merge (mergeStacks), each switchable when `enabled`. */
+  /**
+   * The gable fit (fitGables) and the stacked-strip merge (mergeStacks), each switchable when `enabled`. The gable fit
+   * is on. The stack merge is off: on the benchmark's EagleView houses it changed two, a hip roof's bowed face for the
+   * better (dev) and a complex roof for the worse (held-out: 14 ft of an eave a report counts gone), no line total's
+   * median better for it.
+   */
   gables: boolean;
   stacks: boolean;
   /** A slope vouches for the one across its ridge when at least this big (square metres)... */
@@ -156,7 +162,7 @@ export type PrimitiveParams = {
 export const DEFAULT_PRIMITIVE_PARAMS: PrimitiveParams = {
   enabled: true,
   gables: true,
-  stacks: true,
+  stacks: false,
   minCleanM2: 8,
   minPitchX12: 3,
   maxPitchX12: 14,

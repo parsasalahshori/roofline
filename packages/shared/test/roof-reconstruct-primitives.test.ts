@@ -2,11 +2,12 @@
 // ridge; stacked strips of one bowed slope merged on the plane through its crest and its eave. Real pitch breaks,
 // porch roofs under a wall, dormers and clean roofs stay as the plane search drew them.
 import { describe, expect, it } from 'vitest';
-import { type LocalRoof, reconstructRoof } from '../src/roof-reconstruct/index.ts';
+import { DEFAULT_PRIMITIVE_PARAMS, type LocalRoof, reconstructRoof } from '../src/roof-reconstruct/index.ts';
 import { DORMER_GABLE } from './fixtures/hard-roofs.ts';
 import { BOWED_GABLE, BOWED_HIP, BOWED_L, bowedRise, PITCH_BREAK, PORCH, SHAPES, synthesize, type Shape, type XY } from './fixtures/synthetic-roofs.ts';
 
-const ON = { primitives: { enabled: true } } as const;
+// Both fits on (the stack merge is off by default), and both off.
+const ON = { primitives: { enabled: true, gables: true, stacks: true } } as const;
 const OFF = { primitives: { enabled: false } } as const;
 
 function lengths(roof: LocalRoof): Record<string, number> {
@@ -138,11 +139,16 @@ describe('roof primitives: what is not a bowed slope is left alone', () => {
     const a = reconstructRoof(syn.raster, syn.point, ON);
     const b = reconstructRoof(syn.raster, syn.point, ON);
     expect(a).toEqual(b);
-    const noGables = reconstructRoof(syn.raster, syn.point, { primitives: { enabled: true, gables: false } })!;
+    const noGables = reconstructRoof(syn.raster, syn.point, { primitives: { enabled: true, gables: false, stacks: false } })!;
     expect(noGables.gables).toBeUndefined();
     const hip = synthesize(BOWED_HIP, { trees: 0 });
     const noStacks = reconstructRoof(hip.raster, hip.point, { primitives: { enabled: true, stacks: false } })!;
     expect(noStacks.stacks).toBeUndefined();
     expect(noStacks.faces.length).toBeGreaterThan(4);
+    // As shipped: the gable fit on, the stack merge off.
+    expect(DEFAULT_PRIMITIVE_PARAMS).toMatchObject({ enabled: true, gables: true, stacks: false });
+    expect(reconstructRoof(hip.raster, hip.point)).toEqual(noStacks);
+    const gable = synthesize(BOWED_GABLE, { trees: 0 });
+    expect(reconstructRoof(gable.raster, gable.point)!.gables).toHaveLength(1);
   });
 });
