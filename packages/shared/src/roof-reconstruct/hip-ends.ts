@@ -101,10 +101,11 @@ export function findHipEnds(scene: ShapeScene, prm: ShapeParams, debug?: (msg: s
     if (!(free.q * 12 >= prm.shapeMinX12 && free.q * 12 <= maxX12) || Math.abs(free.r) > prm.hipAlongShare * free.q) continue;
     let fit = fitBand(rows, false, free, 0.15);
     if (fit === null) continue;
-    // The faces' own planes in the band: climbing away from the edge as the heights do, and at their height, the face is there.
+    // The faces' own planes in the band: climbing away from the edge and level along it, a face already drains to this
+    // eave, whatever its pitch (the heights by a roof's edge are a skirt rounded off into the yard, steeper than the
+    // roof: no evidence of another face).
     const mine = fitBand(rowsModel, true, null, 0);
-    const apart = median(rowsModel.map((p) => Math.abs(p.z - (fit!.h + fit!.q * p.d))));
-    if (mine !== null && mine.q >= 0.7 * fit.q && apart <= 0.1) continue;
+    if (mine !== null && mine.q >= Math.max(1.5 / 12, 0.4 * fit.q) && Math.abs(mine.r) <= 0.5 * mine.q) continue;
     const where = `eave at ${(a.x + (len / 2) * ex).toFixed(1)},${(a.y + (len / 2) * ey).toFixed(1)} (${len.toFixed(1)} m)`;
     // 2. The face walked in from the edge, column by column, and its plane refitted on the heights it holds. Past an
     //    end of the edge where the outline turns inward (a bump-out's side meets the main wall) the face runs on, in

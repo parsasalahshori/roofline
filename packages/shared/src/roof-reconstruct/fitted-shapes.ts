@@ -22,7 +22,12 @@ import type { Topology } from './topology.ts';
 export type ShapeParams = {
   /** Small roofs with a ridge of their own (ridge-roofs.ts). Off: none is fitted. */
   ridgeRoofs: boolean;
-  /** Faces draining to an eave of the outline that the faces lack: hip ends (hip-ends.ts). Off: none is fitted. */
+  /**
+   * Faces draining to an eave of the outline that the faces lack: hip ends (hip-ends.ts). OFF BY DEFAULT: at the
+   * report's smallest face sizes (shapeFaceM2, shapeFaceWidthM) it fits nothing on the benchmark's EagleView dev houses
+   * (an end face that small is a thin strip by those sizes); with thin faces let in, the six it fits there are all
+   * EagleView's.
+   */
   hipEnds: boolean;
   /**
    * The evidence for any shape: over at least shapeMinM2 of footprint (square metres) the heights are closer to the
@@ -79,7 +84,7 @@ export type ShapeParams = {
 
 export const DEFAULT_SHAPE_PARAMS: ShapeParams = {
   ridgeRoofs: true,
-  hipEnds: true,
+  hipEnds: false,
   shapeMinM2: 2.5,
   shapeGainM: 0.08,
   shapeTolM: 0.2,
