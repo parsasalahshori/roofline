@@ -16,14 +16,14 @@ import type { LngLat } from '../roof.ts';
 import type { Roof3d, Roof3dLineKind, RoofQuality, RoofQualityReason } from '../roof-3d.ts';
 import { dist, nearestOnSegment, pointInRing, signedArea, simplifyClosedIdx, type XY } from './geom.ts';
 import { DEFAULT_OUTLINE_PARAMS, mainAxis, maskBoundary, type OutlineParams, squareOutline } from './outline.ts';
-import { buildFaces, DEFAULT_PLANE_PARAMS, dissolve, findPlanes, type FoundPlane, type Plane, type PlaneParams, refitFaces } from './planes.ts';
+import { buildFaces, DEFAULT_PLANE_PARAMS, dissolve, type FaceHooks, type Faces, findPlanes, type FoundPlane, type Plane, type PlaneParams, refitFaces } from './planes.ts';
 import { type CanopyParams, completeRoof, crownMap, crownRmsK, DEFAULT_CANOPY_PARAMS, localPlaneRms } from './canopy.ts';
 import { groundPlane, heightAboveGround, planeInCrop } from './ground.ts';
 import { close, components, countSet, dilate, fillHoles, largestComponent, open, open3, seededRandom, squaredDistance } from './raster.ts';
 import { buildTopology, DEFAULT_TOPOLOGY_PARAMS, type LineFeatures, type TopologyParams } from './topology.ts';
 import { DEFAULT_PHOTO_EDGE, type PhotoEdge, type PhotoEdgeParams, photoEdges } from './outline-photo.ts';
 import { boxShare, crownFromGreen, EAVE_SUPPORT, integral } from './eave-support.ts';
-import { measureFaces } from './faces-evidence.ts';
+import { DEFAULT_EVIDENCE, type EvidenceParams, measureFaces, mergeFragments, nearTreesOf, realFaces } from './faces-evidence.ts';
 import { DEFAULT_FACE_CLEANUP, type FaceCleanupParams, faceSupport, type WeakReason, weakCandidate, weakFaces } from './faces-cleanup.ts';
 import { inferHiddenEaves, type OutlinePlanesParams, type PlanesDecline } from './outline-planes.ts';
 import { DEFAULT_LIDAR_EDGE, type LidarCloud, type LidarEdgeParams, type LidarEdgeReport, lidarHiddenEdges } from './outline-lidar.ts';
@@ -92,6 +92,8 @@ export type ReconstructOptions = {
   topology?: Partial<TopologyParams>;
   /** The weak-face cleanup on the finished faces (faces-cleanup.ts). */
   faces?: Partial<FaceCleanupParams>;
+  /** Faces kept, joined or dropped on evidence read off the height map, not on size (faces-evidence.ts). */
+  evidence?: Partial<EvidenceParams>;
   /** Roof primitives: a gable's bowed slope fitted from its ridge, its eave and the slope across the ridge (primitives.ts). */
   primitives?: Partial<PrimitiveParams>;
   /**
@@ -478,12 +480,26 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   // Unsure faces' pixels (faces-cleanup.ts, unsureThinM): the planes found late in a long search (after the first
   // surePlanes), and the faces buildFaces keeps only for a ridge or a facing of their own. On this crop's pixels: a
   // step that re-cuts the crop (canopy completion, a hidden-edge move) leaves the faces as they are.
-  const unsure = new Uint8Array(g.w * g.h);
-  for (let k = planePrm.surePlanes; k < found.length; k++) {
-    const patch = found[k]!.patch;
-    for (let i = 0; i < patch.length; i++) if (patch[i] === 1) unsure[i] = 1;
-  }
-  let faces = buildFaces(g, s, dsm, roof, found, planePrm, tree, opts.debug, unsure);
+  const unsureOf = (gr: { w: number; h: number }, planesFound: readonly FoundPlane[]): Uint8Array => {
+    const out = new Uint8Array(gr.w * gr.h);
+    for (let k = planePrm.surePlanes; k < planesFound.length; k++) {
+      const patch = planesFound[k]!.patch;
+      for (let i = 0; i < patch.length; i++) if (patch[i] === 1) out[i] = 1;
+    }
+    return out;
+  };
+  let unsure = unsureOf(g, found);
+  const evidencePrm: EvidenceParams = { ...DEFAULT_EVIDENCE, ...opts.evidence };
+  const hooksOn = (gr: { w: number; h: number }, z: Float32Array): FaceHooks | undefined => {
+    if (!evidencePrm.enabled) return undefined;
+    // The crowns grown by a metre once for this crop (every round of buildFaces reads them).
+    const near = tree === null ? null : nearTreesOf(gr, s, tree);
+    return {
+      ...(evidencePrm.joinFragments ? { fragments: (f: Faces) => mergeFragments(gr, s, z, f, planePrm, evidencePrm, opts.debug) } : {}),
+      real: (f) => realFaces(gr, s, z, f, planePrm, tree, evidencePrm, near),
+    };
+  };
+  let faces = buildFaces(g, s, dsm, roof, found, planePrm, tree, opts.debug, unsure, hooksOn(g, dsm));
   if (faces.planes.length === 0) return null;
   // 2p. Primitives (primitives.ts): a gable's bowed slope becomes one face on the plane through its ridge and its eave.
   //     Such a plane is locked: a refit on the heights (which are what is wrong there) leaves it as fitted.
@@ -513,7 +529,6 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   ({ faces, planes } = withPrimitives(g, dsm, roof, faces, tree));
   opts.trace?.('faces', { c0, r0, w: g.w, h: g.h, labels: faces.labels, planes });
   if (opts.debug !== undefined && opts.trace !== undefined) for (const [k, m] of measureFaces(g, s, dsm, { labels: faces.labels, planes }, planePrm, tree).entries()) opts.debug(`evidence ${JSON.stringify({ k, ...m })}`);
-
   // 2a. Roof under canopy or in shade the mask missed: grown along the faces' own planes where the heights show it,
   //     bridged across notches a crown bites out of one roof line (canopy.ts). Only with Google's box (the bound) and the
   //     ground (crowns are told by their height above it), never on a terrace cut. The crop is re-cut round the
@@ -524,7 +539,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   // gives the same roof as reconstructing again with completion off (every step before this one is deterministic and
   // nothing after it draws on rng) without paying for steps 1 and 2 twice (merge note: the undone roof used to be a
   // whole second reconstruction, which failed the benchmark's runtime gate).
-  const beforeCompletion = { g, c0, r0, c1, r1, dsm, roof, googleMask, tree, roofPx, clipped, faces, planes, locked, gables, stacks };
+  const beforeCompletion = { g, c0, r0, c1, r1, dsm, roof, googleMask, tree, roofPx, clipped, faces, planes, locked, gables, stacks, unsure };
   if (opts.canopy?.complete === true && groundFull !== null && box0 !== null && !joined) {
     const done = completeOnWindow(raster, { c0, r0, c1, r1 }, g, s, roof, faces.labels, planes, groundFull, opts.building!, canopyPrm);
     if (done !== null) {
@@ -541,7 +556,9 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
       tree = re.tree;
       roofPx = countSet(roof);
       clipped = clipped || c0 <= 0 || r0 <= 0 || c1 >= W - 1 || r1 >= H - 1;
-      faces = buildFaces(g, s, dsm, roof, re.found, planePrm, tree);
+      // The unsure faces again on the new crop (the first mask is on the old one: the thin-unsure rule would be off here).
+      unsure = unsureOf(g, re.found);
+      faces = buildFaces(g, s, dsm, roof, re.found, planePrm, tree, undefined, unsure, hooksOn(g, dsm));
       if (faces.planes.length === 0) return null;
       ({ faces, planes } = withPrimitives(g, dsm, roof, faces, tree));
       canopyOut = { grownM2: round(done.grownM2, 2), bridgedM2: round(done.bridgedM2, 2), occluded: re.occluded };
@@ -667,8 +684,14 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
           });
         }
         const weak = weakFaces(support, cleanupPrm);
+        // A face that is real on its evidence (faces-evidence.ts) and not thinner than evidence.thinM is no weak face.
+        const real = evidencePrm.enabled && weak.size > 0 ? realFaces(g, s, dsm, { labels: faces.labels, planes }, planePrm, tree, evidencePrm) : null;
         for (const [k, why] of weak) {
           if (tiny.has(k)) continue;
+          if (real?.[k] === 1 && why !== 'steep-unsupported' && support[k]!.widthM >= evidencePrm.thinM) {
+            opts.debug?.(`faces: kept on evidence against ${why}: face ${k}, ${support[k]!.areaM2.toFixed(1)} m2, ${support[k]!.widthM.toFixed(2)} m wide`);
+            continue;
+          }
           tiny.add(k);
           dissolved[why] = (dissolved[why] ?? 0) + 1;
           if (opts.debug !== undefined) {
@@ -693,7 +716,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
       for (let k = 0; k < outline.length; k++) perim += dist(outline[k]!, outline[(k + 1) % outline.length]!);
       if (topo.faces.some((f) => f.fromPixels) || edgeLen > canopyPrm.topologyEdgeSlack * perim) {
         opts.debug?.(`canopy: completion undone (its topology came out worse: ${topo.faces.filter((f) => f.fromPixels).length} pixel faces, edges ${edgeLen.toFixed(1)} m on a ${perim.toFixed(1)} m outline)`);
-        ({ g, c0, r0, c1, r1, dsm, roof, googleMask, tree, roofPx, clipped, faces, planes, locked, gables, stacks } = beforeCompletion);
+        ({ g, c0, r0, c1, r1, dsm, roof, googleMask, tree, roofPx, clipped, faces, planes, locked, gables, stacks, unsure } = beforeCompletion);
         canopyOut = { grownM2: 0, bridgedM2: 0, occluded: [], undone: 'topology' };
         continue;
       }

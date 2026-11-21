@@ -3,8 +3,8 @@
 // over its pixels, and what stands across each boundary. A real small face (a dormer's cheek, a small gable, a hip end)
 // is bounded by creases and steps the height map shows; a junk face (a strip of a bowed slope, a rounded ridge, a
 // gutter) is bounded by nothing: the heights run smoothly through its boundary into a neighbour facing the same way.
-import { adjacency, type Faces, interiorFit, pixelX, pixelY, type Plane, type PlaneParams, planeAngleDeg, planeZ, slopeOf } from './planes.ts';
-import { dilate, type Grid, type Mask } from './raster.ts';
+import { adjacency, compact, type Faces, interiorFit, pixelX, pixelY, type Plane, type PlaneParams, planeAngleDeg, planeZ, slopeOf, splitParts } from './planes.ts';
+import { dilate, type Grid, type Mask, squaredDistance } from './raster.ts';
 
 /** What stands across one boundary of a face: the neighbour, and what the heights do across the boundary. */
 export type FaceRelation = {
@@ -28,12 +28,19 @@ export type FaceRelation = {
   /** The neighbour's pitch (x/12) and area (m2). */
   pitchX12: number;
   areaM2: number;
+  /**
+   * 80th percentile of this face's pixels' distance from the neighbour's plane, metres (how well the neighbour's plane
+   * carried on over this face explains it); absent for a boundary under half a metre or a face not measured in full.
+   */
+  dev?: number;
 };
 
 export type FaceMeasure = {
   areaM2: number;
-  /** 2 area / boundary of the pixel region, metres. */
+  /** 2 area / boundary of the pixel region, metres (low for a face that runs diagonally: its boundary is a staircase). */
   widthM: number;
+  /** The diameter of the largest disc inside the face, metres: a strip's width whatever its length or direction (0 unless every face is measured in full). */
+  thickM: number;
   pitchX12: number;
   /** Downhill direction, degrees clockwise from north. */
   facing: number;
@@ -65,6 +72,11 @@ export type EvidenceProbe = {
 
 export const DEFAULT_EVIDENCE_PROBE: EvidenceProbe = { nearM: 0.1, farM: 0.5, farNarrowM: 0.3, aboveM: 0.1 };
 
+/** The pixels within a metre of a tree crown. */
+export function nearTreesOf(g: Grid, s: number, tree: Mask): Mask {
+  return dilate(g, tree, Math.max(1, Math.round(1 / s)));
+}
+
 function azimuthOf(p: Plane): number {
   return (((Math.atan2(-p.a, -p.b) * 180) / Math.PI) % 360 + 360) % 360;
 }
@@ -94,6 +106,8 @@ export function measureFaces(
   tree: Mask | null = null,
   only: ((k: number) => boolean) | null = null,
   probe: EvidenceProbe = DEFAULT_EVIDENCE_PROBE,
+  /** `tree` grown by a metre, when the caller has it already (it is the same for every call on one crop). */
+  nearTrees: Mask | null = null,
 ): FaceMeasure[] {
   const { w, h } = g;
   const { labels, planes } = faces;
@@ -182,7 +196,26 @@ export function measureFaces(
     const k = labels[i]!;
     if (k >= 0 && want(k)) pixelsOf[k]!.push(i);
   }
-  const nearTree = tree === null ? null : dilate(g, tree, Math.max(1, Math.round(1 / s)));
+  const nearTree = nearTrees ?? (tree === null ? null : nearTreesOf(g, s, tree));
+  const treePx = new Array<number>(n).fill(0);
+  if (nearTree !== null) for (let i = 0; i < labels.length; i++) if (labels[i]! >= 0 && nearTree[i] === 1) treePx[labels[i]!]!++;
+  // Thickness: each pixel's distance to the nearest boundary pixel (of any face: the nearest is its own face's).
+  const onBoundary = (i: number): boolean => {
+    const k = labels[i]!;
+    if (k < 0) return true;
+    const c = i % w;
+    const r = (i - c) / w;
+    return c === 0 || r === 0 || c === w - 1 || r === h - 1 || labels[i - 1] !== k || labels[i + 1] !== k || labels[i - w] !== k || labels[i + w] !== k;
+  };
+  // (Only when faces are measured in full: no rule reads it, and it is a distance transform of the whole crop.)
+  const deep = new Array<number>(n).fill(0);
+  if (only === null) {
+    const d2 = squaredDistance(g, onBoundary);
+    for (let i = 0; i < labels.length; i++) {
+      const k = labels[i]!;
+      if (k >= 0 && d2[i]! > deep[k]!) deep[k] = d2[i]!;
+    }
+  }
   const p80 = (v: number[]): number => (v.length === 0 ? Infinity : v.sort((x, y) => x - y)[Math.floor(v.length * 0.8)]!);
   return planes.map((p, k) => {
     const areaPx = adj.area[k]!;
@@ -190,12 +223,14 @@ export function measureFaces(
     const base = {
       areaM2: areaPx * s * s,
       widthM: boundary[k]! > 0 ? (2 * areaPx * s) / boundary[k]! : 0,
+      thickM: only === null ? 2 * (Math.sqrt(deep[k]!) + 0.5) * s : 0,
       pitchX12: slopeOf(p) * 12,
       facing: az[k]!,
       edgeShare: boundary[k]! > 0 ? adj.edge[k]! / boundary[k]! : 0,
+      treeShare: areaPx > 0 ? treePx[k]! / areaPx : 0,
       relations,
     };
-    if (!want(k)) return { ...base, planeShare: null, ownDev: Infinity, nbDev: Infinity, nb: -1, above: 0, below: 0, treeShare: 0 };
+    if (!want(k)) return { ...base, planeShare: null, ownDev: Infinity, nbDev: Infinity, nb: -1, above: 0, below: 0 };
     const px = pixelsOf[k]!;
     const own: number[] = [];
     const near = relations.filter((q) => q.lenM >= 0.5).map((q) => q.m);
@@ -203,10 +238,8 @@ export function measureFaces(
     const main = relations.length > 0 ? relations[0]!.m : -1;
     let above = 0;
     let below = 0;
-    let trees = 0;
     let finite = 0;
     for (const i of px) {
-      if (nearTree?.[i] === 1) trees++;
       const zz = dsm[i]!;
       if (!Number.isFinite(zz)) continue;
       finite++;
@@ -224,6 +257,7 @@ export function measureFaces(
     let nb = -1;
     for (let q = 0; q < near.length; q++) {
       const d = p80(devs[q]!);
+      relations.find((x) => x.m === near[q])!.dev = d;
       if (d < nbDev) {
         nbDev = d;
         nb = near[q]!;
@@ -238,7 +272,188 @@ export function measureFaces(
       nb,
       above: finite > 0 ? above / finite : 0,
       below: finite > 0 ? below / finite : 0,
-      treeShare: px.length > 0 ? trees / px.length : 0,
     };
   });
+}
+
+export type EvidenceParams = {
+  /**
+   * Off (the default): the faces are cleaned by the size rules alone, as before. On, a face that is real on its
+   * evidence is passed over by them. Meant to go on together with PlaneParams.cleanupRoundsPerFace 1 and splitOnce.
+   */
+  enabled: boolean;
+  /**
+   * A fragment: a narrow face (under fragWidthM wide on average: the width a height map smears a ridge, an eave or a
+   * wall over) beside a bigger face that faces the same way (downhill directions within fragArcDeg, planes within
+   * fragDeg) with no step in the heights between them (under fragStepM, read on at least fragSharedM of boundary). It
+   * is the rounded top or the smeared foot of that face, not a face: the two become one, and no boundary moves (a
+   * dissolve would hand its pixels to whichever plane passes nearest, the face across the ridge as often as not).
+   */
+  fragWidthM: number;
+  fragArcDeg: number;
+  fragDeg: number;
+  fragStepM: number;
+  fragSharedM: number;
+  /** Two faces on one plane (within sameDeg, the same way, no step between them) are one face whatever their width. 0: off. */
+  sameDeg: number;
+  /**
+   * Whether a fragment is joined to its face (true), or only left to the size rules as before (false): either way a
+   * fragment is not real on its evidence, whatever it meets on its other side (a strip along a ridge meets the face
+   * across the ridge at a convex crease, at about its own pitch).
+   */
+  joinFragments: boolean;
+  /**
+   * A ridge or hip of its own: a boundary of at least creaseM where the height map itself turns over (its slope
+   * falls by creaseKink, rise per metre, from one side to the other, read on creaseSeen of the boundary or more),
+   * shared with a face turned away by creaseArcDeg or more at about the same pitch (within creasePitchX12). A gable
+   * dormer's two faces have one between them, a hip end has one with each neighbour, a small gable with its other
+   * half. A strip of a bowed slope, a rounded ridge, a gutter or a wall's smear has none: what it meets at a convex
+   * crease, if anything, faces its own way or is far steeper or shallower. Such a face is real: no size rule
+   * dissolves it (buildFaces steps 2 to 5, the thin-face rules), unless treeShare of it lies within a metre of a
+   * crown (a crown is a little hip roof to a height map).
+   */
+  creaseM: number;
+  creaseKink: number;
+  creaseSeen: number;
+  creaseArcDeg: number;
+  creasePitchX12: number;
+  /**
+   * A facing of its own: a pitched face (ownPitchX12 or more) none of whose pitched neighbours (2/12 or more, sharing
+   * fragSharedM of boundary) faces within ownArcDeg of its way. It is the only face on its side of whatever it stands
+   * on (a hip end, a bay's facet, the one face of a dormer the plane search read right): dissolved, its pixels can
+   * only go to faces that look another way. Real like a face with a ridge of its own; 0: off.
+   */
+  ownArcDeg: number;
+  ownPitchX12: number;
+  treeShare: number;
+  /**
+   * A face that stays only for its evidence (a size rule would have dissolved it) stays when its polygon is at least
+   * this wide on average (2 area / perimeter, metres). 0.9: the benchmark's thin-face width, so no such face is ever
+   * a thin face; 0: whatever its width (a dormer's cheek is often narrower: EagleView's own faces are, one in three).
+   */
+  thinM: number;
+};
+
+export const DEFAULT_EVIDENCE: EvidenceParams = {
+  enabled: false,
+  fragWidthM: 1,
+  fragArcDeg: 30,
+  fragDeg: 20,
+  fragStepM: 0.25,
+  fragSharedM: 1,
+  sameDeg: 0,
+  joinFragments: false,
+  creaseM: 1,
+  creaseKink: 0.15,
+  creaseSeen: 0.2,
+  creaseArcDeg: 60,
+  creasePitchX12: 4,
+  ownArcDeg: 60,
+  ownPitchX12: 3,
+  treeShare: 0.2,
+  thinM: 0.9,
+};
+
+/**
+ * The face that face m (one of measureFaces' records) is a fragment of (EvidenceParams.fragWidthM): the eligible
+ * neighbour it shares most boundary with, or null. `taken(k)`: neighbour k is not available.
+ */
+export function fragmentOf(m: FaceMeasure, prm: EvidenceParams, taken: (k: number) => boolean = () => false): FaceRelation | null {
+  const narrow = m.widthM < prm.fragWidthM;
+  for (const q of m.relations) {
+    if (q.lenM < prm.fragSharedM || q.areaM2 < m.areaM2 || taken(q.m)) continue;
+    if (q.arc >= prm.fragArcDeg || q.deg >= (narrow ? prm.fragDeg : prm.sameDeg)) continue;
+    if (q.seen * q.lenM < prm.fragSharedM || Math.abs(q.step) >= prm.fragStepM) continue;
+    // Relations come longest first: the first eligible one is the face it is most attached to.
+    return q;
+  }
+  return null;
+}
+
+/**
+ * The fragments (EvidenceParams.fragWidthM) joined to the faces they are part of, or null when there is none. Each
+ * joins the eligible neighbour it shares most boundary with; a face that takes a fragment in is not itself joined to
+ * another in the same call.
+ */
+export function mergeFragments(g: Grid, s: number, dsm: Float32Array, faces: Faces, planePrm: PlaneParams, prm: EvidenceParams, debug?: (msg: string) => void): Faces | null {
+  const n = faces.planes.length;
+  if (n < 2) return null;
+  const m = measureFaces(g, s, dsm, faces, planePrm, null, () => false);
+  const order = [...Array(n).keys()].sort((x, y) => m[x]!.areaM2 - m[y]!.areaM2 || x - y);
+  const into = new Array<number>(n).fill(-1);
+  const isTarget = new Uint8Array(n);
+  let any = false;
+  for (const f of order) {
+    if (isTarget[f] === 1) continue;
+    const pick = fragmentOf(m[f]!, prm, (k) => into[k]! >= 0);
+    if (pick === null) continue;
+    into[f] = pick.m;
+    isTarget[pick.m] = 1;
+    any = true;
+    if (debug !== undefined) {
+      let sx = 0;
+      let sy = 0;
+      let c = 0;
+      for (let i = 0; i < faces.labels.length; i++) {
+        if (faces.labels[i] !== f) continue;
+        sx += pixelX(g, s, i);
+        sy += pixelY(g, s, i);
+        c++;
+      }
+      debug(`faces: fragment (${pick.deg.toFixed(1)} deg and ${pick.arc.toFixed(0)} deg of facing from its neighbour, ${m[f]!.widthM.toFixed(2)} m wide) face at ${(sx / Math.max(1, c)).toFixed(1)},${(sy / Math.max(1, c)).toFixed(1)}: ${m[f]!.areaM2.toFixed(1)} m2, ${m[f]!.pitchX12.toFixed(1)}/12 facing ${m[f]!.facing.toFixed(0)}`);
+    }
+  }
+  if (!any) return null;
+  const labels = faces.labels.slice();
+  for (let i = 0; i < labels.length; i++) {
+    const k = labels[i]!;
+    if (k >= 0 && into[k]! >= 0) labels[i] = into[k]!;
+  }
+  return splitParts(g, compact(labels, faces.planes));
+}
+
+/** The length of face m's longest ridge or hip of its own (EvidenceParams.creaseM), metres; 0 without one. */
+export function ownCreaseM(m: FaceMeasure, prm: EvidenceParams): number {
+  let best = 0;
+  for (const q of m.relations) {
+    if (q.kink > -prm.creaseKink || q.seen < prm.creaseSeen) continue;
+    if (q.arc < prm.creaseArcDeg || Math.abs(q.pitchX12 - m.pitchX12) > prm.creasePitchX12) continue;
+    if (q.lenM > best) best = q.lenM;
+  }
+  return best;
+}
+
+/** Whether face m has a facing of its own (EvidenceParams.ownArcDeg). */
+export function ownFacingOf(m: FaceMeasure, prm: EvidenceParams): boolean {
+  if (!(prm.ownArcDeg > 0) || m.pitchX12 < prm.ownPitchX12) return false;
+  let pitched = 0;
+  for (const q of m.relations) {
+    if (q.lenM < prm.fragSharedM || q.pitchX12 < 2) continue;
+    if (q.arc < prm.ownArcDeg) return false;
+    pitched++;
+  }
+  return pitched > 0;
+}
+
+/**
+ * 1 for every face that is real on its evidence (a ridge or hip of its own, or a facing of its own; no fragment; away
+ * from trees), 0 for the others. `nearTrees`: measureFaces' argument.
+ */
+export function realFaces(
+  g: Grid,
+  s: number,
+  dsm: Float32Array,
+  faces: Faces,
+  planePrm: PlaneParams,
+  tree: Mask | null,
+  prm: EvidenceParams,
+  nearTrees: Mask | null = null,
+): Uint8Array {
+  const out = new Uint8Array(faces.planes.length);
+  if (faces.planes.length < 2) return out;
+  measureFaces(g, s, dsm, faces, planePrm, tree, () => false, DEFAULT_EVIDENCE_PROBE, nearTrees).forEach((m, k) => {
+    if (m.treeShare >= prm.treeShare) return;
+    if ((ownCreaseM(m, prm) >= prm.creaseM || ownFacingOf(m, prm)) && fragmentOf(m, prm) === null) out[k] = 1;
+  });
+  return out;
 }
