@@ -110,10 +110,42 @@ converged: R1 is best; five further paths failed to beat it. What is left needs 
 - Walk of the merged app with real keys (port 4680, own database): two real roofs measured in 3D with the new line kinds and
   ridge + hip cap priced, 0 console/5xx errors; WinChoice job -> New quote -> back-office quote editor.
 
+## round 1 closed (2026-11-21 11:40)
+- Owner said go: real-lookups fast-forwarded to e1e06dea and pushed; 4500 (~/roofline-demo) and 4600 (~/roofline-try, AI env)
+  restarted on it, sign-in checked on both. Online redeploy (Render + Vercel) HELD on the owner's "wait": it goes out
+  once, after roof round 2.
+
+# ROOF ROUND 2 (2026-11-21, owner: "I need the measurement accuracies to increase... deploy a lot of Fable 5.2 agents")
+goal: clearly lower roof line, pitch and area error against the EagleView answer keys than algorithm 7.
+green:
+  - `npm run roof3d:bench ... --compare ~/RooflineWork/roof-bench/better/baseline-v7.json --gates gates-v3.json`: all gates pass
+  - scorer `~/RooflineWork/roof-bench/better/score.sh <worktree> <run> --split all`: OBJECTIVE (mean of the five line
+    medians) lower than 21.9 (dev) and 20.9 (held-out); area (4.0 / 2.4 %) and main pitch exact (14/18, 7/14) not worse
+  - the per-line table (`--edges`): same-kind shares up, missing and extra shares not up
+  - the same on the FRESH answer keys the data agent adds (nobody tunes on them)
+  - an independent reviewer's read of the merged change (earlier rounds: it caught what the benchmark could not)
+  - shared roof tests + roof-bench tests pass
+metric: OBJECTIVE dev / held-out / fresh; main pitch exact; area median error
+fence: worktrees ~/RooflineWork/wt-r-* (branches roof2/*), integration in wt-roof2 (roof2/integration). No push until the owner's OK.
+never: as round 1, plus: tune on dev only; no house-specific rules; every change behind a parameter; no paid data.
+budget: 7 Fable agents in parallel (6 tracks + data), then integration by the orchestrator, one reviewer, one remediation pass.
+brief: ~/RooflineWork/plans/roof2-brief.md
+
+## roof2 tracks
+| track | worktree / branch | idea | result |
+|-------|-------------------|------|--------|
+| dormers | wt-r-dormers / roof2/dormers | small faces from the height map (bumps on a face, finer plane pass, hip ends) | running |
+| photo | wt-r-photo / roof2/photo-faces | straight photo edges as evidence for creases inside the roof | running |
+| walls | wt-r-walls / roof2/walls | steps typed piece by piece: upper eave/rake + flashing, not a valley | running |
+| primitives | wt-r-primitives / roof2/primitives | fitted gable/hip shapes for simple wings the plane search cut into strips | running |
+| pitch | wt-r-pitch / roof2/pitch | plane fit, scale check, pooling between faces, calibration | running |
+| labels | wt-r-labels / roof2/labels | line kinds learned from the per-line answer key, written back as rules | running |
+| data | wt-r-data / roof2/data | more EagleView sandbox answer keys as a sealed fresh set | running |
+
 ## next
-- Owner: OK to fast-forward real-lookups to better/integration (commit = push to GitHub), then restart 4500/4600 and redeploy
-  Render + Vercel. Roofs stored by algorithm 6 are re-measured on next open (one Google call each, free quota).
+- wait for the seven reports; merge winners into roof2/integration one at a time behind the gates, measuring combinations
+  through ROOF3D_TUNING; reviewer; remediation; bump the algorithm version once; then ask the owner to merge + deploy.
 
 ## status
-state: converged (waiting for the owner's OK to merge, push and deploy)
-needs-me: OK to merge to real-lookups (push), restart the two local apps on it, redeploy online
+state: running (roof round 2; agents in flight)
+needs-me: nothing now
