@@ -31,6 +31,7 @@ import { DEFAULT_LIDAR_FUSION, fuseLidar, type LidarFusionParams, type LidarFusi
 import { DEFAULT_PITCH_PARAMS, type PitchParams, reportedPitches } from './pitch.ts';
 import { stackChords } from './pitch-stacks.ts';
 import { DEFAULT_PRIMITIVE_PARAMS, fitGables, type FittedGable, type FittedKind, type MergedStack, mergeStacks, type PrimitiveParams } from './primitives.ts';
+import { DEFAULT_REFINE, mergeByEnergy, type RefineParams } from './refine.ts';
 
 export { lngLatToUtm, utmToLngLat, utmZoneOfEpsg, type UtmZone } from './utm.ts';
 export { MAX_RASTER_PIXELS, MAX_ROOF_PART_M2, RASTER_PROBLEMS, type RasterProblem, rasterProblem, roofPartAreaM2 } from './guard.ts';
@@ -102,6 +103,8 @@ export type ReconstructOptions = {
    * default), and a calibration offset for the height map's source (`offsetX12`, 0 here).
    */
   pitch?: Partial<PitchParams>;
+  /** Refinement by the height map's verdict on each change to the settled faces (refine.ts). Off by default. */
+  refine?: Partial<RefineParams>;
   /**
    * Roof the mask missed under canopy or in shade, completed from the roof's own planes (canopy.ts). Off by default
    * since the remediation (on the DEV split it changed 2 of 54 roofs by 1.25 m2 in all, undid itself on 6, and cost
@@ -725,6 +728,18 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
       }
     }
     break;
+  }
+
+  // 4r. Refinement (refine.ts): touching faces one plane explains nearly as well as two are merged, topology again.
+  const refinePrm: RefineParams = { ...DEFAULT_REFINE, ...opts.refine };
+  if (refinePrm.enabled) {
+    const done = mergeByEnergy(g, s, dsm, faces, planes, tree, (k) => locked.has(faces.planes[k]!), refinePrm, opts.debug);
+    if (done !== null) {
+      faces = done.faces;
+      planes = refit(g, dsm, faces);
+      lineRows = opts.lineFeatures !== undefined ? [] : undefined;
+      topo = buildTopology(g, s, faces.labels, planes, outline, dsm, settlePrm, opts.debug, lineRows);
+    }
   }
 
   // 4b. The walls typed piece by piece on the settled faces (topology.ts, stepPieceM): a dormer's cheek wall is its
