@@ -55,6 +55,10 @@ export type PrimitiveParams = {
    */
   chordTolX12: number;
   runRatio: number;
+  /** Where the far slope ends short of the roof's edge, at a drop onto a lower roof: see fitGables' walk. */
+  farStepM: number;
+  stepWindowM: number;
+  stepFromShare: number;
   /** Mirror columns: at least minRidgeM of them, and this share of the columns where the clean slope runs from ridge to eave. */
   mirrorShare: number;
   /**
@@ -81,11 +85,13 @@ export type PrimitiveParams = {
   fineDeg: number;
   /**
    * A face along a fitted ridge that both slopes explain (absorbShare of it within pocketM of the ridge line and under
-   * the two planes within the sag) and that lies on both sides of the line (pocketSideShare of it on each) is a blunt
-   * ridge top in the height map, not a face: it is dissolved into the slopes.
+   * the two planes within the sag), that lies on both sides of the line (pocketSideShare of it on each) and is close to
+   * level (under pocketFlatX12: a clipped gable's small hip is not) is a blunt ridge top in the height map, not a face:
+   * it is dissolved into the slopes.
    */
   pocketM: number;
   pocketSideShare: number;
+  pocketFlatX12: number;
   /**
    * Stacked strips (mergeStacks): an upper face steeper than the lower one by at least stackSteeperX12 (x/12), facing
    * within stackFacingDeg of it (a lower face under stackFlatX12 has no facing to speak of), sharing stackSharedM of
@@ -136,7 +142,10 @@ export const DEFAULT_PRIMITIVE_PARAMS: PrimitiveParams = {
   anchorInnerM: 0.4,
   anchorOuterM: 1.6,
   chordTolX12: 1,
-  runRatio: 0.6,
+  runRatio: 0.7,
+  farStepM: 0.35,
+  stepWindowM: 0.5,
+  stepFromShare: 0.4,
   mirrorShare: 0.5,
   pitch: 'chord',
   pitchTolX12: 2,
@@ -149,6 +158,7 @@ export const DEFAULT_PRIMITIVE_PARAMS: PrimitiveParams = {
   fineDeg: 4,
   pocketM: 1.5,
   pocketSideShare: 0.15,
+  pocketFlatX12: 3,
   stackSteeperX12: 1,
   stackFacingDeg: 25,
   stackFlatX12: 2,
@@ -324,6 +334,22 @@ export function fitGables(
         if (i < 0 || roof[i] !== 1) break;
         zs.push(dsm[i]!);
       }
+      // The far slope ends at the roof's edge, or sooner at a drop onto a lower roof (its eave over a porch roof): past
+      // the first stepFromShare of the way down, the heights falling over stepWindowM by farStepM more than the clean
+      // slope would.
+      if (dir === 1) {
+        const win = Math.max(2, Math.round(prm.stepWindowM / s));
+        let worst = prm.farStepM;
+        let cut = -1;
+        for (let k = Math.ceil((prm.stepFromShare * zs.length * s) / s); k + win < zs.length; k++) {
+          const excess = zs[k]! - zs[k + win]! - slope * win * s;
+          if (excess > worst) {
+            worst = excess;
+            cut = k;
+          } else if (cut >= 0 && k > cut + win) break;
+        }
+        if (cut >= 0) zs.length = cut + (win >> 1);
+      }
       const run = zs.length * s;
       // The eave's height: the least-squares line through the heights of the slope's last stretch, read at the edge.
       let m = 0;
@@ -475,6 +501,7 @@ export function fitGables(
     for (let k = 0; k < n; k++) {
       if (k === f || set.has(k) || gone.has(k) || made.has(k) || area[k] === 0) continue;
       const side = prm.pocketSideShare * area[k]!;
+      if (Math.hypot(planes[k]!.a, planes[k]!.b) * 12 >= prm.pocketFlatX12) continue;
       if (byRidgeFar[k]! + byRidgeNear[k]! >= prm.absorbShare * area[k]! && byRidgeFar[k]! >= side && byRidgeNear[k]! >= side) {
         pockets.add(k);
         debug?.(`gable from face ${f}: face ${k} (${(area[k]! * s * s).toFixed(1)} m2) is the ridge's blunt top, dissolved`);
