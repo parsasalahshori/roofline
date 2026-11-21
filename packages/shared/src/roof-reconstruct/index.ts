@@ -6,6 +6,9 @@
 // 2. Planes: sequential RANSAC with local candidates (10 cm tolerance, at most 24/12, at least 2 m2), every roof
 //    pixel then given to the plane it fits best by a flood from the planes' own pixels; touching faces whose planes
 //    agree are merged, small pieces in the roof's middle are dissolved into their neighbours (planes.ts).
+//    Then primitives (primitives.ts): a gable's slope the height map has bowed and the search cut into strips is one
+//    face again, on the plane its ridge, its eave and the clean slope across the ridge give; so are stacked strips of
+//    a hip roof's face, on the plane through crest and eave.
 // 3. The outline: the roof's pixel boundary, simplified and squared to the house (outline.ts).
 // 4. Topology: corners where faces meet, creases as straight plane intersections between corners, steps where the
 //    planes are far apart in height, eaves and rakes along the outline (topology.ts).

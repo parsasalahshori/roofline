@@ -1,14 +1,26 @@
 // Roof primitives: where the free-form plane search has cut a simple roof shape into junk, the shape itself.
 //
-// The gable (fitGables). A height map bows some slopes (usually the shaded one: steep by the ridge, shallow by the
-// eave, sagging up to most of a metre under the true plane) and the plane search then cuts that one slope into strips,
-// level pockets and odd corners, which topology draws as hips, valleys and eaves the roof does not have. The slope
-// across the ridge is usually clean. A gable's two slopes share the ridge, and on most houses the run and the eave
-// height: so from a clean slope, its ridge (where the heights leave its plane downward on the far side, along a level
-// line) and the far side's own eave (where the roof ends, and how high), the far slope is known without trusting the
-// heights between its ridge and its eave. When the far side is the clean side's mirror in run and eave height, its
-// faces that lie in the strip under that plane (within the sag a bowed slope shows, never above it: a dormer stands
-// above its slope and stays) become one face on the plane through the ridge and the far eave.
+// A height map bows some slopes (often the shaded one: steep by the ridge, shallow by the eave, sagging up to most of
+// a metre under the true plane), and the plane search then cuts that one slope into strips, level pockets and odd
+// corners, which topology draws as hips, valleys and eaves the roof does not have. Two fits, each switchable
+// (PrimitiveParams.gables, .stacks), both told by structure and never by a face's size:
+//
+// - The gable (fitGables). The slope across the ridge is usually clean, and a gable's two slopes share their ridge and
+//   their pitch. From a clean slope: its ridge (a level line along which the heights leave its plane downward, placed
+//   where the far side's heights meet that plane), then every column across the ridge walked down the far side to
+//   the far slope's own eave (the roof's edge, or a drop onto a lower roof). The far side is the clean side's mirror
+//   when, column by column, the rise from eave to ridge over the run comes to the clean pitch. Then the far side's
+//   faces lying in the strip between ridge and eave under the mirrored plane (within the sag a bowed slope shows,
+//   never above it: a dormer stands above its slope and stays) become one face on that plane; a level face along the
+//   ridge on both sides of it (the ridge's blunt top in the height map) is dissolved into the two slopes. A far side
+//   already at the clean pitch and facing is left exactly as it was.
+// - The stack (mergeStacks), where there is no clean slope across a ridge to mirror (a hip roof's faces): an upper,
+//   steeper face lying over a lower, shallower one facing the same way, no wall between them, a crest above and the
+//   roof's edge below, become one face on the plane through crest and eave, when that chord comes to the roof's own
+//   pitch (its other faces') and the upper strip does not. An upper face at the roof's pitch over a shallower one is a
+//   real roof over a porch, whose eave a report counts, and stays.
+//
+// A fitted plane is locked (a later refit on the bowed heights would bend it back) and its face marked `fitted`.
 import type { Grid, Mask } from './raster.ts';
 import { adjacency, compact, dissolve, type Faces, interiorFit, pixelX, pixelY, type Plane, type PlaneParams, planeZ, splitParts } from './planes.ts';
 
@@ -754,7 +766,6 @@ export function mergeStacks(
       // Down from the upper face's top to the roof's edge: whose pixels, and the eave's height (the line through the
       // last stretch of heights, read at the edge).
       let k = 0;
-      let mineU = 0;
       let mineL = 0;
       let other = 0;
       const zs: number[] = [];
@@ -762,9 +773,8 @@ export function mergeStacks(
         const i = at(w, topU[b]! - k * s);
         if (i < 0 || roof[i] !== 1) break;
         zs.push(dsm[i]!);
-        if (labels[i] === U) mineU++;
-        else if (labels[i] === L) mineL++;
-        else other++;
+        if (labels[i] === L) mineL++;
+        else if (labels[i] !== U) other++;
       }
       const run = zs.length * s;
       if (!over) {
