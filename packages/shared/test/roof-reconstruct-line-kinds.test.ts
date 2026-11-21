@@ -157,10 +157,11 @@ describe('a line the height map falls away from on both sides is a ridge (measur
         { a: 0, b: 0.5, c: 5 },
       ],
     };
-    const on = topologyOf(shape, seg);
+    // (stepTopM, the planes' own rule for a small step at the top of a face, makes the same ridge: it is off in both
+    // runs, so the height map's rule is what is tested.)
+    const on = topologyOf(shape, seg, { stepTopM: 0 });
     expect(on.total('ridge')).toBeGreaterThan(8.5);
     expect(on.total('flashing')).toBeLessThan(1.5);
-    // (stepTopM, the planes' own rule for a small step at the top of a face, makes the same ridge: off too.)
     const off = topologyOf(shape, seg, { measuredRidge: false, stepTopM: 0 });
     expect(off.total('ridge')).toBeLessThan(1);
     expect(off.total('flashing')).toBeGreaterThan(8.5);

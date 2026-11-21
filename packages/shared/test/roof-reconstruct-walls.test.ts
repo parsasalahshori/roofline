@@ -123,12 +123,13 @@ describe('walls for a stretch of a boundary', () => {
 
   it('a small step at the top of a face, both faces falling away from it, is their ridge; a tall one is a wall', () => {
     const low = synthesize(offsetRidge(1), { turnDeg: 17, seed: 11, trees: 0 });
-    const by = lengths(reconstructRoof(low.raster, low.point, { seed: 7 })!);
+    // (The height map's own say on such a line, measuredRidge, makes the same ridge: it is off in both runs, so the
+    // planes' rule is what is tested.)
+    const by = lengths(reconstructRoof(low.raster, low.point, { seed: 7, topology: { measuredRidge: false } })!);
     expect(by.ridge ?? 0).toBeGreaterThan(10);
     expect(by.flashing ?? 0).toBeLessThan(1);
     expect(by.eave ?? 0).toBeLessThan(26);
     // Without the rule the step is a wall: the upper face's "eave" over the lower face's flashing, and no ridge.
-    // (The height map's own say on such a line, measuredRidge, is switched off too: it makes the same ridge.)
     const old = lengths(reconstructRoof(low.raster, low.point, { seed: 7, topology: { stepTopM: 0, measuredRidge: false } })!);
     expect(old.flashing ?? 0).toBeGreaterThan(10);
     expect(old.ridge ?? 0).toBeLessThan(2);
