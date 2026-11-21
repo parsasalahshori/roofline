@@ -121,6 +121,8 @@ const ListQuery = z.object({
     .enum(['true', 'false'], { error: MESSAGES.checkField })
     .transform((v) => v === 'true')
     .optional(),
+  tag: z.string({ error: MESSAGES.checkField }).max(40, MESSAGES.checkField).refine(noNul, MESSAGES.checkField).optional(),
+  texting: z.enum(['ok', 'not'], { error: MESSAGES.checkField }).optional(),
 });
 
 /**
