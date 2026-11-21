@@ -125,6 +125,30 @@ export function parseManifest(json: unknown): Manifest {
   return ManifestSchema.parse(json);
 }
 
+/*
+ * A manifest kept beside the frozen one (`roof3d:dump --manifest FILE`): a sealed set of houses that stays out of
+ * manifest.json, its baselines and its split. The house schema, except that the set folder and the split are free
+ * names ('testset-ev2', 'fresh'): the frozen split rule is about manifest.json and does not apply. The benchmark
+ * itself never reads one.
+ */
+const FreeName = z.string().regex(/^[a-z0-9][a-z0-9._-]*$/);
+export const ExtraHouseSchema = HouseSchema.extend({ set: FreeName, split: FreeName });
+export type ExtraHouseEntry = z.infer<typeof ExtraHouseSchema>;
+export const ExtraManifestSchema = ManifestSchema.extend({ houses: z.array(ExtraHouseSchema) });
+export type ExtraManifest = z.infer<typeof ExtraManifestSchema>;
+
+/** Parses a manifest beside the frozen one; throws on a duplicate house or a folder that is not <set>/<slug>. */
+export function parseExtraManifest(json: unknown): ExtraManifest {
+  const m = ExtraManifestSchema.parse(json);
+  const seen = new Set<string>();
+  for (const h of m.houses) {
+    if (seen.has(h.slug)) throw new Error(`duplicate house ${h.slug}`);
+    seen.add(h.slug);
+    if (h.dir !== `${h.set}/${h.slug}`) throw new Error(`${h.slug}: dir ${h.dir} is not ${h.set}/${h.slug}`);
+  }
+  return m;
+}
+
 /** The cohorts a house belongs to (names usable with --cohort). */
 export function cohortsOf(h: HouseEntry): string[] {
   const out = ['all', `set-${h.set}`, `state-${h.region.state}`, `truth-${h.truth}`, h.tags.complexity.class, `split-${h.split}`];
