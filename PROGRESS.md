@@ -1,71 +1,78 @@
 # PROGRESS
-goal: Audit Roofline / WinChoice (real-lookups a853db03), fix confirmed defects, deploy everywhere it runs
-      (Mac 4600 + 4500, Render roofline-api + DB migrate, Vercel roofline-measure, TestFlight WinChoice).
+goal: Make the Roofline / WinChoice web app work end to end (every journey a user can start can be finished,
+      on the built app, with no dead ends or errors), and make the roof measurement clearly more accurate
+      against the EagleView answer keys. Base: real-lookups 8beba4fb (2026-11-21).
+scope: web app + API + worker. The iPhone app is out of this run (audited and fixed Nov 14; TestFlight is blocked
+       on Apple's agreement). No redesign (owner approval rule). No hardening/policy work (owner: it is a demo).
 green:
   - npm run typecheck && npm run lint: clean
-  - vitest shared / web / api / db: 0 failures except the 3 known (front-desk stats 'today' x2, approvals EPIPE), or those fixed
   - npm run build -w @roofline/web (includes check-build-preload)
-  - roof bench: all gates pass vs ~/RooflineWork/roof-bench/baseline-v4-alg6.json + gates-v3.json
-  - iOS: Core scripts/check.sh 0 failures; XCTest WinChoiceTests+WinChoiceCoreTests 0 failures; AccessibilityAuditTests 0 failures
-  - every audit finding marked P0/P1 is fixed with a test that failed before, or listed under needs-me with why
-  - after deploy: 4600 + Render answer /api/public/homeowner/winchoice/company 200 on the new commit; built web app looks styled;
-    simulator walk of the homeowner flow reaches Get my estimate
-metric: open P0/P1 findings (target 0)
-fence: this worktree (branch audit/2026-11-14); deploy targets only after green
-never: no attribution lines in commits; no force-push; no data deletion; no paid data; no new accounts; keys never printed;
-       Sonnet agents xhigh at most; never touch ~/roofline-demo working tree except the final ff merge
-budget: 2 audit agents + at most 2 fix agents; one full suite at the end
+  - vitest shared / web / api / db: 0 failures except the 3 known (front-desk stats 'today' x2, approvals EPIPE), or those fixed
+  - e2e: `npm run e2e` on the integrated branch: every spec passes, including the new per-area journey specs
+    (each new spec was seen failing before its fix, or covers a journey that had no spec)
+  - one walk of the integrated demo (WinChoice + Summit Ridge) in a real browser: every journey in `journeys` below finishes
+  - roof bench (dev + held-out, EagleView truth, re-fetched Google data):
+      all gates in ~/RooflineWork/roof-bench/gates-v3.json pass against a fresh baseline of head (algorithm 6), and
+      the metric below improves on dev AND held-out
+metric:
+  - app: open P0/P1 findings across the five areas (target 0)
+  - roof: median absolute error vs EagleView for ridge, hip, valley, eave, rake totals and for area, plus main-pitch
+    hit rate. Target: every line type's median error at least a third lower than the fresh baseline, area and pitch
+    no worse. (Baseline numbers go in `roof log` once the benchmark data is re-fetched.)
+fence: worktrees ~/RooflineWork/wt-b-* (swarm), wt-roof-better (roof), wt-better (integration). ~/roofline-demo
+       (real-lookups) is touched only by the final fast-forward merge, and only with the owner's OK (commit = push).
+never: no attribution lines in commits; no force-push; no data deletion; no paid data (Google only inside its free
+       monthly quota); no new accounts; keys never printed; Sonnet agents xhigh at most; no DB migrations from swarm
+       agents (a fix that needs one is listed for the orchestrator); no push, deploy or TestFlight without the owner's OK.
+budget: 5 area agents (Sonnet, high), one pass each: walk -> fix P0/P1 -> journey spec. One full suite at the end.
+
+## swarm (area -> worktree / branch / ports)
+| area | worktree | branch | demo port / db port | e2e port |
+|------|----------|--------|---------------------|----------|
+| crm-core | wt-b-crm | b/crm | 4721 / 54721 | 4731 |
+| estimator-flow (UI, proposals, homeowner page; not the roof engine) | wt-b-estimator | b/estimator-flow | 4722 / 54722 | 4732 |
+| windows-quote (window measure, /q/:slug, scans, homeowner API) | wt-b-windows | b/windows-quote | 4723 / 54723 | 4733 |
+| backoffice (WinChoice designer, products, orders, PDFs) | wt-b-backoffice | b/backoffice | 4724 / 54724 | 4734 |
+| ops-ai (storm, front desk, agents, approvals, claims, demo sims) | wt-b-ops | b/ops-ai | 4725 / 54725 | 4735 |
+| roof engine (orchestrator, alone) | wt-roof-better | roof/better | - | - |
+
+## journeys (the end-to-end walk at the end)
+1. Sign up -> setup checklist -> invite a teammate -> sign in as them.
+2. New lead (public quote page /q/:slug) -> appears in the CRM -> customer + job.
+3. Measure a roof from an address -> sections/lines -> proposal -> homeowner page -> e-sign -> signed PDF -> job moves.
+4. Measure windows -> order -> back-office design -> factory order PDF -> stage moves -> customer status updates.
+5. Storm hits (demo sim) -> storm plan -> approve -> door route.
+6. Call/text comes in (demo sim) -> front desk conversation -> appointment on the calendar.
+7. Agents dashboard: a waiting task -> approve -> it shows in the feed.
 
 ## findings
-| id | sev | area | finding | status | evidence |
-|----|-----|------|---------|--------|----------|
-| A1 | P1 | api | Back-office import turns quote-grade homeowner/room-scan windows into designs marked measured ("On site" on the factory PDF) | fixed | backoffice/import-measured.ts:90 |
-| A2 | P1 | api | No cap on scans per window/request or on scan-refine jobs (COLMAP/SAM cost, review-queue spam) | fixed | public/homeowner-scans.ts:144 |
-| A3 | P1 | api | Homeowner API has no human/device check (fake leads, booking every slot) | needs-me (Turnstile/App Attest is a product decision) | public/homeowner.ts:404 |
-| A4 | P1 | api | Debug capture dump: no total cap, captureId not scoped to the request | fixed | public/homeowner-detect.ts:185 |
-| A5 | P1 | deploy | CONFIRMED via Render API: only roofline-api runs online, no worker -> Google 30-day cleanup, signed PDFs, follow-ups never run on Render | fixed: worker runs in the Render container (deploy/start.sh, node --import tsx) | Render services list |
-| A6 | P1 | api | 90-photo cap per request can run out mid-flow with many scanned windows; deleting a window frees nothing | fixed (13 frames/window; caps 400 photos, 400 MB) | shared/homeowner.ts:23 |
-| B1 | P2 | api | quote_estimates keeps Solar-derived data past 30 days | fixed | quote/estimate.ts:269 |
-| B2 | P2 | api | Re-measured window keeps confirmed:true | fixed | shared/window-order.ts:535 |
-| B3 | P2 | api | Same-stage move sends duplicate customer texts/emails | fixed | routes/backoffice.ts:420 |
-| B5,B9 | P2 | api | Turnstile half-configured is silent; /p/<token> not scrubbed from logs | fixed | config.ts:154, errors.ts:139 |
-| B4,B6,B7,B8 | P2 | api/web | expired-request photo sweep; per-process rate limits (keep 1 instance); logo CSP; Maps key restriction | needs-me / nice-to-have | audit report |
-| F1 | P0 | ios | Release build has no server (server.release ""): unreachable until a tester types one; isTesterBuild true | fixed | WinChoice.json:8, Brand.swift:109 |
-| F2 | P1 | ios | Rep app does not compile: ScanShot lives under Homeowner/ which the rep target excludes | fixed | project.yml ~140 |
-| F3 | P1 | ios | A failed window has no Retry in the UI and Get my estimate files the lead without it | fixed | ListScreen:131, HomeownerStore:652 |
-| F4 | P1 | ios | 401/404 on contact/book wipes all measured windows (keepWindows false) | fixed | HomeownerStore+Journey:192 |
-| F5 | P1 | ios | Saved session with old services (roof/gutters) fails to decode -> request silently lost | fixed | Homeowner.swift:1094 |
-| F6 | P1 | ios | setStyle offline leaves a duplicate window | fixed | HomeownerStore+Windows:300-411 |
-| F7 | P1 | ios | Adding a window after booking files a second contact instead of returning to My order | fixed | HomeownerStore+Windows:411 |
-| F8 | P1 | ios | Privacy manifest lacks SystemBootTime reason (systemUptime used) | fixed | PrivacyInfo.xcprivacy, RoomHybridCamera:252 |
-| F9-F13 | P2 | ios | quote/price wording left, start-over alert vs adoption, corrupt outbox swallowed, idle timer during scans, deletion wording | fixed (F9,F11,F12); F10,F13 for owner | audit report |
+(each agent reports a table; merged here at integration)
 
-## dead ends / known
-- Known failing before this run: front-desk stats-routes 'today' x2 (time-dependent), approvals-approve EPIPE.
-- Deployed everywhere = a287de2c (Oct 26). Head a853db03 adds 2 iOS-only commits (TestFlight state unconfirmed).
+## paths (roof)
+| path | idea | metric vs baseline | keep/kill | evidence |
+|------|------|--------------------|-----------|----------|
+| R1 | creases labelled by drainage: upper face draining onto a lower one along a near-level line = eave; same-way same-pitch = pitch break; opposite faces = ridge | dev ridge 28->19, valley 42->24, eave 24->19, hip 15->22, rake 26->26; held-out ridge 19->12, eave 22->12, valley 23->23, hip 42->42, rake 17->17 | keep | roof/better 39117427 + follow-up; dump-v2 |
 
-## log (EXPECTED vs SAW)
-- 2026-11-14 start: baseline suites running (logs ~/RooflineWork/logs/audit-baseline.log).
-- baseline: typecheck/lint/web build OK; shared 2071, web 2672 pass. api EXPECTED 3 known failures, SAW 12: 7 google-retention + 2 roof-3d new.
-  Cause: createMeasurement/updateMeasurement read back with the real clock; fixture date + 30 days passed on Nov 11. Fixed bf47d4e1 (20/20).
-- ios fixes merged (audit/ios-fixes 43419e51): 217 core checks, 174 unit, 16/16 audits, rep app builds.
-- server fixes merged (audit/server-fixes 88b76bea): migration 0050_window_scans_delete_grant; tests per finding.
-- size cap raised to 400 MB (b72380d2). Full suite running: ~/RooflineWork/logs/audit-final.log
+## roof log (EXPECTED vs SAW)
+- Benchmark Google data re-bought 2026-11-21 (84 houses, free quota; ~/RooflineWork/roof-bench/refetch-2026-11-21; delete-by 2026-12-21).
+- Fresh baseline of head (algorithm 6): ~/RooflineWork/roof-bench/better/baseline-head.{json,txt}.
+  Median |error| vs EagleView, dev (18 houses) / held-out (14):
+    area 4.0% / 2.4%; main pitch exact 14/18, 7/14; within 1/12: 16/18, 13/14
+    ridge 28 / 19, hip 15 / 42, valley 42 / 23, eave 24 / 22, rake 26 / 17 (percent)
+- Tools (outside the repo, ~/RooflineWork/roof-bench/better/): linescore.py, linescore_dump.py (official totals), evtruth.py (per-line
+  answer key from EagleView's 3D faces, agrees with official totals within ~8% a house), edgematch.py (which of our lines sit on
+  which EagleView lines, by kind), render.py (pictures), whatif.py (relabel experiments without the engine).
+- Finding: 85-90% of EagleView's line length has a line of ours within 0.75 m; the kind is often wrong.
+
+## log
+- 2026-11-21: run started. Worktrees made, deps installed.
+- Baseline e2e on head (watched failing): 142 passed, 2 failed: estimator.spec "the Measure head ... Roof | Windows | Gutters switch",
+  phone.spec "the proposal view fits the phone" (log ~/RooflineWork/logs/better/e2e-baseline.log).
+- An agent's broad `pkill` stopped the owner's 4500/4600 apps twice; restarted both (4600 with its AI env) and told every agent to kill by its own PID only.
+- backoffice agent DONE: b/backoffice ddb2f128 (9 findings fixed incl. approve discount, accept -> factory order; journey spec passes twice).
 
 ## next
-- Owner: accept the Apple Developer agreement, then upload the built archive (apps/ios/build/WinChoice.xcarchive, build 2611141858, made at 3be48d13) or re-run testflight.sh.
-- Owner: delete the expired benchmark Google data (~/RooflineWork/roof-bench, past 30 days since Nov 10) or say to keep the benchmark off.
-- Owner: Render memory is ~420 of 512 MB with the worker; Standard plan removes the risk.
-- Owner decisions: A3 (bot/device check on the homeowner API), deleting a window now deletes its reviewed scans, F10/F13, B4/B6/B7/B8.
+- launch the five area agents; re-fetch the roof benchmark's Google data (free quota) and freeze a fresh baseline.
 
 ## status
-state: converged (deploy done except TestFlight upload)
-needs-me: Apple agreement (TestFlight upload blocked: FORBIDDEN.REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED)
-
-## green evidence (2026-11-14, head 384f4333; server code = 3be48d13)
-- typecheck, lint, web build: OK. shared 2072/2072, web 2672/2672, db 704/704, api 5110 pass + the 3 known failures.
-- iOS: core 217 checks 0 failures; unit 174/174; a11y 50/50 twice (iPhone 17 Pro); rep app builds.
-- roof bench: NOT RUN (benchmark Google data expired Nov 10; the script refuses). No roof code changed (0 diff lines).
-- E2E walk (simulator, -debugE2E): contact filed=true against local 4600 and against Render.
-- Deployed: real-lookups pushed; Mac 4500 + 4600 restarted (company 200, migration 0050 applied, preload check passed);
-  Render image :3be48d13-b live (health 200, worker started, google-retention ran); Render DB migrated; Vercel roofline-measure live (styled, /health 200).
+state: running
