@@ -96,8 +96,8 @@ function withAvailability(routes: Routes, slots: Slot[]): Routes {
   });
 }
 
-function setup(extra: Routes = {}, options: { slots?: Slot[]; role?: 'owner' | 'rep' } = {}) {
-  const account = options.role === 'rep' ? { ...ACCOUNT, role: 'rep' as const } : ACCOUNT;
+function setup(extra: Routes = {}, options: { slots?: Slot[]; role?: 'owner' | 'rep' | 'office' } = {}) {
+  const account = options.role === undefined ? ACCOUNT : { ...ACCOUNT, role: options.role };
   api = stubApi(
     withAvailability(
       {
@@ -360,6 +360,27 @@ describe('Appointment form', () => {
     await user.click(await screen.findByLabelText(appointments.personLabel));
     const options = within(await screen.findByRole('listbox', { name: appointments.personLabel })).getAllByRole('option');
     expect(options.map((option) => option.textContent)).toEqual([appointments.anyone, 'Sam Roofer', 'Lee Office']);
+  });
+
+  it('an office member starts a new inspection on Anyone, and is not offered as the person, so the times lookup is not for them', async () => {
+    const teamWithOffice = {
+      members: [
+        { id: 'm1', userId: 'u1', name: 'Sam Roofer', email: 'sam@example.com', role: 'office', canApproveSpend: false, status: 'active' },
+        { id: 'm4', userId: 'u4', name: 'Owen Owner', email: 'owen@example.com', role: 'owner', canApproveSpend: true, status: 'active' },
+      ],
+      invites: [],
+    };
+    setup({ 'GET /api/team': () => ({ body: teamWithOffice }) }, { role: 'office' });
+    const { user } = renderAt(<AppointmentForm onDone={vi.fn()} />, '/appointments/new?kind=inspection');
+
+    const person = await screen.findByLabelText(appointments.personLabel);
+    expect(person).toHaveTextContent(appointments.anyone);
+    await user.click(person);
+    const options = within(await screen.findByRole('listbox', { name: appointments.personLabel })).getAllByRole('option');
+    expect(options.map((option) => option.textContent)).toEqual([appointments.anyone, 'Owen Owner']);
+    const lookups = () => api.calls.filter((call) => call.url.includes('/api/calendar/availability'));
+    await waitFor(() => expect(lookups().length).toBeGreaterThan(0));
+    expect(lookups().some((call) => call.url.includes('userId='))).toBe(false);
   });
 
   it('the duration starts at the length of the kind, can be changed, and says when the visit ends', async () => {
