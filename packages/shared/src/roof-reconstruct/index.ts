@@ -28,6 +28,7 @@ import { inferHiddenEaves, type OutlinePlanesParams, type PlanesDecline } from '
 import { DEFAULT_LIDAR_EDGE, type LidarCloud, type LidarEdgeParams, type LidarEdgeReport, lidarHiddenEdges } from './outline-lidar.ts';
 import { DEFAULT_LIDAR_FUSION, fuseLidar, type LidarFusionParams, type LidarFusionReport } from './lidar-fusion.ts';
 import { DEFAULT_PITCH_PARAMS, type PitchParams, reportedPitches } from './pitch.ts';
+import { stackChords } from './pitch-stacks.ts';
 import { DEFAULT_PRIMITIVE_PARAMS, fitGables, type FittedGable, type FittedKind, type MergedStack, mergeStacks, type PrimitiveParams } from './primitives.ts';
 
 export { lngLatToUtm, utmToLngLat, utmZoneOfEpsg, type UtmZone } from './utm.ts';
@@ -769,7 +770,15 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   // The pitch each face reports: its own plane's, pooled with the faces of the roof that agree with it (pitch.ts). The
   // planes, and so the creases and every line, stay as fitted; the sloped area follows the pooled pitch (and the
   // calibration offset only when pitch.offsetArea says so).
-  const pitch = reportedPitches(planes.map((p, k) => ({ pitchX12: Math.hypot(p.a, p.b) * 12, areaM2: raw[k]! * scale })), { ...DEFAULT_PITCH_PARAMS, ...opts.pitch });
+  const pitchPrm: PitchParams = { ...DEFAULT_PITCH_PARAMS, ...opts.pitch };
+  // A bowed slope's two strips read its chord (pitch-stacks.ts); a gable slope mirrored from across its ridge is a copy
+  // of that slope's reading, not one of its own (PitchParams.fittedVote).
+  const chords = pitchPrm.stackChord && !(primPrm.enabled && primPrm.stacks) ? stackChords(g, s, dsm, roof, faces, planes, locked, primPrm, FLAT_X12, opts.debug) : null;
+  const copied = (p: Plane) => locked.get(p) === 'gable' && primPrm.pitch === 'mirror';
+  const pitch = reportedPitches(
+    planes.map((p, k) => ({ pitchX12: chords?.[k] ?? Math.hypot(p.a, p.b) * 12, areaM2: raw[k]! * scale, ...(copied(p) ? { fitted: true } : {}) })),
+    pitchPrm,
+  );
   if (opts.debug !== undefined) for (const gr of pitch.groups) opts.debug(`pitch group ${gr.pitchX12.toFixed(2)}/12: ${gr.faces.length} faces, ${gr.areaM2.toFixed(1)} m2`);
   if (opts.debug !== undefined) planes.forEach((p, k) => opts.debug!(`pitch face ${k}: fitted ${(Math.hypot(p.a, p.b) * 12).toFixed(4)}/12, ${(raw[k]! * scale).toFixed(3)} m2, reports ${pitch.pitchX12[k]!.toFixed(4)}${locked.has(p) ? `, ${locked.get(p)!}` : ''}`));
   const localFaces: LocalFace[] = planes.map((p0, k) => {

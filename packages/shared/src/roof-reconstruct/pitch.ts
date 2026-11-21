@@ -41,6 +41,20 @@ export type PitchParams = {
    * steep reading was hiding about 1 % of it; the area should follow once the outline no longer runs under.
    */
   offsetArea: boolean;
+  /**
+   * Whether a face whose plane was not fitted on its own heights (PitchFace.fitted: a gable slope mirrored from the
+   * slope across its ridge, primitives.ts) counts as a reading of the roof's pitch. False (the default): it is a copy
+   * of the reading it was mirrored from, so it joins that reading's group and reports the group's pitch, but neither
+   * finds a group nor moves its pitch (counted, the one clean slope's reading weighed twice, with the bowed slope's
+   * area on top of its own). True: as before round 3, every face a reading.
+   */
+  fittedVote: boolean;
+  /**
+   * Whether two stacked strips of one bowed slope (steep by the crest, shallow by the eave: pitch-stacks.ts) report the
+   * slope's chord (its rise over its run from crest to eave) in place of their own planes' pitches. Read by the
+   * reconstruction (index.ts), not by reportedPitches: the faces and lines stay as they are, only the readings change.
+   */
+  stackChord: boolean;
 };
 
 export const DEFAULT_PITCH_PARAMS: PitchParams = {
@@ -55,10 +69,15 @@ export const DEFAULT_PITCH_PARAMS: PitchParams = {
   offsetX12: 0,
   offsetShare: 0.1,
   offsetArea: false,
+  fittedVote: false,
+  stackChord: true,
 };
 
-/** A face as the pooling sees it: its own plane's pitch (x/12) and its plan area (square metres). */
-export type PitchFace = { pitchX12: number; areaM2: number };
+/**
+ * A face as the pooling sees it: its reading of the pitch (x/12: its own plane's) and its plan area (square metres).
+ * `fitted`: the plane is a copy of another face's (a mirrored gable slope), not a reading (PitchParams.fittedVote).
+ */
+export type PitchFace = { pitchX12: number; areaM2: number; fitted?: boolean };
 /** A pitch group: the pitch its faces report (before the calibration offset), their indices and plan area. */
 export type PitchGroup = { pitchX12: number; faces: number[]; areaM2: number };
 
@@ -101,14 +120,23 @@ export function reportedPitches(faces: readonly PitchFace[], prm: PitchParams = 
     const tol = (c: number, k: number) => Math.min(prm.tolX12 * Math.min(prm.smallTolX, Math.max(1, Math.sqrt(prm.refM2 / faces[k]!.areaM2))), prm.capShare * c);
     const within = (c: number, among: readonly number[]) => among.filter((k) => Math.abs(faces[k]!.pitchX12 - c) <= tol(c, k));
     const areaOf = (m: readonly number[]) => m.reduce((t, k) => t + faces[k]!.areaM2, 0);
-    const centre = (m: readonly number[]) => weightedMedian(m.map((k) => ({ v: faces[k]!.pitchX12, w: faces[k]!.areaM2 })));
+    // A face that is a reading: every face, but a fitted one when fittedVote is off.
+    const reads = (k: number) => prm.fittedVote || faces[k]!.fitted !== true;
+    const readArea = (m: readonly number[]) => m.reduce((t, k) => t + (reads(k) ? faces[k]!.areaM2 : 0), 0);
+    // A group's pitch: the median of its readings (of all its faces when none of them is a reading).
+    const centre = (m: readonly number[]) => {
+      const own = m.filter(reads);
+      return weightedMedian((own.length > 0 ? own : m).map((k) => ({ v: faces[k]!.pitchX12, w: faces[k]!.areaM2 })));
+    };
     while (free.length >= prm.minFaces) {
-      // The pitch (one of the faces' own) with the most roof within tolerance of it.
+      // The pitch (one of the readings) with the most roof read within tolerance of it. With no reading left, as before.
+      const anyReads = free.some(reads);
       let best: number[] = [];
       let bestArea = 0;
       for (const k of free) {
+        if (anyReads && !reads(k)) continue;
         const m = within(faces[k]!.pitchX12, free);
-        const a = areaOf(m);
+        const a = anyReads ? readArea(m) : areaOf(m);
         if (a > bestArea + 1e-9) {
           bestArea = a;
           best = m;
