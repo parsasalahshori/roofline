@@ -1,9 +1,11 @@
 import { Banner, Button, Skeleton } from '@roofline/ui';
 import { useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router';
+import { ApiError } from '../../api/client.ts';
 import { appointments } from '../../copy/appointments.ts';
 import { WINDOW_COPY } from '../../copy/rail.ts';
 import { AppPage } from '../../shell/AppPage.tsx';
+import { EmptyPanel } from '../jobs/states.tsx';
 import { AppointmentDetail } from './AppointmentDetail.tsx';
 import { AppointmentForm } from './AppointmentForm.tsx';
 import { useAppointment } from './api.ts';
@@ -52,6 +54,21 @@ function ExistingAppointment({ appointmentId }: { appointmentId: string }) {
             <Skeleton height="200px" />
           </div>
         </div>
+      </AppointmentPage>
+    );
+  }
+  if (query.error instanceof ApiError && query.error.status === 404) {
+    return (
+      <AppointmentPage crumb={appointments.crumb}>
+        <EmptyPanel
+          title={appointments.notFound}
+          body={appointments.notFoundBody}
+          action={
+            <Button href="/calendar" variant="default">
+              {appointments.backToCalendar}
+            </Button>
+          }
+        />
       </AppointmentPage>
     );
   }

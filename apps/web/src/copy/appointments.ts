@@ -39,6 +39,10 @@ export const appointments = {
   leaveForm: 'Cancel',
   saveError: 'We could not save this appointment.',
   loadError: 'We could not open this appointment.',
+  /** When the appointment is not there at all (a removed one, a wrong link): Try again would never help. */
+  notFound: "We couldn't find that appointment.",
+  notFoundBody: 'It may have been removed, or the link is wrong.',
+  backToCalendar: 'Back to calendar',
   tryAgain: 'Try again',
   loading: 'Opening the appointment',
   suggestedTitle: 'Suggested times',
