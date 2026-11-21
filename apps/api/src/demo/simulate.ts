@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import {
   appointments,
   calls,
@@ -35,6 +35,7 @@ import { FakeVoiceSession } from '../providers/fakes/voice-session.ts';
 import { signResolvedProposal } from '../public/proposal-sign.ts';
 import { systemContext } from '../permissions.ts';
 import { matchCompany } from '../storm/match.ts';
+import { draftStormPlan } from '../storm/plan.ts';
 import { DEMO_CALL_LINES, DEMO_TEXTS, demoLlm } from './script.ts';
 
 /*
@@ -174,8 +175,27 @@ async function bookDemoInspection(tx: Parameters<Parameters<typeof withTenant>[2
   const result = await tx.execute<{ start: Date | string }>(sql`
     with d as (select (${now}::timestamptz at time zone ${tz})::date as today)
     select ((today + (((4 - extract(isodow from today)::int + 6) % 7) + 1))::date + time '10:00') at time zone ${tz} as start from d`);
-  const start = new Date(result.rows[0]!.start);
-  const end = new Date(start.getTime() + 60 * 60 * 1000);
+  const thursday = new Date(result.rows[0]!.start);
+  // Front Desk books a person, so the visit shows on that person's calendar: the first rep (else the owner) who is
+  // free at that time, trying the following Thursdays when everyone is booked (the call's script says "Thursday").
+  const team = await tx.execute<{ user_id: string }>(
+    sql`select user_id from company_members where status = 'active' and role in ('rep', 'owner') order by (role = 'rep') desc, name, user_id`,
+  );
+  if (team.rows.length === 0) return;
+  let start = thursday;
+  let end = new Date(start.getTime() + 60 * 60 * 1000);
+  let assignedUserId: string | null = null;
+  for (let week = 0; week < 8 && assignedUserId === null; week += 1) {
+    start = new Date(thursday.getTime() + week * 7 * 24 * 60 * 60 * 1000);
+    end = new Date(start.getTime() + 60 * 60 * 1000);
+    const taken = await tx
+      .select({ userId: appointments.assignedUserId })
+      .from(appointments)
+      .where(and(eq(appointments.companyId, ctx.companyId), isNull(appointments.canceledAt), lt(appointments.startsAt, end), gt(appointments.endsAt, start)));
+    const busy = new Set(taken.map((r) => r.userId));
+    assignedUserId = team.rows.find((m) => !busy.has(m.user_id))?.user_id ?? null;
+  }
+  if (assignedUserId === null) return;
   const [already] = await tx
     .select({ id: appointments.id })
     .from(appointments)
@@ -191,7 +211,7 @@ async function bookDemoInspection(tx: Parameters<Parameters<typeof withTenant>[2
       jobId: job?.id ?? null,
       customerId,
       propertyId: home.id,
-      assignedUserId: null,
+      assignedUserId,
       startsAt: start,
       endsAt: end,
       allDay: false,
@@ -322,7 +342,8 @@ export async function simulateStorm(deps: AppDeps, companyId: string): Promise<S
   if (center === null) throw new AppError(409, 'Set a service area first, so the storm has somewhere to land.');
 
   const now = deps.clock.now();
-  const stormId = await insertFixtureStorm(ownerQuery(url), {
+  const query = ownerQuery(url);
+  const stormId = await insertFixtureStorm(query, {
     convectiveDay: now.toISOString().slice(0, 10),
     status: 'provisional',
     contours: [
@@ -332,6 +353,17 @@ export async function simulateStorm(deps: AppDeps, companyId: string): Promise<S
       { thresholdIn: 2.0, box: around(center, 0.015, 0.012) },
     ],
   });
+  // A name for the map and the list: the city of the homes the storm is over (a real storm is named from its centre).
+  const place = await withTenant(deps.pools, ctx, async (tx) => {
+    const [home] = await tx
+      .select({ city: properties.city, state: properties.state })
+      .from(properties)
+      .where(and(isNull(properties.archivedAt), isNotNull(properties.geom)))
+      .orderBy(sql`${properties.geom} <-> ST_SetSRID(ST_MakePoint(${center[0]}, ${center[1]}), 4326)`)
+      .limit(1);
+    return home ? `${home.city}, ${home.state}` : null;
+  });
+  if (place !== null) await query(`update storms set place_name = $2 where id = $1`, [stormId, place]);
   const matched = await matchCompany(deps, companyId, now);
   const [companyStorm] = await withTenant(deps.pools, ctx, (tx) =>
     tx.execute(sql`select id, customers_hit, homes_hit from company_storms where storm_id = ${stormId}::uuid`).then((r) => r.rows),
@@ -340,6 +372,8 @@ export async function simulateStorm(deps: AppDeps, companyId: string): Promise<S
     return { ok: true, stormId, companyStormId: null, message: 'A hail storm passed nearby, but it stayed under your alert threshold.' };
   }
   const row = companyStorm as { id: string; customers_hit: number; homes_hit: number };
+  // A real storm gets its plan once it settles (90 minutes on); the demo does not wait, so Storm Scout drafts it now.
+  const plan = await draftStormPlan(deps, companyId, row.id, now);
   return {
     ok: true,
     stormId,
@@ -347,7 +381,10 @@ export async function simulateStorm(deps: AppDeps, companyId: string): Promise<S
     created: matched.created.length > 0,
     customersHit: Number(row.customers_hit),
     homesHit: Number(row.homes_hit),
-    message: `Hail up to 2 inches hit ${String(row.homes_hit)} homes, ${String(row.customers_hit)} of them your customers.`,
+    taskId: plan?.taskId ?? null,
+    message:
+      `Hail up to 2 inches hit ${String(row.homes_hit)} homes, ${String(row.customers_hit)} of them your customers.` +
+      (plan ? ' Storm Scout drafted a plan and it is waiting for your OK.' : ''),
   };
 }
 

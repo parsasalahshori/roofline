@@ -124,7 +124,9 @@ function buildSteps(
   else if (recipients.emailIds.length === 0) emailOff = STORM_OFF.noEmailRecipients;
   else if (missingStormTokens(emailBody, 'email').length > 0) emailOff = EMAIL_INCOMPLETE;
 
-  const routesPayload = { companyStormId, repUserIds: facts.repUserIds, maxDoors: MAX_DOORS };
+  // The cap is the number of homes the storm hit (never more than MAX_DOORS), so the card promises the doors that exist:
+  // "2 routes · 75 doors", not "10 routes · 1,500 doors" for a 75-home storm.
+  const routesPayload = { companyStormId, repUserIds: facts.repUserIds, maxDoors: Math.max(1, Math.min(MAX_DOORS, facts.homesHit)) };
   let routesOff: string | undefined;
   if (facts.homesHit === 0) routesOff = STORM_OFF.noHomes;
   else if (facts.repUserIds.length === 0) routesOff = STORM_OFF.noReps;

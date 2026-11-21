@@ -2,7 +2,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import pg from 'pg';
 import request from 'supertest';
 import { afterAll, afterEach, describe, expect, inject, test } from 'vitest';
-import { calls, companySettings, conversations, conversationTurns, customers, measurements, messages, proposals } from '@roofline/db';
+import { appointments, calls, companySettings, conversations, conversationTurns, customers, measurements, messages, proposals } from '@roofline/db';
 import { insertFixtureProperty, OMAHA_BOX, OMAHA_CORE, setFixtureServiceArea, type Query } from '@roofline/db/testing';
 import { DEFAULT_WORK_HOURS, type ProposalView } from '@roofline/shared';
 import { DEMO_CALL_SUMMARY } from '../src/demo/script.ts';
@@ -130,6 +130,29 @@ describe('POST /api/demo/simulate/*', () => {
     expect(call).toMatchObject({ status: 'ended', conversationId });
   });
 
+  test('call: the inspection it books is on a person\'s calendar, and a second call does not double-book that person', async () => {
+    await demoApp();
+    await frontDeskOn();
+    const who = new Actors(t);
+    const ownerAgent = await who.as('owner');
+    const companyId = t.seed.a.companyId;
+    const first = await customerWithPhone('Ray Okafor', '+14025550162');
+    const second = await customerWithPhone('Dana Whitfield', '+14025550161');
+    for (const [i, id] of [first, second].entries()) {
+      await mustCreate(ownerAgent, '/api/properties', { customerId: id, ...addressFor(i) });
+    }
+    await simulate('call');
+    await simulate('call');
+    const booked = await inCompany(t, companyId, (tx) =>
+      tx.select({ assigned: appointments.assignedUserId, startsAt: appointments.startsAt, source: appointments.source }).from(appointments).where(eq(appointments.source, 'front_desk')),
+    );
+    expect(booked).toHaveLength(2);
+    // Both are assigned to someone (an unassigned visit is not on any person's calendar) and not to the same person at the same time.
+    expect(booked.every((b) => b.assigned !== null)).toBe(true);
+    const slots = booked.map((b) => `${b.assigned}|${b.startsAt.toISOString()}`);
+    expect(new Set(slots).size).toBe(2);
+  });
+
   test('storm: a hail storm over the service area becomes a company storm with the homes it hit', async () => {
     await demoApp();
     const companyId = t.seed.a.companyId;
@@ -143,6 +166,15 @@ describe('POST /api/demo/simulate/*', () => {
     const list = await (await loginAs(t.app, t.seed.a.owner)).get('/api/storms');
     expect(list.status).toBe(200);
     expect(JSON.stringify(list.body)).toContain(res.body.companyStormId as string);
+    // The storm is named after the homes it is over, and the plan is already drafted (a real storm waits 90 minutes).
+    const taskId = res.body.taskId as string;
+    expect(taskId).toEqual(expect.any(String));
+    expect(res.body.message).toContain('waiting for your OK');
+    const storm = (list.body.storms as { id: string; placeName: string | null; planTaskId: string | null; planStatus: string | null }[]).find(
+      (x) => x.id === res.body.companyStormId,
+    );
+    expect(storm).toMatchObject({ placeName: 'Omaha, NE', planTaskId: taskId, planStatus: 'draft' });
+    expect((await dbSteps(t, 'a', taskId)).length).toBeGreaterThan(0);
   });
 
   test('storm: 409 without a service area', async () => {
