@@ -771,6 +771,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   // calibration offset only when pitch.offsetArea says so).
   const pitch = reportedPitches(planes.map((p, k) => ({ pitchX12: Math.hypot(p.a, p.b) * 12, areaM2: raw[k]! * scale })), { ...DEFAULT_PITCH_PARAMS, ...opts.pitch });
   if (opts.debug !== undefined) for (const gr of pitch.groups) opts.debug(`pitch group ${gr.pitchX12.toFixed(2)}/12: ${gr.faces.length} faces, ${gr.areaM2.toFixed(1)} m2`);
+  if (opts.debug !== undefined) planes.forEach((p, k) => opts.debug!(`pitch face ${k}: fitted ${(Math.hypot(p.a, p.b) * 12).toFixed(4)}/12, ${(raw[k]! * scale).toFixed(3)} m2, reports ${pitch.pitchX12[k]!.toFixed(4)}${locked.has(p) ? `, ${locked.get(p)!}` : ''}`));
   const localFaces: LocalFace[] = planes.map((p0, k) => {
     // The plane in whole-raster coordinates: z = a (x - ox) + b (y - oy) + c.
     const plane: Plane = { a: p0.a, b: p0.b, c: p0.c - p0.a * ox - p0.b * oy };
