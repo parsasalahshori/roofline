@@ -18,6 +18,7 @@ import { Actors, addressFor, inCompany, mustCreate } from './crm-helpers.ts';
 import { greyJpeg, sha256 } from './homeowner-fixture.ts';
 import { makeTestApp, type SuperAgent, type TestApp } from './helpers.ts';
 import { seedFootprintFixture } from '../src/scripts/footprint-fixture.ts';
+import { pdfText } from './pdf-text.ts';
 import { windowPhoto } from './window-photo-fixture.ts';
 
 /*
@@ -611,6 +612,31 @@ describe('documents', () => {
     expect(final.status).toBe(200);
     expect((final.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
     expect((final.body as Buffer).length).toBeLessThan(2_000_000);
+  });
+
+  it('the factory order and the quote list both windows with sizes, options and the server total; safety glass is called out', async () => {
+    const owner = await who.as('owner');
+    const { jobId } = await jobFor(owner);
+    const draft = await newQuote(owner, jobId);
+    const kitchen = unit({ label: 'Kitchen', quantity: 2, widthIn: 35.5, heightIn: 59.5, options: { 'exterior-color': 'ext-bronze' } });
+    // A tub window: the safety rules call for tempered glass and it is not chosen
+    const bath = unit({ id: 'u2', label: 'Bathroom', quantity: 1, widthIn: 30, heightIn: 36, gridType: 'none', options: {}, safety: { besideDoor: false, wetArea: true, sillHeightIn: 30, walkway: null } });
+    const saved = (await save(owner, draft, { designs: [kitchen, bath], discountPercent: 4 })).body as BackofficeQuote;
+    expect(saved.issues.some((i) => i.field === 'safety')).toBe(true);
+
+    const text = async (kind: string) => pdfText((await pdf(owner, draft.id, kind)).body as Buffer);
+    const total = '$' + (saved.totals.better.totalCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2 });
+    const before = await text('factory-order');
+    expect(before).toContain('DRAFT');
+    for (const word of ['Kitchen', 'Bathroom', '35 1/2', '59 1/2', 'Bronze']) expect(before).toContain(word);
+    expect(before).toContain('Tempered glass is called for by the safety rules but not chosen: Bathroom');
+    expect(await text('quote')).toContain(total);
+
+    expect((await owner.post(`${BASE}/quotes/${draft.id}/accept`)).status).toBe(201);
+    const after = await text('factory-order');
+    expect(after).not.toContain('DRAFT');
+    for (const word of ['Kitchen', 'Bathroom', '35 1/2']) expect(after).toContain(word);
+    expect(await text('order-confirmation')).toContain(total);
   });
 
   it('refuses an unknown document and one for a quote the member cannot see', async () => {

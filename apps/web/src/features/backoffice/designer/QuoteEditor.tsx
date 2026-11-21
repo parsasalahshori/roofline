@@ -251,7 +251,7 @@ export function QuoteEditor() {
                     ) : (
                       <>
                         <span className={styles.approval} role="status">
-                          {canApprove ? copy.needsApprovalShort : copy.waitingForOffice}
+                          {copy.needsApprovalShort}
                         </span>
                         {canApprove ? (
                           <Button variant="default" size="sm" busy={approve.isPending} onClick={() => void approveDiscount()}>

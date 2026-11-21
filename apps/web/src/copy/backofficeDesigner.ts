@@ -59,7 +59,6 @@ export const backofficeDesigner = {
   approveDiscount: 'Approve this discount',
   approving: 'Approving…',
   discountApprovedBy: (name: string | null, percent: number) => (name ? `${percent}% approved by ${name}` : `${percent}% approved`),
-  waitingForOffice: 'Waiting for the office or the owner to approve it',
   approveFailed: 'We could not approve the discount. Try again.',
   acceptQuote: 'Customer accepted: make the order',
   accepting: 'Making the order…',
