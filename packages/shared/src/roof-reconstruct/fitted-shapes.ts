@@ -20,7 +20,11 @@ import { findRidgeRoofs } from './ridge-roofs.ts';
 import type { Topology } from './topology.ts';
 
 export type ShapeParams = {
-  /** Small roofs with a ridge of their own (ridge-roofs.ts). Off: none is fitted. */
+  /**
+   * Small roofs with a ridge of their own (ridge-roofs.ts). Off: none is fitted. OFF BY DEFAULT: on the benchmark its
+   * line medians moved by two or three houses crossing them (dev 18.0 -> 16.2, held-out 20.2 -> 23.6) while the
+   * per-line table barely moved, and the held-out area gate failed (2.39 -> 3.01 %).
+   */
   ridgeRoofs: boolean;
   /**
    * Faces draining to an eave of the outline that the faces lack: hip ends (hip-ends.ts). OFF BY DEFAULT: at the
@@ -83,7 +87,7 @@ export type ShapeParams = {
 };
 
 export const DEFAULT_SHAPE_PARAMS: ShapeParams = {
-  ridgeRoofs: true,
+  ridgeRoofs: false,
   hipEnds: false,
   shapeMinM2: 2.5,
   shapeGainM: 0.08,
