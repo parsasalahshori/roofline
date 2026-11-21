@@ -140,7 +140,7 @@ brief: ~/RooflineWork/plans/roof2-brief.md
 | primitives | wt-r-primitives / roof2/primitives | fitted gable/hip shapes for simple wings the plane search cut into strips | running |
 | pitch | wt-r-pitch / roof2/pitch | plane fit, scale check, pooling between faces, calibration | running |
 | labels | wt-r-labels / roof2/labels | line kinds learned from the per-line answer key, written back as rules | running |
-| data | wt-r-data / roof2/data | more EagleView sandbox answer keys as a sealed fresh set | running |
+| data | wt-r-data / roof2/data | more EagleView sandbox answer keys as a sealed fresh set | DONE 3c91f4ce: 20 new keys in testset-ev2 (7 fresh, 6 fresh-derived, 7 fresh-medium; manifest-ev2.json); score with work-data/score_ev2.sh; baseline alg 7 on high (13): OBJECTIVE 26.5, area 6.1 %, pitch exact 10/13; SEALED (tracks never see it); delete by 2026-12-21 |
 
 ## next
 - wait for the seven reports; merge winners into roof2/integration one at a time behind the gates, measuring combinations
