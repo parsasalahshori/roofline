@@ -24,14 +24,14 @@ import { DEFAULT_FACE_CLEANUP, type FaceCleanupParams, faceSupport, type WeakRea
 import { inferHiddenEaves, type OutlinePlanesParams, type PlanesDecline } from './outline-planes.ts';
 import { DEFAULT_LIDAR_EDGE, type LidarCloud, type LidarEdgeParams, type LidarEdgeReport, lidarHiddenEdges } from './outline-lidar.ts';
 import { DEFAULT_LIDAR_FUSION, fuseLidar, type LidarFusionParams, type LidarFusionReport } from './lidar-fusion.ts';
-import { DEFAULT_PRIMITIVE_PARAMS, fitGables, type FittedGable, type MergedStack, mergeStacks, type PrimitiveParams } from './primitives.ts';
+import { DEFAULT_PRIMITIVE_PARAMS, fitGables, type FittedGable, type FittedKind, type MergedStack, mergeStacks, type PrimitiveParams } from './primitives.ts';
 
 export { lngLatToUtm, utmToLngLat, utmZoneOfEpsg, type UtmZone } from './utm.ts';
 export { MAX_RASTER_PIXELS, MAX_ROOF_PART_M2, RASTER_PROBLEMS, type RasterProblem, rasterProblem, roofPartAreaM2 } from './guard.ts';
 export type { XY } from './geom.ts';
 export { DEFAULT_PHOTO_EDGE, PHOTO_EDGE_REASONS, type PhotoEdge, type PhotoEdgeParams, type PhotoEdgeReason } from './outline-photo.ts';
 export type { Plane } from './planes.ts';
-export { DEFAULT_PRIMITIVE_PARAMS, type FittedGable, type MergedStack, type PrimitiveParams } from './primitives.ts';
+export { DEFAULT_PRIMITIVE_PARAMS, type FittedGable, type FittedKind, type MergedStack, type PrimitiveParams } from './primitives.ts';
 export { DEFAULT_LIDAR_FUSION, fuseLidar, LIDAR_FUSION_REASONS, type LidarFusionParams, type LidarFusionReason, type LidarFusionReport, type LidarFusionResult } from './lidar-fusion.ts';
 export { DEFAULT_LIDAR_EDGE, densify, LIDAR_EDGE_REASONS, type LidarCloud, type LidarEdgeParams, type LidarEdgeReason, type LidarEdgeReport } from './outline-lidar.ts';
 
@@ -149,6 +149,11 @@ export type LocalFace = {
   source?: 'lidar';
   /** Share of the face's plan area on lidar pixels (lidar fusion), when any: a face continuing onto a hidden part has some. */
   lidarShare?: number;
+  /**
+   * Set when the face's plane was fitted as a roof primitive (primitives.ts), not on its own heights: a gable's slope
+   * from the slope across its ridge, or stacked strips on the plane through their crest and eave. Its heights are bowed.
+   */
+  fitted?: FittedKind;
 };
 export type LocalLine = { kind: Roof3dLineKind; a: XY; b: XY; faces: number[]; lengthM: number; riseM: number };
 /** `clipped`: the roof runs off the height map's edge, so part of it is missing. */
@@ -436,7 +441,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   if (faces.planes.length === 0) return null;
   // 2p. Primitives (primitives.ts): a gable's bowed slope becomes one face on the plane through its ridge and its eave.
   //     Such a plane is locked: a refit on the heights (which are what is wrong there) leaves it as fitted.
-  let locked = new Set<Plane>();
+  let locked = new Map<Plane, FittedKind>();
   let gables: FittedGable[] = [];
   let stacks: MergedStack[] = [];
   const refit = (gr: { w: number; h: number }, z: Float32Array, f: { labels: Int32Array; planes: Plane[] }): Plane[] => {
@@ -444,7 +449,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     return locked.size === 0 ? fresh : fresh.map((p, k) => (locked.has(f.planes[k]!) ? f.planes[k]! : p));
   };
   const withPrimitives = (gr: { w: number; h: number }, z: Float32Array, rf: Uint8Array, f: { labels: Int32Array; planes: Plane[] }, tr: Uint8Array | null) => {
-    locked = new Set<Plane>();
+    locked = new Map<Plane, FittedKind>();
     gables = [];
     stacks = [];
     if (!primPrm.enabled) return f;
@@ -687,6 +692,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
       slopedAreaM2: plan * Math.sqrt(1 + slope * slope),
       flat: slope * 12 < FLAT_X12,
       label: shift(labelPoint(g, s, faces.labels, k, topo.faces[k]!.ring)),
+      ...(locked.has(p0) ? { fitted: locked.get(p0)! } : {}),
     };
   });
   // Largest first (ties: west to east, then north to south), with the lines' face numbers following.
@@ -1853,6 +1859,7 @@ export function toRoof3d(
       labelAt: ll(f.label),
       ...(f.source !== undefined ? { source: f.source } : {}),
       ...(f.lidarShare !== undefined ? { lidarShare: f.lidarShare } : {}),
+      ...(f.fitted !== undefined ? { fitted: f.fitted } : {}),
     })),
     lines: local.lines.map((l) => ({
       kind: l.kind,

@@ -10,7 +10,7 @@
 // faces that lie in the strip under that plane (within the sag a bowed slope shows, never above it: a dormer stands
 // above its slope and stays) become one face on the plane through the ridge and the far eave.
 import type { Grid, Mask } from './raster.ts';
-import { adjacency, compact, dissolve, type Faces, interiorFit, pixelX, pixelY, type Plane, planeAngleDeg, type PlaneParams, planeZ, splitParts } from './planes.ts';
+import { adjacency, compact, dissolve, type Faces, interiorFit, pixelX, pixelY, type Plane, type PlaneParams, planeZ, splitParts } from './planes.ts';
 
 export type PrimitiveParams = {
   /** Off: the faces stand as the plane search left them. */
@@ -49,9 +49,10 @@ export type PrimitiveParams = {
   anchorInnerM: number;
   anchorOuterM: number;
   /**
-   * A column is a mirror when its two chords (the ridge's height less the eave's, over the run from ridge to eave)
-   * agree within chordTolX12 (x/12) and the shorter run is at least runRatio of the longer. The chord, not the run or
-   * the eave height on their own: where the roof's edge falls in a mask moves both, along the slope's own line.
+   * A column is a mirror when the far side's chord (the ridge's height less its eave's, over its run from ridge to
+   * eave) is within chordTolX12 (x/12) of the clean slope's pitch, and the shorter of the two runs is at least runRatio
+   * of the longer. The chord, not the run or the eave height on their own: where the roof's edge falls in a mask moves
+   * both, along the slope's own line. (The clean side's chord is its plane's pitch: its eave is not read off the heights.)
    */
   chordTolX12: number;
   runRatio: number;
@@ -62,17 +63,20 @@ export type PrimitiveParams = {
   /** Mirror columns: at least minRidgeM of them, and this share of the columns where the clean slope runs from ridge to eave. */
   mirrorShare: number;
   /**
-   * The far slope's pitch: 'chord' from the ridge's height and the far eave's (rise over run, whatever the heights do
-   * between), 'mirror' the clean slope's own. A chord further than pitchTolX12 from the clean pitch is no mirror.
+   * The far slope's pitch: 'mirror', the clean slope's own (a gable's two slopes share their pitch, and the clean one
+   * is a plane fitted on good heights); 'chord', from the ridge's height and the far eave's (rise over run, whatever
+   * the heights do between: on real height maps it reads a little low, the map rounds the ridge off). A chord further
+   * than pitchTolX12 from the clean pitch is no mirror either way.
    */
   pitch: 'chord' | 'mirror';
   pitchTolX12: number;
   /**
-   * The crest's height for a chord: 'heights', the height map's own top within crestReachM of the crest line (a little
-   * low where the map rounds the ridge off); 'plane', the upper face's plane read there (high when that face is itself
-   * fitted too steep, as the strip next to a bowed slope's ridge is).
+   * The ridge's height: 'plane', the clean slope's plane read on the ridge line; 'heights', the height map's own top
+   * within crestReachM of the line (a little low where the map rounds the ridge off). `stackCrest` is the same choice
+   * for a stack's crest, where the plane is the upper strip's: itself fitted too steep on a bowed slope, so high.
    */
   crest: 'heights' | 'plane';
+  stackCrest: 'heights' | 'plane';
   crestReachM: number;
   /** Heights of the far slope lie between sagM under its plane and aboveM over it, metres. */
   sagM: number;
@@ -86,9 +90,13 @@ export type PrimitiveParams = {
   absorbAboveShare: number;
   /** ...and the faces taken must hold this share of the strip (of what in it does not stand above the slope's plane). */
   coverShare: number;
-  /** Far faces already within this angle (degrees) and this height (metres, on average) of the slope's plane are left as they are. */
-  fineDeg: number;
-  fineGapM: number;
+  /**
+   * A far face within fineX12 (x/12) of the slope's pitch and fineFacingDeg of its facing is already right; when such
+   * faces hold fineShare of what would be taken, the far side is left as it is.
+   */
+  fineX12: number;
+  fineFacingDeg: number;
+  fineShare: number;
   /**
    * A face along a fitted ridge that both slopes explain (absorbShare of it within pocketM of the ridge line and under
    * the two planes within the sag), that lies on both sides of the line (pocketSideShare of it on each) and is close to
@@ -129,7 +137,7 @@ export type PrimitiveParams = {
 };
 
 export const DEFAULT_PRIMITIVE_PARAMS: PrimitiveParams = {
-  enabled: false,
+  enabled: true,
   gables: true,
   stacks: true,
   minCleanM2: 8,
@@ -153,17 +161,19 @@ export const DEFAULT_PRIMITIVE_PARAMS: PrimitiveParams = {
   stepWindowM: 0.5,
   stepFromShare: 0.4,
   mirrorShare: 0.5,
-  pitch: 'chord',
+  pitch: 'mirror',
   pitchTolX12: 2,
-  crest: 'heights',
+  crest: 'plane',
+  stackCrest: 'heights',
   crestReachM: 0.4,
   sagM: 1,
   aboveM: 0.3,
   absorbShare: 0.7,
   absorbAboveShare: 0.15,
   coverShare: 0.5,
-  fineDeg: 4,
-  fineGapM: 0.15,
+  fineX12: 1,
+  fineFacingDeg: 15,
+  fineShare: 0.6,
   pocketM: 1.5,
   pocketSideShare: 0.15,
   pocketFlatX12: 3,
@@ -184,6 +194,9 @@ export const DEFAULT_PRIMITIVE_PARAMS: PrimitiveParams = {
 
 /** One merged stack: the upper and lower faces' pitches, the chord's, the merged face's area. */
 export type MergedStack = { upperX12: number; lowerX12: number; pitchX12: number; areaM2: number };
+
+/** How a face's plane was fitted when not on its own heights: a gable's slope from across its ridge, or a stack's chord. */
+export type FittedKind = 'gable' | 'stack';
 
 /** One fitted gable slope: the clean face it was mirrored from (label before the fit), the faces it replaced, its pitch. */
 export type FittedGable = { from: number; absorbed: number; ridgeM: number; pitchX12: number; areaM2: number };
@@ -212,8 +225,8 @@ export function fitGables(
   planePrm: PlaneParams,
   tree: Mask | null = null,
   debug?: (msg: string) => void,
-): { faces: Faces; locked: Set<Plane>; fitted: FittedGable[] } {
-  const locked = new Set<Plane>();
+): { faces: Faces; locked: Map<Plane, FittedKind>; fitted: FittedGable[] } {
+  const locked = new Map<Plane, FittedKind>();
   const fitted: FittedGable[] = [];
   const n = planes.length;
   if (!prm.enabled || !prm.gables || n < 2) return { faces, locked, fitted };
@@ -266,6 +279,30 @@ export function fitGables(
     const onRoof = (i: number) => i >= 0 && roof[i] === 1 && Number.isFinite(dsm[i]!);
     const wOf = (b: number) => wLo + (b + 0.5) * binM;
     const zF = (t: number) => slope * t + P.c;
+    // Where the far side's heights just past the crest (0.3 to 1 m on: clear of the rounding) meet the clean plane, as
+    // a line down the column: the apex itself, not the point past it where the rounded heights were seen to leave.
+    const apexAt = (w: number, tc: number): number => {
+      let m = 0;
+      let st = 0;
+      let sz = 0;
+      let stt = 0;
+      let stz = 0;
+      for (let t = tc + 0.3; t <= tc + 1 + 1e-9; t += s) {
+        const i = at(w, t);
+        if (!onRoof(i)) break;
+        m++;
+        st += t;
+        sz += dsm[i]!;
+        stt += t * t;
+        stz += t * dsm[i]!;
+      }
+      const det = m * stt - st * st;
+      if (m < 4 || det <= 1e-9) return tc;
+      const fall = (m * stz - st * sz) / det;
+      if (!(fall < -0.1)) return tc;
+      const t0 = ((sz - fall * st) / m - P.c) / (slope - fall);
+      return Math.abs(t0 - tc) <= 0.5 ? t0 : tc;
+    };
     // 1. The crest above the clean face, column by column: where the heights leave its plane downward and stay under
     //    it, with a slope (not a level roof, not a wall's drop) a metre on.
     const crest = new Float64Array(nb).fill(Number.NaN);
@@ -285,7 +322,7 @@ export function fitGables(
             const tc = t - (under - 1) * s;
             const j = at(w, tc + 1);
             const drop = onRoof(j) ? zF(tc) - dsm[j]! : Number.NaN;
-            if (drop >= prm.farDropMinM && drop <= prm.farDropMaxM) crest[b] = tc;
+            if (drop >= prm.farDropMinM && drop <= prm.farDropMaxM) crest[b] = apexAt(w, tc);
             break;
           }
         } else under = 0;
@@ -351,6 +388,9 @@ export function fitGables(
         let cut = -1;
         for (let k = Math.ceil((prm.stepFromShare * zs.length * s) / s); k + win < zs.length; k++) {
           const excess = zs[k]! - zs[k + win]! - slope * win * s;
+          // A drop off something standing on the slope (a chimney, a dish, a lump in the heights) is no eave: the roof
+          // before a real one is on the slope's plane, not above it.
+          if (zs[k]! > zR - slope * k * s + prm.aboveM) continue;
           if (excess > worst) {
             worst = excess;
             cut = k;
@@ -392,7 +432,7 @@ export function fitGables(
       direct++;
       const far = walk(b, 1);
       if (Math.min(far.run, near.run) < prm.runRatio * Math.max(far.run, near.run)) continue;
-      if (!(Math.abs((zR - far.eave) / far.run - (zR - near.eave) / near.run) * 12 <= prm.chordTolX12)) continue;
+      if (!(Math.abs((zR - far.eave) / far.run - slope) * 12 <= prm.chordTolX12)) continue;
       mirrors.push(far);
     }
     if (mirrors.length * binM < prm.minRidgeM || mirrors.length < prm.mirrorShare * direct) {
@@ -455,8 +495,6 @@ export function fitGables(
     const byRidgeNear = new Array<number>(n).fill(0);
     const aboveStrip = new Array<number>(n).fill(0);
     const belowStrip = new Array<number>(n).fill(0);
-    // Per face: how far its own plane is from the slope's over its pixels in the strip (summed, metres).
-    const offSlope = new Array<number>(n).fill(0);
     let strip = 0;
     for (let i = 0; i < labels.length; i++) {
       const k = labels[i]!;
@@ -473,10 +511,8 @@ export function fitGables(
       if (tp < -0.3 || tp > farRun[b]! + 0.3) continue;
       strip++;
       const r = dsm[i]! - (zR - p2 * tp);
-      if (r >= -prm.sagM && r <= prm.aboveM) {
-        inStrip[k]!++;
-        offSlope[k]! += Math.abs(planeZ(planes[k]!, x, y) - (zR - p2 * tp));
-      } else if (r > prm.aboveM) aboveStrip[k]!++;
+      if (r >= -prm.sagM && r <= prm.aboveM) inStrip[k]!++;
+      else if (r > prm.aboveM) aboveStrip[k]!++;
       else belowStrip[k]!++;
     }
     if (debug !== undefined) {
@@ -501,8 +537,17 @@ export function fitGables(
       debug?.(`gable from face ${f}: far strip ${(strip * s * s).toFixed(1)} m2 (${(slopePx * s * s).toFixed(1)} m2 not above the slope), faces under the slope cover ${(covered * s * s).toFixed(1)} m2, not fitted`);
       continue;
     }
-    // Faces already on the slope's plane (one face, or the pieces another roof cuts one slope into) are left as they are.
-    if (take.every((k) => planeAngleDeg(planes[k]!, M) <= prm.fineDeg && offSlope[k]! <= prm.fineGapM * inStrip[k]!)) continue;
+    // A far side already (mostly) at the slope's pitch and facing is left as it is: one clean face, or the pieces another
+    // roof cuts one slope into. The fit is for a slope the heights have bent, not a second opinion on a sound one.
+    const fine = (k: number): boolean => {
+      const q = planes[k]!;
+      const sq = Math.hypot(q.a, q.b);
+      if (Math.abs(sq - p2) * 12 > prm.fineX12 || sq < 1e-6) return false;
+      return (q.a * M.a + q.b * M.b) / (sq * p2) >= Math.cos((prm.fineFacingDeg * Math.PI) / 180);
+    };
+    const takenPx = take.reduce((t, k) => t + area[k]!, 0);
+    const finePx = take.reduce((t, k) => t + (fine(k) ? area[k]! : 0), 0);
+    if (finePx >= prm.fineShare * takenPx) continue;
     const target = take[0]!;
     const set = new Set(take);
     let px = 0;
@@ -525,7 +570,7 @@ export function fitGables(
     made.add(target);
     area[target] = px;
     outPlanes[target] = M;
-    locked.add(M);
+    locked.set(M, 'gable');
     fitted.push({ from: f, absorbed: take.length, ridgeM: (e1 - e0 + 1) * binM, pitchX12: p2 * 12, areaM2: px * s * s });
     debug?.(
       `gable from face ${f} (${(slope * 12).toFixed(1)}/12): ridge ${((e1 - e0 + 1) * binM).toFixed(1)} m, ${mirrors.length} mirror columns of ${direct}, far slope ${(p2 * 12).toFixed(1)}/12 (chord ${(chord * 12).toFixed(1)}), faces ${take.join(',')} -> one face of ${(px * s * s).toFixed(1)} m2`,
@@ -559,7 +604,7 @@ export function mergeStacks(
   roof: Mask,
   faces: Faces,
   planes: readonly Plane[],
-  locked: Set<Plane>,
+  locked: Map<Plane, FittedKind>,
   prm: PrimitiveParams,
   debug?: (msg: string) => void,
 ): { faces: Faces; merged: MergedStack[] } {
@@ -720,7 +765,7 @@ export function mergeStacks(
       const eave = (sz - fall * sd) / m + fall * run;
       const tEdge = topU[b]! - run;
       let zc = zTop(w, tc);
-      if (prm.crest === 'heights') {
+      if (prm.stackCrest === 'heights') {
         let top = -Infinity;
         for (let t = tc - prm.crestReachM; t <= tc + prm.crestReachM + 1e-9; t += s) {
           const i = at(w, t);
@@ -782,7 +827,7 @@ export function mergeStacks(
       for (let i = 0; i < labels.length; i++) if (labels[i] === L) labels[i] = U;
       cur[U] = got.plane;
       outPlanes[U] = got.plane;
-      locked.add(got.plane);
+      locked.set(got.plane, 'stack');
       const areaM2 = (adj.area[U]! + adj.area[L]!) * s * s;
       merged.push({ upperX12: sU, lowerX12: sL, pitchX12: got.pitch * 12, areaM2 });
       debug?.(`stack ${U} (${sU.toFixed(1)}/12) over ${L} (${sL.toFixed(1)}/12): one face of ${areaM2.toFixed(1)} m2 at ${(got.pitch * 12).toFixed(1)}/12`);
