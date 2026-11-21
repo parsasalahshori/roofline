@@ -230,7 +230,8 @@ describe('POST /api/measurements: outlines from footprints', () => {
     expect(view.estimate).toEqual(estimateOf([HOUSE], seededPitchX12(propertyId)));
     expect(view.roof).not.toBeNull();
     expect(view.roof!.totals.slopedSqFt).toBe(view.estimate.surfaceSqFt);
-    expect(view.roof!.totals.ridgeFt).toBe(view.estimate.ridgeFt);
+    // The estimate's priced ridge is the cap length: the roof's ridges plus its hips.
+    expect(view.estimate.ridgeFt).toBeCloseTo(view.roof!.totals.ridgeFt + view.roof!.totals.hipFt, 1);
     expect(view.facets).toBe(view.roof!.facets.length);
     expect(view.structures).toHaveLength(1);
     expect(view.structures[0]).toMatchObject({ footprintId: houseId, included: true });

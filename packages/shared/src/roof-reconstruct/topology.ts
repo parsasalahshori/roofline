@@ -17,8 +17,9 @@ import type { Grid } from './raster.ts';
 /**
  * Ridge, hip and valley: creases between two faces. Eave and rake: a face's edge, on the outline or over a lower roof.
  * Flashing and step flashing: where a lower roof meets a wall rising above it. Flat edge: where two flat faces meet.
+ * Pitch break: where one face runs on into another sloping the same way at nearly the same pitch (no edge of either).
  */
-export type RoofLineKind3d = 'ridge' | 'hip' | 'valley' | 'eave' | 'rake' | 'flashing' | 'step-flashing' | 'flat-edge';
+export type RoofLineKind3d = 'ridge' | 'hip' | 'valley' | 'eave' | 'rake' | 'flashing' | 'step-flashing' | 'flat-edge' | 'pitch-break';
 
 export type TopologyParams = {
   /** Two faces sharing less boundary than this (metres) only touch at a corner. */
@@ -29,6 +30,30 @@ export type TopologyParams = {
   stepM: number;
   /** A crease climbing less than this (degrees) is level: a ridge rather than a hip. */
   levelDeg: number;
+  /**
+   * Two faces falling away from their crease on opposite sides (their downhill directions at least this far apart,
+   * degrees) meet in a ridge even when the fitted planes make it climb a little: a hip is between faces about square
+   * to each other.
+   */
+  ridgeFacingDeg: number;
+  /**
+   * A face drains onto (or away from) a crease when its slope across the crease is at least this share of its own
+   * slope (and at least `drainMinSlope`, rise over run); less, and the crease runs up the face.
+   */
+  drainShare: number;
+  drainMinSlope: number;
+  /**
+   * Where an upper face drains onto a lower one along a line within `ontoEaveDeg` of level on the upper face: faces
+   * within `breakFacingDeg` of the same downhill direction and `breakX12` of the same pitch run on into each other (a
+   * pitch break, no edge); otherwise the upper face ends there in an eave (a report counts it: the main roof's eave
+   * over a porch roof, a dormer's over the roof below). A line climbing more than that across the upper face is a hip
+   * or a valley (by the planes), as a report counts it: on the benchmark's EagleView houses, making every same-way
+   * pair a pitch break whatever the line's direction lost real hips and valleys between faces whose fitted planes
+   * came out alike.
+   */
+  ontoEaveDeg: number;
+  breakFacingDeg: number;
+  breakX12: number;
   /**
    * A face's edge within this angle (degrees) of its level direction is an eave (or, along a wall, flashing); steeper,
    * a rake (step flashing). 45: whichever it is nearer, so a cut-off corner of a hip roof's eave stays an eave.
@@ -54,6 +79,12 @@ export const DEFAULT_TOPOLOGY_PARAMS: TopologyParams = {
   minEdgeM: 1.0,
   stepM: 0.4,
   levelDeg: 6,
+  ridgeFacingDeg: 135,
+  drainShare: 0.25,
+  drainMinSlope: 0.03,
+  ontoEaveDeg: 25,
+  breakFacingDeg: 30,
+  breakX12: 2,
   eaveDeg: 45,
   wallDeg: 30,
   flatX12: 2,
@@ -628,11 +659,20 @@ export function buildTopology(
     const kind: RoofLineKind3d = role === 'wall' ? (level ? 'flashing' : 'step-flashing') : level ? 'eave' : 'rake';
     return { kind, a, b, faces: [f], lengthM: Math.hypot(len, rise), riseM: rise };
   };
-  // A crease from a to b between face i (on its left) and face j: a ridge or hip where they meet convex (level or
-  // climbing), a valley where concave (by the steeper face's climb, so a low-slope face beside a steep one still meets
-  // it in a hip or valley); a flat edge between two flat faces. Its rise is the planes' (the mean of the two on
-  // a crease the planes do not quite meet along).
-  const creaseLine = (i: number, j: number, a: XY, b: XY): TopoLine => {
+  // A crease from a to b between face i (on its left) and face j, by which way each face drains there.
+  // - Both fall away from it: a ridge (level, or the two faces opposite each other) or a hip.
+  // - Both come down to it: a valley.
+  // - One comes down to it and the other falls away from it (or is flat), along a line near level on the upper face:
+  //   the upper face drains onto the lower one. That is the upper face's eave, as on the outline, unless the two slope
+  //   the same way at nearly the same pitch (a pitch break).
+  // - Otherwise (the crease climbs across the faces) by the planes: convex a hip or ridge, concave a valley, by the
+  //   steeper face's climb, so a low-slope face beside a steep one still meets it in a hip or valley.
+  // A flat edge between two flat faces. Its rise is the planes' (the mean of the two on a crease the planes do not
+  // quite meet along).
+  const ridgeCos = Math.cos((prm.ridgeFacingDeg * Math.PI) / 180);
+  const breakCos = Math.cos((prm.breakFacingDeg * Math.PI) / 180);
+  const ontoEaveCos = Math.cos((prm.ontoEaveDeg * Math.PI) / 180);
+  const creaseLine = (i: number, j: number, a: XY, b: XY): TopoLine | null => {
     const pi = planes[i]!;
     const pj = planes[j]!;
     const len = dist(a, b);
@@ -642,13 +682,39 @@ export function buildTopology(
     let lk: RoofLineKind3d;
     if (flat[i] && flat[j]) lk = 'flat-edge';
     else {
-      // Into the left face: the chain's left, so (-uy, ux) from its forward direction.
-      const convex = (pj.a - pi.a) * -uy + (pj.b - pi.b) * ux > 0;
-      // How steeply it climbs on the steeper face (a low-slope face beside it hardly climbs anywhere).
-      const climb = Math.max(Math.abs(pi.a * ux + pi.b * uy), Math.abs(pj.a * ux + pj.b * uy));
-      lk = convex ? (climb < levelTan ? 'ridge' : 'hip') : 'valley';
+      const si = Math.hypot(pi.a, pi.b);
+      const sj = Math.hypot(pj.a, pj.b);
+      // Uphill into each face from the crease (rise over run): positive, the face comes down to the crease. The left
+      // face is on (-uy, ux) from the chain's forward direction.
+      const gi = pi.a * -uy + pi.b * ux;
+      const gj = -(pj.a * -uy + pj.b * ux);
+      const ti = Math.max(prm.drainMinSlope, prm.drainShare * si);
+      const tj = Math.max(prm.drainMinSlope, prm.drainShare * sj);
+      const onto = (f: number, g: number, t: number) => !flat[f] && g > t;
+      const off = (f: number, g: number, t: number) => flat[f] || g < -t;
+      const upper = onto(i, gi, ti) && off(j, gj, tj) ? i : onto(j, gj, tj) && off(i, gi, ti) ? j : -1;
+      const facing = si > 0 && sj > 0 ? (pi.a * pj.a + pi.b * pj.b) / (si * sj) : 0;
+      if (upper >= 0 && levelCos(upper, ux, uy) >= ontoEaveCos) {
+        if (!flat[i] && !flat[j] && facing >= breakCos && Math.abs(si - sj) * 12 < prm.breakX12) lk = 'pitch-break';
+        else {
+          const pu = planes[upper]!;
+          const eaveRise = Math.abs(planeZ(pu, b.x, b.y) - planeZ(pu, a.x, a.y));
+          return { kind: 'eave', a, b, faces: [upper], lengthM: Math.hypot(len, eaveRise), riseM: eaveRise };
+        }
+      } else {
+        // Into the left face: the chain's left, so (-uy, ux) from its forward direction.
+        const convex = gi + gj < 0;
+        // How steeply it climbs on the steeper face (a low-slope face beside it hardly climbs anywhere).
+        const climb = Math.max(Math.abs(pi.a * ux + pi.b * uy), Math.abs(pj.a * ux + pj.b * uy));
+        const opposite = !flat[i] && !flat[j] && gi < -ti && gj < -tj && facing <= ridgeCos;
+        lk = convex ? (climb < levelTan || opposite ? 'ridge' : 'hip') : 'valley';
+      }
     }
     return { kind: lk, a, b, faces: [i, j], lengthM: Math.hypot(len, rise), riseM: rise };
+  };
+  const pushCrease = (i: number, j: number, a: XY, b: XY): void => {
+    const l = creaseLine(i, j, a, b);
+    if (l !== null) lines.push(l);
   };
   // A wall stands along a house's walls, so it runs level along a face beside it or straight up its slope; a boundary
   // running across both faces' slopes on the diagonal is where they meet (a hip or a valley), not a wall, even where
@@ -695,7 +761,7 @@ export function buildTopology(
       const walls: TopoLine[] = [];
       pieces.forEach(({ a, b, len }, n) => {
         if (diag[n] && (len >= prm.jogM || diag[n - 1] === true || diag[n + 1] === true)) {
-          lines.push(creaseLine(i, j, a, b));
+          pushCrease(i, j, a, b);
           return;
         }
         const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
@@ -717,10 +783,10 @@ export function buildTopology(
       const pts = c.verts.map(at);
       const keep = simplifyIdx(pts, 0.25).map((q) => pts[q]!);
       if (pathLength(keep) < 0.3) return;
-      for (let n = 1; n < keep.length; n++) if (dist(keep[n - 1]!, keep[n]!) >= 0.05) lines.push(creaseLine(i, j, keep[n - 1]!, keep[n]!));
+      for (let n = 1; n < keep.length; n++) if (dist(keep[n - 1]!, keep[n]!) >= 0.05) pushCrease(i, j, keep[n - 1]!, keep[n]!);
       return;
     }
-    lines.push(creaseLine(i, j, a, b));
+    pushCrease(i, j, a, b);
   });
   return { faces, lines: joinCollinear(lines) };
 }

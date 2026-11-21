@@ -7,9 +7,10 @@ import type { RoofPlane } from './roof-model.ts';
 /**
  * Ridge, hip and valley: creases between two faces. Eave and rake: a face's edge where the roof ends, on the outline or
  * over a lower roof. Flashing (the wall runs level along the face below it) and step flashing (the wall climbs along
- * it): where a lower roof meets a wall rising above it. Flat edge: where two flat faces meet.
+ * it): where a lower roof meets a wall rising above it. Flat edge: where two flat faces meet. Pitch break: where a face
+ * runs on into another sloping the same way at nearly the same pitch (drawn, never counted as an edge).
  */
-export const ROOF_3D_LINE_KINDS = ['ridge', 'hip', 'valley', 'eave', 'rake', 'flashing', 'step-flashing', 'flat-edge'] as const;
+export const ROOF_3D_LINE_KINDS = ['ridge', 'hip', 'valley', 'eave', 'rake', 'flashing', 'step-flashing', 'flat-edge', 'pitch-break'] as const;
 /**
  * A line's kind. 'step' is what reconstructions stored before October 2026 called the line between a higher and a lower
  * roof (one line for the higher roof's edge and the lower roof's wall); it is read as step flashing.
@@ -446,9 +447,12 @@ export const ROOF_3D_SNAPSHOT_SCHEMA = 2;
  * inferred roof priced as measured) read as stale, and no number ever means two reconstructions. 6: eave support reads
  * the whole of every outline edge (docs/roof-3d/support.md; before, the second half of each edge was read at its
  * midpoint), so edge support, the edges-unverified review and the edge confidences change; edge confidence now weighs
- * strong, weak and unverified stretches separately, calibrated on DEV against EagleView and lidar truth.
+ * strong, weak and unverified stretches separately, calibrated on DEV against EagleView and lidar truth. 7: creases are
+ * labelled by which way each face drains (docs/roof-3d/line-kinds.md): an upper face draining onto a lower one ends in
+ * an eave (it was a valley), opposite faces meet in a ridge even when it climbs a little (it was a hip), and a pitch
+ * break is its own kind. Faces, areas, pitches and the outline are unchanged; line kinds and their totals change.
  */
-export const ROOF_3D_ALGORITHM_VERSION = 6;
+export const ROOF_3D_ALGORITHM_VERSION = 7;
 
 function versionField(value: unknown): number | null {
   if (value === undefined) return 1;

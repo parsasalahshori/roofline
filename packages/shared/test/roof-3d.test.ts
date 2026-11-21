@@ -87,7 +87,7 @@ describe('measureRoof with a 3D roof', () => {
     expect(estimate.surfaceSqFt).toBeCloseTo(HIP_ROOF.faces.reduce((t, f) => t + f.slopedAreaSqFt, 0), 0);
     expect(estimate.footprintSqFt).toBeCloseTo(polygonAreaSqFt(HIP_ROOF.outline), 0);
     expect(estimate.edgeFt).toBe(roof!.totals.eaveFt);
-    expect(estimate.ridgeFt).toBe(roof!.totals.ridgeFt);
+    expect(estimate.ridgeFt).toBeCloseTo(roof!.totals.ridgeFt + roof!.totals.hipFt, 1);
     expect(estimate.pitchX12).toBe(5);
     expect(roof!.totals.slopedSqFt).toBe(estimate.surfaceSqFt);
   });

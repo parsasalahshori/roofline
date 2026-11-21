@@ -22,6 +22,7 @@
     "roof3d:bench-candidates": "tsx src/scripts/roof-3d-bench-candidates.ts",
     "roof3d:bench-manifest": "tsx src/scripts/roof-3d-bench-manifest.ts",
     "roof3d:bench": "tsx src/scripts/roof-3d-bench.ts",
+    "roof3d:dump": "tsx src/scripts/roof-3d-dump.ts",
     "roof3d:bench-fetch": "tsx src/scripts/roof-3d-bench-fetch.ts",
     "test:bench": "vitest run -c vitest.bench.config.ts",
     "test:pure": "vitest run -c vitest.pure.config.ts",
