@@ -93,6 +93,11 @@ export type ReconstructOptions = {
   canopy?: Partial<CanopyParams> & { complete?: boolean };
   /** Development only: told what the topology decided. */
   debug?: (msg: string) => void;
+  /**
+   * Development only: handed the face label image (crop pixels, -1 = none; the crop's first column and row in the whole
+   * raster) and the planes (crop metres) after the plane search ('planes'), the face cleanup ('faces') and at the end ('final').
+   */
+  trace?: (stage: 'planes' | 'faces' | 'final', d: { c0: number; r0: number; w: number; h: number; labels: Int32Array; planes: readonly Plane[] }) => void;
   /** The imagery's quality (HIGH, MEDIUM), for the quality result. */
   imageryQuality?: string | null;
   /**
@@ -421,11 +426,19 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   }
 
   // 2. Planes and faces.
-  const found = findPlanes(g, s, dsm, roof, rng, planePrm, tree);
+  const found = findPlanes(g, s, dsm, roof, rng, planePrm, tree, opts.debug);
   if (found.length === 0) return null;
-  let faces = buildFaces(g, s, dsm, roof, found, planePrm, tree);
+  if (opts.trace !== undefined) {
+    const lab = new Int32Array(g.w * g.h).fill(-1);
+    found.forEach((f, k) => {
+      for (let i = 0; i < lab.length; i++) if (f.patch[i] === 1) lab[i] = k;
+    });
+    opts.trace('planes', { c0, r0, w: g.w, h: g.h, labels: lab, planes: found.map((f) => f.plane) });
+  }
+  let faces = buildFaces(g, s, dsm, roof, found, planePrm, tree, opts.debug);
   if (faces.planes.length === 0) return null;
   let planes = refitFaces(g, s, dsm, faces, planePrm.tolM, planePrm.maxPitchX12);
+  opts.trace?.('faces', { c0, r0, w: g.w, h: g.h, labels: faces.labels, planes });
 
   // 2a. Roof under canopy or in shade the mask missed: grown along the faces' own planes where the heights show it,
   //     bridged across notches a crown bites out of one roof line (canopy.ts). Only with Google's box (the bound) and the
@@ -601,6 +614,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     break;
   }
 
+  opts.trace?.('final', { c0, r0, w: g.w, h: g.h, labels: faces.labels, planes });
   // Face areas: the polygons' (they tile the outline), shared out so they add up to the outline's area.
   const outlineArea = signedArea(outline);
   const pixelCount = new Array<number>(planes.length).fill(0);

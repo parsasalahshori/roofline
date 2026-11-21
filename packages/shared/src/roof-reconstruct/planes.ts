@@ -292,7 +292,7 @@ function rankTop(x: { score: number; fill: number; rms: number; seed: number }, 
  * When what is left has no patch of minPlaneM2, the search goes on once more with rescueTolX times the tolerance,
  * measured square to the plane (steep faces in a height map are rougher), then stops: trees, edges, clutter.
  */
-export function findPlanes(g: Grid, s: number, dsm: Float32Array, roof: Mask, rng: () => number, prm: PlaneParams, tree: Mask | null = null): FoundPlane[] {
+export function findPlanes(g: Grid, s: number, dsm: Float32Array, roof: Mask, rng: () => number, prm: PlaneParams, tree: Mask | null = null, debug?: (msg: string) => void): FoundPlane[] {
   const { w, h } = g;
   const free = erode(g, roof, Math.max(1, Math.round(0.2 / s)));
   // No plane is fitted on missing heights or on tree crowns.
@@ -391,6 +391,7 @@ export function findPlanes(g: Grid, s: number, dsm: Float32Array, roof: Mask, rn
       patch = again.patch;
     }
     out.push({ plane, patch });
+    debug?.(`plane ${out.length - 1}: ${(countSet(patch) * s * s).toFixed(1)} m2, ${(slopeOf(plane) * 12).toFixed(1)}/12 facing ${azimuth(plane).toFixed(0)}${square ? ' (rescue pass)' : ''}`);
     // The patch and a pixel round it are used.
     for (let i = 0; i < patch.length; i++) {
       if (patch[i] !== 1) continue;
@@ -601,6 +602,7 @@ export function buildFaces(
   found: readonly FoundPlane[],
   prm: PlaneParams,
   tree: Mask | null = null,
+  debug?: (msg: string) => void,
 ): Faces {
   const n0 = found.length;
   let planes = found.map((f) => f.plane);
@@ -614,6 +616,20 @@ export function buildFaces(
   }
   let faces = splitParts(g, compact(floodAssign(g, s, dsm, roof, planes, seeds, null, tree), planes));
   const px2 = s * s;
+  // Development: what happened to a face (its centre in crop metres, its size and plane).
+  const say = (what: string, f: Faces, k: number, area: number): void => {
+    if (debug === undefined) return;
+    let sx = 0;
+    let sy = 0;
+    let m = 0;
+    for (let i = 0; i < f.labels.length; i++) {
+      if (f.labels[i] !== k) continue;
+      sx += pixelX(g, s, i);
+      sy += pixelY(g, s, i);
+      m++;
+    }
+    debug(`faces: ${what} face at ${(sx / Math.max(1, m)).toFixed(1)},${(sy / Math.max(1, m)).toFixed(1)}: ${(area * px2).toFixed(1)} m2, ${(slopeOf(f.planes[k]!) * 12).toFixed(1)}/12 facing ${azimuth(f.planes[k]!).toFixed(0)}`);
+  };
   for (let round = 0; round < 12; round++) {
     // 0. A face in two parts joined by a narrow neck becomes two faces (each then checked like any other).
     const split = splitNecks(g, s, dsm, faces, prm);
@@ -655,6 +671,7 @@ export function buildFaces(
         const joint = p80(p, idx);
         if (!(joint <= prm.mergeFitM && joint <= Math.max(own[a]!, own[b]!) + 0.05)) continue;
       }
+      say(`merged (${ang.toFixed(1)} deg${strict ? '' : ', loose'}) into ${a}`, faces, b, adj.area[b]!);
       for (const i of idx) labels[i] = a;
       planes[a] = p;
       merged.add(a);
@@ -676,6 +693,7 @@ export function buildFaces(
       const small = m2 < prm.tinyFaceM2 || (m2 < prm.smallFaceM2 && onEdge < 0.25);
       if (!small || gone.size >= n - 1) continue;
       if (m2 >= prm.tinyFaceM2 && prm.smallKeepDeg > 0 && realPlane(g, s, dsm, faces, k, neighbours(adj, s, k), prm)) continue;
+      say('small', faces, k, adj.area[k]!);
       gone.add(k);
     }
     if (gone.size > 0) {
@@ -687,6 +705,7 @@ export function buildFaces(
     //    heights over most of the face. One at a time, the best explained first.
     const worst = explainedFace(g, s, dsm, faces, adj, prm);
     if (worst >= 0) {
+      say('explained', faces, worst, adj.area[worst]!);
       faces = dissolve(g, s, dsm, roof, faces, new Set([worst]), tree);
       continue;
     }
@@ -695,6 +714,7 @@ export function buildFaces(
     //    facing the same way (a terrace in the height map). Flat faces stay (a deck on a hip roof is real).
     const chamfer = chamferFace(g, s, faces, adj, prm);
     if (chamfer >= 0) {
+      say('chamfer/riser', faces, chamfer, adj.area[chamfer]!);
       faces = dissolve(g, s, dsm, roof, faces, new Set([chamfer]), tree);
       continue;
     }
@@ -702,6 +722,7 @@ export function buildFaces(
     //    trees or on rough heights (a gutter, a wall, a crown leaning over the eave).
     const sliver = sliverFace(g, s, dsm, faces, adj, prm, tree);
     if (sliver < 0) break;
+    say('sliver/steep', faces, sliver, adj.area[sliver]!);
     faces = dissolve(g, s, dsm, roof, faces, new Set([sliver]), tree);
   }
   return faces;

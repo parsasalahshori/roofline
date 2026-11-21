@@ -278,6 +278,8 @@ export type RoofOnLayersOptions = {
   tuning?: RoofTuning;
   /** Development only: told what the reconstruction decided. */
   debug?: (msg: string) => void;
+  /** Development only: the reconstruction's label images by stage (reconstructRoof's trace). */
+  trace?: NonNullable<Parameters<typeof reconstructRoof>[2]>['trace'];
   steep?: boolean;
   building?: SolarBuilding | null;
   seed?: number;
@@ -403,6 +405,7 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
     ...(o.tuning?.topology !== undefined ? { topology: o.tuning.topology } : {}),
     ...(o.tuning?.faces !== undefined ? { faces: o.tuning.faces } : {}),
     ...(o.debug !== undefined ? { debug: o.debug } : {}),
+    ...(o.trace !== undefined ? { trace: o.trace } : {}),
     ...(ownBox ? { building: [box.sw, [box.ne[0], box.sw[1]] as LngLat, box.ne, [box.sw[0], box.ne[1]] as LngLat].map(toPixel) } : {}),
     ...(lidarCloud !== null ? { lidar: { cloud: lidarCloud, ...(o.lidarParams !== undefined ? { params: o.lidarParams } : {}) } } : {}),
     ...(fusionCloud !== null ? { lidarFusion: { cloud: fusionCloud, ...(o.lidarFusion?.params !== undefined ? { params: o.lidarFusion.params } : {}) } } : {}),
