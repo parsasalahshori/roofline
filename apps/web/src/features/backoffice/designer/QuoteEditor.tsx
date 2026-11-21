@@ -142,9 +142,9 @@ export function QuoteEditor() {
               <span>{cat.tiers[tier].label}</span>
               <strong>{dollars(total.totalCents)}</strong>
             </p>
-            <Button variant="default" href={`/backoffice/quotes/${encodeURIComponent(quoteId)}/visual`}>
+            <Button variant="default" href={`/backoffice/quotes/${encodeURIComponent(quoteId)}/visual`} aria-label={copy.openVisualizer}>
               <Icon name="camera" size={18} />
-              {copy.openVisualizer}
+              <span className={styles.photoLabel}>{copy.openVisualizer}</span>
             </Button>
           </div>
         </header>

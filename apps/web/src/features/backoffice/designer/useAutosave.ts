@@ -15,7 +15,6 @@ export function useAutosave<T>(save: (value: T) => Promise<unknown>, delay = SAV
   saveRef.current = save;
   const pending = useRef<{ value: T } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const running = useRef(false);
   const mounted = useRef(true);
 
   /** Sends what is waiting, one value after another; answers whether the last send worked (true when nothing was waiting). */

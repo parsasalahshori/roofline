@@ -229,6 +229,15 @@ describe('orders', () => {
     expect(within(timeline).getByText(copy.orders.email.sent)).toBeInTheDocument();
   });
 
+  it('opens the released factory order as the PDF of its quote, also for an order with no measuring sheet', async () => {
+    signedIn(ON);
+    renderApp('/backoffice/orders/ord1');
+    const link = await screen.findByRole('link', { name: new RegExp(copy.orders.openFactoryOrder) });
+    expect(link).toHaveAttribute('href', '/api/backoffice/quotes/q1/documents/factory-order');
+    expect(within(link).getByText(copy.orders.factoryReleased)).toBeInTheDocument();
+    expect(screen.queryByText(copy.orders.openMeasuringSheet)).toBeNull();
+  });
+
   it('moves an order to the next stage with a preview and sends the move', async () => {
     signedIn(ON, { 'PATCH /api/backoffice/orders/ord1/stage': ({ body }) => ({ body: order({ stage: (body as { stage: BackofficeOrder['stage'] }).stage }) }) });
     const { user } = renderApp('/backoffice/orders/ord1');
@@ -294,6 +303,39 @@ describe('back office home', () => {
     await user.click(within(dialog).getByRole('button', { name: copy.home.startQuote }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/backoffice/quotes/q9'));
     expect(api.sent('POST /api/backoffice/quotes')[0]).toEqual({ jobId: 'j1' });
+  });
+
+  it('starts a quote from the windows measured on site when asked, and says how many came in and how many were left out', async () => {
+    signedIn(ON, {
+      'GET /api/jobs/board': () => ({ body: { columns: [{ stage: 'lead', count: 1, totalCents: null, jobs: [{ id: 'j1', customerName: 'Jordan Reyes', addressLine: '12 Oak St' }] }], lost: { count: 0 } } }),
+      'POST /api/backoffice/quotes': () => ({ body: { id: 'q9', designs: [{ id: 'm-1' }, { id: 'm-2' }], skippedMeasured: 1 } }),
+      'GET /api/backoffice/quotes/q9': () => ({ status: 404, body: { error: 'Not found' } }),
+      'GET /api/backoffice/catalog': () => ({ status: 404, body: { error: 'Not found' } }),
+    });
+    const { user, router } = renderApp('/backoffice');
+    await user.click(await screen.findByRole('button', { name: copy.home.newQuote }));
+    const dialog = await screen.findByRole('dialog', { name: copy.home.newQuoteTitle });
+    await user.selectOptions(await within(dialog).findByLabelText(copy.home.pickJob), 'j1');
+    await user.click(within(dialog).getByRole('checkbox', { name: copy.home.importMeasured }));
+    await user.click(within(dialog).getByRole('button', { name: copy.home.startQuote }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/backoffice/quotes/q9'));
+    expect(api.sent('POST /api/backoffice/quotes')[0]).toEqual({ jobId: 'j1', importMeasured: true });
+    expect(router.state.location.state).toEqual({ measured: { kept: 2, skipped: 1 } });
+  });
+
+  it('says so in the sheet when the address has nothing measured, and stays there', async () => {
+    signedIn(ON, {
+      'GET /api/jobs/board': () => ({ body: { columns: [{ stage: 'lead', count: 1, totalCents: null, jobs: [{ id: 'j1', customerName: 'Jordan Reyes', addressLine: '12 Oak St' }] }], lost: { count: 0 } } }),
+      'POST /api/backoffice/quotes': () => ({ status: 422, body: { error: 'This address has no on-site window measurement to start from.' } }),
+    });
+    const { user, router } = renderApp('/backoffice');
+    await user.click(await screen.findByRole('button', { name: copy.home.newQuote }));
+    const dialog = await screen.findByRole('dialog', { name: copy.home.newQuoteTitle });
+    await user.selectOptions(await within(dialog).findByLabelText(copy.home.pickJob), 'j1');
+    await user.click(within(dialog).getByRole('checkbox', { name: copy.home.importMeasured }));
+    await user.click(within(dialog).getByRole('button', { name: copy.home.startQuote }));
+    expect(await within(dialog).findByText('This address has no on-site window measurement to start from.')).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/backoffice');
   });
 
   it('counts orders by stage with the stuck ones', async () => {

@@ -96,6 +96,7 @@
 
 .main {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
   min-width: 0;
   padding: 20px;
@@ -289,4 +290,15 @@
   align-items: stretch;
   gap: 12px;
   padding: 12px 16px;
+}
+
+/* The photo button keeps its icon only on a phone so the customer's name has room in the toolbar. */
+@media (max-width: 719.98px) {
+  .photoLabel {
+    display: none;
+  }
+
+  .toolbarEnd {
+    gap: 8px;
+  }
 }

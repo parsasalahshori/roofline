@@ -365,7 +365,8 @@ export function backofficeRoutes(deps: AppDeps): Router {
       throw new AppError(404, MESSAGES.notFound);
     }
     if (before?.photo?.key.includes(`/${VISUAL_PHOTO_PREFIX}/`)) await deps.objectStore.delete(before.photo.key).catch((err: unknown) => deps.logError?.(err, 'backoffice-visual-delete'));
-    res.status(201).json({ id: uploadId, widthPx: info.widthPx, heightPx: info.heightPx });
+    // The visual as it stands (its photoUploadId is what the picture editor saves next), plus the upload's own id and size.
+    res.status(201).json({ ...visualOf(id, stored, now), id: uploadId, widthPx: info.widthPx, heightPx: info.heightPx });
   });
 
   router.get('/quotes/:id/visual/photo', async (req, res) => {

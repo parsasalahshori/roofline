@@ -550,7 +550,9 @@ describe('the house picture', () => {
     expect((await owner.post(`${BASE}/quotes/${q.id}/visual/photo`)).status).toBe(400);
     const up = await owner.post(`${BASE}/quotes/${q.id}/visual/photo`).attach('photo', Buffer.from(greyJpeg(800, 600)), 'house.jpg');
     expect(up.status, JSON.stringify(up.body)).toBe(201);
-    expect(up.body).toMatchObject({ widthPx: 800, heightPx: 600 });
+    expect(up.body).toMatchObject({ widthPx: 800, heightPx: 600, quoteId: q.id });
+    // The web picture editor saves the photo by this field, so the answer carries the visual's photoUploadId
+    expect(up.body.photoUploadId).toBe(up.body.id);
 
     const corners = [[0.1, 0.1], [0.3, 0.1], [0.3, 0.4], [0.1, 0.4]];
     const put = await owner.put(`${BASE}/quotes/${q.id}/visual`).send({ photoUploadId: up.body.id, placements: [{ id: 'pl1', designId: 'u1', corners }] });
