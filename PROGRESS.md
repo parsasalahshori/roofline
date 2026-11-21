@@ -45,13 +45,48 @@ budget: 5 area agents (Sonnet, high), one pass each: walk -> fix P0/P1 -> journe
 6. Call/text comes in (demo sim) -> front desk conversation -> appointment on the calendar.
 7. Agents dashboard: a waiting task -> approve -> it shows in the feed.
 
-## findings
-(each agent reports a table; merged here at integration)
+## findings (P0/P1; every one fixed has a test that failed before, or is a new journey spec)
+| id | sev | area | finding | status |
+|----|-----|------|---------|--------|
+| C1 | P0 | crm | Pick this plan / Add a card opened an unreachable checkout page; texting setup was blocked behind it | fixed |
+| C2 | P1 | crm | New inspection as office: person defaulted to someone who cannot take one, times never loaded | fixed |
+| C3 | P1 | crm | Customers Tag and Texting filters only covered the first 50 rows | fixed (server-side) |
+| C4 | P1 | crm | Jobs "open" count included installed jobs | fixed |
+| C5 | P1 | crm | A missing appointment offered Try again instead of Not found | fixed |
+| E1 | P1 | estimator | A taken or invalid phone on a new customer said only "Please check this field" | fixed |
+| E2 | P1 | estimator | An exact report's card showed outline numbers (42.8 sq) while the proposal used the report (26.1 sq) | fixed |
+| E3 | P1 | estimator | Ordering an exact report on a home with no customer came back to no proposal | fixed |
+| E4 | P1 | estimator | A rep typing a new address was told to pick a customer with no way to | fixed (link to add one) |
+| E5 | P1 | estimator | estimator.spec and phone.spec still expected the removed Roof/Windows/Gutters switch | fixed (specs) |
+| E6 | P1 | roof | Hip caps were never priced on a free estimate (ridge only) | fixed (roof-model capFt) |
+| B1 | P0 | backoffice | No way to approve a discount | fixed |
+| B2 | P0 | backoffice | No Accept in the quote editor; the Status control's "Accepted" was refused by the server | fixed |
+| B3 | P1 | backoffice | An accepted order without a measuring sheet said "Not released to the factory yet" | fixed |
+| B4 | P1 | backoffice | New quote never offered importing measured windows | fixed |
+| B5 | P0 | backoffice | Saving a house photo in the visualizer failed (400) | fixed |
+| B6-B9 | P1 | backoffice | Dead "Try again" after a failed autosave; accepted quote still editable; editor cut off at 375 px; factory PDF silent on safety glass | fixed |
+| O1 | P1 | ops | Front Desk average answer time counted unanswered calls as 0 ms (the long-failing 'today' tests) | fixed |
+| O2 | P1 | ops | approvals EPIPE test | fixed (test keeps the connection alive) |
+| O3-O7 | P0/P1 | ops | Demo call "booked" a visit nobody was assigned to (never on the calendar); storm sim drafted no plan; no booking card; plan card said 1,500 doors for 75 homes | fixed |
+| I1 | P1 | integration | A window company's job "New quote" opened a roof shingle quote | fixed (opens the back office for that job) |
+| I2 | P2 | integration | Approval bar said "ad spend" on an exact roof report | fixed |
+| W | - | windows | No P0/P1 found; journey spec added | - |
+
+Open P2 (not fixed, listed by the agents): proposal text preview shows {address} unfilled (needs a payload field); calendar week
+view hides person-less visits; storm/front-desk demo scripts talk roofs for WinChoice; /storm/settings and /storm/ads say "could
+not find that storm"; homeowner window rows named "Window 2" not by room; card-measured windows open in the sheet method;
+company phone shown raw after save; global search Enter picks an action before a match; times in two zones on the proposal page.
 
 ## paths (roof)
 | path | idea | metric vs baseline | keep/kill | evidence |
 |------|------|--------------------|-----------|----------|
-| R1 | creases labelled by drainage: upper face draining onto a lower one along a near-level line = eave; same-way same-pitch = pitch break; opposite faces = ridge | dev ridge 28->19, valley 42->24, eave 24->19, hip 15->22, rake 26->26; held-out ridge 19->12, eave 22->12, valley 23->23, hip 42->42, rake 17->17 | keep | roof/better 39117427 + follow-up; dump-v2 |
+| R1 | creases labelled by drainage: upper face draining onto a lower one along a near-level line = eave; same-way same-pitch = pitch break; opposite faces = ridge | dev ridge 28->19, valley 42->24, eave 24->19, hip 15->22, rake 26->26; held-out ridge 19->12, eave 22->12, valley 23->23, hip 42->42, rake 17->17 | KEEP (algorithm 7) | roof/better 44d2ba8a; run-v7.json; all gates pass |
+| R2 | snap face pitches to the roof's dominant whole pitches | main pitch exact 14->12 of 18, 7->6 of 14 | kill | pitchsnap.py |
+| R3 | eave vs rake read off the height map along the edge | eave 19->35, rake 26->32 (dev) | kill | xform_rake.py |
+| R4 | dissolve narrow same-way strips and flat pockets | dev 21.9->22.0, held-out 20.9->23.0 (mean of medians); halves one simple house, hurts complex ones | kill | dump-v3* |
+| R5 | pitch break whatever the line's direction | dev 21.9->22.8, held-out 20.9->21.4 | kill | dump-v4, v5 |
+| R6 | eaveDeg 50-60 | eave better, rake worse by as much | kill | dump-v2-e* |
+converged: R1 is best; five further paths failed to beat it. What is left needs more than the height map (docs/roof-3d/line-kinds.md).
 
 ## roof log (EXPECTED vs SAW)
 - Benchmark Google data re-bought 2026-11-21 (84 houses, free quota; ~/RooflineWork/roof-bench/refetch-2026-11-21; delete-by 2026-12-21).
@@ -69,10 +104,16 @@ budget: 5 area agents (Sonnet, high), one pass each: walk -> fix P0/P1 -> journe
 - Baseline e2e on head (watched failing): 142 passed, 2 failed: estimator.spec "the Measure head ... Roof | Windows | Gutters switch",
   phone.spec "the proposal view fits the phone" (log ~/RooflineWork/logs/better/e2e-baseline.log).
 - An agent's broad `pkill` stopped the owner's 4500/4600 apps twice; restarted both (4600 with its AI env) and told every agent to kill by its own PID only.
-- backoffice agent DONE: b/backoffice ddb2f128 (9 findings fixed incl. approve discount, accept -> factory order; journey spec passes twice).
+- All five area agents done; branches b/crm d929ad3e, b/estimator-flow 46dd5c79, b/windows-quote 4e968914, b/backoffice ddb2f128, b/ops-ai 11302ad4.
+- Merged with roof/better into better/integration (no conflicts). typecheck + lint clean. Integration fixes 1730f1c8.
+- e2e on the merged branch: 151 passed, 0 failed (was 142 + 2 failing); includes the five new journey specs.
+- Walk of the merged app with real keys (port 4680, own database): two real roofs measured in 3D with the new line kinds and
+  ridge + hip cap priced, 0 console/5xx errors; WinChoice job -> New quote -> back-office quote editor.
 
 ## next
-- launch the five area agents; re-fetch the roof benchmark's Google data (free quota) and freeze a fresh baseline.
+- Owner: OK to fast-forward real-lookups to better/integration (commit = push to GitHub), then restart 4500/4600 and redeploy
+  Render + Vercel. Roofs stored by algorithm 6 are re-measured on next open (one Google call each, free quota).
 
 ## status
-state: running
+state: converged (waiting for the owner's OK to merge, push and deploy)
+needs-me: OK to merge to real-lookups (push), restart the two local apps on it, redeploy online
