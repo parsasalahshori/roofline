@@ -29,6 +29,7 @@ import { DEFAULT_LIDAR_EDGE, type LidarCloud, type LidarEdgeParams, type LidarEd
 import { DEFAULT_LIDAR_FUSION, fuseLidar, type LidarFusionParams, type LidarFusionReport } from './lidar-fusion.ts';
 import { DEFAULT_PITCH_PARAMS, type PitchParams, reportedPitches } from './pitch.ts';
 import { DEFAULT_PRIMITIVE_PARAMS, fitGables, type FittedGable, type FittedKind, type MergedStack, mergeStacks, type PrimitiveParams } from './primitives.ts';
+import { type AreaParams, DEFAULT_AREA_PARAMS, type EaveTrimEdge, trimOutline, trimRoof, tuckUnder } from './area.ts';
 
 export { lngLatToUtm, utmToLngLat, utmZoneOfEpsg, type UtmZone } from './utm.ts';
 export { MAX_RASTER_PIXELS, MAX_ROOF_PART_M2, RASTER_PROBLEMS, type RasterProblem, rasterProblem, roofPartAreaM2 } from './guard.ts';
@@ -37,6 +38,7 @@ export { DEFAULT_PHOTO_EDGE, PHOTO_EDGE_REASONS, type PhotoEdge, type PhotoEdgeP
 export type { Plane } from './planes.ts';
 export { DEFAULT_PITCH_PARAMS, type PitchFace, type PitchGroup, type PitchParams, reportedPitches } from './pitch.ts';
 export { DEFAULT_PRIMITIVE_PARAMS, type FittedGable, type FittedKind, type MergedStack, type PrimitiveParams } from './primitives.ts';
+export { type AreaParams, DEFAULT_AREA_PARAMS, type EaveTrimEdge } from './area.ts';
 export { DEFAULT_LIDAR_FUSION, fuseLidar, LIDAR_FUSION_REASONS, type LidarFusionParams, type LidarFusionReason, type LidarFusionReport, type LidarFusionResult } from './lidar-fusion.ts';
 export { DEFAULT_LIDAR_EDGE, densify, LIDAR_EDGE_REASONS, type LidarCloud, type LidarEdgeParams, type LidarEdgeReason, type LidarEdgeReport } from './outline-lidar.ts';
 
@@ -98,6 +100,12 @@ export type ReconstructOptions = {
    * default), and a calibration offset for the height map's source (`offsetX12`, 0 here).
    */
   pitch?: Partial<PitchParams>;
+  /**
+   * Area at the roof's edges (area.ts): eaves moved in to where the photo shows the roof ending (the mask runs fat;
+   * needs RoofRaster.rgb, else only the fixed inset applies), and the roof a lower face has under the overhang of the
+   * roof above it, along its wall lines.
+   */
+  area?: Partial<AreaParams>;
   /**
    * Roof the mask missed under canopy or in shade, completed from the roof's own planes (canopy.ts). Off by default
    * since the remediation (on the DEV split it changed 2 of 54 roofs by 1.25 m2 in all, undid itself on 6, and cost
@@ -181,6 +189,8 @@ export type LocalFace = {
    * from the slope across its ridge, or stacked strips on the plane through their crest and eave. Its heights are bowed.
    */
   fitted?: FittedKind;
+  /** Plan area (square metres, part of planAreaM2) the face has under the overhang of a roof above it (area.ts), when any: priced, not drawn. */
+  underOverhangM2?: number;
 };
 export type LocalLine = { kind: Roof3dLineKind; a: XY; b: XY; faces: number[]; lengthM: number; riseM: number };
 /** `clipped`: the roof runs off the height map's edge, so part of it is missing. */
@@ -207,6 +217,8 @@ export type LocalRoof = {
   cuts?: { maskM2: number; groundM2: number; terraceM2: number };
   /** Faces the weak-face cleanup dissolved, by reason (absent when none). */
   dissolved?: Partial<Record<WeakReason, number>>;
+  /** Outline edges moved in by the eave trim (area.ts), absent when none moved: `from` indexes the outline before the trim. */
+  eaveTrim?: EaveTrimEdge[];
   /** Gable slopes fitted as primitives (primitives.ts), absent when none: their heights were not trusted between ridge and eave. */
   gables?: FittedGable[];
   /** Stacked strips of one bowed slope merged onto the plane through its crest and its eave (primitives.ts), absent when none. */
@@ -314,6 +326,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   // While the faces are being settled every boundary is typed once for its whole length (stepPieceSettled).
   const settlePrm: TopologyParams = topoPrm.stepPieceSettled && topoPrm.stepPieceM > 0 ? { ...topoPrm, stepPieceM: 0 } : topoPrm;
   const primPrm: PrimitiveParams = { ...DEFAULT_PRIMITIVE_PARAMS, ...opts.primitives };
+  const areaPrm: AreaParams = { ...DEFAULT_AREA_PARAMS, ...opts.area };
   const rng = seededRandom(opts.seed ?? 7);
 
   // 1. The mask's part under the point, or the nearest one within reach.
@@ -559,12 +572,25 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   // The outline before the hidden-edge steps and after each (set in step 3b on every pass), and whether they were undone.
   let stepRings: XY[][];
   let undone: 'large-change' | undefined;
+  let eaveTrim: EaveTrimEdge[] | undefined;
   // Steps 3 and 4 run once, or twice when the completed roof is undone (its state restored, completion off).
   for (;;) {
     // 3. The outline, squared.
     const boundary = maskBoundary(g, roof, s);
     outline = squareOutline(boundary, outlinePrm);
     if (outline.length < 3) return null;
+    // 3a. Eaves moved in to where the photo shows the roof ending (area.ts): the mask runs fat. The rim cut off is
+    //     cleared from the mask the outline is checked against, as the ground and terrace cuts are.
+    eaveTrim = undefined;
+    if (areaPrm.eaveBeforeTopology) {
+      const trim = trimOutline(outline, s, raster.rgb != null ? { rgb: raster.rgb, green: raster.green ?? null, width: W, height: H, c0, r0 } : null, { dsm, w: g.w, h: g.h }, areaPrm);
+      if (trim.outline !== null) {
+        googleMask = withoutRim(g, s, googleMask, outline, trim.outline);
+        outline = trim.outline;
+        eaveTrim = trim.edges.filter((e) => e.moveM !== 0);
+        opts.debug?.(`eave trim: ${trim.edges.map((e) => `${e.by} ${e.moveM.toFixed(2)}`).join(', ')}`);
+      }
+    }
     // 3b. Hidden eaves from leaf-off lidar (outline-lidar.ts): only edges the heights cannot see, only when asked.
     if (opts.lidar != null) {
       const done = lidarHiddenEdges(
@@ -725,6 +751,19 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     }
   }
 
+  // 4c. The eave trim on the settled roof instead (area.eaveBeforeTopology false): the outline's edges move, and the
+  //     faces' corners and lines' ends on them, and no face or line changes its being.
+  if (!areaPrm.eaveBeforeTopology) {
+    const trimmed = trimRoof(outline, s, raster.rgb != null ? { rgb: raster.rgb, green: raster.green ?? null, width: W, height: H, c0, r0 } : null, { dsm, w: g.w, h: g.h }, areaPrm, topo.faces, topo.lines, { tinyFaceM2: planePrm.tinyFaceM2, thinFaceM: THIN_FACE_M });
+    if (trimmed !== null) {
+      googleMask = withoutRim(g, s, googleMask, outline, trimmed.outline);
+      outline = trimmed.outline;
+      topo = { faces: trimmed.faces, lines: trimmed.lines };
+      if (lineRows !== undefined) lineRows = lineRows.map((r) => ({ ...r, a: trimmed.at(r.a), b: trimmed.at(r.b) }));
+      eaveTrim = trimmed.edges.filter((e) => e.moveM !== 0);
+      opts.debug?.(`eave trim: ${trimmed.edges.map((e) => `${e.by} ${e.moveM.toFixed(2)}`).join(', ')}`);
+    }
+  }
   opts.trace?.('final', { c0, r0, w: g.w, h: g.h, labels: faces.labels, planes });
   // Face areas: the polygons' (they tile the outline), shared out so they add up to the outline's area.
   const outlineArea = signedArea(outline);
@@ -733,6 +772,9 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   const raw = topo.faces.map((f, k) => (f.areaM2 > 0 ? f.areaM2 : pixelCount[k]! * s * s));
   const rawSum = raw.reduce((t, a) => t + a, 0);
   const scale = rawSum > 0 ? outlineArea / rawSum : 1;
+  // Roof a face has under the overhang of the roof above it, along its wall lines (area.ts): added to its area (not to
+  // a face under the smallest face size: a sliver stays one).
+  const tucked = tuckUnder(topo.lines, planes.length, areaPrm).map((t, k) => (raw[k]! * scale < planePrm.tinyFaceM2 ? 0 : t));
 
   const quality = qualityOf(g, s, dsm, googleMask, roof, tree, faces.labels, planes, outline, topo.faces, opts.imageryQuality ?? null);
   if (joined) quality.reasons.push('joined-buildings');
@@ -775,7 +817,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     // The plane in whole-raster coordinates: z = a (x - ox) + b (y - oy) + c.
     const plane: Plane = { a: p0.a, b: p0.b, c: p0.c - p0.a * ox - p0.b * oy };
     const slope = Math.hypot(plane.a, plane.b);
-    const plan = raw[k]! * scale;
+    const plan = raw[k]! * scale + tucked[k]!;
     const reported = pitch.pitchX12[k]!;
     const forArea = pitch.areaPitchX12[k]!;
     return {
@@ -789,6 +831,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
       flat: slope * 12 < FLAT_X12,
       label: shift(labelPoint(g, s, faces.labels, k, topo.faces[k]!.ring)),
       ...(locked.has(p0) ? { fitted: locked.get(p0)! } : {}),
+      ...(tucked[k]! > 0 ? { underOverhangM2: tucked[k]! } : {}),
     };
   });
   // Largest first (ties: west to east, then north to south), with the lines' face numbers following.
@@ -813,6 +856,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     quality,
     cuts: { maskM2: maskPx0 * s * s, groundM2: groundPx * s * s, terraceM2: terracePx * s * s },
     ...(Object.keys(dissolved).length > 0 ? { dissolved } : {}),
+    ...(eaveTrim !== undefined && eaveTrim.length > 0 ? { eaveTrim } : {}),
     ...(gables.length > 0 ? { gables } : {}),
     ...(stacks.length > 0 ? { stacks } : {}),
     ...(lidarEdges !== undefined ? { lidarEdges } : {}),
@@ -1620,6 +1664,17 @@ export function otherRoofParts(raster: RoofRaster, main: LocalRoof): { at: { col
   return out.sort((a, b) => a.gapM - b.gapM).slice(0, OTHER_ROOFS.max);
 }
 
+/** The mask without the rim between an outline and the same outline trimmed (crop-local metres). */
+function withoutRim(g: { w: number; h: number }, s: number, mask: Uint8Array, was: readonly XY[], now: readonly XY[]) {
+  const inWas = new Uint8Array(g.w * g.h);
+  const inNow = new Uint8Array(g.w * g.h);
+  rasterize(g, s, was, inWas);
+  rasterize(g, s, now, inNow);
+  const out = new Uint8Array(g.w * g.h);
+  for (let i = 0; i < out.length; i++) out[i] = inWas[i] === 1 && inNow[i] !== 1 ? 0 : mask[i]!;
+  return out;
+}
+
 /** Pixels whose centres lie inside a ring (crop-local metres). */
 function rasterize(g: { w: number; h: number }, s: number, ring: readonly XY[], into: Uint8Array): void {
   if (ring.length < 3) return;
@@ -1964,6 +2019,7 @@ export function toRoof3d(
       ...(f.source !== undefined ? { source: f.source } : {}),
       ...(f.lidarShare !== undefined ? { lidarShare: f.lidarShare } : {}),
       ...(f.fitted !== undefined ? { fitted: f.fitted } : {}),
+      ...(f.underOverhangM2 !== undefined ? { underOverhangSqFt: round(f.underOverhangM2 * SQ_FT_PER_SQ_M, 1) } : {}),
     })),
     lines: local.lines.map((l) => ({
       kind: l.kind,

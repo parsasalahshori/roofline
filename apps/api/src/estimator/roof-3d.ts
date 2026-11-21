@@ -18,6 +18,7 @@ import {
   type SolarBuilding,
 } from '@roofline/shared';
 import {
+  DEFAULT_AREA_PARAMS,
   type HiddenEdgeOption,
   lngLatToUtm,
   MAX_ROOF_PART_M2,
@@ -279,7 +280,7 @@ export const DEFAULT_HIDDEN_EDGE: Readonly<HiddenEdgeOption> | null = null;
 export const GOOGLE_PITCH_OFFSET_X12 = 0.25;
 
 /** The reconstruction's own parameters, for the benchmark's studies (development only; the server never sets them). */
-export type RoofTuning = Pick<NonNullable<Parameters<typeof reconstructRoof>[2]>, 'planes' | 'outline' | 'topology' | 'faces' | 'pitch' | 'primitives'>;
+export type RoofTuning = Pick<NonNullable<Parameters<typeof reconstructRoof>[2]>, 'planes' | 'outline' | 'topology' | 'faces' | 'pitch' | 'primitives' | 'area'>;
 
 export type RoofOnLayersOptions = {
   /** Development only: parameter overrides for a benchmark study. */
@@ -400,7 +401,8 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
   const raster = {
     ...layers.raster,
     green: layers.raster.green ?? greenOf(layers),
-    ...(hiddenEdge !== null && hiddenEdge.method !== 'planes' ? { rgb: rgbOf(layers) } : {}),
+    // The photo: for the photo method for hidden edges, and for the eave trim (roof-reconstruct/area.ts, on by default).
+    ...((hiddenEdge !== null && hiddenEdge.method !== 'planes') || (o.tuning?.area?.eavePhoto ?? DEFAULT_AREA_PARAMS.eavePhoto) ? { rgb: rgbOf(layers) } : {}),
   };
   const lidarCloud = o.lidar != null ? lidarOnLayers(layers, o.lidar) : null;
   const fusionCloud = o.lidarFusion != null ? lidarOnLayers(layers, o.lidarFusion.points) : null;
@@ -416,6 +418,7 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
     ...(o.tuning?.faces !== undefined ? { faces: o.tuning.faces } : {}),
     pitch: { offsetX12: GOOGLE_PITCH_OFFSET_X12, ...o.tuning?.pitch },
     ...(o.tuning?.primitives !== undefined ? { primitives: o.tuning.primitives } : {}),
+    ...(o.tuning?.area !== undefined ? { area: o.tuning.area } : {}),
     ...(o.debug !== undefined ? { debug: o.debug } : {}),
     ...(o.lineFeatures !== undefined ? { lineFeatures: o.lineFeatures } : {}),
     ...(o.trace !== undefined ? { trace: o.trace } : {}),
@@ -450,6 +453,7 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
       ...(hiddenEdge !== null ? { hiddenEdge: { ...hiddenEdge } as HiddenEdgeOption } : {}),
       // The same pitch reporting as the main roof (one height map, one calibration).
       pitch: { offsetX12: GOOGLE_PITCH_OFFSET_X12, ...o.tuning?.pitch },
+      ...(o.tuning?.area !== undefined ? { area: o.tuning.area } : {}),
     });
     if (found === null || found.clipped || found.faces.length === 0) continue;
     const r = toRoof3d(found, toLngLat, meta);

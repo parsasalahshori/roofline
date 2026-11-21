@@ -57,6 +57,12 @@ export type Roof3dFace = {
    * bowed heights, so the face is not checked against it.
    */
   fitted?: 'gable' | 'stack';
+  /**
+   * Plan area (part of planAreaSqFt, and of the sloped area at the face's pitch) the face has under the overhang of a
+   * roof above it, along its flashing and step-flashing lines (roof-reconstruct/area.ts): priced, but outside `ring`,
+   * which is what is seen from above. Absent: none.
+   */
+  underOverhangSqFt?: number;
 };
 
 export type Roof3dLine = {
