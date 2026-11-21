@@ -48,10 +48,13 @@ export type PrimitiveParams = {
    */
   anchorInnerM: number;
   anchorOuterM: number;
-  /** A column is a mirror when its two runs agree within runTolM or runTolShare of the clean one, and its eave heights within eaveTolM. */
-  runTolM: number;
-  runTolShare: number;
-  eaveTolM: number;
+  /**
+   * A column is a mirror when its two chords (the ridge's height less the eave's, over the run from ridge to eave)
+   * agree within chordTolX12 (x/12) and the shorter run is at least runRatio of the longer. The chord, not the run or
+   * the eave height on their own: where the roof's edge falls in a mask moves both, along the slope's own line.
+   */
+  chordTolX12: number;
+  runRatio: number;
   /** Mirror columns: at least minRidgeM of them, and this share of the columns where the clean slope runs from ridge to eave. */
   mirrorShare: number;
   /**
@@ -132,9 +135,8 @@ export const DEFAULT_PRIMITIVE_PARAMS: PrimitiveParams = {
   ridgeEndM: 1.5,
   anchorInnerM: 0.4,
   anchorOuterM: 1.6,
-  runTolM: 0.75,
-  runTolShare: 0.15,
-  eaveTolM: 0.35,
+  chordTolX12: 1,
+  runRatio: 0.6,
   mirrorShare: 0.5,
   pitch: 'chord',
   pitchTolX12: 2,
@@ -355,8 +357,8 @@ export function fitGables(
       if (!near.direct || near.run < 1.5) continue;
       direct++;
       const far = walk(b, 1);
-      if (Math.abs(far.run - near.run) > Math.max(prm.runTolM, prm.runTolShare * near.run)) continue;
-      if (!(Math.abs(far.eave - near.eave) <= prm.eaveTolM)) continue;
+      if (Math.min(far.run, near.run) < prm.runRatio * Math.max(far.run, near.run)) continue;
+      if (!(Math.abs((zR - far.eave) / far.run - (zR - near.eave) / near.run) * 12 <= prm.chordTolX12)) continue;
       mirrors.push(far);
     }
     if (mirrors.length * binM < prm.minRidgeM || mirrors.length < prm.mirrorShare * direct) {
@@ -364,7 +366,6 @@ export function fitGables(
       continue;
     }
     const chord = median(mirrors.map((m) => (zR - m.eave) / m.run));
-    debug?.(`gable from face ${f}: ridge at ${zR.toFixed(2)} m, far eave ${median(mirrors.map((m) => m.eave)).toFixed(2)} m, far run ${median(mirrors.map((m) => m.run)).toFixed(2)} m`);
     if (!(Math.abs(chord - slope) * 12 <= prm.pitchTolX12)) {
       debug?.(`gable from face ${f}: far chord ${(chord * 12).toFixed(1)}/12 against ${(slope * 12).toFixed(1)}/12, no mirror`);
       continue;
