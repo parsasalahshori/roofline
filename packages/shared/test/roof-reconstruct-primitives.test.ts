@@ -71,6 +71,11 @@ describe('roof primitives: a bowed slope is one face', () => {
       expectTruth(syn, on);
       expect(on.gables, `turn ${turnDeg}`).toHaveLength(1);
       expect(on.gables![0]!.absorbed).toBeGreaterThanOrEqual(2);
+      // The fitted slope says so (its heights are bowed; Google's segment under it is not a check on it); the clean one does not.
+      const at = (name: string) => on.faces.find((f) => inside(syn.toLocal(syn.faces.find((t) => t.name === name)!.probe), f.ring))!;
+      expect(at('north').fitted).toBe('gable');
+      expect(at('south').fitted).toBeUndefined();
+      expect(off.faces.every((f) => f.fitted === undefined)).toBe(true);
     }
   });
 
