@@ -42,7 +42,16 @@ export const GatesSchema = z.object({
    * catch) may not rise by more than this, in these cohorts only: on simple roofs and under trees a thin face is almost
    * always junk, while a complex roof's narrow dormer cheeks are real.
    */
-  thinFaces: z.object({ maxRise: z.number().nonnegative(), cohorts: z.array(z.string()) }),
+  thinFaces: z.object({
+    maxRise: z.number().nonnegative(),
+    cohorts: z.array(z.string()),
+    /**
+     * true: a thin face that stands on evidence of its own (Roof3dFace.evidence, HouseMetrics.thinExcused) is not
+     * counted: a dormer's cheek or a hip end is a real face however narrow (EagleView's own faces are thin one time in
+     * three). A baseline made before the flag excused nothing (its count is all its thin faces). Absent: as before.
+     */
+    excuseEvidence: z.boolean().optional(),
+  }),
   /** Faces steeper than 18/12 without a Google segment that steep may not rise by more than this. */
   steepJunk: z.object({ maxRise: z.number().nonnegative() }),
   /** Houses that fail to reconstruct (a throw, or no roof) may not rise by more than this. */
@@ -185,7 +194,10 @@ export function compareSplits(base: SplitReport, cur: SplitReport, gates: Gates,
     higher('median |area error| pts', b.stats.truth.medianAreaErrAbsPct, c.stats.truth.medianAreaErrAbsPct, gates.medianAreaErrPct.maxRisePoints, true);
     lower('houses passing all targets', b.stats.checkerPass, c.stats.checkerPass, gates.checkerPass.maxDrop, false);
     higher('slivers', b.stats.slivers, c.stats.slivers, gates.slivers.maxRise, false);
-    if (gates.thinFaces.cohorts.includes(cohort)) higher('thin faces (simple and canopy cohorts)', b.stats.thinFaces, c.stats.thinFaces, gates.thinFaces.maxRise, false);
+    if (gates.thinFaces.cohorts.includes(cohort)) {
+      if (gates.thinFaces.excuseEvidence === true) higher('thin faces without evidence of their own (simple and canopy cohorts)', b.stats.thinUnexcused ?? b.stats.thinFaces, c.stats.thinUnexcused ?? c.stats.thinFaces, gates.thinFaces.maxRise, false);
+      else higher('thin faces (simple and canopy cohorts)', b.stats.thinFaces, c.stats.thinFaces, gates.thinFaces.maxRise, false);
+    }
     higher('steep junk faces', b.stats.steepJunk, c.stats.steepJunk, gates.steepJunk.maxRise, false);
     if (gates.medianAlignedIoU !== undefined) lower('median aligned outline IoU', b.stats.truth.medianAlignedIoU, c.stats.truth.medianAlignedIoU, gates.medianAlignedIoU.maxDrop, true);
     if (gates.flagRecall !== undefined) lower('review flag recall', b.stats.flags.recall, c.stats.flags.recall, gates.flagRecall.maxDrop, true);

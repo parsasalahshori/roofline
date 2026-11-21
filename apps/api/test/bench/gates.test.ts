@@ -5,8 +5,8 @@ import type { SplitReport } from '../../src/bench/roof3d/report.ts';
 
 const st = (v: number): Stat => ({ mean: v, min: v, max: v });
 
-type Knobs = { lidarHouses: number; lidarIoU: number; lidarBnd: number; lidarArea: number; hiddenSamples: number; hiddenMean: number; hiddenWithin: number; truthHiddenMean: number; truthHiddenWithin: number; recall: number; aligned: number; thin: number; iou: number; bnd: number; area: number; pass: number; slivers: number; steep: number; failed: number; noRoof: number; comparable: number; nondet: number; p95: number };
-const BASE: Knobs = { lidarHouses: 10, lidarIoU: 0.88, lidarBnd: 0.4, lidarArea: 5, hiddenSamples: 400, hiddenMean: 0.6, hiddenWithin: 0.55, truthHiddenMean: 0.7, truthHiddenWithin: 0.5, recall: 0.5, aligned: 0.9, thin: 2, iou: 0.8, bnd: 1.0, area: 4, pass: 20, slivers: 3, steep: 2, failed: 0, noRoof: 0, comparable: 12, nondet: 0, p95: 700 };
+type Knobs = { excused: number; lidarHouses: number; lidarIoU: number; lidarBnd: number; lidarArea: number; hiddenSamples: number; hiddenMean: number; hiddenWithin: number; truthHiddenMean: number; truthHiddenWithin: number; recall: number; aligned: number; thin: number; iou: number; bnd: number; area: number; pass: number; slivers: number; steep: number; failed: number; noRoof: number; comparable: number; nondet: number; p95: number };
+const BASE: Knobs = { excused: 0, lidarHouses: 10, lidarIoU: 0.88, lidarBnd: 0.4, lidarArea: 5, hiddenSamples: 400, hiddenMean: 0.6, hiddenWithin: 0.55, truthHiddenMean: 0.7, truthHiddenWithin: 0.5, recall: 0.5, aligned: 0.9, thin: 2, iou: 0.8, bnd: 1.0, area: 4, pass: 20, slivers: 3, steep: 2, failed: 0, noRoof: 0, comparable: 12, nondet: 0, p95: 700 };
 
 function cohort(k: Partial<Knobs> = {}): CohortReport {
   const v = { ...BASE, ...k };
@@ -30,6 +30,8 @@ function cohort(k: Partial<Knobs> = {}): CohortReport {
       faces: { median: st(10), total: st(300) },
       slivers: st(v.slivers),
       thinFaces: st(v.thin),
+      thinExcused: st(v.excused),
+      thinUnexcused: st(v.thin - v.excused),
       steepJunk: st(v.steep),
       steepAny: st(v.steep),
       vertices: { median: st(12) },
@@ -159,6 +161,26 @@ describe('the gates are the contract', () => {
     expect(gatesFailed(gated('canopy-heavy', 1))).toEqual([]);
     expect(gatesFailed(gated('complex', 30))).toEqual([]);
     expect(gatesFailed(gated('all', 30))).toEqual([]);
+  });
+
+  test('with excuseEvidence, a thin face standing on evidence of its own is not counted; without it, it is', () => {
+    const excusing = GatesSchema.parse({ ...DEFAULT_GATES, thinFaces: { ...DEFAULT_GATES.thinFaces, excuseEvidence: true } });
+    const gated = (gates: typeof DEFAULT_GATES, cur: Partial<Knobs>, base: Partial<Knobs> = {}) =>
+      gatesFailed(compareSplits({ houses: 5, cohorts: { 'canopy-light': cohort(base) } }, { houses: 5, cohorts: { 'canopy-light': cohort(cur) } }, gates, { base: 1, cur: 1 })).map((r) => r.rule);
+    // Two more thin faces, both a dormer's cheeks with a ridge of their own: excused; one of them junk: fails.
+    expect(gated(excusing, { thin: 4, excused: 2 })).toEqual([]);
+    expect(gated(excusing, { thin: 4, excused: 1 })).toEqual(['thin faces without evidence of their own (simple and canopy cohorts)']);
+    expect(gated(DEFAULT_GATES, { thin: 4, excused: 2 })).toEqual(['thin faces (simple and canopy cohorts)']);
+    // A baseline made before the flag (no excused counts in its report): all its thin faces count against the run's unexcused ones.
+    const old = cohort();
+    const oldStats: Partial<typeof old.stats> = { ...old.stats };
+    delete oldStats.thinExcused;
+    delete oldStats.thinUnexcused;
+    const before = { ...old, stats: oldStats as typeof old.stats };
+    const vsOld = (cur: Partial<Knobs>) =>
+      gatesFailed(compareSplits({ houses: 5, cohorts: { 'canopy-light': before } }, { houses: 5, cohorts: { 'canopy-light': cohort(cur) } }, excusing, { base: 1, cur: 1 })).map((r) => r.rule);
+    expect(vsOld({ thin: 5, excused: 3 })).toEqual([]);
+    expect(vsOld({ thin: 5, excused: 2 })).toEqual(['thin faces without evidence of their own (simple and canopy cohorts)']);
   });
 
   test('a house that no longer reconstructs fails, by throwing or by finding no roof', () => {

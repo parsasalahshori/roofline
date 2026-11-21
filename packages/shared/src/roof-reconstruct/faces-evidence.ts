@@ -3,6 +3,7 @@
 // over its pixels, and what stands across each boundary. A real small face (a dormer's cheek, a small gable, a hip end)
 // is bounded by creases and steps the height map shows; a junk face (a strip of a bowed slope, a rounded ridge, a
 // gutter) is bounded by nothing: the heights run smoothly through its boundary into a neighbour facing the same way.
+import type { Roof3dFaceEvidence } from '../roof-3d.ts';
 import { adjacency, compact, type Faces, interiorFit, pixelX, pixelY, type Plane, type PlaneParams, planeAngleDeg, planeZ, slopeOf, splitParts } from './planes.ts';
 import { dilate, type Grid, type Mask, squaredDistance } from './raster.ts';
 
@@ -449,11 +450,29 @@ export function realFaces(
   prm: EvidenceParams,
   nearTrees: Mask | null = null,
 ): Uint8Array {
-  const out = new Uint8Array(faces.planes.length);
+  return Uint8Array.from(faceEvidence(g, s, dsm, faces, planePrm, tree, prm, nearTrees), (e) => (e === null ? 0 : 1));
+}
+
+/**
+ * Each face's own evidence (Roof3dFace.evidence): 'crease' for a ridge or hip of its own, else 'facing' for a facing of
+ * its own; null for a fragment, a face by trees, or a face with neither (realFaces is 1 exactly where this is set).
+ */
+export function faceEvidence(
+  g: Grid,
+  s: number,
+  dsm: Float32Array,
+  faces: Faces,
+  planePrm: PlaneParams,
+  tree: Mask | null,
+  prm: EvidenceParams,
+  nearTrees: Mask | null = null,
+): (Roof3dFaceEvidence | null)[] {
+  const out: (Roof3dFaceEvidence | null)[] = faces.planes.map(() => null);
   if (faces.planes.length < 2) return out;
   measureFaces(g, s, dsm, faces, planePrm, tree, () => false, DEFAULT_EVIDENCE_PROBE, nearTrees).forEach((m, k) => {
-    if (m.treeShare >= prm.treeShare) return;
-    if ((ownCreaseM(m, prm) >= prm.creaseM || ownFacingOf(m, prm)) && fragmentOf(m, prm) === null) out[k] = 1;
+    if (m.treeShare >= prm.treeShare || fragmentOf(m, prm) !== null) return;
+    if (ownCreaseM(m, prm) >= prm.creaseM) out[k] = 'crease';
+    else if (ownFacingOf(m, prm)) out[k] = 'facing';
   });
   return out;
 }
