@@ -23,7 +23,11 @@ export type PrimitiveParams = {
   /** ...between these pitches (x/12)... */
   minPitchX12: number;
   maxPitchX12: number;
-  /** ...and this share of its interior lies on its plane (planes.ts interiorFit). */
+  /**
+   * ...and this share of its interior lies on its plane (planes.ts interiorFit). A sanity check, not the evidence (that
+   * is the mirror): on the benchmark's dev houses the slopes whose mirror was fitted had 80 and 84 %, and no other
+   * mirror would have been fitted down to 50 %.
+   */
   cleanShare: number;
   /** Columns across the ridge are this wide, metres (never under two pixels). */
   binM: number;
@@ -98,12 +102,13 @@ export type PrimitiveParams = {
   fineFacingDeg: number;
   fineShare: number;
   /**
-   * A face along a fitted ridge that both slopes explain (absorbShare of it within pocketM of the ridge line and under
+   * A face along a fitted ridge that both slopes explain (pocketShare of it within pocketM of the ridge line and under
    * the two planes within the sag), that lies on both sides of the line (pocketSideShare of it on each) and is close to
    * level (under pocketFlatX12: a clipped gable's small hip is not) is a blunt ridge top in the height map, not a face:
    * it is dissolved into the slopes.
    */
   pocketM: number;
+  pocketShare: number;
   pocketSideShare: number;
   pocketFlatX12: number;
   /**
@@ -143,7 +148,7 @@ export const DEFAULT_PRIMITIVE_PARAMS: PrimitiveParams = {
   minCleanM2: 8,
   minPitchX12: 3,
   maxPitchX12: 14,
-  cleanShare: 0.8,
+  cleanShare: 0.7,
   binM: 0.2,
   crestDropM: 0.12,
   crestHoldM: 0.6,
@@ -175,6 +180,7 @@ export const DEFAULT_PRIMITIVE_PARAMS: PrimitiveParams = {
   fineFacingDeg: 15,
   fineShare: 0.6,
   pocketM: 1.5,
+  pocketShare: 0.7,
   pocketSideShare: 0.15,
   pocketFlatX12: 3,
   stackSteeperX12: 1,
@@ -468,7 +474,10 @@ export function fitGables(
     }
     // The clean slope is a plane: most of its interior on it (the costly test, so only now).
     const fit = interiorFit(g, s, dsm, labels, f, P, planePrm);
-    if (fit === null || fit.share < prm.cleanShare) continue;
+    if (fit === null || fit.share < prm.cleanShare) {
+      debug?.(`gable from face ${f}: a mirror, but only ${fit === null ? '-' : (fit.share * 100).toFixed(0)}% of the face on its plane`);
+      continue;
+    }
     const chord = median(mirrors.map((m) => (zR - m.eave) / m.run));
     if (!(Math.abs(chord - slope) * 12 <= prm.pitchTolX12)) {
       debug?.(`gable from face ${f}: far chord ${(chord * 12).toFixed(1)}/12 against ${(slope * 12).toFixed(1)}/12, no mirror`);
@@ -551,10 +560,20 @@ export function fitGables(
         if (all >= 0.3 * area[k]! && area[k]! > 0) debug(`gable from face ${f}: face ${k} (${(area[k]! * s * s).toFixed(1)} m2, ${(Math.hypot(planes[k]!.a, planes[k]!.b) * 12).toFixed(1)}/12): ${((100 * inStrip[k]!) / area[k]!).toFixed(0)}% under the slope, ${((100 * aboveStrip[k]!) / area[k]!).toFixed(0)}% above, ${((100 * belowStrip[k]!) / area[k]!).toFixed(0)}% far below`);
       }
     }
+    // A level face lying along the ridge on both sides of it is the ridge's blunt top, not a piece of the far slope.
+    const blunt = (k: number): boolean => {
+      const side = prm.pocketSideShare * area[k]!;
+      return (
+        Math.hypot(planes[k]!.a, planes[k]!.b) * 12 < prm.pocketFlatX12 &&
+        byRidgeFar[k]! + byRidgeNear[k]! >= prm.pocketShare * area[k]! &&
+        byRidgeFar[k]! >= side &&
+        byRidgeNear[k]! >= side
+      );
+    };
     const take: number[] = [];
     let covered = 0;
     for (let k = 0; k < n; k++) {
-      if (k === f || gone.has(k) || made.has(k) || area[k] === 0) continue;
+      if (k === f || gone.has(k) || made.has(k) || area[k] === 0 || blunt(k)) continue;
       if (inStrip[k]! >= prm.absorbShare * area[k]! && aboveStrip[k]! <= prm.absorbAboveShare * area[k]!) {
         take.push(k);
         covered += inStrip[k]!;
@@ -590,13 +609,9 @@ export function fitGables(
     }
     for (const k of take) if (k !== target) gone.add(k);
     for (let k = 0; k < n; k++) {
-      if (k === f || set.has(k) || gone.has(k) || made.has(k) || area[k] === 0) continue;
-      const side = prm.pocketSideShare * area[k]!;
-      if (Math.hypot(planes[k]!.a, planes[k]!.b) * 12 >= prm.pocketFlatX12) continue;
-      if (byRidgeFar[k]! + byRidgeNear[k]! >= prm.absorbShare * area[k]! && byRidgeFar[k]! >= side && byRidgeNear[k]! >= side) {
-        pockets.add(k);
-        debug?.(`gable from face ${f}: face ${k} (${(area[k]! * s * s).toFixed(1)} m2) is the ridge's blunt top, dissolved`);
-      }
+      if (k === f || set.has(k) || gone.has(k) || made.has(k) || area[k] === 0 || !blunt(k)) continue;
+      pockets.add(k);
+      debug?.(`gable from face ${f}: face ${k} (${(area[k]! * s * s).toFixed(1)} m2) is the ridge's blunt top, dissolved`);
     }
     made.add(target);
     area[target] = px;
