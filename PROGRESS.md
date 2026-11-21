@@ -161,6 +161,12 @@ EXPECTED: held-out to follow dev. SAW: dev 21.9 -> 18.0, held-out 20.9 -> 20.2. 
 is geometry that is not there at all: small features (turrets, nested hips, small gables: faces are 58-68 % of EagleView's),
 non-roof covers counted as roof (area), jagged wall lines. Held-out hip total is a third short, eave and valley a fifth.
 
+Sealed fresh houses (13 "high", nobody tuned on them; orchestrator only, run int-5-ev2), algorithm 7 -> round 2 integrated:
+OBJECTIVE 26.5 -> 22.0 (ridge 15->14, hip 51->39, valley 22->24, eave 29->16, rake 15->16 %), area median 6.1 -> 5.7 %
+(5/13 within 5 %), main pitch exact 10/13 -> 11/13. Round 2 holds on unseen houses. Every line total there sums SHORT
+(ridge -20, hip -31, valley -14, eave -17, rake -17 %): roof left out. Told the area agent to hunt under-coverage with a
+label-free check against Google's own area on all 84 houses.
+
 # ROOF ROUND 3 (2026-11-21): aimed at what is missing, not at names
 brief: ~/RooflineWork/plans/roof3-brief.md. Base: roof2/integration 6a8b49ac + this note. Worktrees ~/RooflineWork/wt-r3-*.
 | track | branch | idea | result |
