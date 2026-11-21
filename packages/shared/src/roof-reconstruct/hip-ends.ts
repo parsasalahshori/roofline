@@ -85,14 +85,15 @@ export function findHipEnds(scene: ShapeScene, prm: ShapeParams, debug?: (msg: s
     const at = (t: number, d: number) => index(a.x + t * ex + d * nx, a.y + t * ey + d * ny);
     // 1. The band beside the edge: the heights and the faces' planes there, as planes.
     const rows: { t: number; d: number; z: number }[] = [];
-    const rowsModel: { t: number; d: number; z: number }[] = [];
+    const draining: { q: number; r: number }[] = [];
     for (let t = s / 2; t < len; t += s) {
       const reach = Math.min(prm.hipBandOutM, 0.8 * Math.min(t, len - t));
       for (let d = prm.hipBandInM; d <= reach + 1e-9; d += s) {
         const i = at(t, d);
         if (!usable(i) || labels[i]! < 0) continue;
         rows.push({ t, d, z: dsm[i]! });
-        rowsModel.push({ t, d, z: model[i]! });
+        const own = scene.planes[labels[i]!]!;
+        draining.push({ q: own.a * nx + own.b * ny, r: own.a * ex + own.b * ey });
       }
     }
     const free0 = fitBand(rows, true, null, 0);
@@ -101,11 +102,11 @@ export function findHipEnds(scene: ShapeScene, prm: ShapeParams, debug?: (msg: s
     if (!(free.q * 12 >= prm.shapeMinX12 && free.q * 12 <= maxX12) || Math.abs(free.r) > prm.hipAlongShare * free.q) continue;
     let fit = fitBand(rows, false, free, 0.15);
     if (fit === null) continue;
-    // The faces' own planes in the band: climbing away from the edge and level along it, a face already drains to this
+    // The faces' own planes in the band (pixel by pixel, each its face's): climbing away from the edge and level along it, a face already drains to this
     // eave, whatever its pitch (the heights by a roof's edge are a skirt rounded off into the yard, steeper than the
     // roof: no evidence of another face).
-    const mine = fitBand(rowsModel, true, null, 0);
-    if (mine !== null && mine.q >= Math.max(1.5 / 12, 0.4 * fit.q) && Math.abs(mine.r) <= 0.5 * mine.q) continue;
+    const need = Math.max(1.5 / 12, 0.4 * fit.q);
+    if (draining.filter((p) => p.q >= need && Math.abs(p.r) <= 0.5 * p.q).length >= 0.5 * draining.length) continue;
     const where = `eave at ${(a.x + (len / 2) * ex).toFixed(1)},${(a.y + (len / 2) * ey).toFixed(1)} (${len.toFixed(1)} m)`;
     // 2. The face walked in from the edge, column by column, and its plane refitted on the heights it holds. Past an
     //    end of the edge where the outline turns inward (a bump-out's side meets the main wall) the face runs on, in
