@@ -104,6 +104,13 @@ export type TopologyParams = {
    * seven tenths of its points within this (metres) of that line.
    */
   stepCreaseOffM: number;
+  /**
+   * The faces are settled first, with every boundary typed once for its whole length (small and weak faces are
+   * dissolved on the polygons that typing draws, as they always were), and the walls are typed piece by piece on the
+   * faces that are left; that topology is kept unless it draws a face worse (from its pixels, or under the smallest
+   * face size) that the first one drew well. False: piece by piece from the start.
+   */
+  stepPieceSettled: boolean;
 };
 
 export const DEFAULT_TOPOLOGY_PARAMS: TopologyParams = {
@@ -129,6 +136,7 @@ export const DEFAULT_TOPOLOGY_PARAMS: TopologyParams = {
   stepSideTolM: 0.2,
   stepSideShare: 0.4,
   stepCreaseOffM: 0.75,
+  stepPieceSettled: true,
 };
 
 export type TopoFace = { ring: XY[]; areaM2: number; fromPixels: boolean };
