@@ -94,7 +94,7 @@ describe('walls for a stretch of a boundary', () => {
 
       // Typed once for its whole length, the same boundary is a crease all the way: the dormer's front comes out a
       // hip and its eaves valleys (the test would not see the change otherwise).
-      const whole = lengths(reconstructRoof(syn.raster, syn.point, { seed: 7, topology: { stepPieceM: 0 } })!);
+      const whole = lengths(reconstructRoof(syn.raster, syn.point, { seed: 7, topology: { stepPieceM: 0, hipStepM: 0, measuredEdge: false, measuredRidge: false } })!);
       expect((whole.hip ?? 0) + (whole.valley ?? 0), `whole-length typing at ${turnDeg}`).toBeGreaterThan(truth.valley! + 5);
       expect((whole.flashing ?? 0) + (whole['step-flashing'] ?? 0), `whole-length typing at ${turnDeg}`).toBeLessThan(2);
     }
@@ -128,7 +128,8 @@ describe('walls for a stretch of a boundary', () => {
     expect(by.flashing ?? 0).toBeLessThan(1);
     expect(by.eave ?? 0).toBeLessThan(26);
     // Without the rule the step is a wall: the upper face's "eave" over the lower face's flashing, and no ridge.
-    const old = lengths(reconstructRoof(low.raster, low.point, { seed: 7, topology: { stepTopM: 0 } })!);
+    // (The height map's own say on such a line, measuredRidge, is switched off too: it makes the same ridge.)
+    const old = lengths(reconstructRoof(low.raster, low.point, { seed: 7, topology: { stepTopM: 0, measuredRidge: false } })!);
     expect(old.flashing ?? 0).toBeGreaterThan(10);
     expect(old.ridge ?? 0).toBeLessThan(2);
 

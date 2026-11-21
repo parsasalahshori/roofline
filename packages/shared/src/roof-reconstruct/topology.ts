@@ -1200,6 +1200,25 @@ export function buildTopology(
     const right = beside(a, b, -1);
     return { left, right, both: left.rise < -prm.fallAwaySlope && right.rise < -prm.fallAwaySlope };
   };
+  // How far the height map 0.6 m out on the left of a -> b stands above (or below) the height map 0.6 m out on its
+  // right: the median over the line's stations (NaN where neither side is roof). A ridge's two sides are level with
+  // each other there; across a wall one stands the wall's height above the other.
+  const jumpAcross = (a: XY, b: XY): number => {
+    const len = dist(a, b);
+    if (len < 1e-6) return Number.NaN;
+    const ux = (b.x - a.x) / len;
+    const uy = (b.y - a.y) / len;
+    const inset = Math.min(0.4, len / 4);
+    const count = Math.max(1, Math.floor((len - 2 * inset) / 0.4) + 1);
+    const ds: number[] = [];
+    for (let q = 0; q < count; q++) {
+      const t = count === 1 ? len / 2 : inset + ((len - 2 * inset) * q) / (count - 1);
+      const x = a.x + ux * t;
+      const y = a.y + uy * t;
+      ds.push(dsmAt(x - uy * 0.6, y + ux * 0.6) - dsmAt(x + uy * 0.6, y - ux * 0.6));
+    }
+    return medianOf(ds);
+  };
   // A crease from a to b between face i (on its left) and face j, by which way each face drains there.
   // - Both fall away from it: a ridge (level, or the two faces opposite each other) or a hip.
   // - Both come down to it: a valley.
@@ -1345,7 +1364,9 @@ export function buildTopology(
         // level piece it is a ridge whose two sides the height map holds apart (TopologyParams.measuredRidge).
         if (prm.measuredRidge) {
           const m = peakBeside(a, b);
-          if (m.both && Math.max(m.left.along, m.right.along) < prm.ridgeAlongSlope) {
+          // (Not where the height map itself stands a wall's height higher on one side: a tall step is a wall, stepTopM.)
+          const jump = prm.stepTopM > 0 ? Math.abs(jumpAcross(a, b)) : 0;
+          if (m.both && Math.max(m.left.along, m.right.along) < prm.ridgeAlongSlope && !(jump >= prm.stepTopM)) {
             const rise = (Math.abs(planeZ(pi, b.x, b.y) - planeZ(pi, a.x, a.y)) + Math.abs(planeZ(pj, b.x, b.y) - planeZ(pj, a.x, a.y))) / 2;
             const line: TopoLine = { kind: 'ridge', a, b, faces: [i, j], lengthM: Math.hypot(len, rise), riseM: rise };
             lines.push(line);

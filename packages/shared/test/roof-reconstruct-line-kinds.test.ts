@@ -160,7 +160,8 @@ describe('a line the height map falls away from on both sides is a ridge (measur
     const on = topologyOf(shape, seg);
     expect(on.total('ridge')).toBeGreaterThan(8.5);
     expect(on.total('flashing')).toBeLessThan(1.5);
-    const off = topologyOf(shape, seg, { measuredRidge: false });
+    // (stepTopM, the planes' own rule for a small step at the top of a face, makes the same ridge: off too.)
+    const off = topologyOf(shape, seg, { measuredRidge: false, stepTopM: 0 });
     expect(off.total('ridge')).toBeLessThan(1);
     expect(off.total('flashing')).toBeGreaterThan(8.5);
     // The upper half's edge over the wall was an eave: 10 m more of it with the rule off.
