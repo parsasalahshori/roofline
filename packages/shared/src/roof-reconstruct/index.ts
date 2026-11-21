@@ -733,7 +733,10 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   // 4r. Refinement (refine.ts): touching faces one plane explains nearly as well as two are merged, topology again.
   const refinePrm: RefineParams = { ...DEFAULT_REFINE, ...opts.refine };
   if (refinePrm.enabled) {
-    const done = mergeByEnergy(g, s, dsm, faces, planes, tree, (k) => locked.has(faces.planes[k]!), refinePrm, opts.debug);
+    // A face standing on evidence of its own (faces-evidence.ts) is never merged away (refine.keepOwned).
+    const own = refinePrm.keepOwned ? faceEvidence(g, s, dsm, { labels: faces.labels, planes }, planePrm, tree, evidencePrm) : null;
+    const fixedFace = (k: number) => locked.has(faces.planes[k]!);
+    const done = mergeByEnergy(g, s, dsm, faces, planes, tree, { fixed: fixedFace, owned: (k) => own?.[k] != null }, refinePrm, opts.debug);
     if (done !== null) {
       faces = done.faces;
       planes = refit(g, dsm, faces);
