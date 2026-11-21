@@ -69,6 +69,8 @@ export function RequestsList({ selectedId, onPick }: { selectedId: string; onPic
     );
   };
   const measureNew = () => measureAddress(q);
+  // A rep's new address needs its customer first: say where to add one
+  const needsCustomerFirst = create.error instanceof ApiError && create.error.status === 400 && create.error.field === 'address';
   const newFailed = create.error instanceof ApiError && create.error.message !== '' ? create.error.message : measure.measureNewFailed;
 
   // The address the window opened with is measured once
@@ -199,6 +201,11 @@ export function RequestsList({ selectedId, onPick }: { selectedId: string; onPic
           {create.isError ? (
             <div role="alert">
               <Banner tone="danger">{newFailed}</Banner>
+              {needsCustomerFirst ? (
+                <Button variant="default" href="/customers/new">
+                  {measure.measureNewAddCustomer}
+                </Button>
+              ) : null}
             </div>
           ) : null}
         </div>

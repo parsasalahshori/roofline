@@ -67,6 +67,7 @@ export const measure = {
   measureNewBusy: 'Finding the roof',
   measureNewSlow: 'Finding the roof outline for this area (first time only, about 30 seconds)',
   measureNewFailed: 'We could not measure that address.',
+  measureNewAddCustomer: 'Add the customer first',
   pickRequest: 'Pick a request, or type any address in the search to measure a new roof.',
   proposalLink: 'Proposal',
   proposalLinkLabel: (name: string) => `Proposal for ${name}`,

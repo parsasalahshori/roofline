@@ -850,6 +850,22 @@ describe('the Measure roof scan', () => {
 });
 
 describe('the EagleView option after measuring', () => {
+  it('a home with no customer asks who it is for, and drafts the proposal the report will land on before ordering', async () => {
+    await open({ hasCustomer: false });
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(paidReports.exactChoice.replace(/[()]/g, '\\$&')) }));
+    expect(screen.getByText(measure.customerTitle)).toBeTruthy();
+    const order = screen.getByRole('button', { name: paidReports.exactRequest }) as HTMLButtonElement;
+    expect(order.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText(measure.customerName), { target: { value: 'Dana Fox' } });
+    fireEvent.change(screen.getByLabelText(measure.customerPhone), { target: { value: '4025550142' } });
+    expect(order.disabled).toBe(false);
+    fireEvent.click(order);
+    await screen.findByRole('link', { name: measure.waitingForOk });
+    expect(sent('POST /api/proposals')).toEqual([{ measurementId: 'm1', customer: { name: 'Dana Fox', phone: '4025550142', askedByText: false } }]);
+    expect(sent('POST /api/measurements/m1/exact-report')).toHaveLength(1);
+    expect(calls.findIndex((c) => c.key === 'POST /api/proposals')).toBeLessThan(calls.findIndex((c) => c.key === 'POST /api/measurements/m1/exact-report'));
+  });
+
   it('is a secondary choice marked paid and ordered after the owner OK, and links to the approval once asked', async () => {
     await open();
     const order = screen.getByRole('button', { name: new RegExp(paidReports.exactChoice) });

@@ -149,7 +149,7 @@ function Loaded({ m, preview, onProposalReady }: { m: MeasurementView; preview: 
   const send = useSendProposal();
   const model = readRoof(m);
   // A roof whose proposal is already out links to it instead of offering to send again
-  const { rows: requestRows } = useRequestRows('');
+  const { rows: requestRows, list: requestList } = useRequestRows('');
   const sentRow = requestRows.find((r) => r.measurementId === m.id && (r.status === 'estimate_sent' || r.status === 'signed'));
   const scan = useRoofScan(m, model?.totals.facetCount ?? m.facets);
   // Opened by a Measure press: the scan plays straight away
@@ -507,6 +507,37 @@ function Loaded({ m, preview, onProposalReady }: { m: MeasurementView; preview: 
     }
   };
 
+  // A report that comes back needs a proposal to land on (it re-prices the home's open ones): one is drafted first when there is none
+  const hasProposal = builtRef.current !== null || requestRows.some((r) => r.measurementId === m.id);
+  const orderReport = async () => {
+    if (makingRef.current) return;
+    makingRef.current = true;
+    setMaking(true);
+    setMakeFailed(null);
+    try {
+      // A save that did not go through is shown by the screen itself: nothing is ordered on an outline that is not saved
+      if (!(await flushPending().then(() => true, () => false))) return;
+      if (!hasProposal) {
+        try {
+          builtRef.current = await build.mutateAsync({
+            measurementId: m.id,
+            ...(handoff.jobId !== undefined && { jobId: handoff.jobId }),
+            ...(handoff.customer !== undefined && { customer: handoff.customer }),
+            ...(needsCustomer && { customer: { name: customer.name.trim(), phone: customer.phone.trim(), askedByText: customer.askedByText } }),
+          });
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 400 && error.field === 'customer') setCustomerAsked(true);
+          setMakeFailed(makeFailureMessage(error));
+          return;
+        }
+      }
+      await exact.mutateAsync().catch(() => undefined);
+    } finally {
+      makingRef.current = false;
+      setMaking(false);
+    }
+  };
+
   const noOutline = drawMode && ring.length < 3;
   const proposalBlocked = making || problem !== null || noOutline || locked || patch.isPending || (needsCustomer && !customerReady(customer));
   const ordering = canOrderReport && (choice === 'exact' || exact.isSuccess);
@@ -664,7 +695,7 @@ function Loaded({ m, preview, onProposalReady }: { m: MeasurementView; preview: 
   const controls = (
     <>
       {canOrderReport ? <EstimateChoice choice={choice} onChoose={setChoice} disabled={exact.isPending || exact.isSuccess} /> : null}
-      {needsCustomer && !ordering ? <CustomerStep value={customer} onChange={setCustomer} disabled={making} /> : null}
+      {needsCustomer && !exact.isSuccess ? <CustomerStep value={customer} onChange={setCustomer} disabled={making} /> : null}
     </>
   );
 
@@ -679,9 +710,9 @@ function Loaded({ m, preview, onProposalReady }: { m: MeasurementView; preview: 
       ) : (
         <Button
           className={styles.send}
-          busy={exact.isPending}
-          disabled={exact.isPending}
-          onClick={() => void flushPending().then(() => exact.mutate(), () => {})}
+          busy={exact.isPending || making}
+          disabled={exact.isPending || making || requestList.isPending || (!hasProposal && needsCustomer && !customerReady(customer))}
+          onClick={() => void orderReport()}
         >
           {paidReports.exactRequest}
         </Button>

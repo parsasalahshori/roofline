@@ -97,6 +97,7 @@ beforeEach(() => {
         if (measureGate !== null) await measureGate;
         const address = posts[posts.length - 1]?.address ?? '';
         if (address.includes('nowhere')) return new Response(JSON.stringify({ error: 'We could not find that address.' }), { status: 400, headers: { 'content-type': 'application/json' } });
+        if (address.includes('nocustomer')) return new Response(JSON.stringify({ error: 'Pick the customer for this address first.', field: 'address' }), { status: 400, headers: { 'content-type': 'application/json' } });
         return new Response(JSON.stringify({ id: 'mnew' }), { status: 201, headers: { 'content-type': 'application/json' } });
       }
       urls.push(url);
@@ -177,6 +178,15 @@ describe('RequestsList', () => {
     fireEvent.click(offer);
     await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/estimator/measure/mnew'));
     expect(posts).toEqual([{ address: '12 Elm St' }]);
+  });
+
+  it('an address that needs its customer first says so and links to adding one', async () => {
+    renderList();
+    await screen.findByText('Mei Abernathy');
+    fireEvent.change(screen.getByRole('searchbox', { name: measure.requestsSearch }), { target: { value: '5 nocustomer Rd' } });
+    fireEvent.click(await screen.findByRole('button', { name: measure.measureNew('5 nocustomer Rd') }));
+    expect(await screen.findByText('Pick the customer for this address first.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: measure.measureNewAddCustomer })).toHaveAttribute('href', '/customers/new');
   });
 
   it('opens the new measurement with the scan asked for, so it plays without a second press', async () => {
