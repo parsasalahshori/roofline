@@ -199,6 +199,13 @@ export type BackofficeQuote = {
   issues: DesignIssue[];
   /** A discount over the rep's limit waits for an office approval. */
   discountNeedsApproval: boolean;
+  /**
+   * The highest discount percent an owner or office user has approved for this quote (additive to the contract), null
+   * when none. The discount counts once it is at or under this; raising it past this needs a new approval.
+   */
+  discountApprovedPercent?: number | null;
+  /** Who approved it (their name), when known. */
+  discountApprovedBy?: string | null;
   /** The order this quote became when it was accepted (additive to the contract); null before. */
   orderId?: string | null;
   /** Only on the POST /quotes answer when measured sizes were imported: windows left out because they were measured only to quote grade (homeowner app, room scan, card). */

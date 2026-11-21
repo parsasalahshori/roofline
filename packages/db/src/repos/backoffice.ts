@@ -10,7 +10,7 @@ import {
   type Tier,
   type WindowDesign,
 } from '@roofline/shared';
-import { backofficeOrderEvents, backofficeOrders, backofficeQuotes, companySettings, customers, jobs, properties, windowOrders, windowMeasurements, type StoredHouseVisual } from '../schema/index.ts';
+import { auditLog, backofficeOrderEvents, backofficeOrders, backofficeQuotes, companySettings, customers, jobs, properties, windowOrders, windowMeasurements, type StoredHouseVisual } from '../schema/index.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
 import { memberNames } from './appointments.ts';
 import { jobScope } from './scope.ts';
@@ -172,6 +172,32 @@ export async function setBackofficeQuoteVisual(tx: Tx, ctx: TenantContext, id: s
   if (!(await getBackofficeQuote(tx, ctx, id))) return false;
   await tx.update(backofficeQuotes).set({ houseVisual: visual, updatedAt: now }).where(and(eq(backofficeQuotes.id, id), eq(backofficeQuotes.companyId, ctx.companyId)));
   return true;
+}
+
+/** audit_log action and target type of a discount approval (append-only, so the approval needs no column of its own). */
+const DISCOUNT_APPROVED = 'backoffice.discount_approved';
+const QUOTE_TARGET = 'backoffice_quote';
+
+export type DiscountApproval = { percent: number; byUserId: string | null; byUserName: string | null; at: Date };
+
+/** The newest discount approval recorded for a quote, or null when it has none. */
+export async function getQuoteDiscountApproval(tx: Tx, ctx: TenantContext, quoteId: string): Promise<DiscountApproval | null> {
+  const [row] = await tx
+    .select({ after: auditLog.after, by: auditLog.actorUserId, at: auditLog.at })
+    .from(auditLog)
+    .where(and(eq(auditLog.companyId, ctx.companyId), eq(auditLog.action, DISCOUNT_APPROVED), eq(auditLog.targetType, QUOTE_TARGET), eq(auditLog.targetId, quoteId)))
+    .orderBy(desc(auditLog.at), desc(auditLog.id))
+    .limit(1);
+  if (!row) return null;
+  const percent = (row.after as { discountPercent?: unknown } | null)?.discountPercent;
+  if (typeof percent !== 'number') return null;
+  const name = row.by === null ? null : ((await memberNames(tx)).get(row.by) ?? null);
+  return { percent, byUserId: row.by, byUserName: name, at: row.at };
+}
+
+/** Records that the signed-in owner or office user approved this discount percent on the quote (the route checks who may). */
+export async function recordQuoteDiscountApproval(tx: Tx, ctx: TenantContext, quoteId: string, percent: number, now: Date): Promise<void> {
+  await tx.insert(auditLog).values({ companyId: ctx.companyId, actorUserId: ctx.userId, action: DISCOUNT_APPROVED, targetType: QUOTE_TARGET, targetId: quoteId, after: { discountPercent: percent }, at: now, createdAt: now, updatedAt: now });
 }
 
 /** The window order sheet (window_orders) of a measurement, when it has one: the id the back office order links to. */

@@ -71,15 +71,21 @@ export function useQuotes() {
   });
 }
 
-/** Starts a quote from a job; the answer carries the new quote's id. */
+/** What starting a quote gives back: its id, and (when it started from measured sizes) how many windows came in and how many were left out. */
+export type CreatedQuote = { id: string; measured?: { kept: number; skipped: number } };
+
+/** Starts a quote from a job, optionally from the sizes measured at the job's address; the answer carries the new quote's id. */
 export function useCreateQuote() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (jobId: string) => {
-      const body = await apiFetch<{ id?: string; quote?: { id: string } }>('/api/backoffice/quotes', { method: 'POST', body: { jobId } });
+    mutationFn: async (input: { jobId: string; importMeasured: boolean }): Promise<CreatedQuote> => {
+      const body = await apiFetch<{ id?: string; quote?: { id: string }; designs?: unknown[]; skippedMeasured?: number }>('/api/backoffice/quotes', {
+        method: 'POST',
+        body: input.importMeasured ? { jobId: input.jobId, importMeasured: true } : { jobId: input.jobId },
+      });
       const id = body.quote?.id ?? body.id;
       if (!id) throw new Error('No quote id');
-      return id;
+      return { id, ...(input.importMeasured && { measured: { kept: body.designs?.length ?? 0, skipped: body.skippedMeasured ?? 0 } }) };
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: boKeys.quotes }),
   });

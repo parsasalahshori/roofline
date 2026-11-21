@@ -96,6 +96,7 @@
 
 .main {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
   min-width: 0;
   padding: 20px;
@@ -270,5 +271,34 @@
 @media (max-width: 1099.98px) and (min-width: 720px) {
   .page[data-inspector="open"] .layout {
     grid-template-columns: minmax(0, 1fr) 420px;
+  }
+}
+
+/* An accepted quote: price, extras and status are for reading only (the markup inside is made inert). */
+.lockable {
+  display: contents;
+}
+
+.approved {
+  color: var(--bo-green, #1f7a3d);
+  font-weight: 600;
+}
+
+.acceptRow {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  padding: 12px 16px;
+}
+
+/* The photo button keeps its icon only on a phone so the customer's name has room in the toolbar. */
+@media (max-width: 719.98px) {
+  .photoLabel {
+    display: none;
+  }
+
+  .toolbarEnd {
+    gap: 8px;
   }
 }

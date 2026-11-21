@@ -63,13 +63,19 @@
 .splitButtons {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: 1fr;
+  grid-auto-columns: minmax(0, 1fr);
   gap: 8px;
   padding: 8px 12px;
 }
 
 .splitButtons > * {
   width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 44px;
+  white-space: normal;
+  line-height: 1.15;
+  text-align: center;
 }
 
 .actionRow {

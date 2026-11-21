@@ -18,6 +18,7 @@ import { Actors, addressFor, inCompany, mustCreate } from './crm-helpers.ts';
 import { greyJpeg, sha256 } from './homeowner-fixture.ts';
 import { makeTestApp, type SuperAgent, type TestApp } from './helpers.ts';
 import { seedFootprintFixture } from '../src/scripts/footprint-fixture.ts';
+import { pdfText } from './pdf-text.ts';
 import { windowPhoto } from './window-photo-fixture.ts';
 
 /*
@@ -324,6 +325,67 @@ describe('accepting a quote', () => {
   });
 });
 
+describe('approving a discount', () => {
+  async function overLimitQuote(rep: SuperAgent, n = 1) {
+    const { jobId } = await jobFor(rep, { assignTo: t.seed.a.rep.userId, n });
+    const q = await newQuote(rep, jobId);
+    const saved = await save(rep, q, { designs: [unit()], discountPercent: 15 });
+    expect(saved.status).toBe(200);
+    expect((saved.body as BackofficeQuote).discountNeedsApproval).toBe(true);
+    expect((saved.body as BackofficeQuote).discountApprovedPercent).toBeNull();
+    return q;
+  }
+
+  it('lets only the owner or office approve; then the rep may accept, and the approval shows on the quote', async () => {
+    const rep = await who.as('rep');
+    const owner = await who.as('owner');
+    const q = await overLimitQuote(rep);
+
+    const byRep = await rep.post(`${BASE}/quotes/${q.id}/approve-discount`);
+    expect(byRep.status).toBe(403);
+    expect((await rep.post(`${BASE}/quotes/${q.id}/accept`)).status).toBe(403);
+
+    const approved = await owner.post(`${BASE}/quotes/${q.id}/approve-discount`);
+    expect(approved.status, JSON.stringify(approved.body)).toBe(200);
+    expect(approved.body).toMatchObject({ discountNeedsApproval: true, discountApprovedPercent: 15 });
+    expect((approved.body as BackofficeQuote).discountApprovedBy).toBeTruthy();
+    expect(((await rep.get(`${BASE}/quotes/${q.id}`)).body as BackofficeQuote).discountApprovedPercent).toBe(15);
+
+    const accepted = await rep.post(`${BASE}/quotes/${q.id}/accept`);
+    expect(accepted.status, JSON.stringify(accepted.body)).toBe(201);
+    expect(((await owner.post(`${BASE}/quotes/${q.id}/approve-discount`)).status)).toBe(409);
+  });
+
+  it('asks for a new approval when the discount goes up past the approved one, not when it comes down', async () => {
+    const rep = await who.as('rep');
+    const office = await who.as('office');
+    const q = await overLimitQuote(rep);
+    await office.post(`${BASE}/quotes/${q.id}/approve-discount`);
+    await save(rep, q, { designs: [unit()], discountPercent: 20 });
+    expect((await rep.post(`${BASE}/quotes/${q.id}/accept`)).status).toBe(403);
+    await save(rep, q, { designs: [unit()], discountPercent: 12 });
+    expect((await rep.post(`${BASE}/quotes/${q.id}/accept`)).status).toBe(201);
+  });
+
+  it('has nothing to approve inside the rep limit, and the office accepting an unapproved discount counts as approving it', async () => {
+    const rep = await who.as('rep');
+    const office = await who.as('office');
+    const { jobId } = await jobFor(rep, { assignTo: t.seed.a.rep.userId, n: 3 });
+    const q = await newQuote(rep, jobId);
+    await save(rep, q, { designs: [unit()], discountPercent: 5 });
+    expect((await office.post(`${BASE}/quotes/${q.id}/approve-discount`)).status).toBe(409);
+
+    const q2 = await overLimitQuote(rep, 2);
+    expect((await office.post(`${BASE}/quotes/${q2.id}/accept`)).status).toBe(201);
+    expect(((await office.get(`${BASE}/quotes/${q2.id}`)).body as BackofficeQuote).discountApprovedPercent).toBe(15);
+  });
+
+  it('is a 404 for a quote the person cannot see', async () => {
+    const owner = await who.as('owner');
+    expect((await owner.post(`${BASE}/quotes/00000000-0000-4000-8000-000000000000/approve-discount`)).status).toBe(404);
+  });
+});
+
 describe('orders and stage moves', () => {
   it('shows the board with days in stage, and an order with its events', async () => {
     const owner = await who.as('owner');
@@ -488,7 +550,9 @@ describe('the house picture', () => {
     expect((await owner.post(`${BASE}/quotes/${q.id}/visual/photo`)).status).toBe(400);
     const up = await owner.post(`${BASE}/quotes/${q.id}/visual/photo`).attach('photo', Buffer.from(greyJpeg(800, 600)), 'house.jpg');
     expect(up.status, JSON.stringify(up.body)).toBe(201);
-    expect(up.body).toMatchObject({ widthPx: 800, heightPx: 600 });
+    expect(up.body).toMatchObject({ widthPx: 800, heightPx: 600, quoteId: q.id });
+    // The web picture editor saves the photo by this field, so the answer carries the visual's photoUploadId
+    expect(up.body.photoUploadId).toBe(up.body.id);
 
     const corners = [[0.1, 0.1], [0.3, 0.1], [0.3, 0.4], [0.1, 0.4]];
     const put = await owner.put(`${BASE}/quotes/${q.id}/visual`).send({ photoUploadId: up.body.id, placements: [{ id: 'pl1', designId: 'u1', corners }] });
@@ -550,6 +614,31 @@ describe('documents', () => {
     expect(final.status).toBe(200);
     expect((final.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
     expect((final.body as Buffer).length).toBeLessThan(2_000_000);
+  });
+
+  it('the factory order and the quote list both windows with sizes, options and the server total; safety glass is called out', async () => {
+    const owner = await who.as('owner');
+    const { jobId } = await jobFor(owner);
+    const draft = await newQuote(owner, jobId);
+    const kitchen = unit({ label: 'Kitchen', quantity: 2, widthIn: 35.5, heightIn: 59.5, options: { 'exterior-color': 'ext-bronze' } });
+    // A tub window: the safety rules call for tempered glass and it is not chosen
+    const bath = unit({ id: 'u2', label: 'Bathroom', quantity: 1, widthIn: 30, heightIn: 36, gridType: 'none', options: {}, safety: { besideDoor: false, wetArea: true, sillHeightIn: 30, walkway: null } });
+    const saved = (await save(owner, draft, { designs: [kitchen, bath], discountPercent: 4 })).body as BackofficeQuote;
+    expect(saved.issues.some((i) => i.field === 'safety')).toBe(true);
+
+    const text = async (kind: string) => pdfText((await pdf(owner, draft.id, kind)).body as Buffer);
+    const total = '$' + (saved.totals.better.totalCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2 });
+    const before = await text('factory-order');
+    expect(before).toContain('DRAFT');
+    for (const word of ['Kitchen', 'Bathroom', '35 1/2', '59 1/2', 'Bronze']) expect(before).toContain(word);
+    expect(before).toContain('Tempered glass is called for by the safety rules but not chosen: Bathroom');
+    expect(await text('quote')).toContain(total);
+
+    expect((await owner.post(`${BASE}/quotes/${draft.id}/accept`)).status).toBe(201);
+    const after = await text('factory-order');
+    expect(after).not.toContain('DRAFT');
+    for (const word of ['Kitchen', 'Bathroom', '35 1/2']) expect(after).toContain(word);
+    expect(await text('order-confirmation')).toContain(total);
   });
 
   it('refuses an unknown document and one for a quote the member cannot see', async () => {

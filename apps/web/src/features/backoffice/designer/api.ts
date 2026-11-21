@@ -1,6 +1,7 @@
-import type { BackofficeQuote, ProductCatalog, QuoteDocument } from '@roofline/shared';
+import type { BackofficeOrder, BackofficeQuote, ProductCatalog, QuoteDocument } from '@roofline/shared';
 import { useMutation, useQuery, useQueryClient, type UseMutationResult, type UseQueryResult } from '@tanstack/react-query';
 import { apiFetch } from '../../../api/client.ts';
+import { boKeys } from '../api.ts';
 import type { QuoteDraft } from './pricing.ts';
 
 export const quoteKey = (id: string) => ['backoffice', 'quote', id] as const;
@@ -44,3 +45,25 @@ export function usePutQuote(id: string): UseMutationResult<BackofficeQuote, Erro
 }
 
 export const pickDraft = (q: QuoteDraft): QuoteDraft => ({ status: q.status, tier: q.tier, designs: q.designs, accessories: q.accessories, discountPercent: q.discountPercent });
+
+/** POST /api/backoffice/quotes/:id/approve-discount (owner, office): the discount as saved now counts; the answer is the quote. */
+export function useApproveDiscount(id: string): UseMutationResult<BackofficeQuote, Error, void> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch<BackofficeQuote>(`${quotePath(id)}/approve-discount`, { method: 'POST' }),
+    onSuccess: (saved) => queryClient.setQueryData<BackofficeQuote>(quoteKey(id), (current) => (current ? { ...saved, ...pickDraft(current) } : saved)),
+  });
+}
+
+/** POST /api/backoffice/quotes/:id/accept: the customer said yes. Makes the order (and releases the factory order); the answer is the order. */
+export function useAcceptQuote(id: string): UseMutationResult<BackofficeOrder, Error, void> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch<BackofficeOrder>(`${quotePath(id)}/accept`, { method: 'POST' }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: quoteKey(id) });
+      void queryClient.invalidateQueries({ queryKey: boKeys.quotes });
+      void queryClient.invalidateQueries({ queryKey: boKeys.orders });
+    },
+  });
+}

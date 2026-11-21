@@ -239,6 +239,12 @@ function renderFactoryOrder(i: DocumentInput, compress?: boolean): PDFKit.PDFDoc
     d.font(FONT.bold).fontSize(9).fillColor(COLOR.warning).text(`${typed.length} unit${typed.length === 1 ? ' has a typed size' : 's have typed sizes'}, not measured on site. Confirm the size before this goes to the factory.`, p.left, d.y, { width: p.contentW });
     d.y += 4;
   }
+  // The safety rules (door, tub, low sill, walkway) call for tempered glass here, and the unit does not have it.
+  const needsTempered = [...new Set(view.issues.filter((x) => x.field === 'safety').map((x) => view.designs.find((dz) => dz.id === x.designId)?.label ?? ''))].filter(Boolean);
+  if (needsTempered.length > 0) {
+    d.font(FONT.bold).fontSize(9).fillColor(COLOR.warning).text(`Tempered glass is called for by the safety rules but not chosen: ${needsTempered.join(', ')}. Confirm the glass before this goes to the factory.`, p.left, d.y, { width: p.contentW });
+    d.y += 4;
+  }
   d.y += 6;
 
   const cols: Col[] = [

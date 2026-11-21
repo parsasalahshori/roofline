@@ -154,4 +154,14 @@
 .row[data-stacked="true"] [role="radio"] {
   flex: 1 1 0;
   justify-content: center;
+  min-width: 0;
+}
+
+/* On a phone the three packages could not fit side by side with their prices: the price goes under the name */
+@media (max-width: 719.98px) {
+  .row[data-stacked="true"] [role="radio"] {
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px 6px;
+  }
 }

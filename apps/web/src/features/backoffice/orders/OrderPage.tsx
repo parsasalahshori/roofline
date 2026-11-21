@@ -101,22 +101,25 @@ function Detail({
           </UiLink>
         </li>
         <li>
-          {order.windowOrderId ? (
+          {/* Accepting the quote released the factory order: its sheet (every window, size and option) is the PDF made from the quote. */}
+          <a className="bo-row" href={`/api/backoffice/quotes/${encodeURIComponent(order.quoteId)}/documents/factory-order`} target="_blank" rel="noreferrer">
+            <span className="bo-row-main">
+              <b>{t.openFactoryOrder}</b>
+              <small className="bo-foot">{t.factoryReleased}</small>
+            </span>
+            <Icon name="chev" size={16} className="bo-chev" />
+          </a>
+        </li>
+        {order.windowOrderId ? (
+          <li>
             <UiLink href="/estimator/windows" className="bo-row">
               <span className="bo-row-main">
-                <b>{t.openFactoryOrder}</b>
-                <small className="bo-foot">{t.factoryReleased}</small>
+                <b>{t.openMeasuringSheet}</b>
               </span>
               <Icon name="chev" size={16} className="bo-chev" />
             </UiLink>
-          ) : (
-            <div className="bo-row">
-              <span className="bo-row-main">
-                <b className="bo-row-value">{t.noFactoryOrder}</b>
-              </span>
-            </div>
-          )}
-        </li>
+          </li>
+        ) : null}
       </ul>
 
       {canEdit ? (
