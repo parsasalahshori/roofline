@@ -1035,8 +1035,13 @@ export function buildTopology(
       const y = a.y + uy * t + ny * d;
       return labelAt(x, y) >= 0 ? dsmAt(x, y) : Number.NaN;
     };
-    const rise = ts.map((t) => (labelAt(a.x + ux * t + nx * 1.5, a.y + uy * t + ny * 1.5) >= 0 ? (dsmAt(a.x + ux * t + nx * 1.5, a.y + uy * t + ny * 1.5) - dsmAt(a.x + ux * t + nx * 0.6, a.y + uy * t + ny * 0.6)) / 0.9 : Number.NaN));
-    const zs = ts.map((t) => zAt(t, 1));
+    // Measured from `near` to `far` in from the line: 0.6 to 1.5 m on a 0.1 m height map. On coarser pixels the edge's
+    // roll-off (the roof's edge blurred over about three pixels) reaches further in, and a sample on it reads every
+    // edge as climbing away, so the window starts three pixels in.
+    const near = Math.max(0.6, 3 * s);
+    const far = near + 0.9;
+    const rise = ts.map((t) => (labelAt(a.x + ux * t + nx * far, a.y + uy * t + ny * far) >= 0 ? (dsmAt(a.x + ux * t + nx * far, a.y + uy * t + ny * far) - dsmAt(a.x + ux * t + nx * near, a.y + uy * t + ny * near)) / 0.9 : Number.NaN));
+    const zs = ts.map((t) => zAt(t, near + 0.4));
     const lag = Math.min(3, count - 1);
     const slopes: number[] = [];
     if (lag >= 1) for (let q = 0; q + lag < count; q++) if (ts[q + lag]! - ts[q]! > 0.5) slopes.push(Math.abs(zs[q + lag]! - zs[q]!) / (ts[q + lag]! - ts[q]!));
@@ -1365,8 +1370,8 @@ export function buildTopology(
         if (prm.measuredRidge) {
           const m = peakBeside(a, b);
           // (Not where the height map itself stands a wall's height higher on one side: a tall step is a wall, stepTopM.)
-          const jump = prm.stepTopM > 0 ? Math.abs(jumpAcross(a, b)) : 0;
-          if (m.both && Math.max(m.left.along, m.right.along) < prm.ridgeAlongSlope && !(jump >= prm.stepTopM)) {
+          const tall = prm.stepTopM > 0 && Math.abs(jumpAcross(a, b)) >= prm.stepTopM;
+          if (m.both && Math.max(m.left.along, m.right.along) < prm.ridgeAlongSlope && !tall) {
             const rise = (Math.abs(planeZ(pi, b.x, b.y) - planeZ(pi, a.x, a.y)) + Math.abs(planeZ(pj, b.x, b.y) - planeZ(pj, a.x, a.y))) / 2;
             const line: TopoLine = { kind: 'ridge', a, b, faces: [i, j], lengthM: Math.hypot(len, rise), riseM: rise };
             lines.push(line);

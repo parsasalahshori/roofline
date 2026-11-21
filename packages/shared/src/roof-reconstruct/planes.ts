@@ -107,6 +107,23 @@ export type PlaneParams = {
    */
   ownFacingDeg: number;
   ownShare: number;
+  /**
+   * buildFaces' cleanup runs at most cleanupRounds rounds, plus cleanupRoundsPerFace for every face it starts with
+   * (never more than cleanupRounds + 400). The explained, chamfer and sliver steps dissolve one face a round, so the
+   * fixed 12 end the cleanup unfinished on every roof with more than a dozen faces to dissolve (and the later steps
+   * never run there). 1: a round for every face, the cleanup runs to its end. 0 (the default): the fixed budget.
+   * Measured on the 18 dev answer keys the unfinished cleanup is the better one while the size rules decide alone
+   * (run to the end they dissolve 19 more real faces; held-out median area error 2.4 -> 3.8 %): turn this on together
+   * with the evidence rules (faces-evidence.ts), which hold them back.
+   */
+  cleanupRounds: number;
+  cleanupRoundsPerFace: number;
+  /**
+   * A part that was dissolved is not split off again (splitNecks): without this a face split at a neck, its small part
+   * dissolved as explained and its pixels flooded back, is split and dissolved again every two rounds until the
+   * rounds run out. false (the default, for the same reason as cleanupRoundsPerFace): as before.
+   */
+  splitOnce: boolean;
 };
 
 export const DEFAULT_PLANE_PARAMS: PlaneParams = {
@@ -151,6 +168,9 @@ export const DEFAULT_PLANE_PARAMS: PlaneParams = {
   pairCreaseM: 0.5,
   ownFacingDeg: 0,
   ownShare: 0.75,
+  cleanupRounds: 12,
+  cleanupRoundsPerFace: 0,
+  splitOnce: false,
 };
 
 /** Pixel centre coordinates in metres: x east from the grid's left edge, y north from its top edge (so y <= 0). */
@@ -524,6 +544,14 @@ export function adjacency(g: Grid, labels: Int32Array, n: number): { area: numbe
 
 export type Faces = { labels: Int32Array; planes: Plane[] };
 
+/** What the evidence rules (faces-evidence.ts) do inside buildFaces; made by the caller so this file does not depend on them. */
+export type FaceHooks = {
+  /** The faces with every fragment joined to the face it is part of, or null when there is none. */
+  fragments?: (f: Faces) => Faces | null;
+  /** 1 for each face that is real on its evidence: no size rule (steps 2 to 5) dissolves it; such a face is unsure. */
+  real?: (f: Faces) => Uint8Array;
+};
+
 /** Residuals above this (metres) mean the pixel is not on that plane at all. */
 const UNEXPLAINED_M = 0.5;
 
@@ -642,6 +670,8 @@ export function buildFaces(
   debug?: (msg: string) => void,
   /** Set (1) on the pixels of faces that stay only for a ridge or a facing of their own (step 5): unsure faces. */
   unsure: Mask | null = null,
+  /** Evidence rules (faces-evidence.ts), absent when off: fragments joined to their faces (step 1b). */
+  evidence?: FaceHooks,
 ): Faces {
   const n0 = found.length;
   let planes = found.map((f) => f.plane);
@@ -669,9 +699,16 @@ export function buildFaces(
     }
     debug(`faces: ${what} face at ${(sx / Math.max(1, m)).toFixed(1)},${(sy / Math.max(1, m)).toFixed(1)}: ${(area * px2).toFixed(1)} m2, ${(slopeOf(f.planes[k]!) * 12).toFixed(1)}/12 facing ${azimuth(f.planes[k]!).toFixed(0)}`);
   };
-  for (let round = 0; round < 12; round++) {
+  // Pixels of every face dissolved so far (splitOnce): splitNecks does not split such a part off again.
+  const fused = prm.splitOnce ? new Uint8Array(roof.length) : null;
+  const dissolved = (f: Faces, gone: ReadonlySet<number>): Faces => {
+    if (fused !== null) for (let i = 0; i < f.labels.length; i++) if (gone.has(f.labels[i]!)) fused[i] = 1;
+    return dissolve(g, s, dsm, roof, f, gone, tree);
+  };
+  const rounds = prm.cleanupRounds + Math.min(400, Math.round(prm.cleanupRoundsPerFace * faces.planes.length));
+  for (let round = 0; round < rounds; round++) {
     // 0. A face in two parts joined by a narrow neck becomes two faces (each then checked like any other).
-    const split = splitNecks(g, s, dsm, faces, prm);
+    const split = splitNecks(g, s, dsm, faces, prm, fused);
     if (split.planes.length !== faces.planes.length) {
       faces = split;
       continue;
@@ -688,7 +725,6 @@ export function buildFaces(
       const r = idx.map((i) => residual(g, s, dsm, p, i)).filter(Number.isFinite).sort((x, y) => x - y);
       return r.length > 0 ? r[Math.floor(r.length * 0.8)]! : Infinity;
     };
-    const own = planes.map((p, k) => p80(p, pixelsOf[k]!));
     const pairs: { a: number; b: number; ang: number }[] = [];
     for (const [key, cracks] of adj.shared) {
       const a = Math.floor(key / 100000);
@@ -697,6 +733,8 @@ export function buildFaces(
       const ang = planeAngleDeg(planes[a]!, planes[b]!);
       if (ang < prm.mergeLooseDeg) pairs.push({ a, b, ang });
     }
+    // Each face's own fit, read only when a pair is up for a merge (none is while mergeLooseDeg is 0).
+    const own = pairs.length > 0 ? planes.map((p, k) => p80(p, pixelsOf[k]!)) : [];
     pairs.sort((x, y) => x.ang - y.ang || x.a - y.a || x.b - y.b);
     const merged = new Set<number>();
     const labels = faces.labels.slice();
@@ -721,6 +759,19 @@ export function buildFaces(
       faces = splitParts(g, compact(labels, planes));
       continue;
     }
+    // 1b. A fragment (the rounded top or smeared foot of a face) joins the face it is part of (faces-evidence.ts).
+    const joined = evidence?.fragments?.(faces) ?? null;
+    if (joined !== null) {
+      faces = joined;
+      continue;
+    }
+    // Faces that are real on their evidence: the size rules below pass over them, and mark them unsure.
+    const keep = evidence?.real !== undefined && faces.planes.length > 1 ? evidence.real(faces) : null;
+    const saved = new Set<number>();
+    const markSaved = (): void => {
+      if (unsure === null || saved.size === 0) return;
+      for (let i = 0; i < faces.labels.length; i++) if (saved.has(faces.labels[i]!)) unsure[i] = 1;
+    };
     // 2. Dissolve small faces into their neighbours.
     const gone = new Set<number>();
     const order = [...Array(n).keys()].sort((x, y) => adj.area[x]! - adj.area[y]! || x - y);
@@ -732,42 +783,50 @@ export function buildFaces(
       const small = m2 < prm.tinyFaceM2 || (m2 < prm.smallFaceM2 && onEdge < 0.25);
       if (!small || gone.size >= n - 1) continue;
       if (m2 >= prm.tinyFaceM2 && prm.smallKeepDeg > 0 && realPlane(g, s, dsm, faces, k, neighbours(adj, s, k), prm)) continue;
+      if (m2 >= prm.tinyFaceM2 && keep?.[k] === 1) {
+        saved.add(k);
+        continue;
+      }
       say('small', faces, k, adj.area[k]!);
       gone.add(k);
     }
     if (gone.size > 0) {
-      faces = dissolve(g, s, dsm, roof, faces, gone, tree);
+      markSaved();
+      faces = dissolved(faces, gone);
       continue;
     }
     // 3. Dissolve a face its neighbours already explain: a rounded hip, ridge or apex, or a terrace in the height
     //    map, where the neighbours' planes (one of them, or the envelope of them) lie within explainedM of the
     //    heights over most of the face. One at a time, the best explained first.
-    const worst = explainedFace(g, s, dsm, faces, adj, prm);
+    const worst = explainedFace(g, s, dsm, faces, adj, prm, keep, saved);
     if (worst >= 0) {
+      markSaved();
       say('explained', faces, worst, adj.area[worst]!);
-      faces = dissolve(g, s, dsm, roof, faces, new Set([worst]), tree);
+      faces = dissolved(faces, new Set([worst]));
       continue;
     }
     // 4. Dissolve a chamfer: a shallower face between two neighbours that meet in a convex crease (a hip or ridge the
     //    height map has rounded off), facing between them; or a riser: a small strip far steeper than a neighbour
     //    facing the same way (a terrace in the height map). Flat faces stay (a deck on a hip roof is real).
-    const chamfer = chamferFace(g, s, faces, adj, prm);
+    const chamfer = chamferFace(g, s, faces, adj, prm, keep, saved);
     if (chamfer >= 0) {
+      markSaved();
       say('chamfer/riser', faces, chamfer, adj.area[chamfer]!);
-      faces = dissolve(g, s, dsm, roof, faces, new Set([chamfer]), tree);
+      faces = dissolved(faces, new Set([chamfer]));
       continue;
     }
     // 5. Dissolve a sliver: a thin strip, or a small face much steeper than its main neighbour on the roof's edge, by
     //    trees or on rough heights (a gutter, a wall, a crown leaning over the eave). When the evidence rules are on
     //    (pairFacingDeg, ownFacingDeg), a face with a ridge partner or a facing direction of its own is neither.
     const why: { text: string; kept?: string } = { text: '' };
-    const sliver = sliverFace(g, s, dsm, faces, adj, prm, tree, debug !== undefined ? why : undefined, unsure);
+    const sliver = sliverFace(g, s, dsm, faces, adj, prm, tree, debug !== undefined ? why : undefined, unsure, keep, saved);
+    markSaved();
     if (sliver < 0) {
       if (why.kept !== undefined) debug?.(`faces: kept for a ridge or a facing of their own: ${why.kept.slice(1).split('|').join('; ')}`);
       break;
     }
     say(`sliver/steep (${why.text})`, faces, sliver, adj.area[sliver]!);
-    faces = dissolve(g, s, dsm, roof, faces, new Set([sliver]), tree);
+    faces = dissolved(faces, new Set([sliver]));
   }
   return faces;
 }
@@ -777,7 +836,7 @@ export function buildFaces(
  * into their parts: an opening of the face by 0.4 m that leaves two or more parts of minPlaneM2 or more; each pixel
  * goes to the nearest part.
  */
-function splitNecks(g: Grid, s: number, dsm: Float32Array, faces: Faces, prm: PlaneParams): Faces {
+function splitNecks(g: Grid, s: number, dsm: Float32Array, faces: Faces, prm: PlaneParams, fused: Mask | null = null): Faces {
   const r = Math.max(1, Math.round(0.4 / s));
   const minPx = prm.minPlaneM2 / (s * s);
   const labels = faces.labels.slice();
@@ -814,9 +873,12 @@ function splitNecks(g: Grid, s: number, dsm: Float32Array, faces: Faces, prm: Pl
     // Parts big enough, and really on the plane (most of their pixels within tol of it): not clutter at the edge.
     const onPlane = new Array<number>(sizes.length).fill(0);
     for (let j = 0; j < parts.length; j++) if (parts[j]! > 0 && residual(g, s, dsm, planes[k]!, full(j)) < prm.tolM) onPlane[parts[j]!]!++;
+    // A part that is mostly pixels of a face dissolved before is not split off again.
+    const again = new Array<number>(sizes.length).fill(0);
+    if (fused !== null) for (let j = 0; j < parts.length; j++) if (parts[j]! > 0 && fused[full(j)] === 1) again[parts[j]!]!++;
     const big = sizes
       .map((sz, id) => ({ sz, id }))
-      .filter((p) => p.id > 0 && p.sz * s * s >= prm.smallFaceM2 && onPlane[p.id]! >= 0.8 * p.sz)
+      .filter((p) => p.id > 0 && p.sz * s * s >= prm.smallFaceM2 && onPlane[p.id]! >= 0.8 * p.sz && again[p.id]! < 0.5 * p.sz)
       .sort((a, b) => b.sz - a.sz || a.id - b.id);
     if (big.length < 2) continue;
     // Multi-source breadth-first growth of the big parts through the face.
@@ -937,7 +999,7 @@ export function dissolve(g: Grid, s: number, dsm: Float32Array, roof: Mask, face
 }
 
 /** The face its neighbours explain best (see buildFaces, step 3), or -1 when none qualifies. */
-function explainedFace(g: Grid, s: number, dsm: Float32Array, faces: Faces, adj: ReturnType<typeof adjacency>, prm: PlaneParams): number {
+function explainedFace(g: Grid, s: number, dsm: Float32Array, faces: Faces, adj: ReturnType<typeof adjacency>, prm: PlaneParams, keep: Uint8Array | null = null, saved: Set<number> | null = null): number {
   const n = faces.planes.length;
   if (n < 2) return -1;
   const near: number[][] = Array.from({ length: n }, () => []);
@@ -981,6 +1043,10 @@ function explainedFace(g: Grid, s: number, dsm: Float32Array, faces: Faces, adj:
     if (d < limit && d - limit < pickDev) {
       // A real plane of its own (a dormer's face) is explained only when its neighbours' planes are really on it.
       if (prm.smallKeepDeg > 0 && d >= prm.explainedRealM && realPlane(g, s, dsm, faces, k, near[k]!, prm)) continue;
+      if (keep?.[k] === 1) {
+        saved?.add(k);
+        continue;
+      }
       pickDev = d - limit;
       pick = k;
     }
@@ -998,7 +1064,7 @@ function arc(a: number, b: number): number {
 }
 
 /** The smallest chamfer or riser face (see buildFaces, step 4), or -1. */
-function chamferFace(g: Grid, s: number, faces: Faces, adj: ReturnType<typeof adjacency>, prm: PlaneParams): number {
+function chamferFace(g: Grid, s: number, faces: Faces, adj: ReturnType<typeof adjacency>, prm: PlaneParams, keep: Uint8Array | null = null, saved: Set<number> | null = null): number {
   const n = faces.planes.length;
   const near: number[][] = Array.from({ length: n }, () => []);
   for (const [key, cracks] of adj.shared) {
@@ -1034,7 +1100,8 @@ function chamferFace(g: Grid, s: number, faces: Faces, adj: ReturnType<typeof ad
       (m) => arc(azimuth(P[m]!), azimuth(P[f]!)) < 25 && slope(f) - slope(m) > 4 / 12 && adj.area[f]! < 0.5 * adj.area[m]! && adj.area[f]! * s * s < 15,
     );
     if (riser) {
-      pick = f;
+      if (keep?.[f] === 1) saved?.add(f);
+      else pick = f;
       continue;
     }
     let found = false;
@@ -1048,7 +1115,10 @@ function chamferFace(g: Grid, s: number, faces: Faces, adj: ReturnType<typeof ad
         if (between && convex(a, b)) found = true;
       }
     }
-    if (found) pick = f;
+    if (found) {
+      if (keep?.[f] === 1) saved?.add(f);
+      else pick = f;
+    }
   }
   return pick;
 }
@@ -1138,7 +1208,7 @@ export function ownFacing(g: Grid, s: number, dsm: Float32Array, faces: Faces, a
  * that lies along the roof's edge (15% of its boundary), next to tree crowns (a fifth of it within a metre of one),
  * or on rough heights (a fifth of its pixels more than 12 cm off its own plane).
  */
-function sliverFace(g: Grid, s: number, dsm: Float32Array, faces: Faces, adj: ReturnType<typeof adjacency>, prm: PlaneParams, tree: Mask | null, why?: { text: string; kept?: string }, unsure: Mask | null = null): number {
+function sliverFace(g: Grid, s: number, dsm: Float32Array, faces: Faces, adj: ReturnType<typeof adjacency>, prm: PlaneParams, tree: Mask | null, why?: { text: string; kept?: string }, unsure: Mask | null = null, keep: Uint8Array | null = null, saved: Set<number> | null = null): number {
   // A face that stays only for its ridge partner or its own facing is unsure (and told to the debug output).
   const keptForRidge = (f: number): void => {
     if (why !== undefined) {
@@ -1194,6 +1264,10 @@ function sliverFace(g: Grid, s: number, dsm: Float32Array, faces: Faces, adj: Re
       const real = own || paired();
       if (!own && real) keptForRidge(f);
       if (!real) {
+        if (keep?.[f] === 1) {
+          saved?.add(f);
+          continue;
+        }
         pick = f;
         if (why !== undefined) why.text = `narrow, ${width.toFixed(2)} m wide`;
         continue;
@@ -1217,6 +1291,10 @@ function sliverFace(g: Grid, s: number, dsm: Float32Array, faces: Faces, adj: Re
     // ...or has a ridge or a facing direction of its own.
     if (paired()) {
       keptForRidge(f);
+      continue;
+    }
+    if (keep?.[f] === 1) {
+      saved?.add(f);
       continue;
     }
     pick = f;

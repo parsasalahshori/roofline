@@ -16,18 +16,20 @@ import type { LngLat } from '../roof.ts';
 import type { Roof3d, Roof3dLineKind, RoofQuality, RoofQualityReason } from '../roof-3d.ts';
 import { dist, nearestOnSegment, pointInRing, signedArea, simplifyClosedIdx, type XY } from './geom.ts';
 import { DEFAULT_OUTLINE_PARAMS, mainAxis, maskBoundary, type OutlineParams, squareOutline } from './outline.ts';
-import { buildFaces, DEFAULT_PLANE_PARAMS, dissolve, findPlanes, type FoundPlane, type Plane, type PlaneParams, refitFaces } from './planes.ts';
+import { buildFaces, DEFAULT_PLANE_PARAMS, dissolve, type FaceHooks, type Faces, findPlanes, type FoundPlane, type Plane, type PlaneParams, refitFaces } from './planes.ts';
 import { type CanopyParams, completeRoof, crownMap, crownRmsK, DEFAULT_CANOPY_PARAMS, localPlaneRms } from './canopy.ts';
 import { groundPlane, heightAboveGround, planeInCrop } from './ground.ts';
 import { close, components, countSet, dilate, fillHoles, largestComponent, open, open3, seededRandom, squaredDistance } from './raster.ts';
 import { buildTopology, DEFAULT_TOPOLOGY_PARAMS, type LineFeatures, type TopologyParams } from './topology.ts';
 import { DEFAULT_PHOTO_EDGE, type PhotoEdge, type PhotoEdgeParams, photoEdges } from './outline-photo.ts';
 import { boxShare, crownFromGreen, EAVE_SUPPORT, integral } from './eave-support.ts';
+import { DEFAULT_EVIDENCE, type EvidenceParams, measureFaces, mergeFragments, nearTreesOf, realFaces } from './faces-evidence.ts';
 import { DEFAULT_FACE_CLEANUP, type FaceCleanupParams, faceSupport, type WeakReason, weakCandidate, weakFaces } from './faces-cleanup.ts';
 import { inferHiddenEaves, type OutlinePlanesParams, type PlanesDecline } from './outline-planes.ts';
 import { DEFAULT_LIDAR_EDGE, type LidarCloud, type LidarEdgeParams, type LidarEdgeReport, lidarHiddenEdges } from './outline-lidar.ts';
 import { DEFAULT_LIDAR_FUSION, fuseLidar, type LidarFusionParams, type LidarFusionReport } from './lidar-fusion.ts';
 import { DEFAULT_PITCH_PARAMS, type PitchParams, reportedPitches } from './pitch.ts';
+import { stackChords } from './pitch-stacks.ts';
 import { DEFAULT_PRIMITIVE_PARAMS, fitGables, type FittedGable, type FittedKind, type MergedStack, mergeStacks, type PrimitiveParams } from './primitives.ts';
 import { type AreaParams, DEFAULT_AREA_PARAMS, type EaveTrimEdge, trimOutline, trimRoof, tuckUnder } from './area.ts';
 
@@ -93,6 +95,8 @@ export type ReconstructOptions = {
   topology?: Partial<TopologyParams>;
   /** The weak-face cleanup on the finished faces (faces-cleanup.ts). */
   faces?: Partial<FaceCleanupParams>;
+  /** Faces kept, joined or dropped on evidence read off the height map, not on size (faces-evidence.ts). */
+  evidence?: Partial<EvidenceParams>;
   /** Roof primitives: a gable's bowed slope fitted from its ridge, its eave and the slope across the ridge (primitives.ts). */
   primitives?: Partial<PrimitiveParams>;
   /**
@@ -490,12 +494,26 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   // Unsure faces' pixels (faces-cleanup.ts, unsureThinM): the planes found late in a long search (after the first
   // surePlanes), and the faces buildFaces keeps only for a ridge or a facing of their own. On this crop's pixels: a
   // step that re-cuts the crop (canopy completion, a hidden-edge move) leaves the faces as they are.
-  const unsure = new Uint8Array(g.w * g.h);
-  for (let k = planePrm.surePlanes; k < found.length; k++) {
-    const patch = found[k]!.patch;
-    for (let i = 0; i < patch.length; i++) if (patch[i] === 1) unsure[i] = 1;
-  }
-  let faces = buildFaces(g, s, dsm, roof, found, planePrm, tree, opts.debug, unsure);
+  const unsureOf = (gr: { w: number; h: number }, planesFound: readonly FoundPlane[]): Uint8Array => {
+    const out = new Uint8Array(gr.w * gr.h);
+    for (let k = planePrm.surePlanes; k < planesFound.length; k++) {
+      const patch = planesFound[k]!.patch;
+      for (let i = 0; i < patch.length; i++) if (patch[i] === 1) out[i] = 1;
+    }
+    return out;
+  };
+  let unsure = unsureOf(g, found);
+  const evidencePrm: EvidenceParams = { ...DEFAULT_EVIDENCE, ...opts.evidence };
+  const hooksOn = (gr: { w: number; h: number }, z: Float32Array): FaceHooks | undefined => {
+    if (!evidencePrm.enabled) return undefined;
+    // The crowns grown by a metre once for this crop (every round of buildFaces reads them).
+    const near = tree === null ? null : nearTreesOf(gr, s, tree);
+    return {
+      ...(evidencePrm.joinFragments ? { fragments: (f: Faces) => mergeFragments(gr, s, z, f, planePrm, evidencePrm, opts.debug) } : {}),
+      real: (f) => realFaces(gr, s, z, f, planePrm, tree, evidencePrm, near),
+    };
+  };
+  let faces = buildFaces(g, s, dsm, roof, found, planePrm, tree, opts.debug, unsure, hooksOn(g, dsm));
   if (faces.planes.length === 0) return null;
   // 2p. Primitives (primitives.ts): a gable's bowed slope becomes one face on the plane through its ridge and its eave.
   //     Such a plane is locked: a refit on the heights (which are what is wrong there) leaves it as fitted.
@@ -524,7 +542,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   let planes: Plane[];
   ({ faces, planes } = withPrimitives(g, dsm, roof, faces, tree));
   opts.trace?.('faces', { c0, r0, w: g.w, h: g.h, labels: faces.labels, planes });
-
+  if (opts.debug !== undefined && opts.trace !== undefined) for (const [k, m] of measureFaces(g, s, dsm, { labels: faces.labels, planes }, planePrm, tree).entries()) opts.debug(`evidence ${JSON.stringify({ k, ...m })}`);
   // 2a. Roof under canopy or in shade the mask missed: grown along the faces' own planes where the heights show it,
   //     bridged across notches a crown bites out of one roof line (canopy.ts). Only with Google's box (the bound) and the
   //     ground (crowns are told by their height above it), never on a terrace cut. The crop is re-cut round the
@@ -535,7 +553,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   // gives the same roof as reconstructing again with completion off (every step before this one is deterministic and
   // nothing after it draws on rng) without paying for steps 1 and 2 twice (merge note: the undone roof used to be a
   // whole second reconstruction, which failed the benchmark's runtime gate).
-  const beforeCompletion = { g, c0, r0, c1, r1, dsm, roof, googleMask, tree, roofPx, clipped, faces, planes, locked, gables, stacks };
+  const beforeCompletion = { g, c0, r0, c1, r1, dsm, roof, googleMask, tree, roofPx, clipped, faces, planes, locked, gables, stacks, unsure };
   if (opts.canopy?.complete === true && groundFull !== null && box0 !== null && !joined) {
     const done = completeOnWindow(raster, { c0, r0, c1, r1 }, g, s, roof, faces.labels, planes, groundFull, opts.building!, canopyPrm);
     if (done !== null) {
@@ -552,7 +570,9 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
       tree = re.tree;
       roofPx = countSet(roof);
       clipped = clipped || c0 <= 0 || r0 <= 0 || c1 >= W - 1 || r1 >= H - 1;
-      faces = buildFaces(g, s, dsm, roof, re.found, planePrm, tree);
+      // The unsure faces again on the new crop (the first mask is on the old one: the thin-unsure rule would be off here).
+      unsure = unsureOf(g, re.found);
+      faces = buildFaces(g, s, dsm, roof, re.found, planePrm, tree, undefined, unsure, hooksOn(g, dsm));
       if (faces.planes.length === 0) return null;
       ({ faces, planes } = withPrimitives(g, dsm, roof, faces, tree));
       canopyOut = { grownM2: round(done.grownM2, 2), bridgedM2: round(done.bridgedM2, 2), occluded: re.occluded };
@@ -691,8 +711,14 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
           });
         }
         const weak = weakFaces(support, cleanupPrm);
+        // A face that is real on its evidence (faces-evidence.ts) and not thinner than evidence.thinM is no weak face.
+        const real = evidencePrm.enabled && weak.size > 0 ? realFaces(g, s, dsm, { labels: faces.labels, planes }, planePrm, tree, evidencePrm) : null;
         for (const [k, why] of weak) {
           if (tiny.has(k)) continue;
+          if (real?.[k] === 1 && why !== 'steep-unsupported' && support[k]!.widthM >= evidencePrm.thinM) {
+            opts.debug?.(`faces: kept on evidence against ${why}: face ${k}, ${support[k]!.areaM2.toFixed(1)} m2, ${support[k]!.widthM.toFixed(2)} m wide`);
+            continue;
+          }
           tiny.add(k);
           dissolved[why] = (dissolved[why] ?? 0) + 1;
           if (opts.debug !== undefined) {
@@ -717,7 +743,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
       for (let k = 0; k < outline.length; k++) perim += dist(outline[k]!, outline[(k + 1) % outline.length]!);
       if (topo.faces.some((f) => f.fromPixels) || edgeLen > canopyPrm.topologyEdgeSlack * perim) {
         opts.debug?.(`canopy: completion undone (its topology came out worse: ${topo.faces.filter((f) => f.fromPixels).length} pixel faces, edges ${edgeLen.toFixed(1)} m on a ${perim.toFixed(1)} m outline)`);
-        ({ g, c0, r0, c1, r1, dsm, roof, googleMask, tree, roofPx, clipped, faces, planes, locked, gables, stacks } = beforeCompletion);
+        ({ g, c0, r0, c1, r1, dsm, roof, googleMask, tree, roofPx, clipped, faces, planes, locked, gables, stacks, unsure } = beforeCompletion);
         canopyOut = { grownM2: 0, bridgedM2: 0, occluded: [], undone: 'topology' };
         continue;
       }
@@ -811,8 +837,27 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   // The pitch each face reports: its own plane's, pooled with the faces of the roof that agree with it (pitch.ts). The
   // planes, and so the creases and every line, stay as fitted; the sloped area follows the pooled pitch (and the
   // calibration offset only when pitch.offsetArea says so).
-  const pitch = reportedPitches(planes.map((p, k) => ({ pitchX12: Math.hypot(p.a, p.b) * 12, areaM2: raw[k]! * scale })), { ...DEFAULT_PITCH_PARAMS, ...opts.pitch });
+  const pitchPrm: PitchParams = { ...DEFAULT_PITCH_PARAMS, ...opts.pitch };
+  // A bowed slope's two strips read its chord (pitch-stacks.ts); a gable slope mirrored from across its ridge is a copy
+  // of that slope's reading, not one of its own (PitchParams.fittedVote).
+  const chords = pitchPrm.stackChord && !(primPrm.enabled && primPrm.stacks) ? stackChords(g, s, dsm, roof, faces, planes, locked, primPrm, FLAT_X12, opts.debug) : null;
+  const copied = (p: Plane) => locked.get(p) === 'gable' && primPrm.pitch === 'mirror';
+  // A face measured by the lidar (lidar fusion: the same test as its `source`, withLidarProvenance) is not a reading of
+  // the calibrated height map: the calibration offset is not taken off it (PitchFace.uncalibrated).
+  const lidarPx = opts.lidarPixels != null && opts.lidarPixels.length === W * H ? opts.lidarPixels : null;
+  const byLidar = (k: number) => lidarPx !== null && lidarShareIn(lidarPx, W, H, s, topo.faces[k]!.ring.map(shift)) >= LIDAR_SOURCE_SHARE;
+  const pitch = reportedPitches(
+    planes.map((p, k) => ({
+      pitchX12: chords?.[k] ?? Math.hypot(p.a, p.b) * 12,
+      areaM2: raw[k]! * scale,
+      azimuthDeg: azimuthOf(p),
+      ...(copied(p) ? { fitted: true } : {}),
+      ...(byLidar(k) ? { uncalibrated: true } : {}),
+    })),
+    pitchPrm,
+  );
   if (opts.debug !== undefined) for (const gr of pitch.groups) opts.debug(`pitch group ${gr.pitchX12.toFixed(2)}/12: ${gr.faces.length} faces, ${gr.areaM2.toFixed(1)} m2`);
+  if (opts.debug !== undefined) planes.forEach((p, k) => opts.debug!(`pitch face ${k}: fitted ${(Math.hypot(p.a, p.b) * 12).toFixed(4)}/12, ${(raw[k]! * scale).toFixed(3)} m2, reports ${pitch.pitchX12[k]!.toFixed(4)}${locked.has(p) ? `, ${locked.get(p)!}` : ''}`));
   const localFaces: LocalFace[] = planes.map((p0, k) => {
     // The plane in whole-raster coordinates: z = a (x - ox) + b (y - oy) + c.
     const plane: Plane = { a: p0.a, b: p0.b, c: p0.c - p0.a * ox - p0.b * oy };
@@ -878,32 +923,43 @@ const THIN_FACE_M = 0.9;
 /** A face with less than this share on lidar pixels is Google's (the seam's pixels, a crown's edge). */
 const LIDAR_FACE_MIN_SHARE = 0.05;
 
+/** A face with this share or more of its polygon on lidar pixels is the lidar's: `source` 'lidar', its pitch not calibrated as Google's. */
+const LIDAR_SOURCE_SHARE = 0.5;
+
+/** The share of a polygon's pixels (raster-local metres, on a W x H raster of `s` metre pixels) that are set in `px`; 0 for an empty polygon. */
+function lidarShareIn(px: Uint8Array, W: number, H: number, s: number, ring: readonly XY[]): number {
+  const { on, all } = pixelsIn(px, W, H, s, ring);
+  return all > 0 ? on / all : 0;
+}
+
+function pixelsIn(px: Uint8Array, W: number, H: number, s: number, ring: readonly XY[]): { on: number; all: number } {
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const p of ring) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); }
+  const c0 = Math.max(0, Math.floor(x0 / s)), c1 = Math.min(W - 1, Math.ceil(x1 / s));
+  const r0 = Math.max(0, Math.floor(-y1 / s)), r1 = Math.min(H - 1, Math.ceil(-y0 / s));
+  let on = 0, all = 0;
+  for (let r = r0; r <= r1; r++) {
+    for (let c = c0; c <= c1; c++) {
+      if (!pointInRing({ x: (c + 0.5) * s, y: -(r + 0.5) * s }, ring)) continue;
+      all++;
+      if (px[r * W + c] === 1) on++;
+    }
+  }
+  return { on, all };
+}
+
 function withLidarProvenance(local: LocalRoof, report: LidarFusionReport, px: Uint8Array | null, evidence: { dsm: Float32Array; groundPx: Uint8Array } | null, W: number, H: number): LocalRoof {
   const s = local.pixelSizeM;
   const outlineArea = Math.abs(signedArea(local.outline));
   if (px === null) return { ...local, lidarFusion: { ...report, addedPlanM2: 0, addedSlopedM2: 0, addedShare: 0 } };
-  const shareIn = (ring: readonly XY[]): { on: number; all: number } => {
-    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    for (const p of ring) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); }
-    const c0 = Math.max(0, Math.floor(x0 / s)), c1 = Math.min(W - 1, Math.ceil(x1 / s));
-    const r0 = Math.max(0, Math.floor(-y1 / s)), r1 = Math.min(H - 1, Math.ceil(-y0 / s));
-    let on = 0, all = 0;
-    for (let r = r0; r <= r1; r++) {
-      for (let c = c0; c <= c1; c++) {
-        if (!pointInRing({ x: (c + 0.5) * s, y: -(r + 0.5) * s }, ring)) continue;
-        all++;
-        if (px[r * W + c] === 1) on++;
-      }
-    }
-    return { on, all };
-  };
+  const shareIn = (ring: readonly XY[]): { on: number; all: number } => pixelsIn(px, W, H, s, ring);
   let addedSloped = 0;
   const faces = local.faces.map((f) => {
     const { on, all } = shareIn(f.ring);
     const share = all > 0 ? on / all : 0;
     addedSloped += share * f.slopedAreaM2;
     if (!(share >= LIDAR_FACE_MIN_SHARE)) return f;
-    return { ...f, lidarShare: round(share, 3), ...(share >= 0.5 ? { source: 'lidar' as const } : {}) };
+    return { ...f, lidarShare: round(share, 3), ...(share >= LIDAR_SOURCE_SHARE ? { source: 'lidar' as const } : {}) };
   });
   const addedPlan = shareIn(local.outline).on * s * s;
   const addedShare = outlineArea > 0 ? addedPlan / outlineArea : 0;
