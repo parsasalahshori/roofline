@@ -271,7 +271,7 @@ export function roofOnLayers(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
 export const DEFAULT_HIDDEN_EDGE: Readonly<HiddenEdgeOption> | null = null;
 
 /** The reconstruction's own parameters, for the benchmark's studies (development only; the server never sets them). */
-export type RoofTuning = Pick<NonNullable<Parameters<typeof reconstructRoof>[2]>, 'planes' | 'outline' | 'topology' | 'faces'>;
+export type RoofTuning = Pick<NonNullable<Parameters<typeof reconstructRoof>[2]>, 'planes' | 'outline' | 'topology' | 'faces' | 'primitives'>;
 
 export type RoofOnLayersOptions = {
   /** Development only: parameter overrides for a benchmark study. */
@@ -402,6 +402,7 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
     ...(o.tuning?.outline !== undefined ? { outline: o.tuning.outline } : {}),
     ...(o.tuning?.topology !== undefined ? { topology: o.tuning.topology } : {}),
     ...(o.tuning?.faces !== undefined ? { faces: o.tuning.faces } : {}),
+    ...(o.tuning?.primitives !== undefined ? { primitives: o.tuning.primitives } : {}),
     ...(o.debug !== undefined ? { debug: o.debug } : {}),
     ...(ownBox ? { building: [box.sw, [box.ne[0], box.sw[1]] as LngLat, box.ne, [box.sw[0], box.ne[1]] as LngLat].map(toPixel) } : {}),
     ...(lidarCloud !== null ? { lidar: { cloud: lidarCloud, ...(o.lidarParams !== undefined ? { params: o.lidarParams } : {}) } } : {}),
