@@ -6,6 +6,9 @@
 // 2. Planes: sequential RANSAC with local candidates (10 cm tolerance, at most 24/12, at least 2 m2), every roof
 //    pixel then given to the plane it fits best by a flood from the planes' own pixels; touching faces whose planes
 //    agree are merged, small pieces in the roof's middle are dissolved into their neighbours (planes.ts).
+//    Then primitives (primitives.ts): a gable's slope the height map has bowed and the search cut into strips is one
+//    face again, on the plane its ridge, its eave and the clean slope across the ridge give; so are stacked strips of
+//    a hip roof's face, on the plane through crest and eave.
 // 3. The outline: the roof's pixel boundary, simplified and squared to the house (outline.ts).
 // 4. Topology: corners where faces meet, creases as straight plane intersections between corners, steps where the
 //    planes are far apart in height, eaves and rakes along the outline (topology.ts).
@@ -25,6 +28,7 @@ import { inferHiddenEaves, type OutlinePlanesParams, type PlanesDecline } from '
 import { DEFAULT_LIDAR_EDGE, type LidarCloud, type LidarEdgeParams, type LidarEdgeReport, lidarHiddenEdges } from './outline-lidar.ts';
 import { DEFAULT_LIDAR_FUSION, fuseLidar, type LidarFusionParams, type LidarFusionReport } from './lidar-fusion.ts';
 import { DEFAULT_PITCH_PARAMS, type PitchParams, reportedPitches } from './pitch.ts';
+import { DEFAULT_PRIMITIVE_PARAMS, fitGables, type FittedGable, type FittedKind, type MergedStack, mergeStacks, type PrimitiveParams } from './primitives.ts';
 
 export { lngLatToUtm, utmToLngLat, utmZoneOfEpsg, type UtmZone } from './utm.ts';
 export { MAX_RASTER_PIXELS, MAX_ROOF_PART_M2, RASTER_PROBLEMS, type RasterProblem, rasterProblem, roofPartAreaM2 } from './guard.ts';
@@ -32,6 +36,7 @@ export type { XY } from './geom.ts';
 export { DEFAULT_PHOTO_EDGE, PHOTO_EDGE_REASONS, type PhotoEdge, type PhotoEdgeParams, type PhotoEdgeReason } from './outline-photo.ts';
 export type { Plane } from './planes.ts';
 export { DEFAULT_PITCH_PARAMS, type PitchFace, type PitchGroup, type PitchParams, reportedPitches } from './pitch.ts';
+export { DEFAULT_PRIMITIVE_PARAMS, type FittedGable, type FittedKind, type MergedStack, type PrimitiveParams } from './primitives.ts';
 export { DEFAULT_LIDAR_FUSION, fuseLidar, LIDAR_FUSION_REASONS, type LidarFusionParams, type LidarFusionReason, type LidarFusionReport, type LidarFusionResult } from './lidar-fusion.ts';
 export { DEFAULT_LIDAR_EDGE, densify, LIDAR_EDGE_REASONS, type LidarCloud, type LidarEdgeParams, type LidarEdgeReason, type LidarEdgeReport } from './outline-lidar.ts';
 
@@ -86,6 +91,8 @@ export type ReconstructOptions = {
   topology?: Partial<TopologyParams>;
   /** The weak-face cleanup on the finished faces (faces-cleanup.ts). */
   faces?: Partial<FaceCleanupParams>;
+  /** Roof primitives: a gable's bowed slope fitted from its ridge, its eave and the slope across the ridge (primitives.ts). */
+  primitives?: Partial<PrimitiveParams>;
   /**
    * The pitch each face reports (pitch.ts): faces of one roof that agree on a pitch report one pitch (`pool`, on by
    * default), and a calibration offset for the height map's source (`offsetX12`, 0 here).
@@ -164,6 +171,11 @@ export type LocalFace = {
   source?: 'lidar';
   /** Share of the face's plan area on lidar pixels (lidar fusion), when any: a face continuing onto a hidden part has some. */
   lidarShare?: number;
+  /**
+   * Set when the face's plane was fitted as a roof primitive (primitives.ts), not on its own heights: a gable's slope
+   * from the slope across its ridge, or stacked strips on the plane through their crest and eave. Its heights are bowed.
+   */
+  fitted?: FittedKind;
 };
 export type LocalLine = { kind: Roof3dLineKind; a: XY; b: XY; faces: number[]; lengthM: number; riseM: number };
 /** `clipped`: the roof runs off the height map's edge, so part of it is missing. */
@@ -190,6 +202,10 @@ export type LocalRoof = {
   cuts?: { maskM2: number; groundM2: number; terraceM2: number };
   /** Faces the weak-face cleanup dissolved, by reason (absent when none). */
   dissolved?: Partial<Record<WeakReason, number>>;
+  /** Gable slopes fitted as primitives (primitives.ts), absent when none: their heights were not trusted between ridge and eave. */
+  gables?: FittedGable[];
+  /** Stacked strips of one bowed slope merged onto the plane through its crest and its eave (primitives.ts), absent when none. */
+  stacks?: MergedStack[];
   /**
    * What the hidden-edge step did (only when ReconstructOptions.hiddenEdge is set): edges moved onto a plane's eave line
    * and chamfers turned into corners, their length (metres, inferred, not seen), candidate edges left alone by reason,
@@ -292,6 +308,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   const topoPrm: TopologyParams = { ...DEFAULT_TOPOLOGY_PARAMS, ...opts.topology };
   // While the faces are being settled every boundary is typed once for its whole length (stepPieceSettled).
   const settlePrm: TopologyParams = topoPrm.stepPieceSettled && topoPrm.stepPieceM > 0 ? { ...topoPrm, stepPieceM: 0 } : topoPrm;
+  const primPrm: PrimitiveParams = { ...DEFAULT_PRIMITIVE_PARAMS, ...opts.primitives };
   const rng = seededRandom(opts.seed ?? 7);
 
   // 1. The mask's part under the point, or the nearest one within reach.
@@ -446,7 +463,32 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   if (found.length === 0) return null;
   let faces = buildFaces(g, s, dsm, roof, found, planePrm, tree);
   if (faces.planes.length === 0) return null;
-  let planes = refitFaces(g, s, dsm, faces, planePrm.tolM, planePrm.maxPitchX12);
+  // 2p. Primitives (primitives.ts): a gable's bowed slope becomes one face on the plane through its ridge and its eave.
+  //     Such a plane is locked: a refit on the heights (which are what is wrong there) leaves it as fitted.
+  let locked = new Map<Plane, FittedKind>();
+  let gables: FittedGable[] = [];
+  let stacks: MergedStack[] = [];
+  const refit = (gr: { w: number; h: number }, z: Float32Array, f: { labels: Int32Array; planes: Plane[] }): Plane[] => {
+    const fresh = refitFaces(gr, s, z, f, planePrm.tolM, planePrm.maxPitchX12);
+    return locked.size === 0 ? fresh : fresh.map((p, k) => (locked.has(f.planes[k]!) ? f.planes[k]! : p));
+  };
+  // One refit when nothing is fitted (as before the primitives); another only after a step that changed the faces.
+  const withPrimitives = (gr: { w: number; h: number }, z: Float32Array, rf: Uint8Array, f: { labels: Int32Array; planes: Plane[] }, tr: Uint8Array | null) => {
+    locked = new Map<Plane, FittedKind>();
+    gables = [];
+    stacks = [];
+    const planes0 = refitFaces(gr, s, z, f, planePrm.tolM, planePrm.maxPitchX12);
+    if (!primPrm.enabled) return { faces: f, planes: planes0 };
+    const done = fitGables(gr, s, z, rf, f, planes0, primPrm, planePrm, tr, opts.debug);
+    locked = done.locked;
+    gables = done.fitted;
+    const planes1 = done.faces === f ? planes0 : refit(gr, z, done.faces);
+    const stacked = mergeStacks(gr, s, z, rf, done.faces, planes1, locked, primPrm, opts.debug);
+    stacks = stacked.merged;
+    return { faces: stacked.faces, planes: stacked.faces === done.faces ? planes1 : refit(gr, z, stacked.faces) };
+  };
+  let planes: Plane[];
+  ({ faces, planes } = withPrimitives(g, dsm, roof, faces, tree));
 
   // 2a. Roof under canopy or in shade the mask missed: grown along the faces' own planes where the heights show it,
   //     bridged across notches a crown bites out of one roof line (canopy.ts). Only with Google's box (the bound) and the
@@ -458,7 +500,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   // gives the same roof as reconstructing again with completion off (every step before this one is deterministic and
   // nothing after it draws on rng) without paying for steps 1 and 2 twice (merge note: the undone roof used to be a
   // whole second reconstruction, which failed the benchmark's runtime gate).
-  const beforeCompletion = { g, c0, r0, c1, r1, dsm, roof, googleMask, tree, roofPx, clipped, faces, planes };
+  const beforeCompletion = { g, c0, r0, c1, r1, dsm, roof, googleMask, tree, roofPx, clipped, faces, planes, locked, gables, stacks };
   if (opts.canopy?.complete === true && groundFull !== null && box0 !== null && !joined) {
     const done = completeOnWindow(raster, { c0, r0, c1, r1 }, g, s, roof, faces.labels, planes, groundFull, opts.building!, canopyPrm);
     if (done !== null) {
@@ -477,7 +519,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
       clipped = clipped || c0 <= 0 || r0 <= 0 || c1 >= W - 1 || r1 >= H - 1;
       faces = buildFaces(g, s, dsm, roof, re.found, planePrm, tree);
       if (faces.planes.length === 0) return null;
-      planes = refitFaces(g, s, dsm, faces, planePrm.tolM, planePrm.maxPitchX12);
+      ({ faces, planes } = withPrimitives(g, dsm, roof, faces, tree));
       canopyOut = { grownM2: round(done.grownM2, 2), bridgedM2: round(done.bridgedM2, 2), occluded: re.occluded };
       opts.debug?.(`canopy: grew ${done.grownM2.toFixed(1)} m2 on the faces' planes, bridged ${done.bridgedM2.toFixed(1)} m2 under crowns`);
     }
@@ -603,7 +645,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
       }
       if (tiny.size === 0 || tiny.size >= faces.planes.length) break;
       faces = dissolve(g, s, dsm, roof, faces, tiny, tree);
-      planes = refitFaces(g, s, dsm, faces, planePrm.tolM, planePrm.maxPitchX12);
+      planes = refit(g, dsm, faces);
       lineRows = opts.lineFeatures !== undefined ? [] : undefined;
       topo = buildTopology(g, s, faces.labels, planes, outline, dsm, settlePrm, opts.debug, lineRows);
     }
@@ -617,7 +659,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
       for (let k = 0; k < outline.length; k++) perim += dist(outline[k]!, outline[(k + 1) % outline.length]!);
       if (topo.faces.some((f) => f.fromPixels) || edgeLen > canopyPrm.topologyEdgeSlack * perim) {
         opts.debug?.(`canopy: completion undone (its topology came out worse: ${topo.faces.filter((f) => f.fromPixels).length} pixel faces, edges ${edgeLen.toFixed(1)} m on a ${perim.toFixed(1)} m outline)`);
-        ({ g, c0, r0, c1, r1, dsm, roof, googleMask, tree, roofPx, clipped, faces, planes } = beforeCompletion);
+        ({ g, c0, r0, c1, r1, dsm, roof, googleMask, tree, roofPx, clipped, faces, planes, locked, gables, stacks } = beforeCompletion);
         canopyOut = { grownM2: 0, bridgedM2: 0, occluded: [], undone: 'topology' };
         continue;
       }
@@ -713,6 +755,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
       slopedAreaM2: plan * Math.sqrt(1 + (forArea / 12) ** 2),
       flat: slope * 12 < FLAT_X12,
       label: shift(labelPoint(g, s, faces.labels, k, topo.faces[k]!.ring)),
+      ...(locked.has(p0) ? { fitted: locked.get(p0)! } : {}),
     };
   });
   // Largest first (ties: west to east, then north to south), with the lines' face numbers following.
@@ -737,6 +780,8 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     quality,
     cuts: { maskM2: maskPx0 * s * s, groundM2: groundPx * s * s, terraceM2: terracePx * s * s },
     ...(Object.keys(dissolved).length > 0 ? { dissolved } : {}),
+    ...(gables.length > 0 ? { gables } : {}),
+    ...(stacks.length > 0 ? { stacks } : {}),
     ...(lidarEdges !== undefined ? { lidarEdges } : {}),
     ...(canopyOut !== undefined ? { canopy: { ...canopyOut, occluded: canopyOut.occluded.map(shift) } } : {}),
     ...(hiddenOut !== undefined ? { hiddenEdge: hiddenOut.summary } : {}),
@@ -1885,6 +1930,7 @@ export function toRoof3d(
       labelAt: ll(f.label),
       ...(f.source !== undefined ? { source: f.source } : {}),
       ...(f.lidarShare !== undefined ? { lidarShare: f.lidarShare } : {}),
+      ...(f.fitted !== undefined ? { fitted: f.fitted } : {}),
     })),
     lines: local.lines.map((l) => ({
       kind: l.kind,

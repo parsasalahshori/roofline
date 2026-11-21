@@ -490,7 +490,7 @@ export type Faces = { labels: Int32Array; planes: Plane[] };
 const UNEXPLAINED_M = 0.5;
 
 /** Renumbers labels 0..n-1 in order of first appearance, dropping planes no pixel uses. */
-function compact(labels: Int32Array, planes: readonly Plane[]): Faces {
+export function compact(labels: Int32Array, planes: readonly Plane[]): Faces {
   const map = new Map<number, number>();
   const out = new Int32Array(labels.length);
   const kept: Plane[] = [];
@@ -512,7 +512,7 @@ function compact(labels: Int32Array, planes: readonly Plane[]): Faces {
 }
 
 /** Each label split into its 4-connected parts (each part its own face, same plane). */
-function splitParts(g: Grid, f: Faces): Faces {
+export function splitParts(g: Grid, f: Faces): Faces {
   const out = new Int32Array(f.labels.length).fill(-1);
   const planes: Plane[] = [];
   const seen = new Int32Array(f.labels.length).fill(-1);

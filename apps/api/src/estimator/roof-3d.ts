@@ -279,7 +279,7 @@ export const DEFAULT_HIDDEN_EDGE: Readonly<HiddenEdgeOption> | null = null;
 export const GOOGLE_PITCH_OFFSET_X12 = 0.25;
 
 /** The reconstruction's own parameters, for the benchmark's studies (development only; the server never sets them). */
-export type RoofTuning = Pick<NonNullable<Parameters<typeof reconstructRoof>[2]>, 'planes' | 'outline' | 'topology' | 'faces' | 'pitch'>;
+export type RoofTuning = Pick<NonNullable<Parameters<typeof reconstructRoof>[2]>, 'planes' | 'outline' | 'topology' | 'faces' | 'pitch' | 'primitives'>;
 
 export type RoofOnLayersOptions = {
   /** Development only: parameter overrides for a benchmark study. */
@@ -413,6 +413,7 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
     ...(o.tuning?.topology !== undefined ? { topology: o.tuning.topology } : {}),
     ...(o.tuning?.faces !== undefined ? { faces: o.tuning.faces } : {}),
     pitch: { offsetX12: GOOGLE_PITCH_OFFSET_X12, ...o.tuning?.pitch },
+    ...(o.tuning?.primitives !== undefined ? { primitives: o.tuning.primitives } : {}),
     ...(o.debug !== undefined ? { debug: o.debug } : {}),
     ...(o.lineFeatures !== undefined ? { lineFeatures: o.lineFeatures } : {}),
     ...(ownBox ? { building: [box.sw, [box.ne[0], box.sw[1]] as LngLat, box.ne, [box.sw[0], box.ne[1]] as LngLat].map(toPixel) } : {}),

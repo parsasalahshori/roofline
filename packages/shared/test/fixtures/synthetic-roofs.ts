@@ -214,6 +214,76 @@ export const PORCH: Shape = {
 export const SHAPES: readonly Shape[] = [GABLE, HIP, L_CROSS, HIP_FLAT, TWO_STOREY];
 
 /**
+ * A slope's rise above its eave `d` metres in from it, bowed the way a height map bows a (usually shaded) slope: shallow
+ * by the eave (0.58 of the true pitch over the lower 65 % of the run), steep by the ridge, meeting the true plane at
+ * both ends and sagging up to a fifth of the rise under it between them.
+ */
+export function bowedRise(d: number, run: number, p: number): number {
+  const low = 0.58 * (p / 12);
+  const d1 = 0.65 * run;
+  const high = ((p / 12) * run - low * d1) / (run - d1);
+  return d <= d1 ? low * d : low * d1 + high * (d - d1);
+}
+
+/** GABLE (14 x 9 m at 6/12) with its north slope bowed. The roof is still two faces, a ridge, two eaves and four rakes. */
+export const BOWED_GABLE: Shape = {
+  ...GABLE,
+  name: 'gable with a bowed slope',
+  height: ({ x, y }) => (Math.abs(x) <= 7 && Math.abs(y) <= 4.5 ? EAVE + (y > 0 ? bowedRise(4.5 - y, 4.5, 6) : (4.5 + y) * 0.5) : null),
+};
+
+/**
+ * L_CROSS (an L-shaped cross gable at 6/12) with the main gable's north slope and the wing's west slope bowed, and a
+ * level pocket 2.4 m across in the middle of the wing's west slope (a height map's terrace): the roof is still five
+ * faces, two ridges and two valleys.
+ */
+export const BOWED_L: Shape = {
+  ...L_CROSS,
+  name: 'l-cross-gable with bowed slopes',
+  height: ({ x, y }) => {
+    const X = x + L_OFF.x;
+    const Y = y + L_OFF.y;
+    const main = X >= 0 && X <= 18 && Y >= 0 && Y <= 8 ? (Y > 4 ? bowedRise(8 - Y, 4, 6) : Y * 0.5) : null;
+    const pocket = Math.hypot(X - 12, Y + 4) <= 1.2;
+    const wing = X >= 10 && X <= 18 && Y >= -8 && Y <= 4 ? (X < 14 ? bowedRise(pocket ? 2 : X - 10, 4, 6) : (18 - X) * 0.5) : null;
+    if (main === null && wing === null) return null;
+    return EAVE + Math.max(main ?? -Infinity, wing ?? -Infinity);
+  },
+};
+
+/** HIP (16 x 10 m at 5/12) with its north face bowed: still four faces, four hips and a ridge. */
+export const BOWED_HIP: Shape = {
+  ...HIP,
+  name: 'hip with a bowed side',
+  height: ({ x, y }) => {
+    if (Math.abs(x) > 8 || Math.abs(y) > 5) return null;
+    const end = 8 - Math.abs(x);
+    const side = 5 - Math.abs(y);
+    return EAVE + (y > 0 && side <= end ? bowedRise(side, 5, 5) : Math.min(side, end) * (5 / 12));
+  },
+};
+
+/**
+ * A real pitch break, for the primitives to leave alone: a gable 12 x 8 m at 8/12 whose south slope runs on, with no
+ * step, into a porch roof 3 m deep at 3/12. Three faces; the north eave is 0.75 m above the porch's.
+ */
+export const PITCH_BREAK: Shape = {
+  name: 'gable running on into a porch roof',
+  extent: 10,
+  height: ({ x, y }) => {
+    if (Math.abs(x) > 6 || y > 4 || y < -7) return null;
+    return y >= -4 ? EAVE + 0.75 + (4 - Math.abs(y)) * (8 / 12) : EAVE + (y + 7) * 0.25;
+  },
+  faces: [
+    { name: 'north', probe: { x: 0, y: 2 }, pitchX12: 8, downDeg: 90, planAreaM2: 48 },
+    { name: 'south', probe: { x: 0, y: -2 }, pitchX12: 8, downDeg: -90, planAreaM2: 48 },
+    { name: 'porch', probe: { x: 0, y: -5.5 }, pitchX12: 3, downDeg: -90, planAreaM2: 36 },
+  ],
+  lines: { ridge: 12 },
+  planAreaM2: 132,
+};
+
+/**
  * A terrace of three homes, each 7 x 10 m under a gable at 6/12 with the ridges in line along X; the middle home
  * stands 0.8 m higher than its neighbours, the way terraces step. The mask joins all three. The faces, lines and area
  * are the middle home's (TERRACE_HOME is its footprint, house frame): the home at the point.

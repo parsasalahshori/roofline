@@ -62,7 +62,9 @@ export function checkRoof(roof: Roof3d, building: SolarBuilding | null): Accepta
     const segment = under === undefined ? null : { pitchX12: x12(under.pitchDeg), azimuthDeg: under.azimuthDeg, planSqFt: under.groundAreaM2 * SQ_FT_PER_M2 };
     // A face mostly measured by leaf-off lidar (source 'lidar') lies where Google's leaf-on view saw a crown: the segment
     // under it was fitted to the canopy, so it is not checked against it (the roof carries 'roof-from-lidar' instead).
-    const main = f.planAreaSqFt >= TARGETS.mainFaceSqFt && segment !== null && f.source !== 'lidar';
+    // A face fitted as a primitive (fitted) lies where the height map bows a slope: Google's segment under it was fitted
+    // to the same bowed heights, so it is not checked against it either (the roof's heights still count as rough).
+    const main = f.planAreaSqFt >= TARGETS.mainFaceSqFt && segment !== null && f.source !== 'lidar' && f.fitted === undefined;
     // Google's segment is a plane fitted to the same heights, so it is held against this face's own fitted plane, not
     // the pitch the face reports (pooled with the roof's other faces and calibrated: roof-reconstruct/pitch.ts).
     const fit = f.fitPitchX12 ?? f.pitchX12;

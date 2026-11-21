@@ -50,6 +50,13 @@ export type Roof3dFace = {
   source?: Roof3dSource;
   /** Share (0-1) of the face's plan area that only leaf-off lidar saw (lidar fusion), when any. */
   lidarShare?: number;
+  /**
+   * Set when the face's plane was fitted as a roof primitive, not on its own heights (which the height map bows):
+   * 'gable', a gable's slope from its ridge and the slope across it; 'stack', one slope the plane search had cut into
+   * strips, on the plane through its crest and its eave. Google's own segment under such a face is fitted to the
+   * bowed heights, so the face is not checked against it.
+   */
+  fitted?: 'gable' | 'stack';
 };
 
 export type Roof3dLine = {
