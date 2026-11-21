@@ -15,7 +15,8 @@ import { E2E_POLICY_DOMAIN, resetScenario } from './fixtures.ts';
 const PORT = Number(process.env.E2E_PORT?.trim() || 4410);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
-const STACK_FILE = fileURLToPath(new URL('.stack.json', import.meta.url));
+/** E2E_STACK_FILE: where this stack writes its connection details (a spec that runs a second stack of its own uses another file). */
+const STACK_FILE = process.env.E2E_STACK_FILE?.trim() || fileURLToPath(new URL('.stack.json', import.meta.url));
 const SHUTDOWN_WAIT_MS = 10_000;
 
 const db = await startTestDatabase();
@@ -41,6 +42,8 @@ const env: NodeJS.ProcessEnv = {
   FAKE_PROVIDERS: '1',
   WEB_DIST_DIR: 'apps/web/dist',
   API_RATE_LIMIT_PER_MIN: '100000',
+  // E2E_DEMO_MODE=1: the presenter's Demo badge and its four simulations (ops-journey.spec.ts runs a stack like this).
+  ...(process.env.E2E_DEMO_MODE === '1' ? { DEMO_MODE: '1', DEMO_DATABASE_URL_OWNER: db.urls.owner } : {}),
 };
 
 let shuttingDown = false;
