@@ -167,6 +167,23 @@ OBJECTIVE 26.5 -> 22.0 (ridge 15->14, hip 51->39, valley 22->24, eave 29->16, ra
 (ridge -20, hip -31, valley -14, eave -17, rake -17 %): roof left out. Told the area agent to hunt under-coverage with a
 label-free check against Google's own area on all 84 houses.
 
+## review of the round-2 merge (independent reviewer, read-only; scripts in /private/tmp/claude-501/review-roof2)
+No P0. Determinism, fuzz (250 rasters), stored fields, offset-applied-once, indices and signs: sound.
+| finding | sev | status |
+|---------|-----|--------|
+| buildFaces runs out of its 12 rounds (split -> "explained" -> split again; 80 planes into the old budget) | P1 | sent to the roof3/faces agent (its code) |
+| measuredEdge at 0.25 m pixels reads rakes as eaves (sample on the edge roll-off) | P1 | FIXED 0ab87eca: window starts 3 px in; synthetic sweep at 0.25 m worse 9 -> 6, better 7 -> 10; 0.1 m unchanged |
+| stepTopM 0 switched measuredRidge off on walls | P2 | FIXED 0ab87eca |
+| two ridge tests could not fail for the rule they name | P2 | FIXED 0ab87eca (each switches the other rule off in both runs) |
+| stepPieceSettled test has no case where settling matters | P2 | open |
+| hidden-edge crop pad drops the fitted-plane lock (hidden edge is off in production) | P2 | open |
+| lidar faces get Google's pitch offset (lidar off by default); pooling merges 5/12 with 6/12 | P2 | sent to the roof3/pitch2 agent |
+| canopy re-crop calls buildFaces without `unsure` | P2 | sent to the roof3/faces agent |
+| fitted faces still take the 0.8 confidence penalty; structures get only tuning.pitch; override rescales rise by reported pitch | P2 | open |
+| runtime: 80-plane search adds ~300 ms on the biggest roofs (four houses 1.0-1.5 s through roofOnLayers; gate passes) | P2 | open (watch after round 3) |
+| ROOF_3D_ALGORITHM_VERSION still 7 | must | bump to 8 at the final merge |
+After the fixes: scorer unchanged (dev 18.0, held-out 20.2), 458 roof tests, 169 roof-bench tests.
+
 # ROOF ROUND 3 (2026-11-21): aimed at what is missing, not at names
 brief: ~/RooflineWork/plans/roof3-brief.md. Base: roof2/integration 6a8b49ac + this note. Worktrees ~/RooflineWork/wt-r3-*.
 | track | branch | idea | result |
