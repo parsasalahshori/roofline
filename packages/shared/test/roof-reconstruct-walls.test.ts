@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { reconstructRoof, type LocalRoof } from '../src/roof-reconstruct/index.ts';
-import { flipShortRuns } from '../src/roof-reconstruct/topology.ts';
-import { type Shape, synthesize } from './fixtures/synthetic-roofs.ts';
+import type { Plane } from '../src/roof-reconstruct/planes.ts';
+import { buildTopology, DEFAULT_TOPOLOGY_PARAMS, flipShortRuns } from '../src/roof-reconstruct/topology.ts';
+import { HIP_FLAT, type Shape, synthesize } from './fixtures/synthetic-roofs.ts';
 
 // A boundary between two faces typed piece by piece (topology.ts, stepPieceM): where one face ends above the other
 // for a stretch (a dormer's front and cheek walls) the upper face has its rake or eave there and the lower face its
@@ -107,6 +108,19 @@ describe('walls for a stretch of a boundary', () => {
     expect(eaveOf(3)).toBeGreaterThan(eaveOf(0) + 1);
   }, 30_000);
 
+  it('a tree crown leaning over the end of a hip does not make a wall of it', () => {
+    // The pixel boundary strays round the crown, the planes are far apart there and the height map jumps at the
+    // crown's rim; but the pixels on one side are the crown's, not on their face's plane.
+    const syn = synthesize(HIP_FLAT, { turnDeg: 17, seed: 11 });
+    const walls = (by: Record<string, number>) => (by.flashing ?? 0) + (by['step-flashing'] ?? 0);
+    const by = lengths(reconstructRoof(syn.raster, syn.point, { seed: 7 })!);
+    expect(walls(by)).toBeLessThan(0.5);
+    expect(Math.abs((by.hip ?? 0) - HIP_FLAT.lines.hip!)).toBeLessThan(1.5);
+    expect(by.rake ?? 0).toBeLessThan(0.5);
+    const unasked = lengths(reconstructRoof(syn.raster, syn.point, { seed: 7, topology: { stepSideTolM: 0 } })!);
+    expect(walls(unasked)).toBeGreaterThan(1.5);
+  }, 30_000);
+
   it('a small step at the top of a face, both faces falling away from it, is their ridge; a tall one is a wall', () => {
     const low = synthesize(offsetRidge(1), { turnDeg: 17, seed: 11, trees: 0 });
     const by = lengths(reconstructRoof(low.raster, low.point, { seed: 7 })!);
@@ -122,6 +136,50 @@ describe('walls for a stretch of a boundary', () => {
     const high = lengths(reconstructRoof(tall.raster, tall.point, { seed: 7 })!);
     expect(high.flashing ?? 0).toBeGreaterThan(10);
   }, 30_000);
+});
+
+describe('a stretch on the diagonal', () => {
+  // Two faces of a hip, 12 x 12 m at 6/12: face 0 falls west, face 1 north, and their planes meet on the diagonal
+  // x = v (v southwards). Over the southern half the boundary between their pixels lies 1.5 m west of it, and the
+  // heights there are face 1's: a 0.75 m jump along a line on the diagonal across both faces.
+  const s = 0.1;
+  const g = { w: 120, h: 120 };
+  const planes: Plane[] = [
+    { a: 0.5, b: 0, c: 5 },
+    { a: 0, b: -0.5, c: 5 },
+  ];
+  const labels = new Int32Array(g.w * g.h);
+  const dsm = new Float32Array(g.w * g.h);
+  for (let r = 0; r < g.h; r++) {
+    for (let c = 0; c < g.w; c++) {
+      const x = (c + 0.5) * s;
+      const v = (r + 0.5) * s;
+      const face = x < v - (v < 6 ? 0 : 1.5) ? 0 : 1;
+      labels[r * g.w + c] = face;
+      dsm[r * g.w + c] = planes[face]!.a * x + planes[face]!.b * -v + planes[face]!.c;
+    }
+  }
+  const outline = [
+    { x: 0, y: -12 },
+    { x: 12, y: -12 },
+    { x: 12, y: 0 },
+    { x: 0, y: 0 },
+  ];
+  const linesOf = (prm: Partial<typeof DEFAULT_TOPOLOGY_PARAMS>) => buildTopology(g, s, labels, planes, outline, dsm, { ...DEFAULT_TOPOLOGY_PARAMS, ...prm }).lines;
+  const walls = (lines: ReturnType<typeof linesOf>) => lines.filter((l) => l.kind === 'flashing' || l.kind === 'step-flashing').reduce((t, l) => t + l.lengthM, 0);
+
+  it('is the two faces meeting, not a wall: the boundary is not cut there and the hip stays one straight line', () => {
+    const lines = linesOf({});
+    const hips = lines.filter((l) => l.kind === 'hip');
+    expect(hips.length).toBe(1);
+    expect(Math.hypot(hips[0]!.b.x - hips[0]!.a.x, hips[0]!.b.y - hips[0]!.a.y)).toBeGreaterThan(16);
+    expect(walls(lines)).toBe(0);
+  });
+
+  it('would be a wall were it not on the diagonal (the test sees the jump)', () => {
+    // wallDeg 45: no direction counts as diagonal. stepTopM 0: a low step at a face's top is not their crease either.
+    expect(walls(linesOf({ wallDeg: 45, stepTopM: 0 }))).toBeGreaterThan(6);
+  });
 });
 
 describe('flipShortRuns', () => {
