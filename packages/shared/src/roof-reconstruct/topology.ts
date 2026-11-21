@@ -84,7 +84,8 @@ export type TopologyParams = {
    * slope (the direction of next to no slope is noise), where the edge is too short to measure (about 1.3 m), or where
    * the heights beside it are not a roof's (a tree's crown over the edge: they fall away from the edge, or climb along
    * it at over twice the face's slope), and only on the say of three in four of the stations along the edge.
-   * Fitted on the benchmark's EagleView houses (dev): of the edge length it renames, 12 ft in 13 is renamed right.
+   * Fitted on the benchmark's EagleView houses (dev): of the edge length it renames that has a clear answer there,
+   * nine tenths is renamed right.
    */
   measuredEdge: boolean;
   measuredEaveDeg: number;
@@ -111,9 +112,11 @@ export type TopologyParams = {
    * A valley is a trough: the roof rises away from it on both sides. A crease the planes call a valley, where the
    * height map 1 m out on the lower face's side lies `valleyDropM` or more BELOW the line, is no trough: the lower roof
    * is a step down the planes smoothed over, and the line is the upper face's edge over it (eave or rake, as on a wall;
-   * the lower face is flashed). 0 turns it off. On the benchmark's EagleView houses (dev) none of the length this
-   * renames was a valley; it leaves the valley total short by what the reconstruction really misses (see
-   * docs/roof-3d/line-kinds.md: wrong valleys used to make up for missing ones).
+   * the lower face is flashed). 0 is off, and OFF IS THE DEFAULT (0.3 is the studied value): on the benchmark's
+   * EagleView houses (dev) none of the length this renames was a valley, but it leaves the valley total short by what
+   * the reconstruction really misses (wrong valleys make up for missing ones), and on the held-out houses, where the
+   * valleys are already a fifth short, the valley total's median error rose from 23 to 31 %. Turn it on once the
+   * missing valleys are found (docs/roof-3d/line-kinds.md).
    */
   valleyDropM: number;
   /**
@@ -164,7 +167,7 @@ export const DEFAULT_TOPOLOGY_PARAMS: TopologyParams = {
   fallAwaySlope: 0.1,
   ridgeAlongSlope: 0.3,
   ridgeBesideM: 1.2,
-  valleyDropM: 0.3,
+  valleyDropM: 0,
   hipStepM: 0.6,
 };
 

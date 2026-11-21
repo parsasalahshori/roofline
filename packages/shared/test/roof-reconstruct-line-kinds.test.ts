@@ -243,12 +243,13 @@ describe('a valley with a step down beside it is the upper roof\'s edge (valleyD
     ],
   };
 
+  // (Off by default: see TopologyParams.valleyDropM. 0.3 m is the studied value.)
   it('is named as along a wall: the upper face\'s eave and flashing on the lower roof', () => {
-    const on = topologyOf(shape, seg);
+    const on = topologyOf(shape, seg, { valleyDropM: 0.3 });
     expect(on.total('valley')).toBeLessThan(1);
     expect(on.near({ x: 0, y: 0 }).kind).toBe('eave');
     expect(on.total('flashing')).toBeGreaterThan(7.5);
-    const off = topologyOf(shape, seg, { valleyDropM: 0 });
+    const off = topologyOf(shape, seg);
     expect(off.near({ x: 0, y: 0 }).kind).toBe('valley');
     expect(off.total('valley')).toBeGreaterThan(7.5);
     expect(off.total('flashing')).toBeLessThan(1);
@@ -257,7 +258,7 @@ describe('a valley with a step down beside it is the upper roof\'s edge (valleyD
   it('leaves a true valley a valley', () => {
     // The same two roofs meeting in a trough: the lower roof starts where the upper one ends, and its plane is its own.
     const trough: Shape = { ...shape, name: 'trough', height: ({ x, y }) => (y >= 0 ? (Math.abs(x) <= 4 && y <= 4 ? 4 + 0.5 * y : null) : Math.abs(x) <= 5 && y >= -4 ? 3.8 - 0.3 * y : null) };
-    const on = topologyOf(trough, seg);
+    const on = topologyOf(trough, seg, { valleyDropM: 0.3 });
     expect(on.near({ x: 0, y: 0 }).kind).toBe('valley');
     expect(on.total('valley')).toBeGreaterThan(7.5);
   });
@@ -339,7 +340,7 @@ describe('roofs the planes already name right', () => {
       for (const l of r!.lines) by[l.kind] = (by[l.kind] ?? 0) + l.lengthM;
       return by;
     };
-    const on = totals({});
+    const on = totals({ valleyDropM: 0.3 });
     const off = totals({ measuredEdge: false, measuredRidge: false, valleyDropM: 0, hipStepM: 0 });
     for (const kind of new Set([...Object.keys(on), ...Object.keys(off)])) expect(Math.abs((on[kind] ?? 0) - (off[kind] ?? 0)), `${shape.name}: ${kind}`).toBeLessThan(0.5);
   }, 30_000);
