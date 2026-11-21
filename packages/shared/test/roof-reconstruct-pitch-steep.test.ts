@@ -1,4 +1,4 @@
-// Round 3 of the pitch a face reports (pitch.ts, pitch-stacks.ts; docs/roof-3d/pitch-steep.md): a gable slope mirrored
+// Round 3 of the pitch a face reports (pitch.ts, pitch-stacks.ts; docs/roof-3d/pitch.md, round 3): a gable slope mirrored
 // from across its ridge is no second reading of the roof's pitch; the two strips of a bowed slope read its chord; two
 // pitches a step apart stay two groups; a face measured by lidar does not lose the height map's calibration offset.
 // And what did not need changing: a narrow steep roof on a blurred height map already reads its pitch.

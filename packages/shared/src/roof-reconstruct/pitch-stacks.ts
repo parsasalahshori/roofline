@@ -1,4 +1,4 @@
-// The chord of a bowed slope as its faces' pitch reading (docs/roof-3d/pitch-steep.md).
+// The chord of a bowed slope as its faces' pitch reading (docs/roof-3d/pitch.md, round 3).
 //
 // A height map bows some slopes: steep by the crest, shallow by the eave, sagging under the true plane between them.
 // The plane search cuts such a slope into an upper, steeper face over a lower, shallower one, and neither plane is the
