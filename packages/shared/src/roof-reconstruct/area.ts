@@ -20,10 +20,19 @@ import { dist, intersectLines, nearestOnSegment, pointInRing, selfIntersects, si
 export type AreaParams = {
   /** Eaves from the photo: an outline edge moves in to where the photo shows the roof's colour ending. */
   eavePhoto: boolean;
-  /** An edge the photo gives no evidence for (or a short one, or with no photo at all) moves in by this, metres. 0 = off. */
+  /**
+   * An edge the photo gives no evidence for (or a short one, or with no photo at all) moves in by this, metres: the
+   * usual excess of the height map's source, a calibration like the pitch offset. 0 here (off); the server sets
+   * Google's (roofOnLayers, GOOGLE_EAVE_INSET_M).
+   */
   eaveInsetM: number;
   /** A colour change deeper inside the edge than this is not the mask's rim (a band of other roofing, a shadow): no evidence. Metres. */
   eaveMaxInM: number;
+  /**
+   * A colour change nearer the edge than this (metres) is the edge itself as far as the photo can tell (its blur is two
+   * pixels or so): the photo then vouches for the edge where it is, and it does not move (nor by the inset).
+   */
+  eaveMinInM: number;
   /** Edges shorter than this are not read in the photo, metres. */
   eaveMinEdgeM: number;
   /**
@@ -45,16 +54,17 @@ export type AreaParams = {
   eaveReachM: number;
   /**
    * Roof under an overhang: the depth, metres, a lower face runs on under the edge of the roof above it along each
-   * wall line (flashing, step flashing). 0.3 m is a 12 inch overhang, and the median width of the strips an EagleView
-   * report prices there (docs/roof-3d/area.md). 0 = off.
+   * wall line (flashing, step flashing). 0 here (off); the server sets OVERHANG_TUCK_M, 0.3 m: a 12 inch overhang,
+   * and the median width of the strips an EagleView report prices there (docs/roof-3d/area.md).
    */
   tuckUnderM: number;
 };
 
 export const DEFAULT_AREA_PARAMS: AreaParams = {
   eavePhoto: true,
-  eaveInsetM: 0.1,
+  eaveInsetM: 0,
   eaveMaxInM: 0.5,
+  eaveMinInM: 0,
   eaveMinEdgeM: 2,
   eaveDropM: 1,
   eaveDropShare: 0.6,
@@ -62,7 +72,7 @@ export const DEFAULT_AREA_PARAMS: AreaParams = {
   eaveMinChange: 22,
   eaveMadK: 4,
   eaveReachM: 0.5,
-  tuckUnderM: 0.3,
+  tuckUnderM: 0,
 };
 
 /** The photo (3 bytes a pixel) and where it is green, on the whole raster's grid, and the crop's first column and row in it. */
@@ -318,7 +328,7 @@ export function eaveMoves(outline: readonly XY[], s: number, photo: AreaPhoto | 
       const seen = roofEndInPhoto(a, b, normal, s, photo, prm);
       photoM = seen.atM;
       if (seen.atM !== null) {
-        move = Math.min(0, seen.atM);
+        move = seen.atM > -prm.eaveMinInM ? 0 : Math.min(0, seen.atM);
         by = 'photo';
       } else if (seen.canopy) {
         move = 0;
