@@ -270,7 +270,14 @@ export function roofOnLayers(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
  */
 export const DEFAULT_HIDDEN_EDGE: Readonly<HiddenEdgeOption> | null = null;
 
+/** The reconstruction's own parameters, for the benchmark's studies (development only; the server never sets them). */
+export type RoofTuning = Pick<NonNullable<Parameters<typeof reconstructRoof>[2]>, 'planes' | 'outline' | 'topology' | 'faces'>;
+
 export type RoofOnLayersOptions = {
+  /** Development only: parameter overrides for a benchmark study. */
+  tuning?: RoofTuning;
+  /** Development only: told what the reconstruction decided. */
+  debug?: (msg: string) => void;
   steep?: boolean;
   building?: SolarBuilding | null;
   seed?: number;
@@ -391,7 +398,11 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
     // The benchmark (roof3d:bench) runs seeds 7, 8 and 9 to show the result does not hang on the random sample; the
     // server never sets it (the reconstruction's own default seed, 7, applies).
     ...(o.seed !== undefined ? { seed: o.seed } : {}),
-    ...(o.steep === true ? { planes: { maxPitchX12: 24 } } : {}),
+    ...(o.steep === true || o.tuning?.planes !== undefined ? { planes: { ...(o.steep === true ? { maxPitchX12: 24 } : {}), ...o.tuning?.planes } } : {}),
+    ...(o.tuning?.outline !== undefined ? { outline: o.tuning.outline } : {}),
+    ...(o.tuning?.topology !== undefined ? { topology: o.tuning.topology } : {}),
+    ...(o.tuning?.faces !== undefined ? { faces: o.tuning.faces } : {}),
+    ...(o.debug !== undefined ? { debug: o.debug } : {}),
     ...(ownBox ? { building: [box.sw, [box.ne[0], box.sw[1]] as LngLat, box.ne, [box.sw[0], box.ne[1]] as LngLat].map(toPixel) } : {}),
     ...(lidarCloud !== null ? { lidar: { cloud: lidarCloud, ...(o.lidarParams !== undefined ? { params: o.lidarParams } : {}) } } : {}),
     ...(fusionCloud !== null ? { lidarFusion: { cloud: fusionCloud, ...(o.lidarFusion?.params !== undefined ? { params: o.lidarFusion.params } : {}) } } : {}),

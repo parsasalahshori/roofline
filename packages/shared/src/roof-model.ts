@@ -1234,6 +1234,14 @@ export function buildRoofModel(
 }
 
 /** 10% for a gable-dominant roof; 12-15% for a hip-heavy one (more cuts), more with valleys and facets. */
+/**
+ * What an estimate prices as ridge: the cap shingles run along ridges and hips alike (an exact report's ridge length is
+ * its ridges plus its hips too), so a hip roof's estimate carries both.
+ */
+function capFt(t: { ridgeFt: number; hipFt: number }): number {
+  return Math.round((t.ridgeFt + t.hipFt) * 10) / 10;
+}
+
 function wasteFor(hipFt: number, rakeFt: number, valleyFt: number, facetCount: number): number {
   if (hipFt <= rakeFt) return 10;
   let w = 12;
@@ -1383,7 +1391,7 @@ export function measureRoof(
         ...base,
         surfaceSqFt,
         squares,
-        ridgeFt: roof.totals.ridgeFt,
+        ridgeFt: capFt(roof.totals),
         valleyFt: given ? base.valleyFt : roof.totals.valleyFt,
         edgeFt: round1(roof.totals.eaveFt + roof.totals.rakeFt),
       },
@@ -1398,7 +1406,7 @@ export function measureRoof(
       planSqFt: q.planSqFt,
       surfaceSqFt: q.slopedSqFt,
       squares: q.squares,
-      ridgeFt: q.ridgeFt,
+      ridgeFt: capFt(q),
       valleyFt: given ? base.valleyFt : q.valleyFt,
       edgeFt: round1(q.eaveFt + q.rakeFt),
     },
@@ -1553,7 +1561,7 @@ function measureWith3d(
         planSqFt,
         surfaceSqFt: slopedSqFt,
         squares: built.totals.squares,
-        ridgeFt: roof.totals.ridgeFt,
+        ridgeFt: capFt(roof.totals),
         valleyFt: given ? base.valleyFt : roof.totals.valleyFt,
         edgeFt: edgeOf(roof.totals),
       },
@@ -1568,7 +1576,7 @@ function measureWith3d(
       planSqFt: q.planSqFt,
       surfaceSqFt: q.slopedSqFt,
       squares: q.squares,
-      ridgeFt: q.ridgeFt,
+      ridgeFt: capFt(q),
       valleyFt: given ? base.valleyFt : q.valleyFt,
       edgeFt: edgeOf(q),
     },

@@ -47,7 +47,9 @@ export type TopologyParams = {
    * within `breakFacingDeg` of the same downhill direction and `breakX12` of the same pitch run on into each other (a
    * pitch break, no edge); otherwise the upper face ends there in an eave (a report counts it: the main roof's eave
    * over a porch roof, a dormer's over the roof below). A line climbing more than that across the upper face is a hip
-   * or a valley (by the planes), as a report counts it.
+   * or a valley (by the planes), as a report counts it: on the benchmark's EagleView houses, making every same-way
+   * pair a pitch break whatever the line's direction lost real hips and valleys between faces whose fitted planes
+   * came out alike.
    */
   ontoEaveDeg: number;
   breakFacingDeg: number;

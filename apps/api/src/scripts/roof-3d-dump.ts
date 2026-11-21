@@ -3,7 +3,7 @@ import path from 'node:path';
 import { loadHouse } from '../bench/roof3d/data.ts';
 import { parseManifest } from '../bench/roof3d/manifest.ts';
 import { benchDir } from '../bench/roof3d/paths.ts';
-import { hiddenEdgeFromEnv } from '../bench/roof3d/run.ts';
+import { hiddenEdgeFromEnv, tuningFromEnv } from '../bench/roof3d/run.ts';
 import { roofOnLayers, steepRoof } from '../estimator/roof-3d.ts';
 
 /*
@@ -27,13 +27,14 @@ const manifest = parseManifest(JSON.parse(readFileSync(path.join(bench, 'manifes
 const only = value('--house')?.split(',') ?? null;
 const set = value('--set') ?? null;
 const hiddenEdge = hiddenEdgeFromEnv();
+const tuning = tuningFromEnv();
 mkdirSync(out, { recursive: true });
 let n = 0;
 for (const entry of manifest.houses) {
   if (only !== null && !only.includes(entry.slug)) continue;
   if (set !== null && entry.set !== set) continue;
   const h = await loadHouse(entry, bench);
-  const roof = roofOnLayers(h.layers, entry.point, { steep: steepRoof(h.building), building: h.building, seed: 7, ...(hiddenEdge !== undefined ? { hiddenEdge } : {}) });
+  const roof = roofOnLayers(h.layers, entry.point, { steep: steepRoof(h.building), building: h.building, seed: 7, ...(argv.includes('--debug') ? { debug: (m: string) => process.stdout.write(`[${entry.slug}] ${m}\n`) } : {}), ...(tuning !== undefined ? { tuning } : {}), ...(hiddenEdge !== undefined ? { hiddenEdge } : {}) });
   writeFileSync(path.join(out, `${entry.slug}.json`), JSON.stringify(roof));
   n++;
 }

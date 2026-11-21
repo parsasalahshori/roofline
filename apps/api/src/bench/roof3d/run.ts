@@ -14,6 +14,17 @@ export const SEEDS: readonly number[] = [7, 8, 9];
  * a JSON object of parameter overrides (sensitivity runs; '{"minDeepSeenShare":0}' is hypothesis mode). Unset: the
  * server's default (DEFAULT_HIDDEN_EDGE: off since ROOF_3D_ALGORITHM_VERSION 5; version 4 ran photo+planes).
  */
+/**
+ * ROOF3D_TUNING: a JSON object of parameter overrides for a study, e.g. {"topology":{"breakX12":3}}. Unset: the
+ * reconstruction's defaults (what the server runs). A report made with it set is a study, never a baseline.
+ */
+export function tuningFromEnv(env: NodeJS.ProcessEnv = process.env): RoofOnLayersOptions['tuning'] {
+  const raw = env.ROOF3D_TUNING?.trim();
+  if (raw === undefined || raw === '') return undefined;
+  return JSON.parse(raw) as RoofOnLayersOptions['tuning'];
+}
+const TUNING = tuningFromEnv();
+
 export function hiddenEdgeFromEnv(env: NodeJS.ProcessEnv = process.env): RoofOnLayersOptions['hiddenEdge'] {
   const method = env.ROOF3D_HIDDEN_EDGE;
   if (method === undefined || method === '') return undefined;
@@ -42,6 +53,7 @@ export function reconstructOnce(h: LoadedHouse, seed: number, p: MetricParams = 
       steep: steepRoof(h.building),
       building: h.building,
       seed,
+      ...(TUNING !== undefined ? { tuning: TUNING } : {}),
       ...(HIDDEN_EDGE !== undefined ? { hiddenEdge: HIDDEN_EDGE } : {}),
       ...(h.lidarPoints != null ? { lidar: h.lidarPoints } : {}),
       ...(h.lidarFusionPoints != null ? { lidarFusion: { points: h.lidarFusionPoints } } : {}),

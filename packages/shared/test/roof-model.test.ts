@@ -215,7 +215,9 @@ describe('measureRoof', () => {
     expect(estimate.planSqFt).toBe(base.planSqFt);
     expect(roof!.totals.slopedSqFt).toBe(base.surfaceSqFt);
     expect(roof!.totals.squares).toBe(base.squares);
-    expect(estimate.ridgeFt).toBe(roof!.totals.ridgeFt);
+    // The priced ridge is the cap length: ridges and hips.
+    expect(estimate.ridgeFt).toBeCloseTo(roof!.totals.ridgeFt + roof!.totals.hipFt, 1);
+    expect(roof!.totals.hipFt).toBeGreaterThan(0);
     expect(estimate.valleyFt).toBe(roof!.totals.valleyFt);
     expect(estimate.edgeFt).toBeCloseTo(roof!.totals.eaveFt + roof!.totals.rakeFt, 1);
     const facetSum = roof!.facets.reduce((s, f) => s + f.areaSqFt, 0);
@@ -310,7 +312,7 @@ describe('quoting only some facets', () => {
     expect(estimate.surfaceSqFt).toBe(q.slopedSqFt);
     expect(estimate.squares).toBe(q.squares);
     expect(estimate.planSqFt).toBe(q.planSqFt);
-    expect(estimate.ridgeFt).toBe(q.ridgeFt);
+    expect(estimate.ridgeFt).toBeCloseTo(q.ridgeFt + q.hipFt, 1);
     expect(estimate.valleyFt).toBe(q.valleyFt);
     expect(estimate.edgeFt).toBeCloseTo(q.eaveFt + q.rakeFt, 1);
     expect(estimate.footprintSqFt).toBeLessThan(measureRoof(L).estimate.footprintSqFt);

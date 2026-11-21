@@ -18,7 +18,7 @@ export const measure = {
   squares: 'Squares',
   pitch: 'Pitch',
   edges: 'Edges (ft)',
-  ridge: 'Ridge (ft)',
+  ridge: 'Ridge and hip cap (ft)',
   valley: 'Valley (ft)',
   getExactReport: 'Request an exact roof report',
   choiceTitle: 'How to price it',
