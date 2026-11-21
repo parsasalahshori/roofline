@@ -448,20 +448,23 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     const fresh = refitFaces(gr, s, z, f, planePrm.tolM, planePrm.maxPitchX12);
     return locked.size === 0 ? fresh : fresh.map((p, k) => (locked.has(f.planes[k]!) ? f.planes[k]! : p));
   };
+  // One refit when nothing is fitted (as before the primitives); another only after a step that changed the faces.
   const withPrimitives = (gr: { w: number; h: number }, z: Float32Array, rf: Uint8Array, f: { labels: Int32Array; planes: Plane[] }, tr: Uint8Array | null) => {
     locked = new Map<Plane, FittedKind>();
     gables = [];
     stacks = [];
-    if (!primPrm.enabled) return f;
-    const done = fitGables(gr, s, z, rf, f, refitFaces(gr, s, z, f, planePrm.tolM, planePrm.maxPitchX12), primPrm, planePrm, tr, opts.debug);
+    const planes0 = refitFaces(gr, s, z, f, planePrm.tolM, planePrm.maxPitchX12);
+    if (!primPrm.enabled) return { faces: f, planes: planes0 };
+    const done = fitGables(gr, s, z, rf, f, planes0, primPrm, planePrm, tr, opts.debug);
     locked = done.locked;
     gables = done.fitted;
-    const stacked = mergeStacks(gr, s, z, rf, done.faces, refit(gr, z, done.faces), locked, primPrm, opts.debug);
+    const planes1 = done.faces === f ? planes0 : refit(gr, z, done.faces);
+    const stacked = mergeStacks(gr, s, z, rf, done.faces, planes1, locked, primPrm, opts.debug);
     stacks = stacked.merged;
-    return stacked.faces;
+    return { faces: stacked.faces, planes: stacked.faces === done.faces ? planes1 : refit(gr, z, stacked.faces) };
   };
-  faces = withPrimitives(g, dsm, roof, faces, tree);
-  let planes = refit(g, dsm, faces);
+  let planes: Plane[];
+  ({ faces, planes } = withPrimitives(g, dsm, roof, faces, tree));
 
   // 2a. Roof under canopy or in shade the mask missed: grown along the faces' own planes where the heights show it,
   //     bridged across notches a crown bites out of one roof line (canopy.ts). Only with Google's box (the bound) and the
@@ -492,8 +495,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
       clipped = clipped || c0 <= 0 || r0 <= 0 || c1 >= W - 1 || r1 >= H - 1;
       faces = buildFaces(g, s, dsm, roof, re.found, planePrm, tree);
       if (faces.planes.length === 0) return null;
-      faces = withPrimitives(g, dsm, roof, faces, tree);
-      planes = refit(g, dsm, faces);
+      ({ faces, planes } = withPrimitives(g, dsm, roof, faces, tree));
       canopyOut = { grownM2: round(done.grownM2, 2), bridgedM2: round(done.bridgedM2, 2), occluded: re.occluded };
       opts.debug?.(`canopy: grew ${done.grownM2.toFixed(1)} m2 on the faces' planes, bridged ${done.bridgedM2.toFixed(1)} m2 under crowns`);
     }

@@ -201,6 +201,30 @@ export type FittedKind = 'gable' | 'stack';
 /** One fitted gable slope: the clean face it was mirrored from (label before the fit), the faces it replaced, its pitch. */
 export type FittedGable = { from: number; absorbed: number; ridgeM: number; pitchX12: number; areaM2: number };
 
+/** Per face: its pixel count and pixels (raster order), and the box of all labelled pixels (columns and rows, inclusive). */
+function facePixels(g: Grid, labels: Int32Array, n: number): { area: number[]; pixelsOf: Int32Array[]; box: { c0: number; r0: number; c1: number; r1: number } } {
+  const area = new Array<number>(n).fill(0);
+  const box = { c0: g.w, r0: g.h, c1: -1, r1: -1 };
+  for (let i = 0; i < labels.length; i++) {
+    const k = labels[i]!;
+    if (k < 0) continue;
+    area[k]!++;
+    const c = i % g.w;
+    const r = (i - c) / g.w;
+    if (c < box.c0) box.c0 = c;
+    if (c > box.c1) box.c1 = c;
+    if (r < box.r0) box.r0 = r;
+    if (r > box.r1) box.r1 = r;
+  }
+  const pixelsOf = area.map((a) => new Int32Array(a));
+  const fill = new Array<number>(n).fill(0);
+  for (let i = 0; i < labels.length; i++) {
+    const k = labels[i]!;
+    if (k >= 0) pixelsOf[k]![fill[k]!++] = i;
+  }
+  return { area, pixelsOf, box };
+}
+
 function median(xs: number[]): number {
   if (xs.length === 0) return Number.NaN;
   const v = [...xs].sort((a, b) => a - b);
@@ -230,24 +254,29 @@ export function fitGables(
   const fitted: FittedGable[] = [];
   const n = planes.length;
   if (!prm.enabled || !prm.gables || n < 2) return { faces, locked, fitted };
-  const labels = faces.labels.slice();
+  // Nothing below touches the caller's labels until a slope is fitted: `labels` is copied on the first fit.
+  let labels = faces.labels;
   const outPlanes = [...faces.planes];
-  const area = new Array<number>(n).fill(0);
-  for (let i = 0; i < labels.length; i++) if (labels[i]! >= 0) area[labels[i]!]!++;
+  const { area, pixelsOf, box } = facePixels(g, labels, n);
   const order = [...Array(n).keys()].sort((a, b) => area[b]! - area[a]! || a - b);
   const gone = new Set<number>();
   const made = new Set<number>();
   const pockets = new Set<number>();
   const binM = Math.max(prm.binM, 2 * s);
   const gapBins = Math.round(prm.ridgeGapM / binM);
+  // The corners of the labelled pixels' box, metres: every pixel's level coordinate lies between theirs.
+  const corners = [
+    [box.c0 * s, -box.r0 * s],
+    [(box.c1 + 1) * s, -box.r0 * s],
+    [box.c0 * s, -(box.r1 + 1) * s],
+    [(box.c1 + 1) * s, -(box.r1 + 1) * s],
+  ] as const;
 
   for (const f of order) {
     if (gone.has(f) || made.has(f) || area[f]! * s * s < prm.minCleanM2) continue;
     const P = planes[f]!;
     const slope = Math.hypot(P.a, P.b);
     if (slope * 12 < prm.minPitchX12 || slope * 12 > prm.maxPitchX12) continue;
-    const fit = interiorFit(g, s, dsm, labels, f, P, planePrm);
-    if (fit === null || fit.share < prm.cleanShare) continue;
     // Slope coordinates: t up the clean slope, w level along it.
     const gx = P.a / slope;
     const gy = P.b / slope;
@@ -255,16 +284,14 @@ export function fitGables(
     const ey = gx;
     let wLo = Infinity;
     let wHi = -Infinity;
-    for (let i = 0; i < labels.length; i++) {
-      if (roof[i] !== 1) continue;
-      const w = pixelX(g, s, i) * ex + pixelY(g, s, i) * ey;
+    for (const [x, y] of corners) {
+      const w = x * ex + y * ey;
       if (w < wLo) wLo = w;
       if (w > wHi) wHi = w;
     }
     const nb = Math.floor((wHi - wLo) / binM) + 1;
     const tTop = new Float64Array(nb).fill(-Infinity);
-    for (let i = 0; i < labels.length; i++) {
-      if (labels[i] !== f) continue;
+    for (const i of pixelsOf[f]!) {
       const x = pixelX(g, s, i);
       const y = pixelY(g, s, i);
       const b = Math.floor((x * ex + y * ey - wLo) / binM);
@@ -439,6 +466,9 @@ export function fitGables(
       debug?.(`gable from face ${f}: ridge ${((b1 - b0 + 1) * binM).toFixed(1)} m, no mirror (${mirrors.length} of ${direct} columns)`);
       continue;
     }
+    // The clean slope is a plane: most of its interior on it (the costly test, so only now).
+    const fit = interiorFit(g, s, dsm, labels, f, P, planePrm);
+    if (fit === null || fit.share < prm.cleanShare) continue;
     const chord = median(mirrors.map((m) => (zR - m.eave) / m.run));
     if (!(Math.abs(chord - slope) * 12 <= prm.pitchTolX12)) {
       debug?.(`gable from face ${f}: far chord ${(chord * 12).toFixed(1)}/12 against ${(slope * 12).toFixed(1)}/12, no mirror`);
@@ -550,6 +580,7 @@ export function fitGables(
     if (finePx >= prm.fineShare * takenPx) continue;
     const target = take[0]!;
     const set = new Set(take);
+    if (labels === faces.labels) labels = faces.labels.slice();
     let px = 0;
     for (let i = 0; i < labels.length; i++) {
       if (set.has(labels[i]!)) {
@@ -611,7 +642,7 @@ export function mergeStacks(
   const merged: MergedStack[] = [];
   const n = planes.length;
   if (!prm.enabled || !prm.stacks || n < 2) return { faces, merged };
-  const labels = faces.labels.slice();
+  let labels = faces.labels;
   const outPlanes = [...faces.planes];
   // Each face's plane now, and the plane its top was fitted on (a merged face's chord is no guide to where its crest is).
   const cur = [...planes];
@@ -621,7 +652,8 @@ export function mergeStacks(
   const onRoof = (i: number) => i >= 0 && roof[i] === 1 && Number.isFinite(dsm[i]!);
   const refused = new Set<string>();
 
-  const tryPair = (U: number, L: number, area: readonly number[]): { plane: Plane; pitch: number } | string => {
+  const tryPair = (U: number, L: number, area: readonly number[], pixelsOf: readonly Int32Array[]): { plane: Plane; pitch: number } | string => {
+    const both = [pixelsOf[U]!, pixelsOf[L]!];
     const PU = cur[U]!;
     const PL = cur[L]!;
     const sU = Math.hypot(PU.a, PU.b);
@@ -651,39 +683,40 @@ export function mergeStacks(
     const ey = gx;
     let wLo = Infinity;
     let wHi = -Infinity;
-    for (let i = 0; i < labels.length; i++) {
-      if (labels[i] !== U && labels[i] !== L) continue;
-      const w = pixelX(g, s, i) * ex + pixelY(g, s, i) * ey;
-      if (w < wLo) wLo = w;
-      if (w > wHi) wHi = w;
+    for (const list of both) {
+      for (const i of list) {
+        const w = pixelX(g, s, i) * ex + pixelY(g, s, i) * ey;
+        if (w < wLo) wLo = w;
+        if (w > wHi) wHi = w;
+      }
     }
     const nb = Math.floor((wHi - wLo) / binM) + 1;
     const topU = new Float64Array(nb).fill(-Infinity);
     const botU = new Float64Array(nb).fill(Infinity);
     const topL = new Float64Array(nb).fill(-Infinity);
     const botL = new Float64Array(nb).fill(Infinity);
-    let gapSum: number[] = [];
-    for (let i = 0; i < labels.length; i++) {
-      const k = labels[i]!;
-      if (k !== U && k !== L) continue;
+    const gaps: number[] = [];
+    for (const i of pixelsOf[U]!) {
       const x = pixelX(g, s, i);
       const y = pixelY(g, s, i);
       const b = Math.floor((x * ex + y * ey - wLo) / binM);
       const t = x * gx + y * gy;
-      if (k === U) {
-        if (t > topU[b]!) topU[b] = t;
-        if (t < botU[b]!) botU[b] = t;
-        const c = i % g.w;
-        if ((c > 0 && labels[i - 1] === L) || (c < g.w - 1 && labels[i + 1] === L) || (i >= g.w && labels[i - g.w] === L) || (i + g.w < labels.length && labels[i + g.w] === L)) {
-          gapSum.push(Math.abs(planeZ(PU, x, y) - planeZ(PL, x, y)));
-        }
-      } else {
-        if (t > topL[b]!) topL[b] = t;
-        if (t < botL[b]!) botL[b] = t;
+      if (t > topU[b]!) topU[b] = t;
+      if (t < botU[b]!) botU[b] = t;
+      const c = i % g.w;
+      if ((c > 0 && labels[i - 1] === L) || (c < g.w - 1 && labels[i + 1] === L) || (i >= g.w && labels[i - g.w] === L) || (i + g.w < labels.length && labels[i + g.w] === L)) {
+        gaps.push(Math.abs(planeZ(PU, x, y) - planeZ(PL, x, y)));
       }
     }
-    if (gapSum.length === 0 || median(gapSum) > prm.stackGapM) return `planes ${median(gapSum).toFixed(2)} m apart at the boundary`;
-    gapSum = [];
+    if (gaps.length === 0 || median(gaps) > prm.stackGapM) return `planes ${median(gaps).toFixed(2)} m apart at the boundary`;
+    for (const i of pixelsOf[L]!) {
+      const x = pixelX(g, s, i);
+      const y = pixelY(g, s, i);
+      const b = Math.floor((x * ex + y * ey - wLo) / binM);
+      const t = x * gx + y * gy;
+      if (t > topL[b]!) topL[b] = t;
+      if (t < botL[b]!) botL[b] = t;
+    }
     const at = (w: number, t: number): number => {
       const c = Math.floor((w * ex + t * gx) / s);
       const r = Math.floor(-(w * ey + t * gy) / s);
@@ -785,11 +818,12 @@ export function mergeStacks(
     const c0 = median(chords.map((c) => c.z - p * c.t));
     let inside = 0;
     let total = 0;
-    for (let i = 0; i < labels.length; i++) {
-      if (labels[i] !== U && labels[i] !== L) continue;
-      total++;
-      const r = dsm[i]! - (c0 + p * (pixelX(g, s, i) * gx + pixelY(g, s, i) * gy));
-      if (r >= -prm.sagM && r <= prm.aboveM) inside++;
+    for (const list of both) {
+      for (const i of list) {
+        total++;
+        const r = dsm[i]! - (c0 + p * (pixelX(g, s, i) * gx + pixelY(g, s, i) * gy));
+        if (r >= -prm.sagM && r <= prm.aboveM) inside++;
+      }
     }
     if (inside < prm.stackFitShare * total) return `${((100 * inside) / total).toFixed(0)}% under the chord plane`;
     return { plane: { a: p * gx, b: p * gy, c: c0 }, pitch: p };
@@ -814,9 +848,11 @@ export function mergeStacks(
       pairs.push({ U, L, cracks });
     }
     pairs.sort((x, y) => y.cracks - x.cracks || x.U - y.U || x.L - y.L);
+    if (pairs.length === 0) break;
+    const { pixelsOf } = facePixels(g, labels, n);
     let done = false;
     for (const { U, L } of pairs) {
-      const got = tryPair(U, L, adj.area);
+      const got = tryPair(U, L, adj.area, pixelsOf);
       const sU = Math.hypot(cur[U]!.a, cur[U]!.b) * 12;
       const sL = Math.hypot(cur[L]!.a, cur[L]!.b) * 12;
       if (typeof got === 'string') {
@@ -824,7 +860,8 @@ export function mergeStacks(
         debug?.(`stack ${U} (${sU.toFixed(1)}/12, ${(adj.area[U]! * s * s).toFixed(1)} m2) over ${L} (${sL.toFixed(1)}/12, ${(adj.area[L]! * s * s).toFixed(1)} m2): no (${got})`);
         continue;
       }
-      for (let i = 0; i < labels.length; i++) if (labels[i] === L) labels[i] = U;
+      if (labels === faces.labels) labels = faces.labels.slice();
+      for (const i of pixelsOf[L]!) labels[i] = U;
       cur[U] = got.plane;
       outPlanes[U] = got.plane;
       locked.set(got.plane, 'stack');
