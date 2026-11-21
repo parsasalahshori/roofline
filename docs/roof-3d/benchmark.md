@@ -276,6 +276,14 @@ skip.
    touched), computes their tags and split. `--explore` prints canopy numbers and writes nothing.
 5. Freeze a new baseline.
 
+**A set beside the manifest.** Houses that must stay out of `manifest.json`, its baselines and its frozen split (a
+sealed fresh set of answer keys, kept for a final verdict) get a manifest of their own in the same schema, with a set
+folder and a split name of their own: `manifest-ev2.json` lists `testset-ev2/` with the splits `fresh`,
+`fresh-derived` and `fresh-medium`. `parseExtraManifest` reads such a file (the benchmark never does), and
+`npm run roof3d:dump -w @roofline/api -- --out DIR --manifest manifest-ev2.json` dumps its houses. Nothing else in the
+repository reads it, so `roof3d:bench-manifest` never pulls those houses into the frozen manifest. The same 30-day
+rule applies to its folders.
+
 **Google's 30-day rule.** The Solar API terms allow keeping its data for 30 days. Every house records
 `downloadedAt` and `deleteBy`; the benchmark refuses to run (exit 3) on a house past `deleteBy` and prints the
 earliest date at the top of every run. Delete the folder, or pass `--allow-expired` for a single run. The
