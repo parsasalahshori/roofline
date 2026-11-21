@@ -36,6 +36,7 @@ export const measure = {
   saveFailed: 'We could not save that change.',
   saving: 'Saving',
   locked: 'Make a new measurement to change a sent proposal.',
+  exactLocked: "An exact report can't be changed. Make a new measurement to change it.",
   drawHint: 'Tap the corners of the roof. Double-tap or press Enter to finish.',
   attribution: 'Estimate from building outlines and satellite images',
   corner: (n: number, total: number) => `Corner ${n} of ${total}`,

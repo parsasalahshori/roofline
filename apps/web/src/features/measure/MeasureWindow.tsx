@@ -223,7 +223,7 @@ function Loaded({ m, preview, onProposalReady }: { m: MeasurementView; preview: 
     inflight.current = saved.catch(() => undefined);
     return saved;
   }).current;
-  const startRef = useRef({ ring: m.outline?.[0] ?? [], drawMode: m.drawMode || !m.outline?.[0]?.length, locked: m.locked, model, m });
+  const startRef = useRef({ ring: m.outline?.[0] ?? [], drawMode: m.drawMode || !m.outline?.[0]?.length, locked: m.locked || m.kind === 'exact', model, m });
   const [mapFailed, setMapFailed] = useState(false);
   // Google's roof photo failed with 410 (past Google's 30 days) after the view named it
   const [roofPhotoGone, setRoofPhotoGone] = useState(false);
@@ -235,7 +235,8 @@ function Loaded({ m, preview, onProposalReady }: { m: MeasurementView; preview: 
   });
 
   const conflict = patch.error instanceof ApiError && patch.error.status === 409;
-  const locked = m.locked || conflict;
+  // An exact report's numbers are what was measured: it is never edited, so it opens read-only
+  const locked = m.locked || m.kind === 'exact' || conflict;
 
   const onEdit = useRef((result: EditResult) => {
     if (result.refused) {
@@ -367,6 +368,8 @@ function Loaded({ m, preview, onProposalReady }: { m: MeasurementView; preview: 
   const roof3d = m.roof3d ?? null;
   const excludedKey = excluded.join(' ');
   const estimate = useMemo(() => {
+    // An exact report is shown as stored (the server never works its numbers out again from the outline)
+    if (m.kind === 'exact') return m.estimate;
     const input = { outline: ring.length > 0 ? [ring] : [], pitchX12: pitch, overhangFt: overhang, valleyFt: m.estimate.valleyFt };
     const out = excludedKey === '' ? [] : excludedKey.split(' ');
     const base = instantEstimate(input);
@@ -376,7 +379,7 @@ function Loaded({ m, preview, onProposalReady }: { m: MeasurementView; preview: 
     if (planes === null || planes.length === 0) return base;
     const sloped = measureRoof({ ...input, planes }).estimate;
     return { ...base, surfaceSqFt: sloped.surfaceSqFt, squares: sloped.squares };
-  }, [ring, pitch, overhang, m.estimate.valleyFt, planes, excludedKey, roof3d, ownPitch]);
+  }, [ring, pitch, overhang, m.kind, m.estimate, planes, excludedKey, roof3d, ownPitch]);
   // The measured roof with the sections left out shaded (and its totals the quoted sections')
   const savedRoofData = m.roof;
   const quotedModel = useMemo(() => {
