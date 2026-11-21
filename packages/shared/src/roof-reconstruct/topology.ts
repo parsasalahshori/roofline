@@ -72,7 +72,75 @@ export type TopologyParams = {
   cornerSnapM: number;
   /** A piece of a face's edge shorter than this between two longer pieces of one kind is a jog in it, metres. */
   jogM: number;
+  /**
+   * A face's edge is named by its plane (eave where it runs level along the face, rake where it climbs) unless the
+   * height map beside the edge clearly says otherwise (`measuredEdge`). The pixels along a roof's edge are often another
+   * face's than the roof behind them (a hip end merged into the main slope, a gable the planes missed, a corner placed a
+   * little off), so the face's plane says rake along a real eave and eave along a real rake. Measured on the roof 0.6 to
+   * 1.5 m in from the edge: how it climbs away from the edge, and how much it climbs or falls along it. The angle between
+   * the two is the edge's angle from level on the roof that is really there: under `measuredEaveDeg` an edge the plane
+   * calls a rake is an eave; at `measuredRakeDeg` or more an edge the plane calls an eave is a rake; between them the
+   * plane stands. Not asked where the roof there is flatter than `measuredMinSlope` (rise over run) or the face is low
+   * slope (the direction of next to no slope is noise), where the edge is too short to measure (about 1.3 m), or where
+   * the heights beside it are not a roof's (a tree's crown over the edge: they fall away from the edge, or climb along
+   * it at over twice the face's slope), and only on the say of three in four of the stations along the edge.
+   * Fitted on the benchmark's EagleView houses (dev): of the edge length it renames that has a clear answer there,
+   * nine tenths is renamed right.
+   */
+  measuredEdge: boolean;
+  measuredEaveDeg: number;
+  measuredRakeDeg: number;
+  measuredMinSlope: number;
+  /**
+   * A line the planes call an upper face's eave over a lower roof (a crease the upper face drains onto, or a wall under
+   * it), where the height map falls away from the line on BOTH sides by at least `fallAwaySlope` (rise over run, 0.6 to
+   * 1.5 m out) is a ridge (`measuredRidge`): the "upper" face's pixels there lie over the ridge, on roof its plane does
+   * not describe. Along a wall the line must also be level in the height map (under `ridgeAlongSlope` along it).
+   * On the benchmark's EagleView houses (dev) none of the length this renames was an eave.
+   */
+  measuredRidge: boolean;
+  fallAwaySlope: number;
+  ridgeAlongSlope: number;
+  /**
+   * A ridge is drawn once: a line `measuredRidge` would make a ridge of, with a ridge already running alongside it
+   * within this many metres over half its length, is the other side of a strip the planes cut off along that ridge: no
+   * edge at all (a pitch break, drawn and never counted). 0: every such line is a ridge. On the benchmark's EagleView
+   * houses (dev) nine in ten of these lines lie beside a ridge the reconstruction already has.
+   */
+  ridgeBesideM: number;
+  /**
+   * A valley is a trough: the roof rises away from it on both sides. A crease the planes call a valley, where the
+   * height map 1 m out on the lower face's side lies `valleyDropM` or more BELOW the line, is no trough: the lower roof
+   * is a step down the planes smoothed over, and the line is the upper face's edge over it (eave or rake, as on a wall;
+   * the lower face is flashed). 0 is off, and OFF IS THE DEFAULT (0.3 is the studied value): on the benchmark's
+   * EagleView houses (dev) none of the length this renames was a valley, but it leaves the valley total short by what
+   * the reconstruction really misses (wrong valleys make up for missing ones), and on the held-out houses, where the
+   * valleys are already a fifth short, the valley total's median error rose from 23 to 31 %. Turn it on once the
+   * missing valleys are found (docs/roof-3d/line-kinds.md).
+   */
+  valleyDropM: number;
+  /**
+   * A hip is a crest: the roof falls away from it on both sides. A crease the planes call a hip that climbs the upper
+   * face (it would be that face's rake), where the height map 1 m out on the upper face's side stands `hipStepM` or more
+   * ABOVE the line, is the upper roof's rake over the lower roof (the lower face is step flashed). 0 turns it off.
+   */
+  hipStepM: number;
 };
+
+/** The height map beside an edge climbs along it at most this many times the face's own slope where it is roof (measuredEdge). */
+const MEASURED_ALONG_MAX = 2;
+/**
+ * The share of the stations beside a line that must agree, one by one, before the height map renames it (a tree's crown
+ * over part of the line spoils the stations under it), and what a station's angle from level must be to agree that an
+ * edge is a rake (past the plane rule's own 45 degrees) or an eave (under 60: at a hip's corner the stations at the end
+ * of an eave look onto the next face). Set on the benchmark's EagleView houses (dev) and the synthetic roofs' crowns.
+ */
+const MEASURED_QUORUM = 0.75;
+const QUORUM_RAKE_DEG = 45;
+const QUORUM_EAVE_DEG = 60;
+
+/** Of two faces at a line, one is the upper when its plane is at least this far above the other's at the line's middle, metres. */
+const UPPER_GAP_M = 0.05;
 
 export const DEFAULT_TOPOLOGY_PARAMS: TopologyParams = {
   minSharedM: 0.8,
@@ -91,6 +159,32 @@ export const DEFAULT_TOPOLOGY_PARAMS: TopologyParams = {
   levelX12: 0.5,
   cornerSnapM: 0.6,
   jogM: 1.5,
+  measuredEdge: true,
+  measuredEaveDeg: 40,
+  measuredRakeDeg: 75,
+  measuredMinSlope: 0.1,
+  measuredRidge: true,
+  fallAwaySlope: 0.1,
+  ridgeAlongSlope: 0.3,
+  ridgeBesideM: 1.2,
+  valleyDropM: 0,
+  hipStepM: 0.6,
+};
+
+/**
+ * Development only (roof3d:dump --features): what the topology knew about a line when it named it, for studying the
+ * naming rules against an answer key. Never part of the stored roof. `left` and `right` are the faces on either side of
+ * a -> b (-1 outside the roof); `v` holds the measurements (see `featuresOf` in buildTopology).
+ */
+export type LineFeatures = {
+  src: 'outline' | 'step-edge' | 'step-wall' | 'crease' | 'seam';
+  kind: RoofLineKind3d | 'none';
+  a: XY;
+  b: XY;
+  left: number;
+  right: number;
+  chain: number;
+  v: Record<string, number>;
 };
 
 export type TopoFace = { ring: XY[]; areaM2: number; fromPixels: boolean };
@@ -298,6 +392,7 @@ export function buildTopology(
   dsm: Float32Array,
   prm: TopologyParams = DEFAULT_TOPOLOGY_PARAMS,
   debug?: (msg: string) => void,
+  collect?: LineFeatures[],
 ): Topology {
   const L = lattice(g, labels);
   const { vw } = L;
@@ -371,6 +466,7 @@ export function buildTopology(
     const v = (rr: number, cc: number) => dsm[rr * g.w + cc]!;
     return (v(r, c) * (1 - tx) + v(r, c + 1) * tx) * (1 - ty) + (v(r + 1, c) * (1 - tx) + v(r + 1, c + 1) * tx) * ty;
   };
+  const chainStats: Record<string, number>[] = chains.map(() => ({}));
   const kinds: Kind[] = chains.map((c, k) => {
     if (c.left < 0 || c.right < 0) return { type: 'outline' };
     if (contracted[k]) return { type: 'seam' };
@@ -408,6 +504,7 @@ export function buildTopology(
     const lb = lineBetween(pi, pj);
     const off = lb === null ? Infinity : median(pts.map((p) => distToLine(p, lb.line)));
     debug?.(`chain ${k} faces ${c.left}/${c.right} len ${(c.verts.length * s).toFixed(1)} gap ${gap.toFixed(2)} off ${off.toFixed(2)} wall ${wall.toFixed(2)} strength ${lb?.strength.toFixed(2)}`);
+    if (collect !== undefined) chainStats[k] = { chainGap: gap, chainOff: Number.isFinite(off) ? off : 99, chainWall: wall, chainStrength: lb?.strength ?? 0 };
     if (gap > prm.stepM && wall > prm.stepM * 0.75) return { type: 'step' };
     if (lb !== null && lb.strength >= 0.05 && off <= 3) return { type: 'crease', line: lb.line, strength: lb.strength };
     return gap >= 0.25 ? { type: 'step' } : { type: 'seam' };
@@ -637,6 +734,10 @@ export function buildTopology(
 
   // Lines.
   const lines: TopoLine[] = [];
+  // Lines the height map made ridges of (TopologyParams.measuredRidge), and their development notes: a ridge is drawn
+  // once, so each is checked at the end for a ridge already running alongside it.
+  const peaks = new Set<TopoLine>();
+  const peakNotes = new Map<TopoLine, LineFeatures>();
   const levelTan = Math.tan((prm.levelDeg * Math.PI) / 180);
   const eaveCos = Math.cos((prm.eaveDeg * Math.PI) / 180);
   // How far a direction (unit dx, dy) is from a face's level direction (across its slope), as |cos|: 1 level, 0 straight
@@ -647,17 +748,206 @@ export function buildTopology(
     const slope = Math.hypot(pl.a, pl.b);
     return slope < levelSlope ? 1 : Math.abs((dx * -pl.b + dy * pl.a) / slope);
   };
+  const labelAt = (x: number, y: number): number => {
+    const c = Math.floor(x / s);
+    const r = Math.floor(-y / s);
+    return c < 0 || r < 0 || c >= g.w || r >= g.h ? -1 : labels[r * g.w + c]!;
+  };
+  const medianOf = (xs: number[]): number => {
+    const ok = xs.filter((x) => Number.isFinite(x)).sort((x, y) => x - y);
+    return ok.length === 0 ? Number.NaN : ok[Math.floor(ok.length / 2)]!;
+  };
+  // The height map on the roof beside a line from a to b, on its left (side 1) or its right (-1), read at stations
+  // every 0.4 m or so along the line (clear of its ends). At each station:
+  // - its rise: how the roof climbs away from the line between 0.6 and 1.5 m out (rise over run; negative: it falls
+  //   away). Clear of the first half metre, where the height map rounds a roof's edge off.
+  // - its climb along the line 1 m out, whichever way (the |slope| to the station about 1.2 m on): a gable's edge
+  //   climbs to the peak and falls again, an eave does neither.
+  // - its angle: between the two, the line's angle from level on the roof that is there (0 an eave's, 90 a rake's).
+  // Returned as medians (`rise`, `along`) and, sorted, every station's rise and angle (`rises`, `angles`) for a quorum:
+  // a tree's crown over part of an edge spoils the stations under it, and a name is changed only on the say of most of
+  // them. NaN and empty where it cannot be read: the line too short (under about 1.3 m) or the roof beside it too narrow.
+  type Beside = { rise: number; along: number; rises: number[]; angles: number[] };
+  const beside = (a: XY, b: XY, side: 1 | -1): Beside => {
+    const len = dist(a, b);
+    if (len < 1e-6) return { rise: Number.NaN, along: Number.NaN, rises: [], angles: [] };
+    const ux = (b.x - a.x) / len;
+    const uy = (b.y - a.y) / len;
+    const nx = -uy * side;
+    const ny = ux * side;
+    const inset = Math.min(0.4, len / 4);
+    const count = Math.max(1, Math.floor((len - 2 * inset) / 0.4) + 1);
+    const ts: number[] = [];
+    for (let q = 0; q < count; q++) ts.push(count === 1 ? len / 2 : inset + ((len - 2 * inset) * q) / (count - 1));
+    const zAt = (t: number, d: number): number => {
+      const x = a.x + ux * t + nx * d;
+      const y = a.y + uy * t + ny * d;
+      return labelAt(x, y) >= 0 ? dsmAt(x, y) : Number.NaN;
+    };
+    const rise = ts.map((t) => (labelAt(a.x + ux * t + nx * 1.5, a.y + uy * t + ny * 1.5) >= 0 ? (dsmAt(a.x + ux * t + nx * 1.5, a.y + uy * t + ny * 1.5) - dsmAt(a.x + ux * t + nx * 0.6, a.y + uy * t + ny * 0.6)) / 0.9 : Number.NaN));
+    const zs = ts.map((t) => zAt(t, 1));
+    const lag = Math.min(3, count - 1);
+    const slopes: number[] = [];
+    if (lag >= 1) for (let q = 0; q + lag < count; q++) if (ts[q + lag]! - ts[q]! > 0.5) slopes.push(Math.abs(zs[q + lag]! - zs[q]!) / (ts[q + lag]! - ts[q]!));
+    // Each station's own climb along the line: to the station `lag` on, or (the last ones) from the station `lag` back.
+    const angles: number[] = [];
+    if (lag >= 1 && ts[lag]! - ts[0]! > 0.5) {
+      for (let q = 0; q < count; q++) {
+        const [q1, q2] = q + lag < count ? [q, q + lag] : [q - lag, q];
+        const along = Math.abs(zs[q2]! - zs[q1]!) / (ts[q2]! - ts[q1]!);
+        if (Number.isFinite(along) && Number.isFinite(rise[q]!)) angles.push((Math.atan2(along, Math.abs(rise[q]!)) * 180) / Math.PI);
+      }
+    }
+    return { rise: medianOf(rise), along: medianOf(slopes), rises: rise.filter((x) => Number.isFinite(x)).sort((x, y) => x - y), angles: angles.sort((x, y) => x - y) };
+  };
+  /** The value a `share` of the way up a sorted list (0 its least, 1 its greatest); NaN of none. */
+  const quantile = (sorted: readonly number[], share: number): number => (sorted.length === 0 ? Number.NaN : sorted[Math.min(sorted.length - 1, Math.floor(share * sorted.length))]!);
+  // How far the height map 1 m out from a -> b on one side stands above (positive) or lies below the line itself, the
+  // line's height being the mean of the two faces' planes there: at every station, sorted (empty off the grid).
+  const standBeside = (i: number, j: number, a: XY, b: XY, side: 1 | -1): number[] => {
+    const len = dist(a, b);
+    if (len < 1e-6) return [];
+    const ux = (b.x - a.x) / len;
+    const uy = (b.y - a.y) / len;
+    const inset = Math.min(0.4, len / 4);
+    const count = Math.max(1, Math.floor((len - 2 * inset) / 0.4) + 1);
+    const hs: number[] = [];
+    for (let q = 0; q < count; q++) {
+      const t = count === 1 ? len / 2 : inset + ((len - 2 * inset) * q) / (count - 1);
+      const x = a.x + ux * t;
+      const y = a.y + uy * t;
+      hs.push(dsmAt(x - uy * side, y + ux * side) - (planeZ(planes[i]!, x, y) + planeZ(planes[j]!, x, y)) / 2);
+    }
+    return hs.filter((h) => Number.isFinite(h)).sort((x, y) => x - y);
+  };
+  // Development only: the measurements behind each line's name (LineFeatures), when asked for.
+  const faceStats =
+    collect === undefined
+      ? null
+      : (() => {
+          const n = new Float64Array(nFaces);
+          const sum = new Float64Array(nFaces);
+          for (let i = 0; i < labels.length; i++) {
+            const f = labels[i]!;
+            if (f < 0) continue;
+            const z = dsm[i]!;
+            if (!Number.isFinite(z)) continue;
+            const x = ((i % g.w) + 0.5) * s;
+            const y = -(Math.floor(i / g.w) + 0.5) * s;
+            n[f]!++;
+            sum[f]! += Math.min(1, Math.abs(z - planeZ(planes[f]!, x, y)));
+          }
+          return { n, sum };
+        })();
+  const featuresOf = (a: XY, b: XY, left: number, right: number, k: number): Record<string, number> => {
+    const len = dist(a, b);
+    const ux = (b.x - a.x) / len;
+    const uy = (b.y - a.y) / len;
+    const nx = -uy;
+    const ny = ux;
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const v: Record<string, number> = { lenM: len, chainLenM: chains[k]!.verts.length * s, ...chainStats[k] };
+    // Stations along the line, clear of its ends.
+    const inset = Math.min(0.4, len / 4);
+    const count = Math.max(1, Math.floor((len - 2 * inset) / 0.4) + 1);
+    const stations: { p: XY; t: number }[] = [];
+    for (let q = 0; q < count; q++) {
+      const t = count === 1 ? len / 2 : inset + ((len - 2 * inset) * q) / (count - 1);
+      stations.push({ p: { x: a.x + ux * t, y: a.y + uy * t }, t });
+    }
+    const both = left >= 0 && right >= 0;
+    const zRef = (p: XY): number => {
+      if (both) return (planeZ(planes[left]!, p.x, p.y) + planeZ(planes[right]!, p.x, p.y)) / 2;
+      return planeZ(planes[left >= 0 ? left : right]!, p.x, p.y);
+    };
+    v.h0 = medianOf(stations.map(({ p }) => dsmAt(p.x, p.y) - zRef(p)));
+    const side = (tag: 'L' | 'R', f: number, sgn: 1 | -1) => {
+      // The height map on this side, against the line's own height (the planes' there), at five distances out.
+      for (const off of [0.3, 0.6, 1, 1.5, 2.5]) {
+        v[`h${tag}${off * 10}`] = medianOf(stations.map(({ p }) => dsmAt(p.x + sgn * off * nx, p.y + sgn * off * ny) - zRef(p)));
+      }
+      v[`roof${tag}`] = stations.filter(({ p }) => labelAt(p.x + sgn * nx, p.y + sgn * ny) >= 0).length / stations.length;
+      // What the naming rules read there (`beside`, `standBeside`).
+      const m = beside(a, b, sgn);
+      v[`mRise${tag}`] = m.rise;
+      v[`mAlong${tag}`] = m.along;
+      for (const share of [0.25, 0.75]) {
+        v[`mAngle${share * 100}${tag}`] = quantile(m.angles, share);
+        v[`mRise${share * 100}${tag}`] = quantile(m.rises, share);
+      }
+      if (both) {
+        const st = standBeside(left, right, a, b, sgn);
+        for (const share of [0.25, 0.5, 0.75]) v[`stand${share * 100}${tag}`] = quantile(st, share);
+      }
+      if (f < 0) return;
+      const pl = planes[f]!;
+      const slope = Math.hypot(pl.a, pl.b);
+      v[`slope${tag}`] = slope;
+      v[`levelDeg${tag}`] = (Math.acos(Math.min(1, levelCos(f, ux, uy))) * 180) / Math.PI;
+      // Uphill into the face from the line (positive: the face comes down to the line), and along it.
+      v[`g${tag}`] = sgn * (pl.a * nx + pl.b * ny);
+      v[`climb${tag}`] = pl.a * ux + pl.b * uy;
+      v[`area${tag}`] = faceStats!.n[f]! * s * s;
+      v[`resid${tag}`] = faceStats!.n[f]! > 0 ? faceStats!.sum[f]! / faceStats!.n[f]! : 0;
+      v[`z${tag}`] = planeZ(pl, mid.x, mid.y);
+      v[`own${tag}`] = stations.filter(({ p }) => labelAt(p.x + sgn * 0.5 * nx, p.y + sgn * 0.5 * ny) === f).length / stations.length;
+      v[`fit${tag}`] = medianOf(stations.map(({ p }) => dsmAt(p.x + sgn * 0.6 * nx, p.y + sgn * 0.6 * ny) - planeZ(pl, p.x + sgn * 0.6 * nx, p.y + sgn * 0.6 * ny)));
+    };
+    side('L', left, 1);
+    side('R', right, -1);
+    if (both) {
+      const pi = planes[left]!;
+      const pj = planes[right]!;
+      const si = Math.hypot(pi.a, pi.b);
+      const sj = Math.hypot(pj.a, pj.b);
+      const cos = si > 1e-6 && sj > 1e-6 ? (pi.a * pj.a + pi.b * pj.b) / (si * sj) : 1;
+      v.facingDeg = (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI;
+      v.gapMid = planeZ(pi, mid.x, mid.y) - planeZ(pj, mid.x, mid.y);
+      v.gapA = planeZ(pi, a.x, a.y) - planeZ(pj, a.x, a.y);
+      v.gapB = planeZ(pi, b.x, b.y) - planeZ(pj, b.x, b.y);
+    }
+    return v;
+  };
+  const note = (src: LineFeatures['src'], kind: LineFeatures['kind'], a: XY, b: XY, k: number, left = chains[k]!.left, right = chains[k]!.right): LineFeatures | null => {
+    if (collect === undefined || dist(a, b) < 0.05) return null;
+    const row: LineFeatures = { src, kind, a, b, left, right, chain: k, v: featuresOf(a, b, left, right, k) };
+    collect.push(row);
+    return row;
+  };
   // A face's own edge from a to b: an edge of the roof (`edge`: eave where it runs level along the face, rake where it
   // climbs; a low-slope face's edges too, as a report counts them), or where the face meets a wall rising above it (`wall`: flashing where the wall
   // runs level along the face, step flashing where it climbs). Its true length is along the face's plane.
-  const faceEdge = (f: number, a: XY, b: XY, role: 'edge' | 'wall'): TopoLine | null => {
+  // `side`: which side of a -> b the face is on (1 its left, -1 its right), for the height map's say on an edge.
+  const faceEdge = (f: number, a: XY, b: XY, role: 'edge' | 'wall', side: 1 | -1): TopoLine | null => {
     const len = dist(a, b);
     if (len < 0.05) return null;
     const pl = planes[f]!;
     const rise = Math.abs(planeZ(pl, b.x, b.y) - planeZ(pl, a.x, a.y));
-    const level = levelCos(f, (b.x - a.x) / len, (b.y - a.y) / len) >= eaveCos;
+    let level = levelCos(f, (b.x - a.x) / len, (b.y - a.y) / len) >= eaveCos;
+    if (role === 'edge' && prm.measuredEdge && !flat[f]) {
+      // The roof that is really beside the edge (TopologyParams.measuredEdge): its angle from level along the edge.
+      const m = beside(a, b, side);
+      if (Number.isFinite(m.rise) && Number.isFinite(m.along) && Math.hypot(m.rise, m.along) >= prm.measuredMinSlope) {
+        const deg = (Math.atan2(m.along, Math.abs(m.rise)) * 180) / Math.PI;
+        // A rake climbs no steeper than a roof does: heights climbing along the edge at over twice the face's own
+        // slope are a tree's crown over the edge. An eave's roof climbs away from it: heights FALLING away from the
+        // edge are a crown too (or the high edge of a roof, which the plane names).
+        // And most of the stations must say so, one by one (a crown over part of the edge, a neighbouring face at a
+        // corner): three in four past 45 degrees for a rake; three in four under 60 and climbing away for an eave.
+        const toRake = deg >= prm.measuredRakeDeg && m.along <= MEASURED_ALONG_MAX * Math.hypot(pl.a, pl.b) && quantile(m.angles, 1 - MEASURED_QUORUM) >= QUORUM_RAKE_DEG;
+        const toEave = deg < prm.measuredEaveDeg && m.rise > 0 && quantile(m.angles, MEASURED_QUORUM) < QUORUM_EAVE_DEG && quantile(m.rises, 1 - MEASURED_QUORUM) > 0;
+        if (level && toRake) level = false;
+        else if (!level && toEave) level = true;
+      }
+    }
     const kind: RoofLineKind3d = role === 'wall' ? (level ? 'flashing' : 'step-flashing') : level ? 'eave' : 'rake';
     return { kind, a, b, faces: [f], lengthM: Math.hypot(len, rise), riseM: rise };
+  };
+  // Whether the height map falls away from a -> b on both sides (TopologyParams.measuredRidge).
+  const peakBeside = (a: XY, b: XY): { left: Beside; right: Beside; both: boolean } => {
+    const left = beside(a, b, 1);
+    const right = beside(a, b, -1);
+    return { left, right, both: left.rise < -prm.fallAwaySlope && right.rise < -prm.fallAwaySlope };
   };
   // A crease from a to b between face i (on its left) and face j, by which way each face drains there.
   // - Both fall away from it: a ridge (level, or the two faces opposite each other) or a hip.
@@ -680,6 +970,7 @@ export function buildTopology(
     const uy = (b.y - a.y) / len;
     const rise = (Math.abs(planeZ(pi, b.x, b.y) - planeZ(pi, a.x, a.y)) + Math.abs(planeZ(pj, b.x, b.y) - planeZ(pj, a.x, a.y))) / 2;
     let lk: RoofLineKind3d;
+    let byHeights = false;
     if (flat[i] && flat[j]) lk = 'flat-edge';
     else {
       const si = Math.hypot(pi.a, pi.b);
@@ -695,7 +986,14 @@ export function buildTopology(
       const upper = onto(i, gi, ti) && off(j, gj, tj) ? i : onto(j, gj, tj) && off(i, gi, ti) ? j : -1;
       const facing = si > 0 && sj > 0 ? (pi.a * pj.a + pi.b * pj.b) / (si * sj) : 0;
       if (upper >= 0 && levelCos(upper, ux, uy) >= ontoEaveCos) {
-        if (!flat[i] && !flat[j] && facing >= breakCos && Math.abs(si - sj) * 12 < prm.breakX12) lk = 'pitch-break';
+        // The planes say the upper face comes down to this line; where the height map falls away from it on that side
+        // too, both sides fall away: a ridge the upper face's pixels lie over (TopologyParams.measuredRidge).
+        const up = prm.measuredRidge ? beside(a, b, upper === i ? 1 : -1) : null;
+        if (up !== null && up.rise < -prm.fallAwaySlope && quantile(up.rises, MEASURED_QUORUM) < 0) {
+          lk = 'ridge';
+          byHeights = true;
+        }
+        else if (!flat[i] && !flat[j] && facing >= breakCos && Math.abs(si - sj) * 12 < prm.breakX12) lk = 'pitch-break';
         else {
           const pu = planes[upper]!;
           const eaveRise = Math.abs(planeZ(pu, b.x, b.y) - planeZ(pu, a.x, a.y));
@@ -710,11 +1008,40 @@ export function buildTopology(
         lk = convex ? (climb < levelTan || opposite ? 'ridge' : 'hip') : 'valley';
       }
     }
-    return { kind: lk, a, b, faces: [i, j], lengthM: Math.hypot(len, rise), riseM: rise };
+    const line: TopoLine = { kind: lk, a, b, faces: [i, j], lengthM: Math.hypot(len, rise), riseM: rise };
+    if (byHeights) peaks.add(line);
+    return line;
   };
-  const pushCrease = (i: number, j: number, a: XY, b: XY): void => {
+  const pushCrease = (i: number, j: number, a: XY, b: XY, k: number): void => {
     const l = creaseLine(i, j, a, b);
-    if (l !== null) lines.push(l);
+    if (l === null) return;
+    // A valley with a step down beside it, or a hip with a step up, is the upper face's edge over the lower roof
+    // (TopologyParams.valleyDropM, hipStepM): named as along a wall.
+    if ((l.kind === 'valley' && prm.valleyDropM > 0) || (l.kind === 'hip' && prm.hipStepM > 0)) {
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const gap = planeZ(planes[i]!, mid.x, mid.y) - planeZ(planes[j]!, mid.x, mid.y);
+      const [upper, lower] = gap >= 0 ? [i, j] : [j, i];
+      const upperSide = upper === i ? 1 : -1;
+      // Which face is the upper one must not be a toss-up: the planes a little apart at the line's middle (a line drawn
+      // exactly where they cross has neither above the other).
+      // (The upper roof must stand above a hip at most of the stations, half as far at three in four: a crown does not.)
+      const stands = Math.abs(gap) >= UPPER_GAP_M ? standBeside(i, j, a, b, l.kind === 'valley' ? (upperSide === 1 ? -1 : 1) : upperSide) : [];
+      const stepped = l.kind === 'valley' ? quantile(stands, 0.5) <= -prm.valleyDropM : quantile(stands, 0.5) >= prm.hipStepM && quantile(stands, 1 - MEASURED_QUORUM) >= prm.hipStepM / 2;
+      const e = stepped ? faceEdge(upper, a, b, 'edge', upperSide) : null;
+      if (e !== null && (l.kind === 'valley' || e.kind === 'rake')) {
+        const w = faceEdge(lower, a, b, 'wall', upperSide === 1 ? -1 : 1);
+        lines.push(e);
+        note('step-edge', e.kind, a, b, k);
+        if (w !== null) {
+          lines.push(w);
+          note('step-wall', w.kind, a, b, k);
+        }
+        return;
+      }
+    }
+    lines.push(l);
+    const row = note('crease', l.kind, a, b, k);
+    if (row !== null && peaks.has(l)) peakNotes.set(l, row);
   };
   // A wall stands along a house's walls, so it runs level along a face beside it or straight up its slope; a boundary
   // running across both faces' slopes on the diagonal is where they meet (a hip or a valley), not a wall, even where
@@ -731,15 +1058,23 @@ export function buildTopology(
     const path = paths[k]!;
     if (kind.type === 'outline') {
       const f = c.left >= 0 ? c.left : c.right;
+      // The face is on the path's left when it is the chain's left, and round a whole outline (a loop's path is the
+      // outline itself, counter-clockwise, whichever way its chain was traced).
+      const faceLeft = c.loop || c.left >= 0;
       const pieces: TopoLine[] = [];
       for (let n = 1; n < path.length; n++) {
-        const l = faceEdge(f, path[n - 1]!, path[n]!, 'edge');
+        const l = faceEdge(f, path[n - 1]!, path[n]!, 'edge', faceLeft ? 1 : -1);
         if (l !== null) pieces.push(l);
       }
-      lines.push(...jogsFollow(pieces, prm.jogM));
+      const named = jogsFollow(pieces, prm.jogM);
+      lines.push(...named);
+      for (const l of named) note('outline', l.kind, l.a, l.b, k, faceLeft ? f : -1, faceLeft ? -1 : f);
       return;
     }
-    if (kind.type === 'seam') return;
+    if (kind.type === 'seam') {
+      if (path.length >= 2) note('seam', 'none', path[0]!, path.at(-1)!, k);
+      return;
+    }
     const i = c.left;
     const j = c.right;
     const pi = planes[i]!;
@@ -761,17 +1096,35 @@ export function buildTopology(
       const walls: TopoLine[] = [];
       pieces.forEach(({ a, b, len }, n) => {
         if (diag[n] && (len >= prm.jogM || diag[n - 1] === true || diag[n + 1] === true)) {
-          pushCrease(i, j, a, b);
+          pushCrease(i, j, a, b, k);
           return;
+        }
+        // No wall stands along a line both roofs fall away from: where the height map falls away on both sides of a
+        // level piece it is a ridge whose two sides the height map holds apart (TopologyParams.measuredRidge).
+        if (prm.measuredRidge) {
+          const m = peakBeside(a, b);
+          if (m.both && Math.max(m.left.along, m.right.along) < prm.ridgeAlongSlope) {
+            const rise = (Math.abs(planeZ(pi, b.x, b.y) - planeZ(pi, a.x, a.y)) + Math.abs(planeZ(pj, b.x, b.y) - planeZ(pj, a.x, a.y))) / 2;
+            const line: TopoLine = { kind: 'ridge', a, b, faces: [i, j], lengthM: Math.hypot(len, rise), riseM: rise };
+            lines.push(line);
+            peaks.add(line);
+            const row = note('crease', 'ridge', a, b, k);
+            if (row !== null) peakNotes.set(line, row);
+            return;
+          }
         }
         const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
         const [upper, lower] = planeZ(pi, mid.x, mid.y) >= planeZ(pj, mid.x, mid.y) ? [i, j] : [j, i];
-        const e = faceEdge(upper, a, b, 'edge');
-        const w = faceEdge(lower, a, b, 'wall');
+        const e = faceEdge(upper, a, b, 'edge', upper === i ? 1 : -1);
+        const w = faceEdge(lower, a, b, 'wall', lower === i ? 1 : -1);
         if (e !== null) edges.push(e);
         if (w !== null) walls.push(w);
       });
-      lines.push(...jogsFollow(edges, prm.jogM), ...jogsFollow(walls, prm.jogM));
+      const namedEdges = jogsFollow(edges, prm.jogM);
+      const namedWalls = jogsFollow(walls, prm.jogM);
+      lines.push(...namedEdges, ...namedWalls);
+      for (const l of namedEdges) note('step-edge', l.kind, l.a, l.b, k);
+      for (const l of namedWalls) note('step-wall', l.kind, l.a, l.b, k);
       return;
     }
     const a = path[0]!;
@@ -783,11 +1136,44 @@ export function buildTopology(
       const pts = c.verts.map(at);
       const keep = simplifyIdx(pts, 0.25).map((q) => pts[q]!);
       if (pathLength(keep) < 0.3) return;
-      for (let n = 1; n < keep.length; n++) if (dist(keep[n - 1]!, keep[n]!) >= 0.05) pushCrease(i, j, keep[n - 1]!, keep[n]!);
+      for (let n = 1; n < keep.length; n++) if (dist(keep[n - 1]!, keep[n]!) >= 0.05) pushCrease(i, j, keep[n - 1]!, keep[n]!, k);
       return;
     }
-    pushCrease(i, j, a, b);
+    pushCrease(i, j, a, b, k);
   });
+  // A ridge is drawn once. A line the height map made a ridge of, with a ridge already running alongside it (within
+  // `ridgeBesideM` over half its length: the planes cut a strip of roof along the ridge off as a face of its own, and
+  // this is the strip's other side), is no edge at all: a pitch break, drawn and never counted.
+  if (peaks.size > 0 && prm.ridgeBesideM > 0) {
+    const cosMax = Math.cos((25 * Math.PI) / 180);
+    const settled = lines.filter((l) => l.kind === 'ridge' && !peaks.has(l));
+    for (const l of lines) {
+      if (!peaks.has(l)) continue;
+      const len = dist(l.a, l.b);
+      const ux = (l.b.x - l.a.x) / len;
+      const uy = (l.b.y - l.a.y) / len;
+      const n = Math.max(2, Math.round(len / 0.2));
+      let covered = 0;
+      for (let q = 0; q < n; q++) {
+        const p = { x: l.a.x + (ux * len * (q + 0.5)) / n, y: l.a.y + (uy * len * (q + 0.5)) / n };
+        const beside = settled.some((o) => {
+          const ol = dist(o.a, o.b);
+          if (ol < 1e-6) return false;
+          const ox = (o.b.x - o.a.x) / ol;
+          const oy = (o.b.y - o.a.y) / ol;
+          if (Math.abs(ux * ox + uy * oy) < cosMax) return false;
+          const along = (p.x - o.a.x) * ox + (p.y - o.a.y) * oy;
+          return along >= -0.2 && along <= ol + 0.2 && Math.abs((p.x - o.a.x) * oy - (p.y - o.a.y) * ox) <= prm.ridgeBesideM;
+        });
+        if (beside) covered++;
+      }
+      if (covered >= n / 2) {
+        l.kind = 'pitch-break';
+        const row = peakNotes.get(l);
+        if (row !== undefined) row.kind = 'pitch-break';
+      } else settled.push(l);
+    }
+  }
   return { faces, lines: joinCollinear(lines) };
 }
 

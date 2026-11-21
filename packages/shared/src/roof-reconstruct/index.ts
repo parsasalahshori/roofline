@@ -17,7 +17,7 @@ import { buildFaces, DEFAULT_PLANE_PARAMS, dissolve, findPlanes, type FoundPlane
 import { type CanopyParams, completeRoof, crownMap, crownRmsK, DEFAULT_CANOPY_PARAMS, localPlaneRms } from './canopy.ts';
 import { groundPlane, heightAboveGround, planeInCrop } from './ground.ts';
 import { close, components, countSet, dilate, fillHoles, largestComponent, open, open3, seededRandom, squaredDistance } from './raster.ts';
-import { buildTopology, DEFAULT_TOPOLOGY_PARAMS, type TopologyParams } from './topology.ts';
+import { buildTopology, DEFAULT_TOPOLOGY_PARAMS, type LineFeatures, type TopologyParams } from './topology.ts';
 import { DEFAULT_PHOTO_EDGE, type PhotoEdge, type PhotoEdgeParams, photoEdges } from './outline-photo.ts';
 import { boxShare, crownFromGreen, EAVE_SUPPORT, integral } from './eave-support.ts';
 import { DEFAULT_FACE_CLEANUP, type FaceCleanupParams, faceSupport, type WeakReason, weakCandidate, weakFaces } from './faces-cleanup.ts';
@@ -100,6 +100,11 @@ export type ReconstructOptions = {
   canopy?: Partial<CanopyParams> & { complete?: boolean };
   /** Development only: told what the topology decided. */
   debug?: (msg: string) => void;
+  /**
+   * Development only (roof3d:dump --features): given the measurements behind each line's name on the finished roof
+   * (whole-raster metres), for studying the naming rules against an answer key. Never part of the result.
+   */
+  lineFeatures?: (rows: LineFeatures[]) => void;
   /** The imagery's quality (HIGH, MEDIUM), for the quality result. */
   imageryQuality?: string | null;
   /**
@@ -478,6 +483,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
 
   let outline: XY[];
   let topo: ReturnType<typeof buildTopology>;
+  let lineRows: LineFeatures[] | undefined;
   let dissolved: Partial<Record<WeakReason, number>>;
   let hiddenOut: ReturnType<typeof hiddenEdgeStep> | undefined;
   let lidarEdges: LidarEdgeReport | undefined;
@@ -569,7 +575,8 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     //    neighbours' creases) is dissolved and the topology built again.
     //    Then (faces-cleanup.ts) faces too weak to stand on the polygons topology drew: thin strips with no plane of
     //    their own or cut from a neighbour's plane, and faces steeper than a roof plane without strong support.
-    topo = buildTopology(g, s, faces.labels, planes, outline, dsm, topoPrm, opts.debug);
+    lineRows = opts.lineFeatures !== undefined ? [] : undefined;
+    topo = buildTopology(g, s, faces.labels, planes, outline, dsm, topoPrm, opts.debug, lineRows);
     dissolved = {};
     // The crown test for the crown-edge rule, on this crop's heights (the same for every pass below).
     const crownBeside = cleanupPrm.enabled && cleanupPrm.crownShare <= 1 ? crownBesideOf(raster, g, c0, r0, dsm) : null;
@@ -595,7 +602,8 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
       if (tiny.size === 0 || tiny.size >= faces.planes.length) break;
       faces = dissolve(g, s, dsm, roof, faces, tiny, tree);
       planes = refitFaces(g, s, dsm, faces, planePrm.tolM, planePrm.maxPitchX12);
-      topo = buildTopology(g, s, faces.labels, planes, outline, dsm, topoPrm, opts.debug);
+      lineRows = opts.lineFeatures !== undefined ? [] : undefined;
+      topo = buildTopology(g, s, faces.labels, planes, outline, dsm, topoPrm, opts.debug, lineRows);
     }
 
     // 2a, checked: a completed roof whose topology came out worse (a face drawn from its pixels, or edge lines longer
@@ -687,6 +695,10 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   });
   const newIndex = new Array<number>(order.length);
   order.forEach((k, i) => (newIndex[k] = i));
+  if (opts.lineFeatures !== undefined && lineRows !== undefined) {
+    const face = (f: number) => (f >= 0 ? newIndex[f]! : -1);
+    opts.lineFeatures(lineRows.map((r) => ({ ...r, a: shift(r.a), b: shift(r.b), left: face(r.left), right: face(r.right) })));
+  }
   return {
     outline: outline.map(shift),
     faces: order.map((k) => localFaces[k]!),
