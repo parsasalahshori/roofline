@@ -139,7 +139,7 @@ brief: ~/RooflineWork/plans/roof2-brief.md
 | walls | wt-r-walls / roof2/walls | steps typed piece by piece: upper eave/rake + flashing, not a valley | running |
 | primitives | wt-r-primitives / roof2/primitives | fitted gable/hip shapes for simple wings the plane search cut into strips | running |
 | pitch | wt-r-pitch / roof2/pitch | plane fit, scale check, pooling between faces, calibration | DONE b1e17e34 (win): pooling (pitch.pool) + Google calibration 0.25/12 (pitch.offsetX12); main pitch exact 14->15/18 dev, 7->8/14 held-out; faces within 0.5/12: 56->73 % dev, 58->67 % held-out; area and lines unchanged; gates pass. Dead ends: other plane fits, Google segments, global scale, per-house tilt |
-| labels | wt-r-labels / roof2/labels | line kinds learned from the per-line answer key, written back as rules | running |
+| labels | wt-r-labels / roof2/labels | line kinds learned from the per-line answer key, written back as rules | DONE 4f01dc71 (partial win): the height map beside a line checks its name (measuredEdge, measuredRidge, hipStepM on; valleyDropM off); dev OBJECTIVE 21.9->20.5 (eave 19->10, rake 26->24), held-out 20.9->20.5 (chosen on held-out, not clean); gates pass. Ceiling for naming alone on dev: 19.4. valleyDropM 0.3 is right line by line but exposes missing real valleys: turn on once geometry finds them |
 | data | wt-r-data / roof2/data | more EagleView sandbox answer keys as a sealed fresh set | DONE 3c91f4ce: 20 new keys in testset-ev2 (7 fresh, 6 fresh-derived, 7 fresh-medium; manifest-ev2.json); score with work-data/score_ev2.sh; baseline alg 7 on high (13): OBJECTIVE 26.5, area 6.1 %, pitch exact 10/13; SEALED (tracks never see it); delete by 2026-12-21 |
 
 ## next
