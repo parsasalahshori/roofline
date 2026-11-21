@@ -18,12 +18,16 @@
 import { dist, intersectLines, nearestOnSegment, pointInRing, selfIntersects, signedArea, type XY } from './geom.ts';
 
 export type AreaParams = {
-  /** Eaves from the photo: an outline edge moves in to where the photo shows the roof's colour ending. */
+  /**
+   * Eaves from the photo: an outline edge moves in to where the photo shows the roof's colour ending. Off by default
+   * (round 3: with `eaveInsetM` 0.1 and `tuckUnderM` 0.3 it brings the area nearer EagleView's on dev and held-out, but
+   * the lidar outline gates do not allow the outline to move: docs/roof-3d/area.md).
+   */
   eavePhoto: boolean;
   /**
    * An edge the photo gives no evidence for (or a short one, or with no photo at all) moves in by this, metres: the
-   * usual excess of the height map's source, a calibration like the pitch offset. 0 here (off); the server sets
-   * Google's (roofOnLayers, GOOGLE_EAVE_INSET_M).
+   * usual excess of the height map's source, a calibration like the pitch offset. 0 = off (the default); 0.1 is
+   * Google's as measured on the dev houses (docs/roof-3d/area.md).
    */
   eaveInsetM: number;
   /** A colour change deeper inside the edge than this is not the mask's rim (a band of other roofing, a shadow): no evidence. Metres. */
@@ -54,21 +58,21 @@ export type AreaParams = {
   eaveReachM: number;
   /**
    * Roof under an overhang: the depth, metres, a lower face runs on under the edge of the roof above it along each
-   * wall line (flashing, step flashing). 0 here (off); the server sets OVERHANG_TUCK_M, 0.3 m: a 12 inch overhang,
-   * and the median width of the strips an EagleView report prices there (docs/roof-3d/area.md).
+   * wall line (flashing, step flashing). 0 = off (the default); 0.3 m is a 12 inch overhang, and the median width of
+   * the strips an EagleView report prices there (docs/roof-3d/area.md).
    */
   tuckUnderM: number;
 };
 
 export const DEFAULT_AREA_PARAMS: AreaParams = {
-  eavePhoto: true,
+  eavePhoto: false,
   eaveInsetM: 0,
   eaveMaxInM: 0.5,
   eaveMinInM: 0,
   eaveMinEdgeM: 2,
-  eaveDropM: 1,
-  eaveDropShare: 0.6,
-  eaveBeforeTopology: true,
+  eaveDropM: 0.5,
+  eaveDropShare: 0.5,
+  eaveBeforeTopology: false,
   eaveMinChange: 22,
   eaveMadK: 4,
   eaveReachM: 0.5,

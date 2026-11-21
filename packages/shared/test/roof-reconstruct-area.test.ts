@@ -27,7 +27,7 @@ function bandPhoto(roofEndX: number, bandEndX: number): AreaPhoto {
   return { rgb: paint(W, H, 0.1, (x) => (x < roofEndX ? ROOF_RGB : x < bandEndX ? WALL_RGB : YARD_RGB)), green: null, width: W, height: H, c0: 0, r0: 0 };
 }
 
-const P: AreaParams = DEFAULT_AREA_PARAMS;
+const P: AreaParams = { ...DEFAULT_AREA_PARAMS, eavePhoto: true };
 // An outline edge at x = 20 running north to south down the photo's middle, the roof to its west: outward normal east.
 const A: XY = { x: 20, y: -4 };
 const B: XY = { x: 20, y: -16 };
@@ -170,6 +170,7 @@ describe('eaveMoves: how far each outline edge moves', () => {
     const noPhoto = eaveMoves(ring, 0.1, null, heights, { ...P, eaveInsetM: 0.1 });
     expect(noPhoto.map((e) => e.by)).toEqual(['inset', 'inset', 'none', 'inset']);
     expect(eaveMoves(ring, 0.1, null, heights, P).every((e) => e.moveM === 0)).toBe(true);
+    expect(eaveMoves(ring, 0.1, photo, heights, DEFAULT_AREA_PARAMS)).toEqual([]);
   });
 });
 
@@ -274,8 +275,8 @@ describe('reconstructRoof: area at the roof edges', () => {
     const syn = synthesize(GABLE, { trees: 0 });
     // The roof truly ends 0.4 m short of the mask at its east gable end: a bright band of wall is in the mask there.
     const raster = withPhoto(syn, (p) => p.x < 7 - 0.4);
-    const off = reconstructRoof(raster, syn.point, { area: { eavePhoto: false } })!;
-    const on = reconstructRoof(raster, syn.point)!;
+    const off = reconstructRoof(raster, syn.point)!;
+    const on = reconstructRoof(raster, syn.point, { area: { eavePhoto: true } })!;
     expect(off.eaveTrim).toBeUndefined();
     expect(on.eaveTrim).toBeDefined();
     // 0.4 m off a 9 m gable end.
@@ -294,8 +295,8 @@ describe('reconstructRoof: area at the roof edges', () => {
   it('gives the same roof trimming before the topology or after it', () => {
     const syn = synthesize(GABLE, { trees: 0 });
     const raster = withPhoto(syn, (p) => p.x < 7 - 0.4);
-    const before = reconstructRoof(raster, syn.point, { area: { eaveBeforeTopology: true } })!;
-    const after = reconstructRoof(raster, syn.point, { area: { eaveBeforeTopology: false } })!;
+    const before = reconstructRoof(raster, syn.point, { area: { eavePhoto: true, eaveBeforeTopology: true } })!;
+    const after = reconstructRoof(raster, syn.point, { area: { eavePhoto: true, eaveBeforeTopology: false } })!;
     expect(Math.abs(outlineArea(before.outline) - outlineArea(after.outline))).toBeLessThan(0.05);
     expect(after.faces).toHaveLength(before.faces.length);
     expect(Math.abs(after.faces[0]!.planAreaM2 - before.faces[0]!.planAreaM2)).toBeLessThan(0.3);
@@ -303,7 +304,7 @@ describe('reconstructRoof: area at the roof edges', () => {
 
   it('leaves a roof whose colour runs to the mask edge alone, and without a photo moves nothing unless the inset is set', () => {
     const syn = synthesize(GABLE, { trees: 0 });
-    const exact = reconstructRoof(withPhoto(syn, () => true), syn.point)!;
+    const exact = reconstructRoof(withPhoto(syn, () => true), syn.point, { area: { eavePhoto: true } })!;
     const plain = reconstructRoof(syn.raster, syn.point)!;
     expect(plain.eaveTrim).toBeUndefined();
     expect(outlineArea(plain.outline) - outlineArea(exact.outline)).toBeLessThan(0.02 * outlineArea(plain.outline));

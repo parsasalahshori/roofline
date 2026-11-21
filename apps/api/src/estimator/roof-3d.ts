@@ -279,20 +279,6 @@ export const DEFAULT_HIDDEN_EDGE: Readonly<HiddenEdgeOption> | null = null;
  */
 export const GOOGLE_PITCH_OFFSET_X12 = 0.25;
 
-/**
- * Google's roof mask runs fat: on the 18 dev houses with an EagleView key the outline lay 0.12 m outside the report's
- * at the mean (docs/roof-3d/area.md). Where the photo does not show the roof ending, an outline edge with an eave in
- * the heights moves in by this much (reconstructRoof's area.eaveInsetM); `tuning.area.eaveInsetM` overrides it, 0 = off.
- */
-export const GOOGLE_EAVE_INSET_M = 0.1;
-
-/**
- * The depth a lower roof runs on under the edge of the roof above it, along each wall line (reconstructRoof's
- * area.tuckUnderM): a 12 inch overhang, the median width of the strips EagleView's reports price there on the dev
- * houses (docs/roof-3d/area.md). `tuning.area.tuckUnderM` overrides it, 0 = off.
- */
-export const OVERHANG_TUCK_M = 0.3;
-
 /** The reconstruction's own parameters, for the benchmark's studies (development only; the server never sets them). */
 export type RoofTuning = Pick<NonNullable<Parameters<typeof reconstructRoof>[2]>, 'planes' | 'outline' | 'topology' | 'faces' | 'pitch' | 'primitives' | 'area'>;
 
@@ -415,7 +401,7 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
   const raster = {
     ...layers.raster,
     green: layers.raster.green ?? greenOf(layers),
-    // The photo: for the photo method for hidden edges, and for the eave trim (roof-reconstruct/area.ts, on by default).
+    // The photo: for the photo method for hidden edges, and for the eave trim (roof-reconstruct/area.ts) when it is on.
     ...((hiddenEdge !== null && hiddenEdge.method !== 'planes') || (o.tuning?.area?.eavePhoto ?? DEFAULT_AREA_PARAMS.eavePhoto) ? { rgb: rgbOf(layers) } : {}),
   };
   const lidarCloud = o.lidar != null ? lidarOnLayers(layers, o.lidar) : null;
@@ -432,7 +418,7 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
     ...(o.tuning?.faces !== undefined ? { faces: o.tuning.faces } : {}),
     pitch: { offsetX12: GOOGLE_PITCH_OFFSET_X12, ...o.tuning?.pitch },
     ...(o.tuning?.primitives !== undefined ? { primitives: o.tuning.primitives } : {}),
-    area: { eaveInsetM: GOOGLE_EAVE_INSET_M, tuckUnderM: OVERHANG_TUCK_M, ...o.tuning?.area },
+    ...(o.tuning?.area !== undefined ? { area: o.tuning.area } : {}),
     ...(o.debug !== undefined ? { debug: o.debug } : {}),
     ...(o.lineFeatures !== undefined ? { lineFeatures: o.lineFeatures } : {}),
     ...(o.trace !== undefined ? { trace: o.trace } : {}),
@@ -467,8 +453,7 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
       ...(hiddenEdge !== null ? { hiddenEdge: { ...hiddenEdge } as HiddenEdgeOption } : {}),
       // The same pitch reporting as the main roof (one height map, one calibration).
       pitch: { offsetX12: GOOGLE_PITCH_OFFSET_X12, ...o.tuning?.pitch },
-      // The same edges and overhangs as the main roof (one mask, one calibration).
-      area: { eaveInsetM: GOOGLE_EAVE_INSET_M, tuckUnderM: OVERHANG_TUCK_M, ...o.tuning?.area },
+      ...(o.tuning?.area !== undefined ? { area: o.tuning.area } : {}),
     });
     if (found === null || found.clipped || found.faces.length === 0) continue;
     const r = toRoof3d(found, toLngLat, meta);
