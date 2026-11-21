@@ -508,7 +508,8 @@ function Loaded({ m, preview, onProposalReady }: { m: MeasurementView; preview: 
   };
 
   // A report that comes back needs a proposal to land on (it re-prices the home's open ones): one is drafted first when there is none
-  const hasProposal = builtRef.current !== null || requestRows.some((r) => r.measurementId === m.id);
+  const [drafted, setDrafted] = useState(false);
+  const hasProposal = drafted || requestRows.some((r) => r.measurementId === m.id);
   const orderReport = async () => {
     if (makingRef.current) return;
     makingRef.current = true;
@@ -525,6 +526,7 @@ function Loaded({ m, preview, onProposalReady }: { m: MeasurementView; preview: 
             ...(handoff.customer !== undefined && { customer: handoff.customer }),
             ...(needsCustomer && { customer: { name: customer.name.trim(), phone: customer.phone.trim(), askedByText: customer.askedByText } }),
           });
+          setDrafted(true);
         } catch (error) {
           if (error instanceof ApiError && error.status === 400 && error.field === 'customer') setCustomerAsked(true);
           setMakeFailed(makeFailureMessage(error));
