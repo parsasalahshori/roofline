@@ -125,6 +125,45 @@ export type TopologyParams = {
    * ABOVE the line, is the upper roof's rake over the lower roof (the lower face is step flashed). 0 turns it off.
    */
   hipStepM: number;
+  /**
+   * A boundary between two faces is typed piece by piece: a stretch at least this long (metres) along which the planes
+   * are a step apart and the height map jumps is a wall (the upper face's eave or rake, the lower face's flashing),
+   * the rest of the boundary a crease, with a corner where the wall ends (a dormer's cheek wall tapering into the
+   * valley behind it; an upper storey's eave running on into a hip). 0: a boundary is typed once for its whole length.
+   */
+  stepPieceM: number;
+  /**
+   * A wall at the top of the upper face (the face falls away from it, and the lower face does not come down to it):
+   * with the planes less than this far apart (metres) the two faces meet there, in a ridge or hip the height map
+   * holds apart, and the line is named as their crease. 0: every such wall is a wall.
+   */
+  stepTopM: number;
+  /**
+   * A wall found for a stretch runs on, for at most this far (metres), to where the two planes meet when they close
+   * steadily beyond its end: a cheek wall tapers to nothing, and the height map shows no jump over its last, low part.
+   * The corner between the wall and the crease is then where the planes meet. 0: the wall ends where the jump does.
+   */
+  stepTaperM: number;
+  /**
+   * Beside such a stretch, on each face's own pixels, the height map lies on that face's plane within `stepSideTolM`
+   * (metres), along at least `stepSideShare` of the stretch: a wall is a jump from one face's plane to the other's.
+   * Where the pixel boundary has strayed from a crease (round a tree crown or a chimney, or at the roof's edge) one
+   * side of it is not on its own plane. Tolerance 0: not asked.
+   */
+  stepSideTolM: number;
+  stepSideShare: number;
+  /**
+   * A boundary is cut into a wall and a crease only when the part that is not wall lies along the planes' crease:
+   * seven tenths of its points within this (metres) of that line.
+   */
+  stepCreaseOffM: number;
+  /**
+   * The faces are settled first, with every boundary typed once for its whole length (small and weak faces are
+   * dissolved on the polygons that typing draws, as they always were), and the walls are typed piece by piece on the
+   * faces that are left; that topology is kept unless it draws a face worse (from its pixels, or under the smallest
+   * face size) that the first one drew well. False: piece by piece from the start.
+   */
+  stepPieceSettled: boolean;
 };
 
 /** The height map beside an edge climbs along it at most this many times the face's own slope where it is roof (measuredEdge). */
@@ -169,6 +208,13 @@ export const DEFAULT_TOPOLOGY_PARAMS: TopologyParams = {
   ridgeBesideM: 1.2,
   valleyDropM: 0,
   hipStepM: 0.6,
+  stepPieceM: 1.25,
+  stepTopM: 1.2,
+  stepTaperM: 3,
+  stepSideTolM: 0.2,
+  stepSideShare: 0.4,
+  stepCreaseOffM: 0.75,
+  stepPieceSettled: true,
 };
 
 /**
@@ -199,6 +245,10 @@ type Chain = {
   start: number;
   end: number;
   loop: boolean;
+  /** The directed crack leaving each vertex but the last. */
+  codes: number[];
+  /** A stretch of a longer boundary found to be a wall (typed piece by piece). */
+  wall?: boolean;
 };
 
 class UnionFind {
@@ -274,11 +324,13 @@ function traceChains(L: Lattice): { chains: Chain[]; chainOfCode: Int32Array; no
     const id = chains.length;
     const [left, right] = sidesOf(L, i0, j0, d0);
     const verts = [i0 * vw + j0];
+    const codes: number[] = [];
     let i = i0;
     let j = j0;
     let d = d0;
     for (let guard = 0; guard < 4 * L.crackCount; guard++) {
       const code = codeOf(i, j, d);
+      codes.push(code);
       chainOfCode[code] = id;
       chainOfCode[code ^ 1] = id;
       i += DI[d]!;
@@ -294,7 +346,7 @@ function traceChains(L: Lattice): { chains: Chain[]; chainOfCode: Int32Array; no
     }
     const start = verts[0]!;
     const end = verts.at(-1)!;
-    chains.push({ verts, left, right, start, end, loop: start === end });
+    chains.push({ verts, left, right, start, end, loop: start === end, codes });
   };
   for (const v of nodeVerts) {
     const i = Math.floor(v / vw);
@@ -400,6 +452,251 @@ export function buildTopology(
   const at = (v: number): XY => ({ x: (v % vw) * s, y: -Math.floor(v / vw) * s });
   const { chains, chainOfCode } = traceChains(L);
   const flat = planes.map((p) => Math.hypot(p.a, p.b) * 12 < prm.flatX12);
+  // How far a direction (unit dx, dy) is from a face's level direction (across its slope), as |cos|: 1 level, 0 straight
+  // up the slope; 1 on a dead-level face.
+  const levelSlope = prm.levelX12 / 12;
+  const levelCos = (f: number, dx: number, dy: number): number => {
+    const pl = planes[f]!;
+    const slope = Math.hypot(pl.a, pl.b);
+    return slope < levelSlope ? 1 : Math.abs((dx * -pl.b + dy * pl.a) / slope);
+  };
+  // A wall stands along a house's walls, so it runs level along a face beside it or straight up its slope; a boundary
+  // running across both faces' slopes on the diagonal is where they meet (a hip or a valley), not a wall, even where
+  // the height map holds them apart.
+  const wallCos = Math.cos((prm.wallDeg * Math.PI) / 180);
+  const diagonalCos = Math.cos(((90 - prm.wallDeg) * Math.PI) / 180);
+  const diagonal = (f: number, dx: number, dy: number): boolean => {
+    const cos = levelCos(f, dx, dy);
+    return !flat[f] && cos < wallCos && cos > diagonalCos;
+  };
+  const dsmAt = (x: number, y: number): number => {
+    // Bilinear height at a point (pixel centres at ((c + 0.5) s, -(r + 0.5) s)); NaN off the grid.
+    const fc = x / s - 0.5;
+    const fr = -y / s - 0.5;
+    const c = Math.floor(fc);
+    const r = Math.floor(fr);
+    if (c < 0 || r < 0 || c + 1 >= g.w || r + 1 >= g.h) return Number.NaN;
+    const tx = fc - c;
+    const ty = fr - r;
+    const v = (rr: number, cc: number) => dsm[rr * g.w + cc]!;
+    return (v(r, c) * (1 - tx) + v(r, c + 1) * tx) * (1 - ty) + (v(r + 1, c) * (1 - tx) + v(r + 1, c + 1) * tx) * ty;
+  };
+  // The wall test at a boundary's point v: across the boundary (square to the chord from point `from` to point `to`),
+  // the most the height map climbs over a short window, beyond what the steeper of the two planes climbs there. Null
+  // where the chord has no length.
+  const wallHalf = Math.max(1, Math.round(0.5 / s));
+  const wallWin = 0.3;
+  const wallExcess = (pts: readonly XY[], v: number, from: number, to: number, maxSlope: number): number | null => {
+    const a = pts[from]!;
+    const b = pts[to]!;
+    const len = dist(a, b);
+    if (len < 1e-9) return null;
+    const n = { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
+    const p = pts[v]!;
+    const prof: number[] = [];
+    for (let t = -0.6; t <= 0.6 + 1e-9; t += s) prof.push(dsmAt(p.x + t * n.x, p.y + t * n.y));
+    const w = Math.max(1, Math.round(wallWin / s));
+    let jump = 0;
+    for (let q = 0; q + w < prof.length; q++) {
+      const d = Math.abs(prof[q + w]! - prof[q]!);
+      if (Number.isFinite(d)) jump = Math.max(jump, d);
+    }
+    return jump - wallWin * maxSlope;
+  };
+  // Whether the height map lies on each face's own plane beside the boundary at point v (the left face on the left of
+  // the chord from point `from` to point `to`): on each side, three of the pixels 0.2 to 1.2 m out are that face's and
+  // within `tol` of its plane.
+  const sidesOnPlanes = (pts: readonly XY[], v: number, from: number, to: number, left: number, right: number, tol: number): boolean => {
+    const a = pts[from]!;
+    const b = pts[to]!;
+    const len = dist(a, b);
+    if (len < 1e-9) return false;
+    const n = { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
+    const p = pts[v]!;
+    for (const [sign, f] of [[1, left], [-1, right]] as const) {
+      const pl = planes[f]!;
+      let on = 0;
+      for (let t = 0.2; t <= 1.2 + 1e-9 && on < 3; t += s) {
+        const col = Math.floor((p.x + sign * t * n.x) / s);
+        const row = Math.floor(-(p.y + sign * t * n.y) / s);
+        if (col < 0 || row < 0 || col >= g.w || row >= g.h || labels[row * g.w + col] !== f) continue;
+        if (Math.abs(dsm[row * g.w + col]! - planeZ(pl, (col + 0.5) * s, -(row + 0.5) * s)) <= tol) on++;
+      }
+      if (on < 3) return false;
+    }
+    return true;
+  };
+  // A low quantile, not the median: a tree or a chimney on part of the boundary does not make it a wall.
+  const lowQuantile = (xs: number[]) => xs.sort((x, y) => x - y)[Math.floor(xs.length * 0.3)] ?? 0;
+  // A whole boundary's measures: how far apart the two planes are in height along it, and the wall test.
+  type Measure = { pts: XY[]; gap: number; wall: number };
+  const measured = new Map<Chain, Measure>();
+  const measure = (c: Chain): Measure => {
+    const known = measured.get(c);
+    if (known !== undefined) return known;
+    const pi = planes[c.left]!;
+    const pj = planes[c.right]!;
+    const pts = c.verts.map(at);
+    const gap = lowQuantile(pts.map((p) => Math.abs(planeZ(pi, p.x, p.y) - planeZ(pj, p.x, p.y))));
+    const every = Math.max(1, Math.round(0.3 / s));
+    const maxSlope = Math.max(Math.hypot(pi.a, pi.b), Math.hypot(pj.a, pj.b));
+    const excess: number[] = [];
+    for (let v = wallHalf; v + wallHalf < pts.length; v += every) {
+      const e = wallExcess(pts, v, v - wallHalf, v + wallHalf, maxSlope);
+      if (e !== null) excess.push(e);
+    }
+    const out = { pts, gap, wall: excess.length > 0 ? lowQuantile(excess) : 0 };
+    measured.set(c, out);
+    return out;
+  };
+  const isWall = (gap: number, wall: number): boolean => gap > prm.stepM && wall > prm.stepM * 0.75;
+
+  // Piece by piece (stepPieceM): a boundary that is not a wall for its whole length may still run along one for a
+  // stretch (a dormer's cheek wall, tall at the front and tapering to nothing at the valley behind; an upper storey's
+  // eave over a porch roof running on into a hip). Each stretch where the planes are a step apart and the height map
+  // jumps becomes a boundary of its own, a wall, with a corner at each end of it.
+  if (prm.stepPieceM > 0) {
+    const minRun = Math.max(2, Math.round(prm.stepPieceM / s));
+    const closeRun = Math.max(1, Math.round(0.5 / s));
+    const count = chains.length;
+    for (let k = 0; k < count; k++) {
+      const c = chains[k]!;
+      if (c.left < 0 || c.right < 0) continue;
+      const m = c.verts.length - 1;
+      if (m < minRun) continue;
+      const whole = measure(c);
+      if (isWall(whole.gap, whole.wall)) continue;
+      const pi = planes[c.left]!;
+      const pj = planes[c.right]!;
+      const maxSlope = Math.max(Math.hypot(pi.a, pi.b), Math.hypot(pj.a, pj.b));
+      // A ring with no corner on it is walked round and round; one that starts and ends at a real corner is not.
+      const cyclic = c.loop && boundaryDirs(L, Math.floor(c.start / vw), c.start % vw).length < 3;
+      const n = cyclic ? m : m + 1;
+      const pts = whole.pts;
+      let flag: boolean[] = [];
+      const onPlanes: boolean[] = [];
+      for (let v = 0; v < n; v++) {
+        const p = pts[v]!;
+        const gap = Math.abs(planeZ(pi, p.x, p.y) - planeZ(pj, p.x, p.y));
+        const from = cyclic ? (v - wallHalf + 2 * m) % m : Math.max(0, v - wallHalf);
+        const to = cyclic ? (v + wallHalf) % m : Math.min(m, v + wallHalf);
+        const e = gap > prm.stepM ? wallExcess(pts, v, from, to, maxSlope) : null;
+        const jump = e !== null && e > prm.stepM * 0.75;
+        flag.push(jump);
+        onPlanes.push(jump && prm.stepSideTolM > 0 && sidesOnPlanes(pts, v, from, to, c.left, c.right, prm.stepSideTolM));
+      }
+      const jumps = [...flag];
+      flag = flipShortRuns(flag, false, closeRun, cyclic, true);
+      flag = flipShortRuns(flag, true, minRun, cyclic, false);
+      if (flag.includes(true)) {
+        // Each stretch: both faces on their own planes beside enough of it, or not a wall.
+        const start = cyclic ? Math.max(0, flag.findIndex((f, v) => f !== flag[(v + n - 1) % n])) : 0;
+        for (let k0 = 0; k0 < n; ) {
+          let len = 1;
+          while (k0 + len < n && flag[(start + k0 + len) % n] === flag[(start + k0) % n]) len++;
+          if (flag[(start + k0) % n]) {
+            let all = 0;
+            let on = 0;
+            for (let q = 0; q < len; q++) {
+              const v = (start + k0 + q) % n;
+              if (jumps[v]) all++;
+              if (onPlanes[v]) on++;
+            }
+            // And along the house's walls: a stretch mostly on the diagonal across both faces is their hip or valley.
+            const run: XY[] = [];
+            for (let q = 0; q < len; q++) run.push(pts[(start + k0 + q) % n]!);
+            const corners = simplifyIdx(run, 0.25).map((q) => run[q]!);
+            let along = 0;
+            let across = 0;
+            for (let q = 1; q < corners.length; q++) {
+              const d = dist(corners[q - 1]!, corners[q]!);
+              if (d < 1e-9) continue;
+              const dx = (corners[q]!.x - corners[q - 1]!.x) / d;
+              const dy = (corners[q]!.y - corners[q - 1]!.y) / d;
+              along += d;
+              if (diagonal(c.left, dx, dy) && diagonal(c.right, dx, dy)) across += d;
+            }
+            if ((prm.stepSideTolM > 0 && on < prm.stepSideShare * all) || across > 0.5 * along) for (let q = 0; q < len; q++) flag[(start + k0 + q) % n] = false;
+          }
+          k0 += len;
+        }
+      }
+      if (prm.stepTaperM > 0 && flag.includes(true)) {
+        const gapAt = (v: number) => Math.abs(planeZ(pi, pts[v]!.x, pts[v]!.y) - planeZ(pj, pts[v]!.x, pts[v]!.y));
+        const reach = Math.round(prm.stepTaperM / s);
+        const was = [...flag];
+        for (let v = 0; v < n; v++) {
+          if (!was[v]) continue;
+          for (const dir of [1, -1]) {
+            const next = (q: number) => (cyclic ? (v + dir * q + n * (reach + 1)) % n : v + dir * q);
+            const first = next(1);
+            if (first < 0 || first >= n || was[first]) continue;
+            // From the wall's end outwards: the planes close (the pixel boundary's stair steps aside) down to nothing.
+            let low = gapAt(v);
+            let met = 0;
+            for (let q = 1; q <= reach; q++) {
+              const w = next(q);
+              if (w < 0 || w >= n || was[w]) break;
+              const gp = gapAt(w);
+              if (gp > low + 0.25) break;
+              low = Math.min(low, gp);
+              if (gp < 0.12) {
+                met = q;
+                break;
+              }
+            }
+            for (let q = 1; q <= met; q++) flag[next(q)] = true;
+          }
+        }
+      }
+      flag = flipShortRuns(flag, false, minRun, cyclic, false);
+      if (!flag.includes(true)) continue;
+      if (!flag.includes(false)) {
+        c.wall = true;
+        continue;
+      }
+      // What is left beside the wall is drawn as the planes' crease, corner to corner: it must lie along that line
+      // (the valley behind a cheek wall does). A boundary that strays from its crease is left typed as a whole.
+      const lb = lineBetween(pi, pj);
+      if (lb === null || lb.strength < 0.05) continue;
+      const off: number[] = [];
+      for (let v = 0; v < n; v++) if (!flag[v]) off.push(distToLine(pts[v]!, lb.line));
+      off.sort((x, y) => x - y);
+      if (off[Math.floor(off.length * 0.7)]! > prm.stepCreaseOffM) continue;
+      // Rotate a ring to start where a stretch starts, then cut at every change.
+      let verts = c.verts;
+      let codes = c.codes;
+      if (cyclic) {
+        let b = 0;
+        for (let v = 0; v < m; v++) {
+          if (flag[v] !== flag[(v + m - 1) % m]) {
+            b = v;
+            break;
+          }
+        }
+        verts = [...verts.slice(b, m), ...verts.slice(0, b + 1)];
+        codes = [...codes.slice(b), ...codes.slice(0, b)];
+        flag = [...flag.slice(b), ...flag.slice(0, b), flag[b]!];
+      }
+      let from = 0;
+      let first = true;
+      for (let v = 1; v <= m; v++) {
+        if (v < m && flag[v] === flag[v - 1]) continue;
+        const piece: Chain = { verts: verts.slice(from, v + 1), codes: codes.slice(from, v), left: c.left, right: c.right, start: verts[from]!, end: verts[v]!, loop: false, wall: flag[from]! };
+        if (first) chains[k] = piece;
+        else {
+          for (const code of piece.codes) {
+            chainOfCode[code] = chains.length;
+            chainOfCode[code ^ 1] = chains.length;
+          }
+          chains.push(piece);
+        }
+        first = false;
+        from = v;
+      }
+      debug?.(`chain ${k} faces ${c.left}/${c.right} len ${(m * s).toFixed(1)} typed piece by piece`);
+    }
+  }
 
   // Nodes: one per node vertex, merged along contracted chains.
   const uf = new UnionFind();
@@ -454,58 +751,20 @@ export function buildTopology(
   // Chain kinds: outline; crease (its planes' straight intersection); step (a wall: the height map jumps across the
   // boundary and the planes are far apart in height there); seam (neither: planes that barely differ, no line drawn).
   type Kind = { type: 'outline' } | { type: 'crease'; line: Line; strength: number } | { type: 'step' } | { type: 'seam' };
-  const dsmAt = (x: number, y: number): number => {
-    // Bilinear height at a point (pixel centres at ((c + 0.5) s, -(r + 0.5) s)); NaN off the grid.
-    const fc = x / s - 0.5;
-    const fr = -y / s - 0.5;
-    const c = Math.floor(fc);
-    const r = Math.floor(fr);
-    if (c < 0 || r < 0 || c + 1 >= g.w || r + 1 >= g.h) return Number.NaN;
-    const tx = fc - c;
-    const ty = fr - r;
-    const v = (rr: number, cc: number) => dsm[rr * g.w + cc]!;
-    return (v(r, c) * (1 - tx) + v(r, c + 1) * tx) * (1 - ty) + (v(r + 1, c) * (1 - tx) + v(r + 1, c + 1) * tx) * ty;
-  };
   const chainStats: Record<string, number>[] = chains.map(() => ({}));
   const kinds: Kind[] = chains.map((c, k) => {
     if (c.left < 0 || c.right < 0) return { type: 'outline' };
     if (contracted[k]) return { type: 'seam' };
+    if (c.wall === true) return { type: 'step' };
     const pi = planes[c.left]!;
     const pj = planes[c.right]!;
-    const pts = c.verts.map(at);
-    // A low quantile, not the median: a tree or a chimney on part of the boundary does not make it a wall.
-    const median = (xs: number[]) => xs.sort((x, y) => x - y)[Math.floor(xs.length * 0.3)] ?? 0;
-    const gap = median(pts.map((p) => Math.abs(planeZ(pi, p.x, p.y) - planeZ(pj, p.x, p.y))));
-    // The wall test: across the boundary, the most the height map climbs over a short window, beyond what the
-    // steeper of the two planes climbs there.
-    const half = Math.max(1, Math.round(0.5 / s));
-    const every = Math.max(1, Math.round(0.3 / s));
-    const win = 0.3;
-    const maxSlope = Math.max(Math.hypot(pi.a, pi.b), Math.hypot(pj.a, pj.b));
-    const excess: number[] = [];
-    for (let v = half; v + half < pts.length; v += every) {
-      const a = pts[v - half]!;
-      const b = pts[v + half]!;
-      const len = dist(a, b);
-      if (len < 1e-9) continue;
-      const n = { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
-      const p = pts[v]!;
-      const prof: number[] = [];
-      for (let t = -0.6; t <= 0.6 + 1e-9; t += s) prof.push(dsmAt(p.x + t * n.x, p.y + t * n.y));
-      const w = Math.max(1, Math.round(win / s));
-      let jump = 0;
-      for (let q = 0; q + w < prof.length; q++) {
-        const d = Math.abs(prof[q + w]! - prof[q]!);
-        if (Number.isFinite(d)) jump = Math.max(jump, d);
-      }
-      excess.push(jump - win * maxSlope);
-    }
-    const wall = excess.length > 0 ? median(excess) : 0;
+    const { pts, gap, wall } = measure(c);
     const lb = lineBetween(pi, pj);
-    const off = lb === null ? Infinity : median(pts.map((p) => distToLine(p, lb.line)));
+    const off = lb === null ? Infinity : lowQuantile(pts.map((p) => distToLine(p, lb.line)));
     debug?.(`chain ${k} faces ${c.left}/${c.right} len ${(c.verts.length * s).toFixed(1)} gap ${gap.toFixed(2)} off ${off.toFixed(2)} wall ${wall.toFixed(2)} strength ${lb?.strength.toFixed(2)}`);
     if (collect !== undefined) chainStats[k] = { chainGap: gap, chainOff: Number.isFinite(off) ? off : 99, chainWall: wall, chainStrength: lb?.strength ?? 0 };
-    if (gap > prm.stepM && wall > prm.stepM * 0.75) return { type: 'step' };
+    // A stretch left between walls is not a wall (c.wall false).
+    if (c.wall === undefined && isWall(gap, wall)) return { type: 'step' };
     if (lb !== null && lb.strength >= 0.05 && off <= 3) return { type: 'crease', line: lb.line, strength: lb.strength };
     return gap >= 0.25 ? { type: 'step' } : { type: 'seam' };
   });
@@ -740,14 +999,6 @@ export function buildTopology(
   const peakNotes = new Map<TopoLine, LineFeatures>();
   const levelTan = Math.tan((prm.levelDeg * Math.PI) / 180);
   const eaveCos = Math.cos((prm.eaveDeg * Math.PI) / 180);
-  // How far a direction (unit dx, dy) is from a face's level direction (across its slope), as |cos|: 1 level, 0 straight
-  // up the slope; 1 on a dead-level face.
-  const levelSlope = prm.levelX12 / 12;
-  const levelCos = (f: number, dx: number, dy: number): number => {
-    const pl = planes[f]!;
-    const slope = Math.hypot(pl.a, pl.b);
-    return slope < levelSlope ? 1 : Math.abs((dx * -pl.b + dy * pl.a) / slope);
-  };
   const labelAt = (x: number, y: number): number => {
     const c = Math.floor(x / s);
     const r = Math.floor(-y / s);
@@ -1043,15 +1294,6 @@ export function buildTopology(
     const row = note('crease', l.kind, a, b, k);
     if (row !== null && peaks.has(l)) peakNotes.set(l, row);
   };
-  // A wall stands along a house's walls, so it runs level along a face beside it or straight up its slope; a boundary
-  // running across both faces' slopes on the diagonal is where they meet (a hip or a valley), not a wall, even where
-  // the height map holds them apart.
-  const wallCos = Math.cos((prm.wallDeg * Math.PI) / 180);
-  const diagonalCos = Math.cos(((90 - prm.wallDeg) * Math.PI) / 180);
-  const diagonal = (f: number, dx: number, dy: number): boolean => {
-    const cos = levelCos(f, dx, dy);
-    return !flat[f] && cos < wallCos && cos > diagonalCos;
-  };
   chains.forEach((c, k) => {
     if (contracted[k]) return;
     const kind = kinds[k]!;
@@ -1115,6 +1357,17 @@ export function buildTopology(
         }
         const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
         const [upper, lower] = planeZ(pi, mid.x, mid.y) >= planeZ(pj, mid.x, mid.y) ? [i, j] : [j, i];
+        if (prm.stepTopM > 0 && !flat[upper] && Math.abs(planeZ(pi, mid.x, mid.y) - planeZ(pj, mid.x, mid.y)) < prm.stepTopM) {
+          // Uphill into each face from the line (the left face is on (-dy, dx) from the path's direction).
+          const dx = (b.x - a.x) / len;
+          const dy = (b.y - a.y) / len;
+          const into = (f: number) => (planes[f]!.a * -dy + planes[f]!.b * dx) * (f === i ? 1 : -1);
+          const least = (f: number) => Math.max(prm.drainMinSlope, prm.drainShare * Math.hypot(planes[f]!.a, planes[f]!.b));
+          if (into(upper) < -least(upper) && !(!flat[lower] && into(lower) > least(lower))) {
+            pushCrease(i, j, a, b, k);
+            return;
+          }
+        }
         const e = faceEdge(upper, a, b, 'edge', upper === i ? 1 : -1);
         const w = faceEdge(lower, a, b, 'wall', lower === i ? 1 : -1);
         if (e !== null) edges.push(e);
@@ -1175,6 +1428,34 @@ export function buildTopology(
     }
   }
   return { faces, lines: joinCollinear(lines) };
+}
+
+/**
+ * Runs of `value` shorter than `minLen` flipped to the other value. On a ring (`cyclic`) a run may wrap round the end;
+ * `insideOnly` leaves a run at either end of an open sequence alone.
+ */
+export function flipShortRuns(flags: readonly boolean[], value: boolean, minLen: number, cyclic: boolean, insideOnly: boolean): boolean[] {
+  const n = flags.length;
+  const out = [...flags];
+  if (n === 0 || !flags.includes(!value)) return out;
+  // Start at a change (a ring), or at 0.
+  let s0 = 0;
+  if (cyclic) {
+    for (let v = 0; v < n; v++) {
+      if (flags[v] !== flags[(v + n - 1) % n]) {
+        s0 = v;
+        break;
+      }
+    }
+  }
+  for (let k = 0; k < n; ) {
+    let len = 1;
+    while (k + len < n && flags[(s0 + k + len) % n] === flags[(s0 + k) % n]) len++;
+    const atEnd = !cyclic && (k === 0 || k + len === n);
+    if (flags[(s0 + k) % n] === value && len < minLen && !(insideOnly && atEnd)) for (let q = 0; q < len; q++) out[(s0 + k + q) % n] = !value;
+    k += len;
+  }
+  return out;
 }
 
 /**

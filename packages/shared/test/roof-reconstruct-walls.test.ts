@@ -1,0 +1,228 @@
+import { describe, expect, it } from 'vitest';
+import { reconstructRoof, type LocalRoof } from '../src/roof-reconstruct/index.ts';
+import type { Plane } from '../src/roof-reconstruct/planes.ts';
+import { buildTopology, DEFAULT_TOPOLOGY_PARAMS, flipShortRuns } from '../src/roof-reconstruct/topology.ts';
+import { HIP_FLAT, PORCH, type Shape, synthesize, TWO_STOREY } from './fixtures/synthetic-roofs.ts';
+
+// A boundary between two faces typed piece by piece (topology.ts, stepPieceM): where one face ends above the other
+// for a stretch (a dormer's front and cheek walls) the upper face has its rake or eave there and the lower face its
+// flashing, and the rest of the same boundary (the valley behind the cheek wall) stays a crease.
+
+function lengths(roof: LocalRoof): Record<string, number> {
+  const by: Record<string, number> = {};
+  for (const l of roof.lines) by[l.kind] = (by[l.kind] ?? 0) + l.lengthM;
+  return by;
+}
+
+const P = 8 / 12;
+
+/**
+ * A gable 16 x 12 m at 8/12 (ridge along X, eaves 3 m up) with a gable dormer 4 m wide at 8/12 on its south face. The
+ * dormer's ridge runs along Y; its eaves stand 2 m above the main eave and its front wall 1 m in from it, so the main
+ * roof runs on in front of it. Each cheek wall is 1.33 m tall at the front and tapers to nothing 2 m back, where the
+ * valley to the dormer's ridge starts.
+ */
+const TALL_DORMER: Shape = {
+  name: 'gable with a tall dormer',
+  extent: 12,
+  height: ({ x, y }) => {
+    if (Math.abs(x) > 8 || Math.abs(y) > 6) return null;
+    const main = 3 + (6 - Math.abs(y)) * P;
+    const dormer = y >= -5 && y < 0 && Math.abs(x) <= 2 ? 5 + (2 - Math.abs(x)) * P : -Infinity;
+    return Math.max(main, dormer);
+  },
+  faces: [
+    { name: 'north', probe: { x: 0, y: 3 }, pitchX12: 8, downDeg: 90, planAreaM2: 96 },
+    { name: 'south', probe: { x: 5.5, y: -3 }, pitchX12: 8, downDeg: -90, planAreaM2: 84 },
+    { name: 'dormer east', probe: { x: 1, y: -3.5 }, pitchX12: 8, downDeg: 0, planAreaM2: 6 },
+    { name: 'dormer west', probe: { x: -1, y: -3.5 }, pitchX12: 8, downDeg: 180, planAreaM2: 6 },
+  ],
+  lines: {
+    // Main ridge, and the dormer's from its front (Y -5) to the main roof (Y -1).
+    ridge: 16 + 4,
+    // From each cheek wall's end (2, -3) to the dormer ridge's end (0, -1), climbing 1.33 m.
+    valley: 2 * Math.hypot(2, 2, 2 * P),
+    // Both main eaves, and the dormer's two over its cheek walls.
+    eave: 32 + 2 * 2,
+    // The main gable's four, and the dormer front's two.
+    rake: 4 * Math.hypot(6, 6 * P) + 2 * Math.hypot(2, 2 * P),
+    // The main roof against the dormer's front wall (level) and its cheek walls (up the slope).
+    flashing: 4,
+    'step-flashing': 2 * Math.hypot(2, 2 * P),
+  },
+  planAreaM2: 192,
+};
+
+/**
+ * A gable 12 x 8 m at 8/12 whose south face stands `stepM` higher than its north face at the ridge: two faces falling
+ * away from the line between them, the height map holding them apart.
+ */
+function offsetRidge(stepM: number): Shape {
+  return {
+    name: `ridge with a ${stepM} m step`,
+    extent: 9,
+    height: ({ x, y }) => {
+      if (Math.abs(x) > 6 || Math.abs(y) > 4) return null;
+      return 3 + (4 - Math.abs(y)) * P + (y < 0 ? stepM : 0);
+    },
+    faces: [
+      { name: 'north', probe: { x: 0, y: 2 }, pitchX12: 8, downDeg: 90, planAreaM2: 48 },
+      { name: 'south', probe: { x: 0, y: -2 }, pitchX12: 8, downDeg: -90, planAreaM2: 48 },
+    ],
+    lines: { ridge: 12 },
+    planAreaM2: 96,
+  };
+}
+
+describe('walls for a stretch of a boundary', () => {
+  it("a dormer's front and cheek walls are its rakes and eaves over the main roof's flashing; the valleys behind them stay", () => {
+    const truth = TALL_DORMER.lines;
+    for (const turnDeg of [0, 17]) {
+      const syn = synthesize(TALL_DORMER, { turnDeg, seed: 11, trees: 0 });
+      const r = reconstructRoof(syn.raster, syn.point, { seed: 7 });
+      expect(r).not.toBeNull();
+      expect(r!.faces.length, `faces at ${turnDeg}`).toBe(4);
+      const by = lengths(r!);
+      const at = `at ${turnDeg}: ${JSON.stringify(Object.fromEntries(Object.entries(by).map(([k, v]) => [k, Math.round(v * 10) / 10])))}`;
+      expect(by.hip ?? 0, `hip ${at}`).toBeLessThan(1);
+      expect(Math.abs((by.valley ?? 0) - truth.valley!), `valley ${at}`).toBeLessThan(1.5);
+      expect(Math.abs((by.eave ?? 0) - truth.eave!), `eave ${at}`).toBeLessThan(2);
+      expect(Math.abs((by.rake ?? 0) - truth.rake!), `rake ${at}`).toBeLessThan(2);
+      expect(Math.abs((by.flashing ?? 0) - truth.flashing!), `flashing ${at}`).toBeLessThan(1.5);
+      expect(Math.abs((by['step-flashing'] ?? 0) - truth['step-flashing']!), `step flashing ${at}`).toBeLessThan(1.5);
+      expect(Math.abs((by.ridge ?? 0) - truth.ridge!), `ridge ${at}`).toBeLessThan(1.5);
+
+      // Typed once for its whole length, the same boundary is a crease all the way: the dormer's front comes out a
+      // hip and its eaves valleys (the test would not see the change otherwise).
+      const whole = lengths(reconstructRoof(syn.raster, syn.point, { seed: 7, topology: { stepPieceM: 0 } })!);
+      expect((whole.hip ?? 0) + (whole.valley ?? 0), `whole-length typing at ${turnDeg}`).toBeGreaterThan(truth.valley! + 5);
+      expect((whole.flashing ?? 0) + (whole['step-flashing'] ?? 0), `whole-length typing at ${turnDeg}`).toBeLessThan(2);
+    }
+  }, 30_000);
+
+  it("the wall runs on to where the planes meet: the cheek wall's low end is still the dormer's eave", () => {
+    const syn = synthesize(TALL_DORMER, { turnDeg: 17, seed: 11, trees: 0 });
+    const eaveOf = (stepTaperM: number) => lengths(reconstructRoof(syn.raster, syn.point, { seed: 7, topology: { stepTaperM } })!).eave ?? 0;
+    // The height map shows no jump over the last, low metre of each cheek wall (the fixture's blur): without the
+    // run-on the dormer's eaves stop short there.
+    expect(eaveOf(3)).toBeGreaterThan(eaveOf(0) + 1);
+  }, 30_000);
+
+  it('a tree crown leaning over the end of a hip does not make a wall of it', () => {
+    // The pixel boundary strays round the crown, the planes are far apart there and the height map jumps at the
+    // crown's rim; but the pixels on one side are the crown's, not on their face's plane.
+    const syn = synthesize(HIP_FLAT, { turnDeg: 17, seed: 11 });
+    const walls = (by: Record<string, number>) => (by.flashing ?? 0) + (by['step-flashing'] ?? 0);
+    const by = lengths(reconstructRoof(syn.raster, syn.point, { seed: 7 })!);
+    expect(walls(by)).toBeLessThan(0.5);
+    expect(Math.abs((by.hip ?? 0) - HIP_FLAT.lines.hip!)).toBeLessThan(1.5);
+    expect(by.rake ?? 0).toBeLessThan(0.5);
+    const unasked = lengths(reconstructRoof(syn.raster, syn.point, { seed: 7, topology: { stepSideTolM: 0 } })!);
+    expect(walls(unasked)).toBeGreaterThan(1.5);
+  }, 30_000);
+
+  it('a small step at the top of a face, both faces falling away from it, is their ridge; a tall one is a wall', () => {
+    const low = synthesize(offsetRidge(1), { turnDeg: 17, seed: 11, trees: 0 });
+    const by = lengths(reconstructRoof(low.raster, low.point, { seed: 7 })!);
+    expect(by.ridge ?? 0).toBeGreaterThan(10);
+    expect(by.flashing ?? 0).toBeLessThan(1);
+    expect(by.eave ?? 0).toBeLessThan(26);
+    // Without the rule the step is a wall: the upper face's "eave" over the lower face's flashing, and no ridge.
+    const old = lengths(reconstructRoof(low.raster, low.point, { seed: 7, topology: { stepTopM: 0 } })!);
+    expect(old.flashing ?? 0).toBeGreaterThan(10);
+    expect(old.ridge ?? 0).toBeLessThan(2);
+
+    const tall = synthesize(offsetRidge(2), { turnDeg: 17, seed: 11, trees: 0 });
+    const high = lengths(reconstructRoof(tall.raster, tall.point, { seed: 7 })!);
+    expect(high.flashing ?? 0).toBeGreaterThan(10);
+  }, 30_000);
+});
+
+describe('the faces are settled before the walls are typed piece by piece', () => {
+  it('the same faces as with every boundary typed once (their count, planes and order), whatever the lines become', () => {
+    for (const shape of [TALL_DORMER, PORCH, TWO_STOREY, HIP_FLAT]) {
+      for (const turnDeg of [17, 45]) {
+        const syn = synthesize(shape, { turnDeg, seed: 5 });
+        const pieces = reconstructRoof(syn.raster, syn.point, { seed: 7 })!;
+        const whole = reconstructRoof(syn.raster, syn.point, { seed: 7, topology: { stepPieceM: 0 } })!;
+        expect(pieces.faces.length, shape.name).toBe(whole.faces.length);
+        expect(pieces.dissolved, shape.name).toEqual(whole.dissolved);
+        // The same planes; a face's area (its polygon's) may differ a little, so may the order of two alike in size.
+        const planesOf = (r: LocalRoof) => r.faces.map((f) => `${f.pitchX12.toFixed(3)}@${f.azimuthDeg.toFixed(2)}`).sort();
+        expect(planesOf(pieces), shape.name).toEqual(planesOf(whole));
+        expect(pieces.outline, shape.name).toEqual(whole.outline);
+      }
+    }
+  }, 60_000);
+});
+
+describe('a stretch on the diagonal', () => {
+  // Two faces of a hip, 12 x 12 m at 6/12: face 0 falls west, face 1 north, and their planes meet on the diagonal
+  // x = v (v southwards). Over the southern half the boundary between their pixels lies 1.5 m west of it, and the
+  // heights there are face 1's: a 0.75 m jump along a line on the diagonal across both faces.
+  const s = 0.1;
+  const g = { w: 120, h: 120 };
+  const planes: Plane[] = [
+    { a: 0.5, b: 0, c: 5 },
+    { a: 0, b: -0.5, c: 5 },
+  ];
+  const labels = new Int32Array(g.w * g.h);
+  const dsm = new Float32Array(g.w * g.h);
+  for (let r = 0; r < g.h; r++) {
+    for (let c = 0; c < g.w; c++) {
+      const x = (c + 0.5) * s;
+      const v = (r + 0.5) * s;
+      const face = x < v - (v < 6 ? 0 : 1.5) ? 0 : 1;
+      labels[r * g.w + c] = face;
+      dsm[r * g.w + c] = planes[face]!.a * x + planes[face]!.b * -v + planes[face]!.c;
+    }
+  }
+  const outline = [
+    { x: 0, y: -12 },
+    { x: 12, y: -12 },
+    { x: 12, y: 0 },
+    { x: 0, y: 0 },
+  ];
+  const linesOf = (prm: Partial<typeof DEFAULT_TOPOLOGY_PARAMS>) => buildTopology(g, s, labels, planes, outline, dsm, { ...DEFAULT_TOPOLOGY_PARAMS, ...prm }).lines;
+  const walls = (lines: ReturnType<typeof linesOf>) => lines.filter((l) => l.kind === 'flashing' || l.kind === 'step-flashing').reduce((t, l) => t + l.lengthM, 0);
+
+  it('is the two faces meeting, not a wall: the boundary is not cut there and the hip stays one straight line', () => {
+    const lines = linesOf({});
+    const hips = lines.filter((l) => l.kind === 'hip');
+    expect(hips.length).toBe(1);
+    expect(Math.hypot(hips[0]!.b.x - hips[0]!.a.x, hips[0]!.b.y - hips[0]!.a.y)).toBeGreaterThan(16);
+    expect(walls(lines)).toBe(0);
+  });
+
+  it('would be a wall were it not on the diagonal (the test sees the jump)', () => {
+    // wallDeg 45: no direction counts as diagonal. stepTopM 0: a low step at a face's top is not their crease either.
+    expect(walls(linesOf({ wallDeg: 45, stepTopM: 0 }))).toBeGreaterThan(6);
+  });
+});
+
+describe('flipShortRuns', () => {
+  const run = (bits: string, value: boolean, minLen: number, cyclic: boolean, insideOnly: boolean) =>
+    flipShortRuns([...bits].map((c) => c === '1'), value, minLen, cyclic, insideOnly).map((b) => (b ? '1' : '0')).join('');
+
+  it('flips runs shorter than the minimum, and only those', () => {
+    expect(run('0011000111000', true, 3, false, false)).toBe('0000000111000');
+    expect(run('1110011100011', false, 3, false, false)).toBe('1111111100011');
+  });
+
+  it('leaves a run at either end of an open sequence alone when asked to', () => {
+    expect(run('00111001110', false, 3, false, true)).toBe('00111111110');
+    expect(run('00111001110', false, 3, false, false)).toBe('11111111111');
+  });
+
+  it('joins a run across the end of a ring', () => {
+    // The two ones at the start and the one at the end are one run of three on a ring.
+    expect(run('1100000001', true, 3, true, false)).toBe('1100000001');
+    expect(run('1100000001', true, 4, true, false)).toBe('0000000000');
+    expect(run('1100000001', true, 3, false, false)).toBe('0000000000');
+  });
+
+  it('leaves a sequence of one value as it is', () => {
+    expect(run('1111', true, 9, true, false)).toBe('1111');
+    expect(run('', true, 3, false, false)).toBe('');
+  });
+});

@@ -132,6 +132,60 @@ to count as finding it.
   it: right twice as often as wrong, but a third of what the height-map check gets.
 - (Round 2) A ridge beside a dead-level face taken for a flat roof's edge: one house.
 
+## Walls for a stretch of a boundary (round 2, 2026-11-21)
+
+A boundary between two faces used to be typed once for its whole length: a wall (a step) when the planes are far apart
+along most of it and the height map jumps, otherwise their crease. A dormer's boundary with the main roof is both: its
+front and cheek walls (the dormer's rake and eave over the main roof's flashing), then the valley behind them. Typed
+once it came out a crease, the front drawn as a hip and the cheek as a valley. Now (`topology.ts`, `stepPieceM`):
+
+- **Piece by piece.** Along a boundary that is not a wall as a whole, each stretch of 1.25 m or more where the planes
+  are a step apart (`stepM`) and the height map jumps becomes a boundary of its own, a wall, with a corner at each end.
+- **Run on to where the planes meet** (`stepTaperM`, 3 m). A cheek wall tapers to nothing and the height map shows no
+  jump over its last, low part: the wall runs on while the planes close steadily, to where they meet, and the corner
+  between the wall and the crease is put there.
+- **Both faces on their own planes** (`stepSideTolM` 0.2 m along `stepSideShare` 0.4 of the stretch). A tree crown or
+  a chimney makes the pixel boundary stray and the height map jump too, but the pixels on one side are then not on
+  their face's plane. Without this, tree crowns at a hip or ridge end made walls of them (synthetic roofs showed it).
+- **Not on the diagonal** (`wallDeg`). A stretch mostly on the diagonal across both faces is their hip or valley held
+  apart, as it already was for whole boundaries; the boundary is not cut there.
+- **A crease beside it** (`stepCreaseOffM` 0.75 m). The boundary is cut only when what is left lies along the planes'
+  crease; one that strays from its crease (two faces nearly alike) stays typed as a whole.
+- **A low step at the top of a face is a ridge** (`stepTopM` 1.2 m). A wall where the upper face falls away from it
+  and the lower face does not come down to it, the planes under 1.2 m apart, is the two faces meeting in a ridge or
+  hip the height map holds apart; it is named as their crease (this one also applies to whole-length walls).
+- **Once the faces are settled** (`stepPieceSettled`). Small and weak faces are dissolved on the topology that types
+  each boundary once, as before, so the faces are the same as algorithm 7's. The walls are then typed piece by piece
+  in one more topology pass, which is kept unless it draws a face worse than the first did: from its pixels, under
+  the smallest face size, or a strip under 0.9 m wide (a wall's path follows the boundary's pixels).
+
+Measured the same way as above (median error per line total; `stepPieceM` 0 and `stepTopM` 0 give algorithm 7's main
+roof back exactly; other structures on the lot are reconstructed with the defaults, the tuning override does not
+reach them):
+
+| | ridge | hip | valley | eave | rake | mean of the five |
+| --- | --- | --- | --- | --- | --- | --- |
+| dev, algorithm 7 | 19 % | 22 % | 24 % | 19 % | 26 % | 21.9 |
+| dev, with this | 18 % | 19 % | 24 % | 13 % | 24 % | 19.5 |
+| held-out, algorithm 7 | 12 % | 42 % | 23 % | 12 % | 17 % | 20.9 |
+| held-out, with this | 12 % | 42 % | 22 % | 10 % | 17 % | 20.6 |
+
+Edge by edge on the dev houses: where EagleView has flashing along a wall we draw a valley 18 % of the time (20 %
+before); EagleView eaves under one of our valleys 5.5 % (7.2 %), rakes 4.3 % (6.0 %); eaves named right 75.7 % (74.0 %),
+rakes 59.3 % (56.0 %). Area, pitches and the outline do not change; every gate of `gates-v3.json` passes.
+
+What it showed: all five totals are short in sum (the missing dormers and hip ends), and valleys drawn along walls
+were standing in for valleys the reconstruction does not have. Typing the walls right without settling the faces
+first (`stepPieceSettled` false) names more edges right (walls drawn as valleys 13.6 %, eaves right 80 %) and keeps
+dormers the old typing dissolved, but the valley total falls 12 to 16 % short, thin faces rise, and two sanity gates
+trip on single houses. The answer key for edges is itself derived from the height map (`evtruth.py`, faces under 1.5 m
+apart count as meeting): it agrees with a height-map wall test more than EagleView's own totals do.
+
+Tried and not kept: a larger tolerance for a wall's path (straighter walls; no gain, thin faces up); no line between
+two near-parallel planes a little apart with no jump (right, but every total is already short); typing whole-length
+walls piece by piece too; requiring the height map to stay between the two planes (lost real walls: slivers and junk
+pixels sit beside many); naming a hip between a small enclosed face and its surround a valley (74 ft of such hips).
+
 ## What is left
 
 Real hips, valleys and rakes the reconstruction does not have at all (10 to 17 % of their length): dormers and small

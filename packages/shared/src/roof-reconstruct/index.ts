@@ -290,6 +290,8 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   const planePrm: PlaneParams = { ...DEFAULT_PLANE_PARAMS, ...opts.planes };
   const outlinePrm: OutlineParams = { ...DEFAULT_OUTLINE_PARAMS, ...opts.outline };
   const topoPrm: TopologyParams = { ...DEFAULT_TOPOLOGY_PARAMS, ...opts.topology };
+  // While the faces are being settled every boundary is typed once for its whole length (stepPieceSettled).
+  const settlePrm: TopologyParams = topoPrm.stepPieceSettled && topoPrm.stepPieceM > 0 ? { ...topoPrm, stepPieceM: 0 } : topoPrm;
   const rng = seededRandom(opts.seed ?? 7);
 
   // 1. The mask's part under the point, or the nearest one within reach.
@@ -576,7 +578,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     //    Then (faces-cleanup.ts) faces too weak to stand on the polygons topology drew: thin strips with no plane of
     //    their own or cut from a neighbour's plane, and faces steeper than a roof plane without strong support.
     lineRows = opts.lineFeatures !== undefined ? [] : undefined;
-    topo = buildTopology(g, s, faces.labels, planes, outline, dsm, topoPrm, opts.debug, lineRows);
+    topo = buildTopology(g, s, faces.labels, planes, outline, dsm, settlePrm, opts.debug, lineRows);
     dissolved = {};
     // The crown test for the crown-edge rule, on this crop's heights (the same for every pass below).
     const crownBeside = cleanupPrm.enabled && cleanupPrm.crownShare <= 1 ? crownBesideOf(raster, g, c0, r0, dsm) : null;
@@ -603,7 +605,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
       faces = dissolve(g, s, dsm, roof, faces, tiny, tree);
       planes = refitFaces(g, s, dsm, faces, planePrm.tolM, planePrm.maxPitchX12);
       lineRows = opts.lineFeatures !== undefined ? [] : undefined;
-      topo = buildTopology(g, s, faces.labels, planes, outline, dsm, topoPrm, opts.debug, lineRows);
+      topo = buildTopology(g, s, faces.labels, planes, outline, dsm, settlePrm, opts.debug, lineRows);
     }
 
     // 2a, checked: a completed roof whose topology came out worse (a face drawn from its pixels, or edge lines longer
@@ -621,6 +623,32 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
       }
     }
     break;
+  }
+
+  // 4b. The walls typed piece by piece on the settled faces (topology.ts, stepPieceM): a dormer's cheek wall is its
+  //     eave over the main roof's flashing, the valley behind it still a valley. Kept unless a face the first topology
+  //     drew well comes out worse: from its pixels, under the smallest face size, or a thin strip (a wall's path
+  //     follows the boundary's pixels, and a narrow face's polygon can come out narrower for it).
+  if (settlePrm !== topoPrm) {
+    const pieceRows: LineFeatures[] | undefined = opts.lineFeatures !== undefined ? [] : undefined;
+    const pieces = buildTopology(g, s, faces.labels, planes, outline, dsm, topoPrm, opts.debug, pieceRows);
+    // A polygon's mean width: twice its area over its perimeter.
+    const widthOf = (ring: readonly XY[]): number => {
+      let perimeter = 0;
+      for (let k = 0; k < ring.length; k++) perimeter += dist(ring[k]!, ring[(k + 1) % ring.length]!);
+      return perimeter > 0 ? (2 * Math.abs(signedArea(ring))) / perimeter : 0;
+    };
+    const worse = pieces.faces.some((f, k) => {
+      const was = topo.faces[k]!;
+      if (f.fromPixels && !was.fromPixels) return true;
+      if (Math.abs(signedArea(f.ring)) < planePrm.tinyFaceM2 && Math.abs(signedArea(was.ring)) >= planePrm.tinyFaceM2) return true;
+      return widthOf(f.ring) < THIN_FACE_M && widthOf(was.ring) >= THIN_FACE_M;
+    });
+    opts.debug?.(`walls piece by piece: ${worse ? 'not kept (a face came out worse)' : 'kept'}`);
+    if (!worse) {
+      topo = pieces;
+      lineRows = pieceRows;
+    }
   }
 
   // Face areas: the polygons' (they tile the outline), shared out so they add up to the outline's area.
@@ -722,6 +750,9 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
  * polygon came from the lidar; the outline's plan area on lidar pixels, the lidar faces' sloped area pro rata, their
  * share of the outline; 'roof-from-lidar' among the review reasons past the inferred-roof limits (QUALITY_LIMITS).
  */
+/** A face whose polygon is narrower than this on average (twice its area over its perimeter, metres) is a thin strip. */
+const THIN_FACE_M = 0.9;
+
 /** A face with less than this share on lidar pixels is Google's (the seam's pixels, a crown's edge). */
 const LIDAR_FACE_MIN_SHARE = 0.05;
 
