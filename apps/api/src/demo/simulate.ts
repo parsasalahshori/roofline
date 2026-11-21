@@ -8,6 +8,7 @@ import {
   jobs,
   companyPhoneNumbers,
   conversations,
+  conversationTurns,
   createPools,
   decrypt,
   customers,
@@ -156,13 +157,13 @@ const DEMO_PICKUP_MS = 800;
  * The inspection the demo call's script promises: Thursday at 10 AM (company time zone), an hour, at the
  * homeowner's first home and open job, booked by Front Desk. Skipped when the homeowner has no home on file.
  */
-async function bookDemoInspection(tx: Parameters<Parameters<typeof withTenant>[2]>[0], ctx: TenantContext, customerId: string, now: Date): Promise<void> {
+async function bookDemoInspection(tx: Parameters<Parameters<typeof withTenant>[2]>[0], ctx: TenantContext, customerId: string, now: Date): Promise<string | null> {
   const [home] = await tx
     .select({ id: properties.id })
     .from(properties)
     .where(and(eq(properties.companyId, ctx.companyId), eq(properties.customerId, customerId), isNull(properties.archivedAt)))
     .limit(1);
-  if (!home) return;
+  if (!home) return null;
   const [job] = await tx
     .select({ id: jobs.id })
     .from(jobs)
@@ -181,7 +182,7 @@ async function bookDemoInspection(tx: Parameters<Parameters<typeof withTenant>[2
   const team = await tx.execute<{ user_id: string }>(
     sql`select user_id from company_members where status = 'active' and role in ('rep', 'owner') order by (role = 'rep') desc, name, user_id`,
   );
-  if (team.rows.length === 0) return;
+  if (team.rows.length === 0) return null;
   let start = thursday;
   let end = new Date(start.getTime() + 60 * 60 * 1000);
   let assignedUserId: string | null = null;
@@ -195,14 +196,14 @@ async function bookDemoInspection(tx: Parameters<Parameters<typeof withTenant>[2
     const busy = new Set(taken.map((r) => r.userId));
     assignedUserId = team.rows.find((m) => !busy.has(m.user_id))?.user_id ?? null;
   }
-  if (assignedUserId === null) return;
+  if (assignedUserId === null) return null;
   const [already] = await tx
     .select({ id: appointments.id })
     .from(appointments)
     .where(and(eq(appointments.companyId, ctx.companyId), eq(appointments.customerId, customerId), eq(appointments.startsAt, start)))
     .limit(1);
-  if (already) return;
-  await createAppointment(
+  if (already) return null;
+  const booked = await createAppointment(
     tx,
     ctx,
     {
@@ -220,6 +221,7 @@ async function bookDemoInspection(tx: Parameters<Parameters<typeof withTenant>[2
     },
     now,
   );
+  return booked.row.id;
 }
 
 /** "Incoming call": a homeowner calls, talks with Front Desk over the fake voice session, and hangs up. */
@@ -275,7 +277,22 @@ export async function simulateCall(deps: AppDeps, companyId: string): Promise<Si
     await updateCall(tx, ctx, callSid, { status: 'ended', endedAt, aiSeconds: DEMO_CALL_SECONDS });
     if (homeowner.customerId !== null) {
       await updateConversation(tx, ctx, conversationId, { customerId: homeowner.customerId, identity: 'matched' });
-      await bookDemoInspection(tx, ctx, homeowner.customerId, endedAt);
+      const appointmentId = await bookDemoInspection(tx, ctx, homeowner.customerId, endedAt);
+      if (appointmentId !== null) {
+        // The booking shows under the assistant's last line as a "Booked an inspection" card that opens the visit.
+        const [last] = await tx
+          .select({ id: conversationTurns.id })
+          .from(conversationTurns)
+          .where(and(eq(conversationTurns.companyId, companyId), eq(conversationTurns.conversationId, conversationId), eq(conversationTurns.speaker, 'assistant')))
+          .orderBy(desc(conversationTurns.position))
+          .limit(1);
+        if (last) {
+          await tx
+            .update(conversationTurns)
+            .set({ toolCalls: [{ name: 'book_inspection', input: { appointmentId }, result: 'Booked', ok: true }] })
+            .where(and(eq(conversationTurns.companyId, companyId), eq(conversationTurns.id, last.id)));
+        }
+      }
     }
   });
   await runAfterCall(demo, { companyId, callSid });

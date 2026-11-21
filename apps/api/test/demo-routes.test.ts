@@ -1,7 +1,7 @@
 import { and, asc, eq } from 'drizzle-orm';
 import pg from 'pg';
 import request from 'supertest';
-import { afterAll, afterEach, describe, expect, inject, test } from 'vitest';
+import { afterAll, afterEach, describe, expect, inject, test, vi } from 'vitest';
 import { appointments, calls, companySettings, conversations, conversationTurns, customers, measurements, messages, proposals } from '@roofline/db';
 import { insertFixtureProperty, OMAHA_BOX, OMAHA_CORE, setFixtureServiceArea, type Query } from '@roofline/db/testing';
 import { DEFAULT_WORK_HOURS, type ProposalView } from '@roofline/shared';
@@ -141,8 +141,17 @@ describe('POST /api/demo/simulate/*', () => {
     for (const [i, id] of [first, second].entries()) {
       await mustCreate(ownerAgent, '/api/properties', { customerId: id, ...addressFor(i) });
     }
+    // The caller is picked at random; make it the two customers in turn.
+    const pick = vi.spyOn(Math, 'random').mockReturnValueOnce(0).mockReturnValueOnce(0.99);
+    const firstCall = await simulate('call');
     await simulate('call');
-    await simulate('call');
+    pick.mockRestore();
+    // The conversation shows the booking as an action card that opens the visit.
+    const detail = await ownerAgent.get(`/api/conversations/${firstCall.body.conversationId as string}`);
+    expect(detail.status).toBe(200);
+    const cards = (detail.body.turns as { actions: { tool: string; link: { kind: string; id: string } | null }[] }[]).flatMap((x) => x.actions);
+    expect(cards).toEqual([expect.objectContaining({ tool: 'book_inspection', link: { kind: 'appointment', id: expect.any(String) } })]);
+    expect(detail.body.links.appointmentIds).toHaveLength(1);
     const booked = await inCompany(t, companyId, (tx) =>
       tx.select({ assigned: appointments.assignedUserId, startsAt: appointments.startsAt, source: appointments.source }).from(appointments).where(eq(appointments.source, 'front_desk')),
     );
