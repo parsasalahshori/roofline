@@ -1456,8 +1456,9 @@ export function roofModelFrom3d(roof: Roof3d, o: { pitchX12: number; ownPitch: b
   const lines: RoofLine[] = roof.lines.map((l) => {
     let lengthFt = l.lengthFt;
     if (!o.ownPitch) {
-      // The rise of a sloped line scales with the pitch of the steepest sloped face it borders.
-      const steepest = Math.max(0, ...l.faces.filter((k) => roof.faces[k] !== undefined && !roof.faces[k]!.flat).map((k) => roof.faces[k]!.pitchX12));
+      // The rise of a sloped line scales with the pitch of the steepest sloped face it borders. The rise was measured on
+      // the faces' fitted planes, so the fitted pitch is the one it is scaled from (the reported one is pooled and calibrated).
+      const steepest = Math.max(0, ...l.faces.filter((k) => roof.faces[k] !== undefined && !roof.faces[k]!.flat).map((k) => roof.faces[k]!.fitPitchX12 ?? roof.faces[k]!.pitchX12));
       if (steepest > 0) {
         const plan = Math.sqrt(Math.max(0, l.lengthFt * l.lengthFt - l.riseFt * l.riseFt));
         lengthFt = Math.hypot(plan, (l.riseFt * manual) / steepest);
