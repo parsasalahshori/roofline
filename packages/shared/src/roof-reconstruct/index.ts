@@ -24,14 +24,14 @@ import { DEFAULT_FACE_CLEANUP, type FaceCleanupParams, faceSupport, type WeakRea
 import { inferHiddenEaves, type OutlinePlanesParams, type PlanesDecline } from './outline-planes.ts';
 import { DEFAULT_LIDAR_EDGE, type LidarCloud, type LidarEdgeParams, type LidarEdgeReport, lidarHiddenEdges } from './outline-lidar.ts';
 import { DEFAULT_LIDAR_FUSION, fuseLidar, type LidarFusionParams, type LidarFusionReport } from './lidar-fusion.ts';
-import { DEFAULT_PRIMITIVE_PARAMS, fitGables, type FittedGable, type PrimitiveParams } from './primitives.ts';
+import { DEFAULT_PRIMITIVE_PARAMS, fitGables, type FittedGable, type MergedStack, mergeStacks, type PrimitiveParams } from './primitives.ts';
 
 export { lngLatToUtm, utmToLngLat, utmZoneOfEpsg, type UtmZone } from './utm.ts';
 export { MAX_RASTER_PIXELS, MAX_ROOF_PART_M2, RASTER_PROBLEMS, type RasterProblem, rasterProblem, roofPartAreaM2 } from './guard.ts';
 export type { XY } from './geom.ts';
 export { DEFAULT_PHOTO_EDGE, PHOTO_EDGE_REASONS, type PhotoEdge, type PhotoEdgeParams, type PhotoEdgeReason } from './outline-photo.ts';
 export type { Plane } from './planes.ts';
-export { DEFAULT_PRIMITIVE_PARAMS, type FittedGable, type PrimitiveParams } from './primitives.ts';
+export { DEFAULT_PRIMITIVE_PARAMS, type FittedGable, type MergedStack, type PrimitiveParams } from './primitives.ts';
 export { DEFAULT_LIDAR_FUSION, fuseLidar, LIDAR_FUSION_REASONS, type LidarFusionParams, type LidarFusionReason, type LidarFusionReport, type LidarFusionResult } from './lidar-fusion.ts';
 export { DEFAULT_LIDAR_EDGE, densify, LIDAR_EDGE_REASONS, type LidarCloud, type LidarEdgeParams, type LidarEdgeReason, type LidarEdgeReport } from './outline-lidar.ts';
 
@@ -177,6 +177,8 @@ export type LocalRoof = {
   dissolved?: Partial<Record<WeakReason, number>>;
   /** Gable slopes fitted as primitives (primitives.ts), absent when none: their heights were not trusted between ridge and eave. */
   gables?: FittedGable[];
+  /** Stacked strips of one bowed slope merged onto the plane through its crest and its eave (primitives.ts), absent when none. */
+  stacks?: MergedStack[];
   /**
    * What the hidden-edge step did (only when ReconstructOptions.hiddenEdge is set): edges moved onto a plane's eave line
    * and chamfers turned into corners, their length (metres, inferred, not seen), candidate edges left alone by reason,
@@ -436,6 +438,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   //     Such a plane is locked: a refit on the heights (which are what is wrong there) leaves it as fitted.
   let locked = new Set<Plane>();
   let gables: FittedGable[] = [];
+  let stacks: MergedStack[] = [];
   const refit = (gr: { w: number; h: number }, z: Float32Array, f: { labels: Int32Array; planes: Plane[] }): Plane[] => {
     const fresh = refitFaces(gr, s, z, f, planePrm.tolM, planePrm.maxPitchX12);
     return locked.size === 0 ? fresh : fresh.map((p, k) => (locked.has(f.planes[k]!) ? f.planes[k]! : p));
@@ -443,11 +446,14 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   const withPrimitives = (gr: { w: number; h: number }, z: Float32Array, rf: Uint8Array, f: { labels: Int32Array; planes: Plane[] }, tr: Uint8Array | null) => {
     locked = new Set<Plane>();
     gables = [];
+    stacks = [];
     if (!primPrm.enabled) return f;
     const done = fitGables(gr, s, z, rf, f, refitFaces(gr, s, z, f, planePrm.tolM, planePrm.maxPitchX12), primPrm, planePrm, tr, opts.debug);
     locked = done.locked;
     gables = done.fitted;
-    return done.faces;
+    const stacked = mergeStacks(gr, s, z, rf, done.faces, refit(gr, z, done.faces), locked, primPrm, opts.debug);
+    stacks = stacked.merged;
+    return stacked.faces;
   };
   faces = withPrimitives(g, dsm, roof, faces, tree);
   let planes = refit(g, dsm, faces);
@@ -462,7 +468,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   // gives the same roof as reconstructing again with completion off (every step before this one is deterministic and
   // nothing after it draws on rng) without paying for steps 1 and 2 twice (merge note: the undone roof used to be a
   // whole second reconstruction, which failed the benchmark's runtime gate).
-  const beforeCompletion = { g, c0, r0, c1, r1, dsm, roof, googleMask, tree, roofPx, clipped, faces, planes, locked, gables };
+  const beforeCompletion = { g, c0, r0, c1, r1, dsm, roof, googleMask, tree, roofPx, clipped, faces, planes, locked, gables, stacks };
   if (opts.canopy?.complete === true && groundFull !== null && box0 !== null && !joined) {
     const done = completeOnWindow(raster, { c0, r0, c1, r1 }, g, s, roof, faces.labels, planes, groundFull, opts.building!, canopyPrm);
     if (done !== null) {
@@ -619,7 +625,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
       for (let k = 0; k < outline.length; k++) perim += dist(outline[k]!, outline[(k + 1) % outline.length]!);
       if (topo.faces.some((f) => f.fromPixels) || edgeLen > canopyPrm.topologyEdgeSlack * perim) {
         opts.debug?.(`canopy: completion undone (its topology came out worse: ${topo.faces.filter((f) => f.fromPixels).length} pixel faces, edges ${edgeLen.toFixed(1)} m on a ${perim.toFixed(1)} m outline)`);
-        ({ g, c0, r0, c1, r1, dsm, roof, googleMask, tree, roofPx, clipped, faces, planes, locked, gables } = beforeCompletion);
+        ({ g, c0, r0, c1, r1, dsm, roof, googleMask, tree, roofPx, clipped, faces, planes, locked, gables, stacks } = beforeCompletion);
         canopyOut = { grownM2: 0, bridgedM2: 0, occluded: [], undone: 'topology' };
         continue;
       }
@@ -702,6 +708,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     cuts: { maskM2: maskPx0 * s * s, groundM2: groundPx * s * s, terraceM2: terracePx * s * s },
     ...(Object.keys(dissolved).length > 0 ? { dissolved } : {}),
     ...(gables.length > 0 ? { gables } : {}),
+    ...(stacks.length > 0 ? { stacks } : {}),
     ...(lidarEdges !== undefined ? { lidarEdges } : {}),
     ...(canopyOut !== undefined ? { canopy: { ...canopyOut, occluded: canopyOut.occluded.map(shift) } } : {}),
     ...(hiddenOut !== undefined ? { hiddenEdge: hiddenOut.summary } : {}),
