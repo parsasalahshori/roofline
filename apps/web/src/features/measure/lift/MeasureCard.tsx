@@ -79,6 +79,7 @@ const LINE_LABEL: Record<RoofLineKind, string> = {
   flashing: liftMeasure.flashing,
   'step-flashing': liftMeasure.stepFlashing,
   'flat-edge': liftMeasure.flatEdges,
+  'pitch-break': liftMeasure.pitchBreaks,
 };
 
 /** The grid under the big number. `share` (0 to 1) is how much of each number shows while the scan plays. */

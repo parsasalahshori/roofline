@@ -30,10 +30,11 @@ export const LINE_COLORS: Record<RoofLineKind, string> = {
   flashing: '#f4f1e8',
   'step-flashing': '#ffd23f',
   'flat-edge': '#9aa7b4',
+  'pitch-break': '#7f8fa3',
 };
-export const LINE_ORDER: readonly RoofLineKind[] = ['ridge', 'hip', 'valley', 'eave', 'rake', 'flashing', 'step-flashing', 'flat-edge'];
+export const LINE_ORDER: readonly RoofLineKind[] = ['ridge', 'hip', 'valley', 'eave', 'rake', 'flashing', 'step-flashing', 'flat-edge', 'pitch-break'];
 /** Kinds only some roofs have (a roof measured in 3D): shown only when the roof has them, like hips. */
-const WHEN_PRESENT: ReadonlySet<RoofLineKind> = new Set(['hip', 'flashing', 'step-flashing', 'flat-edge']);
+const WHEN_PRESENT: ReadonlySet<RoofLineKind> = new Set(['hip', 'flashing', 'step-flashing', 'flat-edge', 'pitch-break']);
 /**
  * Flashing runs where a higher roof's eave or rake hangs over a lower roof, so the two lines share their place: the
  * flashing is drawn after the others and thinner, a stripe down the middle of the eave or rake.

@@ -7,9 +7,10 @@ import type { RoofPlane } from './roof-model.ts';
 /**
  * Ridge, hip and valley: creases between two faces. Eave and rake: a face's edge where the roof ends, on the outline or
  * over a lower roof. Flashing (the wall runs level along the face below it) and step flashing (the wall climbs along
- * it): where a lower roof meets a wall rising above it. Flat edge: where two flat faces meet.
+ * it): where a lower roof meets a wall rising above it. Flat edge: where two flat faces meet. Pitch break: where a face
+ * runs on into another sloping the same way at nearly the same pitch (drawn, never counted as an edge).
  */
-export const ROOF_3D_LINE_KINDS = ['ridge', 'hip', 'valley', 'eave', 'rake', 'flashing', 'step-flashing', 'flat-edge'] as const;
+export const ROOF_3D_LINE_KINDS = ['ridge', 'hip', 'valley', 'eave', 'rake', 'flashing', 'step-flashing', 'flat-edge', 'pitch-break'] as const;
 /**
  * A line's kind. 'step' is what reconstructions stored before October 2026 called the line between a higher and a lower
  * roof (one line for the higher roof's edge and the lower roof's wall); it is read as step flashing.

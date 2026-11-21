@@ -130,6 +130,7 @@ const LINE_COLOURS: Record<string, string> = {
   flashing: '#ffffff',
   'step-flashing': '#ffd23f',
   'flat-edge': '#c8c8c8',
+  'pitch-break': '#8a8a8a',
 };
 
 /** The roof over Google's photo, as an SVG (the photo embedded as a PNG). */

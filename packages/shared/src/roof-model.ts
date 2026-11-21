@@ -23,7 +23,7 @@ import { isRoof3d, type Roof3d, sameOutline } from './roof-3d.ts';
  * or climbing along it) and 'flat-edge' (an edge of a flat or low-slope face) come only from roofs reconstructed in 3D
  * (roof-3d.ts).
  */
-export type RoofLineKind = 'ridge' | 'hip' | 'valley' | 'eave' | 'rake' | 'flashing' | 'step-flashing' | 'flat-edge';
+export type RoofLineKind = 'ridge' | 'hip' | 'valley' | 'eave' | 'rake' | 'flashing' | 'step-flashing' | 'flat-edge' | 'pitch-break';
 export interface RoofFacet {
   /** 'A', 'B', ... largest first. */
   id: string;
