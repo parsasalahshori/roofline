@@ -573,6 +573,19 @@ describe('jobs page head', () => {
     ).toBeInTheDocument();
   });
 
+  it('an installed job is finished: it is not an open job and its money is not in play, so the count agrees with Home', async () => {
+    signedIn(
+      boardOf([
+        column('lead', [job({ id: 'j1', stage: 'lead' })], 100000),
+        column('installed', [job({ id: 'j2', stage: 'installed', customerName: 'Ida Installed', valueCents: 900000 })], 900000),
+      ]),
+    );
+    renderApp('/jobs');
+
+    const main = await screen.findByRole('main', { name: 'Jobs' });
+    expect(await within(main).findByText([jobs.subtitle.open(1), jobs.subtitle.inPlay('$1,000')].join(jobs.subtitle.join))).toBeInTheDocument();
+  });
+
   it('leaves out the money when the server sends none, and the proposals when there are none', async () => {
     signedIn(boardOf([column('lead', [job({ id: 'j1', stage: 'lead' })], null)]));
     renderApp('/jobs');
