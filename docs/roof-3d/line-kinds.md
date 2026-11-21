@@ -74,8 +74,9 @@ once it came out a crease, the front drawn as a hip and the cheek as a valley. N
   in one more topology pass, which is kept unless it draws a face worse than the first did: from its pixels, under
   the smallest face size, or a strip under 0.9 m wide (a wall's path follows the boundary's pixels).
 
-Measured the same way as above (median error per line total; `stepPieceM` 0 and `stepTopM` 0 give algorithm 7 back
-exactly):
+Measured the same way as above (median error per line total; `stepPieceM` 0 and `stepTopM` 0 give algorithm 7's main
+roof back exactly; other structures on the lot are reconstructed with the defaults, the tuning override does not
+reach them):
 
 | | ridge | hip | valley | eave | rake | mean of the five |
 | --- | --- | --- | --- | --- | --- | --- |
