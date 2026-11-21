@@ -1,96 +1,26 @@
 // Small roofs with a ridge of their own that the faces do not have (a gable over an entry or a bump-out, a dormer, a
-// short wing): fitted as a shape, where the plane search fits planes bottom-up.
+// short wing), found from the crest the height map's blur leaves standing. One of the fitted shapes
+// (fitted-shapes.ts, which places a shape's faces and checks what topology draws of them).
 //
 // A height map blurs a roof a few metres across into the slope round it. The plane search then finds no plane on its
 // two small slopes, or finds them and the cleanup takes them for junk by the roof's edge, and the main slope is drawn
 // straight through: the small roof's ridge and its two valleys are missing. What survives the blur is the crest: a
-// level line from which the heights fall away on both sides. Model fitting, from that line:
+// level line from which the heights fall away on both sides.
 //
-// 1. Crests. Along each of the roof's two directions (its faces' own), the pixels from which the heights fall on both
+// 1. Crests. Along each of the roof's directions (its faces' own), the pixels from which the heights fall on both
 //    sides across that direction while the faces' planes there do not (the faces have no ridge within half a metre):
 //    a crest the faces lack, where such pixels line up level for a metre or more.
 // 2. The tent. A level ridge on the crest and one pitch for both slopes (three numbers: where the ridge is, how high,
 //    how steep), least squares on the heights each side of the crest, walked out column by column for as long as the
-//    heights stay on the slope: to the valley where the main slope takes over, or to the roof's edge.
-// 3. The evidence. The tent is kept only where it explains the heights clearly better than the faces that are there
-//    now: over its footprint the mean distance from the heights to the tent is smaller than to the faces' planes by a
-//    margin. A smooth slope has no crest, and a ridge the faces already have gains nothing: neither is touched.
-// 4. The faces. The footprint's pixels each side of the ridge become a face on the tent's plane there (locked: a refit
-//    on the blurred heights would flatten it; marked `fitted`). Topology then draws the ridge and the valleys where
-//    the planes meet. A fitted roof whose faces topology cannot draw (a polygon from pixels, under the smallest face
-//    size, or a thin strip), or that spoils a face beside it, is taken out again.
-import type { XY } from './geom.ts';
+//    heights stay on the slope: to the valley where the main slope takes over, or to the slope's own edge. The ridge
+//    itself runs on past the crest's ends for as long as the heights keep it: into the higher slope behind (the tip
+//    between the two valleys, as the planes have it) and out to the gable's end.
+// 3. The evidence. Over its footprint the tent must explain the heights better than the faces' planes do, by a margin
+//    (ShapeParams.shapeGainM). A smooth slope has no crest, and a ridge the faces already have gains nothing.
+import { median, type ShapeParams, type ShapeProposal, type ShapeScene } from './fitted-shapes.ts';
 import { mainAxis } from './outline.ts';
-import { compact, dissolve, type Faces, pixelX, pixelY, type Plane, planeZ, splitParts } from './planes.ts';
-import type { Grid, Mask } from './raster.ts';
-import type { Topology } from './topology.ts';
-
-export type RidgeRoofParams = {
-  /** Off: no small ridge roof is fitted (the faces stand as the plane search and the cleanup left them). */
-  ridgeRoofs: boolean;
-  /**
-   * A crest: the heights fall away from the pixel on both sides, across the ridge's direction, at this slope or more
-   * (rise over run, measured 0.6 and 1 m out)...
-   */
-  ridgeCrestSlope: number;
-  /** ...where the faces' own planes fall away on both sides at less than this (no ridge of theirs within half a metre). */
-  ridgeModelSlope: number;
-  /** A ridge: crest pixels in line for at least this long (metres), gaps up to ridgeRunGapM bridged. */
-  ridgeMinM: number;
-  ridgeRunGapM: number;
-  /** A slope of the tent runs out from the ridge for as long as the heights lie within this of its plane (metres). */
-  ridgeTolM: number;
-  /** The height map rounds a ridge off: within ridgeRoundM of it the heights may lie up to ridgeRoundDropM under the tent. */
-  ridgeRoundM: number;
-  ridgeRoundDropM: number;
-  /** The tent's pitch lies between these (x/12; never over the plane search's own limit). */
-  ridgeMinX12: number;
-  ridgeMaxX12: number;
-  /** Each slope runs out at most this far from the ridge (metres). */
-  ridgeMaxRunM: number;
-  /** The ridge stands at least this far above where its slopes end (metres): pitch times the slopes' median run. */
-  ridgeReliefM: number;
-  /**
-   * The evidence: over at least ridgeMinM2 of footprint (square metres) the heights are closer to the tent than to the
-   * faces' planes by ridgeGainM on average (metres; each distance counted up to 1 m).
-   */
-  ridgeMinM2: number;
-  ridgeGainM: number;
-  /** A slope the faces already explain as well as the tent (its gain under this, metres) keeps its faces. */
-  ridgeSideGainM: number;
-  /**
-   * A fitted face stays when the polygon topology draws for it is at least this big (square metres) and this wide on
-   * average (twice its area over its perimeter, metres): the report's smallest face, and no thin strip.
-   */
-  ridgeFaceM2: number;
-  ridgeFaceWidthM: number;
-  /** False (a study switch): every fitted roof stays, whatever topology draws of it. */
-  ridgeCheck: boolean;
-};
-
-export const DEFAULT_RIDGE_ROOF_PARAMS: RidgeRoofParams = {
-  ridgeRoofs: true,
-  ridgeCrestSlope: 0.15,
-  ridgeModelSlope: 0.08,
-  ridgeMinM: 1,
-  ridgeRunGapM: 0.4,
-  ridgeTolM: 0.2,
-  ridgeRoundM: 0.5,
-  ridgeRoundDropM: 0.45,
-  ridgeMinX12: 3,
-  ridgeMaxX12: 16,
-  ridgeMaxRunM: 8,
-  ridgeReliefM: 0.25,
-  ridgeMinM2: 2.5,
-  ridgeGainM: 0.08,
-  ridgeSideGainM: 0.02,
-  ridgeFaceM2: 2.35,
-  ridgeFaceWidthM: 0.9,
-  ridgeCheck: true,
-};
-
-/** One fitted ridge roof: its ridge's middle (crop metres) and length, its pitch, its footprint's plan area. */
-export type RidgeRoof = { at: XY; ridgeM: number; pitchX12: number; areaM2: number };
+import type { XY } from './geom.ts';
+import { pixelX, pixelY, type Plane } from './planes.ts';
 
 type Frame = { ex: number; ey: number; dx: number; dy: number };
 type Tent = {
@@ -110,115 +40,75 @@ type Tent = {
   roseHi: boolean;
   ridgeM: number;
 };
-type Shape = { tent: Tent; left: Int32Array; right: Int32Array; gain: number; gainL: number; gainR: number; info: RidgeRoof };
 
 /** The tent's footprint runs on past where a slope was seen to end at a valley by at most this (metres), and past the ridge's end into a higher slope by this. */
 const PAST_VALLEY_M = 0.8;
 const PAST_END_M = 3;
 /** A slope or a ridge that ends within this (metres) of its face's edge (the roof's, or the next face) runs to it. */
 const EDGE_M = 0.8;
-
-function median(xs: number[]): number {
-  if (xs.length === 0) return Number.NaN;
-  const v = [...xs].sort((a, b) => a - b);
-  const m = v.length >> 1;
-  return v.length % 2 === 1 ? v[m]! : (v[m - 1]! + v[m]!) / 2;
-}
-
-/** A polygon's mean width: twice its area over its perimeter. */
-function ringWidth(ring: readonly XY[]): { area: number; width: number } {
-  let a = 0;
-  let per = 0;
-  for (let k = 0; k < ring.length; k++) {
-    const p = ring[k]!;
-    const q = ring[(k + 1) % ring.length]!;
-    a += p.x * q.y - q.x * p.y;
-    per += Math.hypot(q.x - p.x, q.y - p.y);
-  }
-  const area = Math.abs(a) / 2;
-  return { area, width: per > 0 ? (2 * area) / per : 0 };
-}
+/** Two faces' planes meet in a ridge where they are within this of each other in height (metres). */
+const MEET_M = 0.25;
 
 /**
- * The roof's two directions (radians, 0 to pi): the area-weighted mean of its pitched faces' slope directions, mod 90
- * degrees (a small roof's ridge runs up the slope it stands on, or along it), and that turned a quarter. With no
- * pitched face, the outline's own.
+ * The roof's directions (radians, 0 to pi): its pitched faces' slope directions mod 90 degrees, gathered by plan area
+ * into at most three axes at least 15 degrees apart (a house with a wing set at an angle has two), each with its
+ * quarter turn: a small roof's ridge runs up the slope it stands on, or along it. With no pitched face, the outline's.
  */
-function roofDirections(planes: readonly Plane[], area: readonly number[], outline: readonly XY[]): number[] {
-  let cs = 0;
-  let sn = 0;
+export function roofDirections(planes: readonly Plane[], area: readonly number[], outline: readonly XY[]): number[] {
+  const quarter = Math.PI / 2;
+  const bins = 18;
+  const hist = new Array<number>(bins).fill(0);
+  const dirs: { phi: number; w: number }[] = [];
+  let total = 0;
   for (let k = 0; k < planes.length; k++) {
     const p = planes[k]!;
-    const slope = Math.hypot(p.a, p.b);
-    if (slope * 12 < 2 || area[k]! === 0) continue;
-    const phi = Math.atan2(p.b, p.a);
-    cs += area[k]! * Math.cos(4 * phi);
-    sn += area[k]! * Math.sin(4 * phi);
+    if (Math.hypot(p.a, p.b) * 12 < 2 || area[k]! === 0) continue;
+    const phi = ((Math.atan2(p.b, p.a) % quarter) + quarter) % quarter;
+    dirs.push({ phi, w: area[k]! });
+    hist[Math.min(bins - 1, Math.floor((phi / quarter) * bins))]! += area[k]!;
+    total += area[k]!;
   }
-  const axis = cs === 0 && sn === 0 ? mainAxis(outline) : (((Math.atan2(sn, cs) / 4) % (Math.PI / 2)) + Math.PI / 2) % (Math.PI / 2);
-  return [axis, axis + Math.PI / 2];
+  if (total === 0) {
+    const axis = mainAxis(outline);
+    return [axis, axis + quarter];
+  }
+  const smooth = hist.map((h, k) => h + 0.5 * (hist[(k + 1) % bins]! + hist[(k + bins - 1) % bins]!));
+  const peaks = smooth
+    .map((h, k) => ({ h, k }))
+    .filter(({ h, k }) => h >= smooth[(k + 1) % bins]! && h > smooth[(k + bins - 1) % bins]! && h >= 0.12 * 2 * total)
+    .sort((x, y) => y.h - x.h || x.k - y.k);
+  const axes: number[] = [];
+  for (const { k } of peaks) {
+    // The axis: the weighted mean of the faces within 12 degrees of the peak (circular, mod 90 degrees).
+    const centre = ((k + 0.5) / bins) * quarter;
+    let cs = 0;
+    let sn = 0;
+    for (const d of dirs) {
+      let off = Math.abs(d.phi - centre);
+      off = Math.min(off, quarter - off);
+      if (off > (12 * Math.PI) / 180) continue;
+      cs += d.w * Math.cos(4 * d.phi);
+      sn += d.w * Math.sin(4 * d.phi);
+    }
+    const axis = (((Math.atan2(sn, cs) / 4) % quarter) + quarter) % quarter;
+    const apart = (o: number) => Math.min(Math.abs(o - axis), quarter - Math.abs(o - axis));
+    if (axes.every((o) => apart(o) >= (15 * Math.PI) / 180)) axes.push(axis);
+    if (axes.length === 3) break;
+  }
+  if (axes.length === 0) axes.push(mainAxis(outline));
+  return axes.flatMap((axis) => [axis, axis + quarter]);
 }
 
-export type RidgeRoofInput = {
-  g: Grid;
-  s: number;
-  dsm: Float32Array;
-  roof: Mask;
-  tree: Mask | null;
-  outline: readonly XY[];
-  faces: Faces;
-  /** The faces' refitted planes (index for index), and the topology drawn from them. */
-  planes: readonly Plane[];
-  topo: Topology;
-};
-
-/**
- * Small ridge roofs fitted where the heights show a crest the faces lack (see the head of this file). `build` refits
- * and draws the topology of a set of faces (the caller's own, with `lock` already holding the fitted planes: a refit
- * must leave them), with the walls typed once for their length (`settled`) or piece by piece, as they are drawn in the
- * end: a fitted roof is judged on the latter. Returns null when nothing is fitted, else the faces with the fitted roofs
- * in, their planes as `build` gave them, the fitted planes, and what was fitted.
- */
-export function fitRidgeRoofs(
-  inp: RidgeRoofInput,
-  prm: RidgeRoofParams,
-  lim: { tinyFaceM2: number; maxPitchX12: number },
-  lock: (planes: readonly Plane[], on: boolean) => void,
-  build: (f: Faces, settled: boolean) => { planes: Plane[]; topo: Topology },
-  debug?: (msg: string) => void,
-): { faces: Faces; planes: Plane[]; fitted: RidgeRoof[]; fittedPlanes: Plane[] } | null {
-  if (!prm.ridgeRoofs) return null;
-  const { g, s, dsm, roof, tree, outline, faces, planes, topo } = inp;
+/** Ridge roofs the heights show and the faces lack, each with its evidence (see the head of this file). */
+export function findRidgeRoofs(scene: ShapeScene, prm: ShapeParams, debug?: (msg: string) => void): ShapeProposal[] {
+  const { g, s, dsm, roof, labels, planes, area, model, index, usable, outline, maxX12 } = scene;
   const n = g.w * g.h;
-  const labels = faces.labels;
-  const nF = planes.length;
-  const usable = (i: number) => i >= 0 && roof[i] === 1 && Number.isFinite(dsm[i]!) && (tree === null || tree[i] !== 1);
-  // The faces' own surface, pixel by pixel.
-  const model = new Float32Array(n).fill(Number.NaN);
-  const area = new Array<number>(nF).fill(0);
-  for (let i = 0; i < n; i++) {
-    const k = labels[i]!;
-    if (k < 0) continue;
-    area[k]!++;
-    model[i] = planeZ(planes[k]!, pixelX(g, s, i), pixelY(g, s, i));
-  }
-  const index = (x: number, y: number): number => {
-    const c = Math.floor(x / s);
-    const r = Math.floor(-y / s);
-    return c < 0 || r < 0 || c >= g.w || r >= g.h ? -1 : r * g.w + c;
-  };
   const zAt = (x: number, y: number): number => {
     const i = index(x, y);
     return usable(i) ? dsm[i]! : Number.NaN;
   };
-  const mAt = (x: number, y: number): number => {
-    const i = index(x, y);
-    return i >= 0 ? model[i]! : Number.NaN;
-  };
-  const maxX12 = Math.min(prm.ridgeMaxX12, lim.maxPitchX12);
-
+  const found: ShapeProposal[] = [];
   // 1. Crests the faces lack, direction by direction, and the tents fitted on them.
-  const found: Shape[] = [];
   for (const phi of roofDirections(planes, area, outline)) {
     const fr: Frame = { dx: Math.cos(phi), dy: Math.sin(phi), ex: -Math.sin(phi), ey: Math.cos(phi) };
     // The crop's extent in the frame (u across the ridge, v along it), in cells of one pixel size.
@@ -250,6 +140,20 @@ export function fitRidgeRoofs(
       }
       return best;
     };
+    // A ridge of the faces' own at a point: the face 0.6 m out on either side falls away from it (its plane's slope
+    // across the ridge's direction at least ridgeModelSlope), and the two planes meet there (within MEET_M in height:
+    // one slope of a small roof found and the other given to the main slope is a step, not a ridge).
+    const ownRidge = (x: number, y: number): boolean => {
+      const iL = index(x - 0.6 * fr.ex, y - 0.6 * fr.ey);
+      const iR = index(x + 0.6 * fr.ex, y + 0.6 * fr.ey);
+      const kL = iL >= 0 ? labels[iL]! : -1;
+      const kR = iR >= 0 ? labels[iR]! : -1;
+      if (kL < 0 || kR < 0 || kL === kR) return false;
+      const pL = planes[kL]!;
+      const pR = planes[kR]!;
+      if (!(pL.a * fr.ex + pL.b * fr.ey >= prm.ridgeModelSlope && pR.a * fr.ex + pR.b * fr.ey <= -prm.ridgeModelSlope)) return false;
+      return Math.abs(pL.a * x + pL.b * y + pL.c - (pR.a * x + pR.b * y + pR.c)) <= MEET_M;
+    };
     let crests = 0;
     for (let i = 0; i < n; i++) {
       if (!usable(i) || labels[i]! < 0) continue;
@@ -266,11 +170,7 @@ export function fitRidgeRoofs(
       // The faces' own planes: a ridge of theirs within half a metre explains the crest.
       let explained = false;
       for (const shift of [-0.5, -0.25, 0, 0.25, 0.5]) {
-        const mx = x + shift * fr.ex;
-        const my = y + shift * fr.ey;
-        const m0 = mAt(mx, my);
-        if (!Number.isFinite(m0)) continue;
-        if (side(mAt, mx, my, m0, -1) >= prm.ridgeModelSlope && side(mAt, mx, my, m0, 1) >= prm.ridgeModelSlope) {
+        if (ownRidge(x + shift * fr.ex, y + shift * fr.ey)) {
           explained = true;
           break;
         }
@@ -330,11 +230,10 @@ export function fitRidgeRoofs(
         debug?.(`ridge roof: ${where}: ${(tent.q * 12).toFixed(1)}/12, not kept (${shape})`);
         continue;
       }
-      debug?.(`ridge roof: ${where}: ${(tent.q * 12).toFixed(1)}/12, ridge ${tent.ridgeM.toFixed(1)} m, footprint ${shape.info.areaM2.toFixed(1)} m2, gain ${shape.gain.toFixed(2)} m (left ${shape.gainL.toFixed(2)}, right ${shape.gainR.toFixed(2)})`);
+      debug?.(`ridge roof: ${where}: ${(tent.q * 12).toFixed(1)}/12, ridge ${tent.ridgeM.toFixed(1)} m, footprint ${shape.areaM2.toFixed(1)} m2, gain ${shape.gain.toFixed(2)} m, ${shape.sides.length} slopes`);
       found.push(shape);
     }
   }
-  if (found.length === 0) return null;
 
   // 2. The tent on a crest: see the head of this file.
   function fitTent(fr: Frame, uStart: number, va: number, vb: number): Tent | string {
@@ -359,23 +258,23 @@ export function fitRidgeRoofs(
     let zr = median(tops);
     let q = median(slopes);
     if (!Number.isFinite(zr) || !(q > 0)) return 'no heights beside the crest';
-    q = Math.min(Math.max(q, prm.ridgeMinX12 / 12), maxX12 / 12);
+    q = Math.min(Math.max(q, prm.shapeMinX12 / 12), maxX12 / 12);
     // How far a slope runs out from the ridge in one column: for as long as the heights stay on its plane.
     let rose = false;
     const walk = (v: number, sg: number, take?: (t: number, z: number) => void): number => {
       let last = 0;
       let bad = 0;
       rose = false;
-      for (let k = 1; k * s <= prm.ridgeMaxRunM; k++) {
+      for (let k = 1; k * s <= prm.shapeMaxRunM; k++) {
         const t = k * s;
         const i = at(u0 + sg * t, v);
         if (!usable(i)) break;
         const dev = dsm[i]! - (zr - q * t);
-        const ok = t < prm.ridgeRoundM ? dev <= prm.ridgeTolM && dev >= -prm.ridgeRoundDropM : Math.abs(dev) <= prm.ridgeTolM;
+        const ok = t < prm.shapeRoundM ? dev <= prm.shapeTolM && dev >= -prm.shapeRoundDropM : Math.abs(dev) <= prm.shapeTolM;
         if (ok) {
           last = t;
           bad = 0;
-          if (t >= prm.ridgeRoundM) take?.(t, dsm[i]!);
+          if (t >= prm.shapeRoundM) take?.(t, dsm[i]!);
         } else if (++bad >= 3) {
           rose = dev > 0;
           break;
@@ -415,7 +314,7 @@ export function fitRidgeRoofs(
       const den = L.tt - (L.t * L.t) / L.n + (R.tt - (R.t * R.t) / R.n);
       if (!(den > 1e-9)) return 'slopes too short';
       const q1 = -(L.tz - (L.t * L.z) / L.n + (R.tz - (R.t * R.z) / R.n)) / den;
-      if (!(q1 * 12 >= prm.ridgeMinX12 && q1 * 12 <= maxX12)) return `pitch ${(q1 * 12).toFixed(1)}/12`;
+      if (!(q1 * 12 >= prm.shapeMinX12 && q1 * 12 <= maxX12)) return `pitch ${(q1 * 12).toFixed(1)}/12`;
       const A = (L.z + q1 * L.t) / L.n;
       const B = (R.z + q1 * R.t) / R.n;
       u0 += (B - A) / (2 * q1);
@@ -432,11 +331,11 @@ export function fitRidgeRoofs(
         const i = at(u0 + du, v);
         if (usable(i) && dsm[i]! > top) top = dsm[i]!;
       }
-      if (!(top >= zr - prm.ridgeRoundDropM && top <= zr + prm.ridgeTolM)) return null;
+      if (!(top >= zr - prm.shapeRoundDropM && top <= zr + prm.shapeTolM)) return null;
       const l = walk(v, -1);
       const roseL = rose;
       const r = walk(v, 1);
-      return l >= prm.ridgeRoundM && r >= prm.ridgeRoundM ? { l, r, roseL, roseR: rose } : null;
+      return l >= prm.shapeRoundM && r >= prm.shapeRoundM ? { l, r, roseL, roseR: rose } : null;
     };
     const cols = new Map<number, Col>();
     const k1 = Math.round((vb - va) / s);
@@ -473,7 +372,7 @@ export function fitRidgeRoofs(
           if (i < 0 || roof[i] !== 1) return false;
           if (usable(i) && dsm[i]! > top) top = dsm[i]!;
         }
-        if (top > zr + prm.ridgeTolM) return true;
+        if (top > zr + prm.shapeTolM) return true;
       }
       return false;
     };
@@ -528,12 +427,12 @@ export function fitRidgeRoofs(
     }
     if (cols.size * s < prm.ridgeMinM) return `the ridge holds for ${(cols.size * s).toFixed(1)} m`;
     const reach = median([...cols.values()].flatMap((c) => [c.l, c.r]));
-    if (q * reach < prm.ridgeReliefM) return `the ridge ${(q * reach).toFixed(2)} m above its slopes' ends`;
+    if (q * reach < prm.shapeReliefM) return `the ridge ${(q * reach).toFixed(2)} m above its slopes' ends`;
     return { fr, u0, zr, q, v0: va + lo * s, runL, runR, roseL, roseR, roseLo, roseHi, ridgeM: (hi - lo + 1) * s };
   }
 
   // 3. The footprint and the evidence.
-  function footprint(t: Tent): Shape | string {
+  function footprint(t: Tent): ShapeProposal | string {
     const { fr, u0, zr, q } = t;
     const left: number[] = [];
     const right: number[] = [];
@@ -554,14 +453,14 @@ export function fitRidgeRoofs(
       const tentZ = zr - q * d;
       const eT = Math.min(1, Math.abs(dsm[i]! - tentZ));
       const eM = Math.min(1, Math.abs(dsm[i]! - model[i]!));
-      let inside = false;
+      let inside: boolean;
       if (k >= 0 && k <= last) {
         const run = u < 0 ? t.runL[k]! : t.runR[k]!;
         if (run < 0) continue;
         // The tent's where it lies at least as close to the heights as the faces' planes do (by the ridge the height
         // map is rounded off under both); and on past where its slope was seen to end at a valley, to where the
         // tent's plane goes under the faces' own (the valley itself: the height map rounds that off too).
-        if (d <= run + s / 2) inside = d < prm.ridgeRoundM || tentZ >= model[i]! || eT <= eM + 0.02;
+        if (d <= run + s / 2) inside = d < prm.shapeRoundM || tentZ >= model[i]! || eT <= eM + 0.02;
         else inside = (u < 0 ? t.roseL[k]! : t.roseR[k]!) === 1 && d <= run + PAST_VALLEY_M && tentZ >= model[i]!;
       } else {
         // Past an end where the ridge runs into a higher slope: the tip between the two valleys, as the planes have it.
@@ -578,132 +477,19 @@ export function fitRidgeRoofs(
     }
     const [L, R] = sums as [(typeof sums)[0], (typeof sums)[0]];
     const px = L.n + R.n;
-    if (px * s * s < prm.ridgeMinM2) return `footprint ${(px * s * s).toFixed(1)} m2`;
+    if (px * s * s < prm.shapeMinM2) return `footprint ${(px * s * s).toFixed(1)} m2`;
     if (Math.min(L.n, R.n) < 0.2 * px) return `one slope holds ${((100 * Math.min(L.n, R.n)) / px).toFixed(0)}% of the footprint`;
-    const gain = (L.gain + R.gain) / px;
-    if (gain < prm.ridgeGainM) return `the faces explain the heights nearly as well (gain ${gain.toFixed(2)} m over ${(px * s * s).toFixed(1)} m2)`;
+    // A slope the faces already explain as well as the tent keeps its faces (the plane search found that slope of
+    // the small roof and not the other); the evidence is weighed on the slopes that are new.
+    const sides: ShapeProposal['sides'] = [];
+    if (L.gain / L.n >= prm.ridgeSideGainM) sides.push({ px: Int32Array.from(left), plane: { a: q * fr.ex, b: q * fr.ey, c: zr - q * u0 }, gain: L.gain / L.n });
+    if (R.gain / R.n >= prm.ridgeSideGainM) sides.push({ px: Int32Array.from(right), plane: { a: -q * fr.ex, b: -q * fr.ey, c: zr + q * u0 }, gain: R.gain / R.n });
+    const fresh = sides.reduce((acc, side) => acc + side.px.length, 0);
+    const gain = fresh > 0 ? sides.reduce((acc, side) => acc + side.gain * side.px.length, 0) / fresh : 0;
+    if (gain < prm.shapeGainM || fresh * s * s < prm.shapeMinM2 / 2) return `the faces explain the heights nearly as well (gain ${gain.toFixed(2)} m over ${(fresh * s * s).toFixed(1)} m2 of new slope)`;
     const vm = t.v0 + (t.runL.length * s) / 2;
-    return {
-      tent: t,
-      left: Int32Array.from(left),
-      right: Int32Array.from(right),
-      gain,
-      gainL: L.gain / L.n,
-      gainR: R.gain / R.n,
-      info: { at: { x: u0 * fr.ex + vm * fr.dx, y: u0 * fr.ey + vm * fr.dy }, ridgeM: t.ridgeM, pitchX12: q * 12, areaM2: px * s * s },
-    };
+    return { kind: 'ridge-roof', at: { x: u0 * fr.ex + vm * fr.dx, y: u0 * fr.ey + vm * fr.dy }, pitchX12: q * 12, sides, gain, areaM2: fresh * s * s };
   }
 
-  // 4. The faces: the strongest evidence first; a pixel is one roof's.
-  found.sort((a, b) => b.gain * b.info.areaM2 - a.gain * a.info.areaM2);
-  type Applied = { shape: Shape; planes: Plane[] };
-  const apply = (shapes: readonly Shape[]): { faces: Faces; applied: Applied[] } => {
-    const lab = labels.slice();
-    const all: Plane[] = [...planes];
-    const taken = new Uint8Array(n);
-    const touched = new Set<number>();
-    const applied: Applied[] = [];
-    for (const sh of shapes) {
-      const { fr, u0, zr, q } = sh.tent;
-      const mine: Plane[] = [];
-      const sides: [Int32Array, number, Plane][] = [
-        [sh.left, sh.gainL, { a: q * fr.ex, b: q * fr.ey, c: zr - q * u0 }],
-        [sh.right, sh.gainR, { a: -q * fr.ex, b: -q * fr.ey, c: zr + q * u0 }],
-      ];
-      // A roof most of whose footprint an earlier one has taken is the same roof seen along the other direction.
-      const free = (px: Int32Array) => px.reduce((t, i) => t + (taken[i] === 0 ? 1 : 0), 0);
-      if (free(sh.left) + free(sh.right) < 0.7 * (sh.left.length + sh.right.length)) continue;
-      for (const [px, sideGain, plane] of sides) {
-        if (sideGain < prm.ridgeSideGainM) continue;
-        const id = all.length;
-        all.push(plane);
-        mine.push(plane);
-        for (const i of px) {
-          if (taken[i] === 1) continue;
-          taken[i] = 1;
-          touched.add(lab[i]!);
-          lab[i] = id;
-        }
-      }
-      if (mine.length > 0) applied.push({ shape: sh, planes: mine });
-    }
-    if (applied.length === 0) return { faces, applied };
-    // What is left of the faces the roofs were cut from: a scrap under the smallest face size goes to the faces
-    // round it, and so does a fitted slope's stray piece.
-    const split = splitParts(g, compact(lab, all));
-    const size = new Array<number>(split.planes.length).fill(0);
-    for (let i = 0; i < n; i++) if (split.labels[i]! >= 0) size[split.labels[i]!]!++;
-    const fittedSet = new Set(applied.flatMap((a) => a.planes));
-    const touchedPlanes = new Set([...touched].map((k) => planes[k]!));
-    const largest = new Map<Plane, number>();
-    split.planes.forEach((p, k) => {
-      if (fittedSet.has(p) && (largest.get(p) === undefined || size[k]! > size[largest.get(p)!]!)) largest.set(p, k);
-    });
-    const gone = new Set<number>();
-    split.planes.forEach((p, k) => {
-      if (fittedSet.has(p) ? largest.get(p) !== k : touchedPlanes.has(p) && size[k]! * s * s < lim.tinyFaceM2) gone.add(k);
-    });
-    return { faces: gone.size === 0 || gone.size >= split.planes.length ? split : dissolve(g, s, dsm, roof, split, gone, tree), applied };
-  };
-  // Faces topology already drew badly (walls typed once for their length, as the faces were settled, or piece by
-  // piece, as they are drawn in the end) are no evidence against a fitted roof.
-  const badBefore = new Set<Plane>();
-  for (const before of [topo, build({ labels, planes: [...planes] }, false).topo]) {
-    before.faces.forEach((f, k) => {
-      const w = ringWidth(f.ring);
-      if (f.fromPixels || w.area < lim.tinyFaceM2 || w.width < prm.ridgeFaceWidthM) badBefore.add(planes[k]!);
-    });
-  }
-  let shapes = found;
-  for (let round = 0; round < 3 && shapes.length > 0; round++) {
-    const { faces: next, applied } = apply(shapes);
-    if (applied.length === 0) return null;
-    const fittedPlanes = applied.flatMap((a) => a.planes);
-    lock(fittedPlanes, true);
-    const built = build(next, false);
-    const facesOf = new Map<Plane, number[]>();
-    next.planes.forEach((p, k) => facesOf.set(p, [...(facesOf.get(p) ?? []), k]));
-    const fittedSet = new Set(fittedPlanes);
-    // Faces beside a fitted roof that came out badly, though they were drawn well before.
-    const spoiled = new Set<number>();
-    built.topo.faces.forEach((f, k) => {
-      const p = next.planes[k]!;
-      if (fittedSet.has(p) || badBefore.has(p)) return;
-      const w = ringWidth(f.ring);
-      if (f.fromPixels || w.area < lim.tinyFaceM2 || w.width < prm.ridgeFaceWidthM) spoiled.add(k);
-    });
-    const beside = (ks: readonly number[]): boolean => built.topo.lines.some((l) => l.faces.some((f) => ks.includes(f)) && l.faces.some((f) => spoiled.has(f)));
-    const bad: Applied[] = [];
-    for (const a of prm.ridgeCheck ? applied : []) {
-      const ks = a.planes.flatMap((p) => facesOf.get(p) ?? []);
-      let why = '';
-      if (ks.length < a.planes.length) why = 'a slope of it was lost';
-      for (const k of ks) {
-        const f = built.topo.faces[k]!;
-        const w = ringWidth(f.ring);
-        if (f.fromPixels) why = 'a face of it has no sound polygon';
-        else if (w.area < prm.ridgeFaceM2) why = `a face of it comes to ${w.area.toFixed(1)} m2`;
-        else if (w.width < prm.ridgeFaceWidthM) why = `a face of it is ${w.width.toFixed(2)} m wide`;
-      }
-      if (why === '' && spoiled.size > 0 && beside(ks)) why = 'it spoils a face beside it';
-      if (why !== '') {
-        bad.push(a);
-        debug?.(`ridge roof at ${a.shape.info.at.x.toFixed(1)},${a.shape.info.at.y.toFixed(1)}: taken out (${why})`);
-      }
-    }
-    if (bad.length === 0 && spoiled.size > 0 && prm.ridgeCheck) {
-      // A spoiled face beside none of them: no telling which roof did it.
-      lock(fittedPlanes, false);
-      debug?.('ridge roofs: all taken out (a face elsewhere came out worse)');
-      return null;
-    }
-    if (bad.length === 0) {
-      for (const a of applied) debug?.(`ridge roof at ${a.shape.info.at.x.toFixed(1)},${a.shape.info.at.y.toFixed(1)}: fitted, ${a.planes.length} faces at ${a.shape.info.pitchX12.toFixed(1)}/12 over ${a.shape.info.areaM2.toFixed(1)} m2`);
-      return { faces: next, planes: built.planes, fitted: applied.map((a) => a.shape.info), fittedPlanes };
-    }
-    lock(fittedPlanes, false);
-    const out = new Set(bad.map((a) => a.shape));
-    shapes = applied.map((a) => a.shape).filter((sh) => !out.has(sh));
-  }
-  return null;
+  return found;
 }
