@@ -219,6 +219,25 @@ brief: ~/RooflineWork/plans/roof4-brief.md (addendum to roof3-brief.md). Base ro
 | refine | wt-r4-refine / roof4/refine | NEW | analysis-by-synthesis: render model through the blur, energy with complexity cost, continuous solve + split/merge/drop moves | running |
 | sharpen | wt-r4-sharpen / roof4/sharpen | NEW | restore the height map first (piecewise-planar + photo-guided normals) so the unchanged pipeline sees small faces | running |
 
+## round 4 checkpoints (advisor log; agents message the orchestrator, answers go back by message)
+- Advisor channel opened for all seven; a separate session "roof-newflow" (local_7d99bcfb, Opus max, wt-r5-newflow / roof5/newflow) designs a clean-sheet flow.
+- sharpen: Google's height map is not a linear blur: big creases 0.1 m roll-off, small features sigma 0.3-0.4 m, nothing under 1 m wavelength,
+  higher bleeds over lower (walls' low side +0.49 of the step at 0.3 m, valleys filled, eaves 0.2 m outward), big faces bow 0.21 m p-p.
+  Faces < 2.5 m2 recoverable < half the time. shifts_fine.json = 2.5 cm registration. 4 dev houses disagree with the key (47737198, 50319846, 52191863, 53863159).
+- area: plan over on 16/18 (median +6.2 %): rim +0.12 m + non-roof pieces (5 houses); stack -3.1 %; pitch ~0. Evidence-on changes only the pitch column.
+  DECISION: rim and stack = priced area only (per-edge from the photo, one Google constant as fallback); non-roof pieces = geometry. Heights give no per-edge eave signal.
+- small: ridge roofs 6 shapes (5 on EV faces); unlocked 28 (27). Missed hip+valley feet: small ridge roofs 726, hip ends 193, nested 158, fans 58, other 406.
+  SCOPE: small ridge roofs (+fans); hip ends go to skeleton. Bump-outs are never nested hips (skeleton oracle).
+- skeleton: whole-house oracle LOSES (31.1 vs 18.0). Graft oracle ceiling 17.3 (3 hip ends). DECISION: label-free hip-end graft (unseen houses are a third short on hips),
+  then corner-anchored hips/valleys (a hip between two eaves starts at the outline corner) as a constrained refit. Exact weighted skeleton kept as an asset.
+- refine: per-pixel one-plane-vs-two test separates fragments AUC 0.985; merge in engine (refine.ts, 02117125): dev 18.0 -> 17.2, evidence on 15.4 -> 13.4.
+  ORCHESTRATOR CHECK on integration (cherry-picked ec82a5dc, bde9c7cd, ab388d6b): held-out with evidence on 17.9 -> 19.6: merge removes real faces on complex
+  roofs (one house 25 -> 16 faces). NOT a rule yet: sent back (never merge an evidence-flagged face away; test against original planes; validate on labelled faces).
+- faces2: `Roof3dFace.evidence` flag + thinFaces.excuseEvidence + gates-v4.json in. With it, thin-face gate passes for evidence+refine; remaining failures:
+  area (waits for the area track), 1 sliver, lidar sloped area, runtime p95 (noisy), held-out houses-passing / review recall.
+- lines: handover 18.0 -> 17.0 (evidence on 15.4 -> 14.3) but chords across bends and a ring not covering its face (7 gate fails, one house). Naming rule
+  `topology.eaveAlong` (a line level on the draining upper face where the planes part = its eave): evidence-off 17.0 -> 16.3, on 14.3 -> 14.2.
+
 ## next
 - wait for the seven reports; merge winners behind the gates; sealed fresh set once; reviewer; remediation; algorithm 8;
   then ask the owner to merge + deploy.
