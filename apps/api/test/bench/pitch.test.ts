@@ -75,7 +75,14 @@ describe('the pitch the server reports on Google\'s height maps', () => {
     expect(checkRoof(moved, building).rows.every((r) => r.main && r.pitchOk)).toBe(true);
     expect(differsFromGoogle(moved, building)).toBe(false);
     // Without the fitted pitch on the face (a roof stored before), the reported one is all there is to compare.
-    const old: Roof3d = { ...moved, faces: moved.faces.map(({ fitPitchX12: _fit, ...f }) => f) };
+    const old: Roof3d = {
+      ...moved,
+      faces: moved.faces.map((f) => {
+        const g = { ...f };
+        delete g.fitPitchX12;
+        return g;
+      }),
+    };
     expect(checkRoof(old, building).rows.every((r) => !r.pitchOk)).toBe(true);
     // And a plane that really differs from Google's still fails, whatever is reported.
     const off: Roof3d = { ...served, faces: served.faces.map((f) => ({ ...f, pitchX12: 7, fitPitchX12: 9 })) };
