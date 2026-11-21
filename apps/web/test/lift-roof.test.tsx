@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { legal } from '../src/copy/legal.ts';
 import { liftMeasure, liftProposal } from '../src/copy/liftMeasure.ts';
+import { measure } from '../src/copy/measure.ts';
 import { parseCaptureDate } from '../src/features/measure/lift/aerial.ts';
 import { cardCells, cardNumbers, MeasureCard } from '../src/features/measure/lift/MeasureCard.tsx';
 import { panelLines, squaresFor, wholeDollars } from '../src/features/measure/lift/proposalLines.ts';
@@ -181,6 +182,19 @@ describe('the measure card', () => {
     expect(screen.getByText(liftMeasure.outlineOnly)).toBeTruthy();
     expect(screen.queryByText(/Hips|Eaves|Rakes/)).toBeNull();
     expect(screen.getByText('12%')).toBeTruthy();
+  });
+
+  it('an exact report shows the report\'s own numbers, not the outline\'s, and says it cannot be changed', () => {
+    const exactEstimate = { ...instantEstimate({ outline: [ring], pitchX12: 7, overhangFt: 1, valleyFt: 24 }), surfaceSqFt: 2612, squares: 26.12, ridgeFt: 62, edgeFt: 188, valleyFt: 24, pitchX12: 7 };
+    const m = view({ kind: 'exact', method: 'eagleview', facets: 9, locked: false, estimate: exactEstimate });
+    const numbers = cardNumbers(m, m.estimate, gableRoof(ring as [number, number][]), null);
+    expect(numbers.squares).toBe(26.12);
+    expect(numbers.slopedSqFt).toBe(2612);
+    expect(numbers.facets).toBe(9);
+    expect(numbers.ridgeFt).toBe(62);
+    render(<MeasureCard m={m} numbers={numbers} scan={scanAt('done', 1)} outlineOnly={false} locked editing={false} onEdit={() => undefined} panels={null} />);
+    expect(screen.getByText(measure.exactLocked)).toBeTruthy();
+    expect(screen.queryByText(measure.locked)).toBeNull();
   });
 
   it('says one waste figure: the quote\'s when it is known (as the panel does), the roof\'s own suggestion until then', () => {

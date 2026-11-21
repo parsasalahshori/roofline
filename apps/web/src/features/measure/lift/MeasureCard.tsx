@@ -33,7 +33,8 @@ export type CardNumbers = {
  * number); until then it is the roof's own suggestion.
  */
 export function cardNumbers(m: MeasurementView, estimate: InstantEstimate, model: RoofModel | null, wastePct: number | null): CardNumbers {
-  if (model !== null) {
+  // An exact report's own numbers, never the outline's worked out again
+  if (model !== null && m.kind !== 'exact') {
     const t = quotedTotals(model);
     return {
       squares: t.squares,
@@ -220,7 +221,7 @@ export function MeasureCard({
         </div>
         {locked && !scanning ? (
           <p className={styles.note} data-tone="locked">
-            {measure.locked}
+            {m.kind === 'exact' ? measure.exactLocked : measure.locked}
           </p>
         ) : null}
         {outlineOnly && !scanning ? <p className={styles.note}>{liftMeasure.outlineOnly}</p> : null}

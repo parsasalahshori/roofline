@@ -27,7 +27,7 @@ function daytimePlace(): string {
  * The text gate holds a text outside 8:00 to 21:00 in the customer's zone, and CI runs at any hour. This puts the
  * company and its properties in a place where it is daytime now, so the proposal text goes out at once.
  */
-async function makeItDaytime(): Promise<void> {
+export async function makeItDaytime(): Promise<void> {
   const zone = daytimePlace();
   const client = new pg.Client({ connectionString: readStack().ownerUrl });
   await client.connect();
