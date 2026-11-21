@@ -162,6 +162,22 @@ describe('POST /api/demo/simulate/*', () => {
     expect(new Set(slots).size).toBe(2);
   });
 
+  test('call: the caller is a customer with a home on file, so the booking the script promises always happens', async () => {
+    await demoApp();
+    await frontDeskOn();
+    const who = new Actors(t);
+    const ownerAgent = await who.as('owner');
+    const withHome = await customerWithPhone('Ray Okafor', '+14025550162');
+    await mustCreate(ownerAgent, '/api/properties', { customerId: withHome, ...addressFor(0) });
+    await customerWithPhone('Dana Whitfield', '+14025550161'); // newer, no home on file: listed first
+    const pick = vi.spyOn(Math, 'random').mockReturnValue(0);
+    const res = await simulate('call');
+    pick.mockRestore();
+    expect(res.body).toMatchObject({ ok: true, customerId: withHome });
+    const booked = await inCompany(t, t.seed.a.companyId, (tx) => tx.select({ id: appointments.id }).from(appointments).where(eq(appointments.source, 'front_desk')));
+    expect(booked).toHaveLength(1);
+  });
+
   test('storm: a hail storm over the service area becomes a company storm with the homes it hit', async () => {
     await demoApp();
     const companyId = t.seed.a.companyId;

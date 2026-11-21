@@ -92,17 +92,32 @@ async function companyNumber(deps: AppDeps, companyId: string): Promise<string> 
 
 type Homeowner = { customerId: string | null; name: string | null; phone: string };
 
-/** A customer of the company with a phone number, picked at random so repeated runs vary; else a stranger. */
-async function pickHomeowner(deps: AppDeps, companyId: string): Promise<Homeowner> {
+/**
+ * A customer of the company with a phone number, picked at random so repeated runs vary; else a stranger.
+ * `withHome`: the call books an inspection at the caller's home, so it prefers customers who have one on file.
+ */
+async function pickHomeowner(deps: AppDeps, companyId: string, withHome = false): Promise<Homeowner> {
   const ctx = systemContext(companyId);
-  const rows = await withTenant(deps.pools, ctx, (tx) =>
-    tx
-      .select({ id: customers.id, name: customers.displayName, phones: customers.phones })
-      .from(customers)
-      .where(and(isNull(customers.archivedAt), eq(customers.doNotContact, false), sql`jsonb_array_length(${customers.phones}) > 0`))
-      .orderBy(desc(customers.updatedAt))
-      .limit(25),
-  );
+  const find = (needHome: boolean) =>
+    withTenant(deps.pools, ctx, (tx) =>
+      tx
+        .select({ id: customers.id, name: customers.displayName, phones: customers.phones })
+        .from(customers)
+        .where(
+          and(
+            isNull(customers.archivedAt),
+            eq(customers.doNotContact, false),
+            sql`jsonb_array_length(${customers.phones}) > 0`,
+            needHome
+              ? sql`exists (select 1 from ${properties} p where p.customer_id = ${customers.id} and p.archived_at is null)`
+              : undefined,
+          ),
+        )
+        .orderBy(desc(customers.updatedAt))
+        .limit(25),
+    );
+  let rows = withHome ? await find(true) : [];
+  if (rows.length === 0) rows = await find(false);
   const withPhone = rows.flatMap((r) => {
     const phone = r.phones.find((p) => p.primary)?.e164 ?? r.phones[0]?.e164;
     return phone ? [{ customerId: r.id, name: r.name, phone }] : [];
@@ -227,7 +242,7 @@ async function bookDemoInspection(tx: Parameters<Parameters<typeof withTenant>[2
 /** "Incoming call": a homeowner calls, talks with Front Desk over the fake voice session, and hangs up. */
 export async function simulateCall(deps: AppDeps, companyId: string): Promise<SimulateResult> {
   const to = await companyNumber(deps, companyId);
-  const homeowner = await pickHomeowner(deps, companyId);
+  const homeowner = await pickHomeowner(deps, companyId, true);
   const ctx = systemContext(companyId);
   const demo = demoDeps(deps);
   const callSid = `CA${randomUUID().replace(/-/g, '')}`;
