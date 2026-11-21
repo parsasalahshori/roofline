@@ -93,6 +93,22 @@ export const DEFAULT_TOPOLOGY_PARAMS: TopologyParams = {
   jogM: 1.5,
 };
 
+/**
+ * Development only (roof3d:dump --features): what the topology knew about a line when it named it, for studying the
+ * naming rules against an answer key. Never part of the stored roof. `left` and `right` are the faces on either side of
+ * a -> b (-1 outside the roof); `v` holds the measurements (see `featuresOf` in buildTopology).
+ */
+export type LineFeatures = {
+  src: 'outline' | 'step-edge' | 'step-wall' | 'crease' | 'seam';
+  kind: RoofLineKind3d | 'none';
+  a: XY;
+  b: XY;
+  left: number;
+  right: number;
+  chain: number;
+  v: Record<string, number>;
+};
+
 export type TopoFace = { ring: XY[]; areaM2: number; fromPixels: boolean };
 export type TopoLine = { kind: RoofLineKind3d; a: XY; b: XY; faces: number[]; lengthM: number; riseM: number };
 export type Topology = { faces: TopoFace[]; lines: TopoLine[] };
@@ -298,6 +314,7 @@ export function buildTopology(
   dsm: Float32Array,
   prm: TopologyParams = DEFAULT_TOPOLOGY_PARAMS,
   debug?: (msg: string) => void,
+  collect?: LineFeatures[],
 ): Topology {
   const L = lattice(g, labels);
   const { vw } = L;
@@ -371,6 +388,7 @@ export function buildTopology(
     const v = (rr: number, cc: number) => dsm[rr * g.w + cc]!;
     return (v(r, c) * (1 - tx) + v(r, c + 1) * tx) * (1 - ty) + (v(r + 1, c) * (1 - tx) + v(r + 1, c + 1) * tx) * ty;
   };
+  const chainStats: Record<string, number>[] = chains.map(() => ({}));
   const kinds: Kind[] = chains.map((c, k) => {
     if (c.left < 0 || c.right < 0) return { type: 'outline' };
     if (contracted[k]) return { type: 'seam' };
@@ -408,6 +426,7 @@ export function buildTopology(
     const lb = lineBetween(pi, pj);
     const off = lb === null ? Infinity : median(pts.map((p) => distToLine(p, lb.line)));
     debug?.(`chain ${k} faces ${c.left}/${c.right} len ${(c.verts.length * s).toFixed(1)} gap ${gap.toFixed(2)} off ${off.toFixed(2)} wall ${wall.toFixed(2)} strength ${lb?.strength.toFixed(2)}`);
+    if (collect !== undefined) chainStats[k] = { chainGap: gap, chainOff: Number.isFinite(off) ? off : 99, chainWall: wall, chainStrength: lb?.strength ?? 0 };
     if (gap > prm.stepM && wall > prm.stepM * 0.75) return { type: 'step' };
     if (lb !== null && lb.strength >= 0.05 && off <= 3) return { type: 'crease', line: lb.line, strength: lb.strength };
     return gap >= 0.25 ? { type: 'step' } : { type: 'seam' };
@@ -647,6 +666,179 @@ export function buildTopology(
     const slope = Math.hypot(pl.a, pl.b);
     return slope < levelSlope ? 1 : Math.abs((dx * -pl.b + dy * pl.a) / slope);
   };
+  // Development only: the measurements behind each line's name (LineFeatures), when asked for.
+  const faceStats =
+    collect === undefined
+      ? null
+      : (() => {
+          const n = new Float64Array(nFaces);
+          const sum = new Float64Array(nFaces);
+          for (let i = 0; i < labels.length; i++) {
+            const f = labels[i]!;
+            if (f < 0) continue;
+            const z = dsm[i]!;
+            if (!Number.isFinite(z)) continue;
+            const x = ((i % g.w) + 0.5) * s;
+            const y = -(Math.floor(i / g.w) + 0.5) * s;
+            n[f]!++;
+            sum[f]! += Math.min(1, Math.abs(z - planeZ(planes[f]!, x, y)));
+          }
+          return { n, sum };
+        })();
+  const labelAt = (x: number, y: number): number => {
+    const c = Math.floor(x / s);
+    const r = Math.floor(-y / s);
+    return c < 0 || r < 0 || c >= g.w || r >= g.h ? -1 : labels[r * g.w + c]!;
+  };
+  const medianOf = (xs: number[]): number => {
+    const ok = xs.filter((x) => Number.isFinite(x)).sort((x, y) => x - y);
+    return ok.length === 0 ? Number.NaN : ok[Math.floor(ok.length / 2)]!;
+  };
+  const featuresOf = (a: XY, b: XY, left: number, right: number, k: number): Record<string, number> => {
+    const len = dist(a, b);
+    const ux = (b.x - a.x) / len;
+    const uy = (b.y - a.y) / len;
+    const nx = -uy;
+    const ny = ux;
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const v: Record<string, number> = { lenM: len, chainLenM: chains[k]!.verts.length * s, ...chainStats[k] };
+    // Stations along the line, clear of its ends.
+    const inset = Math.min(0.4, len / 4);
+    const count = Math.max(1, Math.floor((len - 2 * inset) / 0.4) + 1);
+    const stations: { p: XY; t: number }[] = [];
+    for (let q = 0; q < count; q++) {
+      const t = count === 1 ? len / 2 : inset + ((len - 2 * inset) * q) / (count - 1);
+      stations.push({ p: { x: a.x + ux * t, y: a.y + uy * t }, t });
+    }
+    const both = left >= 0 && right >= 0;
+    const zRef = (p: XY): number => {
+      if (both) return (planeZ(planes[left]!, p.x, p.y) + planeZ(planes[right]!, p.x, p.y)) / 2;
+      return planeZ(planes[left >= 0 ? left : right]!, p.x, p.y);
+    };
+    v.h0 = medianOf(stations.map(({ p }) => dsmAt(p.x, p.y) - zRef(p)));
+    const side = (tag: 'L' | 'R', f: number, sgn: 1 | -1) => {
+      // The height map on this side, against the line's own height (the planes' there).
+      for (const off of [0.3, 0.6, 1, 1.5, 2.5]) {
+        v[`h${tag}${off * 10}`] = medianOf(stations.map(({ p }) => dsmAt(p.x + sgn * off * nx, p.y + sgn * off * ny) - zRef(p)));
+      }
+      v[`roof${tag}`] = stations.filter(({ p }) => labelAt(p.x + sgn * nx, p.y + sgn * ny) >= 0).length / stations.length;
+      // Its measured slope along the line, 0.5 m in (least squares over the stations).
+      if (stations.length >= 3) {
+        const zs = stations.map(({ p, t }) => ({ t, z: dsmAt(p.x + sgn * 0.5 * nx, p.y + sgn * 0.5 * ny) })).filter((o) => Number.isFinite(o.z));
+        if (zs.length >= 3) {
+          const mt = zs.reduce((acc, o) => acc + o.t, 0) / zs.length;
+          const mz = zs.reduce((acc, o) => acc + o.z, 0) / zs.length;
+          const den = zs.reduce((acc, o) => acc + (o.t - mt) ** 2, 0);
+          if (den > 1e-9) v[`along${tag}`] = zs.reduce((acc, o) => acc + (o.t - mt) * (o.z - mz), 0) / den;
+        }
+      }
+      // And across it, between 0.3 and 0.9 m in (positive: this side rises away from the line).
+      v[`across${tag}`] = medianOf(stations.map(({ p }) => (dsmAt(p.x + sgn * 0.9 * nx, p.y + sgn * 0.9 * ny) - dsmAt(p.x + sgn * 0.3 * nx, p.y + sgn * 0.3 * ny)) / 0.6));
+      // The roof a little way in on this side: the plane through the height map there (least squares over 0.6 to 1.8 m
+      // in), as its slope along the line and away from it.
+      {
+        let n = 0, st = 0, sd = 0, sz = 0, stt = 0, sdd = 0, std = 0, stz = 0, sdz = 0;
+        const pts: { t: number; d: number; z: number }[] = [];
+        for (const { p, t } of stations) {
+          for (const d of [0.6, 0.9, 1.2, 1.5, 1.8]) {
+            const x = p.x + sgn * d * nx;
+            const y = p.y + sgn * d * ny;
+            if (labelAt(x, y) < 0) continue;
+            const z = dsmAt(x, y);
+            if (!Number.isFinite(z)) continue;
+            pts.push({ t, d, z });
+          }
+        }
+        if (pts.length >= 6) {
+          const mt = pts.reduce((acc, o) => acc + o.t, 0) / pts.length;
+          const md = pts.reduce((acc, o) => acc + o.d, 0) / pts.length;
+          const mz = pts.reduce((acc, o) => acc + o.z, 0) / pts.length;
+          for (const o of pts) {
+            const t = o.t - mt, d = o.d - md, z = o.z - mz;
+            n++; st += t; sd += d; sz += z; stt += t * t; sdd += d * d; std += t * d; stz += t * z; sdz += d * z;
+          }
+          const det = stt * sdd - std * std;
+          if (sdd > 1e-6) {
+            // A short line has no spread along itself: the slope away from it alone.
+            const p1 = det > 1e-6 && stt > 0.05 ? (stz * sdd - sdz * std) / det : 0;
+            const q1 = det > 1e-6 && stt > 0.05 ? (sdz * stt - stz * std) / det : sdz / sdd;
+            v[`locAlong${tag}`] = p1;
+            v[`locAcross${tag}`] = q1;
+            let ss = 0;
+            for (const o of pts) ss += (o.z - mz - p1 * (o.t - mt) - q1 * (o.d - md)) ** 2;
+            v[`locRms${tag}`] = Math.sqrt(ss / n);
+            v[`locN${tag}`] = n;
+          }
+        }
+      }
+      // How much the height map climbs or falls along the line, whichever way (a gable's edge climbs to its peak and
+      // falls again; an eave does neither), at three depths in: the median |slope| between stations about 1.2 m apart.
+      for (const d of [0.6, 1, 1.5]) {
+        const zs = stations.map(({ p, t }) => ({ t, z: labelAt(p.x + sgn * d * nx, p.y + sgn * d * ny) >= 0 ? dsmAt(p.x + sgn * d * nx, p.y + sgn * d * ny) : Number.NaN }));
+        const lag = Math.min(3, zs.length - 1);
+        const slopes: number[] = [];
+        if (lag >= 1) for (let q = 0; q + lag < zs.length; q++) if (zs[q + lag]!.t - zs[q]!.t > 0.5) slopes.push(Math.abs(zs[q + lag]!.z - zs[q]!.z) / (zs[q + lag]!.t - zs[q]!.t));
+        v[`absAlong${tag}${d * 10}`] = medianOf(slopes);
+      }
+      // And how it climbs away from the line between 0.6 and 1.5 m in (the median over the stations).
+      v[`rise${tag}`] = medianOf(stations.map(({ p }) => (labelAt(p.x + sgn * 1.5 * nx, p.y + sgn * 1.5 * ny) >= 0 ? (dsmAt(p.x + sgn * 1.5 * nx, p.y + sgn * 1.5 * ny) - dsmAt(p.x + sgn * 0.6 * nx, p.y + sgn * 0.6 * ny)) / 0.9 : Number.NaN)));
+      v[`riseDeep${tag}`] = medianOf(stations.map(({ p }) => (labelAt(p.x + sgn * 2.4 * nx, p.y + sgn * 2.4 * ny) >= 0 ? (dsmAt(p.x + sgn * 2.4 * nx, p.y + sgn * 2.4 * ny) - dsmAt(p.x + sgn * 1 * nx, p.y + sgn * 1 * ny)) / 1.4 : Number.NaN)));
+      // The face that holds the roof 1 m in on this side (the pixels along the line itself can be another face's).
+      {
+        const votes = new Map<number, number>();
+        for (const { p } of stations) {
+          const l = labelAt(p.x + sgn * nx, p.y + sgn * ny);
+          if (l >= 0) votes.set(l, (votes.get(l) ?? 0) + 1);
+        }
+        let best = -1;
+        for (const [l, c] of votes) if (best < 0 || c > votes.get(best)! || (c === votes.get(best)! && l < best)) best = l;
+        if (best >= 0) {
+          const pb = planes[best]!;
+          const sb = Math.hypot(pb.a, pb.b);
+          v[`beh${tag}`] = best === f ? 1 : 0;
+          v[`behShare${tag}`] = votes.get(best)! / stations.length;
+          v[`behSlope${tag}`] = sb;
+          v[`behLevelDeg${tag}`] = (Math.acos(Math.min(1, levelCos(best, ux, uy))) * 180) / Math.PI;
+          v[`behG${tag}`] = sgn * (pb.a * nx + pb.b * ny);
+          v[`behFit${tag}`] = medianOf(stations.map(({ p }) => dsmAt(p.x + sgn * nx, p.y + sgn * ny) - planeZ(pb, p.x + sgn * nx, p.y + sgn * ny)));
+          v[`behArea${tag}`] = faceStats!.n[best]! * s * s;
+          v[`behZ${tag}`] = planeZ(pb, mid.x, mid.y);
+        }
+      }
+      if (f < 0) return;
+      const pl = planes[f]!;
+      const slope = Math.hypot(pl.a, pl.b);
+      v[`slope${tag}`] = slope;
+      v[`levelDeg${tag}`] = (Math.acos(Math.min(1, levelCos(f, ux, uy))) * 180) / Math.PI;
+      // Uphill into the face from the line (positive: the face comes down to the line), and along it.
+      v[`g${tag}`] = sgn * (pl.a * nx + pl.b * ny);
+      v[`climb${tag}`] = pl.a * ux + pl.b * uy;
+      v[`area${tag}`] = faceStats!.n[f]! * s * s;
+      v[`resid${tag}`] = faceStats!.n[f]! > 0 ? faceStats!.sum[f]! / faceStats!.n[f]! : 0;
+      v[`z${tag}`] = planeZ(pl, mid.x, mid.y);
+      v[`own${tag}`] = stations.filter(({ p }) => labelAt(p.x + sgn * 0.5 * nx, p.y + sgn * 0.5 * ny) === f).length / stations.length;
+      v[`fit${tag}`] = medianOf(stations.map(({ p }) => dsmAt(p.x + sgn * 0.6 * nx, p.y + sgn * 0.6 * ny) - planeZ(pl, p.x + sgn * 0.6 * nx, p.y + sgn * 0.6 * ny)));
+    };
+    side('L', left, 1);
+    side('R', right, -1);
+    if (both) {
+      const pi = planes[left]!;
+      const pj = planes[right]!;
+      const si = Math.hypot(pi.a, pi.b);
+      const sj = Math.hypot(pj.a, pj.b);
+      const cos = si > 1e-6 && sj > 1e-6 ? (pi.a * pj.a + pi.b * pj.b) / (si * sj) : 1;
+      v.facingDeg = (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI;
+      v.gapMid = planeZ(pi, mid.x, mid.y) - planeZ(pj, mid.x, mid.y);
+      v.gapA = planeZ(pi, a.x, a.y) - planeZ(pj, a.x, a.y);
+      v.gapB = planeZ(pi, b.x, b.y) - planeZ(pj, b.x, b.y);
+    }
+    return v;
+  };
+  const note = (src: LineFeatures['src'], kind: LineFeatures['kind'], a: XY, b: XY, k: number): void => {
+    if (collect === undefined || dist(a, b) < 0.05) return;
+    const c = chains[k]!;
+    collect.push({ src, kind, a, b, left: c.left, right: c.right, chain: k, v: featuresOf(a, b, c.left, c.right, k) });
+  };
   // A face's own edge from a to b: an edge of the roof (`edge`: eave where it runs level along the face, rake where it
   // climbs; a low-slope face's edges too, as a report counts them), or where the face meets a wall rising above it (`wall`: flashing where the wall
   // runs level along the face, step flashing where it climbs). Its true length is along the face's plane.
@@ -712,9 +904,11 @@ export function buildTopology(
     }
     return { kind: lk, a, b, faces: [i, j], lengthM: Math.hypot(len, rise), riseM: rise };
   };
-  const pushCrease = (i: number, j: number, a: XY, b: XY): void => {
+  const pushCrease = (i: number, j: number, a: XY, b: XY, k: number): void => {
     const l = creaseLine(i, j, a, b);
-    if (l !== null) lines.push(l);
+    if (l === null) return;
+    lines.push(l);
+    note('crease', l.kind, a, b, k);
   };
   // A wall stands along a house's walls, so it runs level along a face beside it or straight up its slope; a boundary
   // running across both faces' slopes on the diagonal is where they meet (a hip or a valley), not a wall, even where
@@ -736,10 +930,15 @@ export function buildTopology(
         const l = faceEdge(f, path[n - 1]!, path[n]!, 'edge');
         if (l !== null) pieces.push(l);
       }
-      lines.push(...jogsFollow(pieces, prm.jogM));
+      const named = jogsFollow(pieces, prm.jogM);
+      lines.push(...named);
+      for (const l of named) note('outline', l.kind, l.a, l.b, k);
       return;
     }
-    if (kind.type === 'seam') return;
+    if (kind.type === 'seam') {
+      if (path.length >= 2) note('seam', 'none', path[0]!, path.at(-1)!, k);
+      return;
+    }
     const i = c.left;
     const j = c.right;
     const pi = planes[i]!;
@@ -761,7 +960,7 @@ export function buildTopology(
       const walls: TopoLine[] = [];
       pieces.forEach(({ a, b, len }, n) => {
         if (diag[n] && (len >= prm.jogM || diag[n - 1] === true || diag[n + 1] === true)) {
-          pushCrease(i, j, a, b);
+          pushCrease(i, j, a, b, k);
           return;
         }
         const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
@@ -771,7 +970,11 @@ export function buildTopology(
         if (e !== null) edges.push(e);
         if (w !== null) walls.push(w);
       });
-      lines.push(...jogsFollow(edges, prm.jogM), ...jogsFollow(walls, prm.jogM));
+      const namedEdges = jogsFollow(edges, prm.jogM);
+      const namedWalls = jogsFollow(walls, prm.jogM);
+      lines.push(...namedEdges, ...namedWalls);
+      for (const l of namedEdges) note('step-edge', l.kind, l.a, l.b, k);
+      for (const l of namedWalls) note('step-wall', l.kind, l.a, l.b, k);
       return;
     }
     const a = path[0]!;
@@ -783,10 +986,10 @@ export function buildTopology(
       const pts = c.verts.map(at);
       const keep = simplifyIdx(pts, 0.25).map((q) => pts[q]!);
       if (pathLength(keep) < 0.3) return;
-      for (let n = 1; n < keep.length; n++) if (dist(keep[n - 1]!, keep[n]!) >= 0.05) pushCrease(i, j, keep[n - 1]!, keep[n]!);
+      for (let n = 1; n < keep.length; n++) if (dist(keep[n - 1]!, keep[n]!) >= 0.05) pushCrease(i, j, keep[n - 1]!, keep[n]!, k);
       return;
     }
-    pushCrease(i, j, a, b);
+    pushCrease(i, j, a, b, k);
   });
   return { faces, lines: joinCollinear(lines) };
 }
