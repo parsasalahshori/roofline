@@ -95,11 +95,18 @@ export type TopologyParams = {
    * it), where the height map falls away from the line on BOTH sides by at least `fallAwaySlope` (rise over run, 0.6 to
    * 1.5 m out) is a ridge (`measuredRidge`): the "upper" face's pixels there lie over the ridge, on roof its plane does
    * not describe. Along a wall the line must also be level in the height map (under `ridgeAlongSlope` along it).
-   * On the benchmark's EagleView houses (dev) every foot this renames was not an eave, and two thirds are ridges.
+   * On the benchmark's EagleView houses (dev) none of the length this renames was an eave.
    */
   measuredRidge: boolean;
   fallAwaySlope: number;
   ridgeAlongSlope: number;
+  /**
+   * A ridge is drawn once: a line `measuredRidge` would make a ridge of, with a ridge already running alongside it
+   * within this many metres over half its length, is the other side of a strip the planes cut off along that ridge: no
+   * edge at all (a pitch break, drawn and never counted). 0: every such line is a ridge. On the benchmark's EagleView
+   * houses (dev) nine in ten of these lines lie beside a ridge the reconstruction already has.
+   */
+  ridgeBesideM: number;
   /**
    * A valley is a trough: the roof rises away from it on both sides. A crease the planes call a valley, where the
    * height map 1 m out on the lower face's side lies `valleyDropM` or more BELOW the line, is no trough: the lower roof
@@ -156,6 +163,7 @@ export const DEFAULT_TOPOLOGY_PARAMS: TopologyParams = {
   measuredRidge: true,
   fallAwaySlope: 0.1,
   ridgeAlongSlope: 0.3,
+  ridgeBesideM: 1.2,
   valleyDropM: 0.3,
   hipStepM: 0.6,
 };
@@ -723,6 +731,10 @@ export function buildTopology(
 
   // Lines.
   const lines: TopoLine[] = [];
+  // Lines the height map made ridges of (TopologyParams.measuredRidge), and their development notes: a ridge is drawn
+  // once, so each is checked at the end for a ridge already running alongside it.
+  const peaks = new Set<TopoLine>();
+  const peakNotes = new Map<TopoLine, LineFeatures>();
   const levelTan = Math.tan((prm.levelDeg * Math.PI) / 180);
   const eaveCos = Math.cos((prm.eaveDeg * Math.PI) / 180);
   // How far a direction (unit dx, dy) is from a face's level direction (across its slope), as |cos|: 1 level, 0 straight
@@ -893,9 +905,11 @@ export function buildTopology(
     }
     return v;
   };
-  const note = (src: LineFeatures['src'], kind: LineFeatures['kind'], a: XY, b: XY, k: number, left = chains[k]!.left, right = chains[k]!.right): void => {
-    if (collect === undefined || dist(a, b) < 0.05) return;
-    collect.push({ src, kind, a, b, left, right, chain: k, v: featuresOf(a, b, left, right, k) });
+  const note = (src: LineFeatures['src'], kind: LineFeatures['kind'], a: XY, b: XY, k: number, left = chains[k]!.left, right = chains[k]!.right): LineFeatures | null => {
+    if (collect === undefined || dist(a, b) < 0.05) return null;
+    const row: LineFeatures = { src, kind, a, b, left, right, chain: k, v: featuresOf(a, b, left, right, k) };
+    collect.push(row);
+    return row;
   };
   // A face's own edge from a to b: an edge of the roof (`edge`: eave where it runs level along the face, rake where it
   // climbs; a low-slope face's edges too, as a report counts them), or where the face meets a wall rising above it (`wall`: flashing where the wall
@@ -953,6 +967,7 @@ export function buildTopology(
     const uy = (b.y - a.y) / len;
     const rise = (Math.abs(planeZ(pi, b.x, b.y) - planeZ(pi, a.x, a.y)) + Math.abs(planeZ(pj, b.x, b.y) - planeZ(pj, a.x, a.y))) / 2;
     let lk: RoofLineKind3d;
+    let byHeights = false;
     if (flat[i] && flat[j]) lk = 'flat-edge';
     else {
       const si = Math.hypot(pi.a, pi.b);
@@ -971,7 +986,10 @@ export function buildTopology(
         // The planes say the upper face comes down to this line; where the height map falls away from it on that side
         // too, both sides fall away: a ridge the upper face's pixels lie over (TopologyParams.measuredRidge).
         const up = prm.measuredRidge ? beside(a, b, upper === i ? 1 : -1) : null;
-        if (up !== null && up.rise < -prm.fallAwaySlope && quantile(up.rises, MEASURED_QUORUM) < 0) lk = 'ridge';
+        if (up !== null && up.rise < -prm.fallAwaySlope && quantile(up.rises, MEASURED_QUORUM) < 0) {
+          lk = 'ridge';
+          byHeights = true;
+        }
         else if (!flat[i] && !flat[j] && facing >= breakCos && Math.abs(si - sj) * 12 < prm.breakX12) lk = 'pitch-break';
         else {
           const pu = planes[upper]!;
@@ -987,7 +1005,9 @@ export function buildTopology(
         lk = convex ? (climb < levelTan || opposite ? 'ridge' : 'hip') : 'valley';
       }
     }
-    return { kind: lk, a, b, faces: [i, j], lengthM: Math.hypot(len, rise), riseM: rise };
+    const line: TopoLine = { kind: lk, a, b, faces: [i, j], lengthM: Math.hypot(len, rise), riseM: rise };
+    if (byHeights) peaks.add(line);
+    return line;
   };
   const pushCrease = (i: number, j: number, a: XY, b: XY, k: number): void => {
     const l = creaseLine(i, j, a, b);
@@ -1017,7 +1037,8 @@ export function buildTopology(
       }
     }
     lines.push(l);
-    note('crease', l.kind, a, b, k);
+    const row = note('crease', l.kind, a, b, k);
+    if (row !== null && peaks.has(l)) peakNotes.set(l, row);
   };
   // A wall stands along a house's walls, so it runs level along a face beside it or straight up its slope; a boundary
   // running across both faces' slopes on the diagonal is where they meet (a hip or a valley), not a wall, even where
@@ -1081,8 +1102,11 @@ export function buildTopology(
           const m = peakBeside(a, b);
           if (m.both && Math.max(m.left.along, m.right.along) < prm.ridgeAlongSlope) {
             const rise = (Math.abs(planeZ(pi, b.x, b.y) - planeZ(pi, a.x, a.y)) + Math.abs(planeZ(pj, b.x, b.y) - planeZ(pj, a.x, a.y))) / 2;
-            lines.push({ kind: 'ridge', a, b, faces: [i, j], lengthM: Math.hypot(len, rise), riseM: rise });
-            note('crease', 'ridge', a, b, k);
+            const line: TopoLine = { kind: 'ridge', a, b, faces: [i, j], lengthM: Math.hypot(len, rise), riseM: rise };
+            lines.push(line);
+            peaks.add(line);
+            const row = note('crease', 'ridge', a, b, k);
+            if (row !== null) peakNotes.set(line, row);
             return;
           }
         }
@@ -1114,6 +1138,39 @@ export function buildTopology(
     }
     pushCrease(i, j, a, b, k);
   });
+  // A ridge is drawn once. A line the height map made a ridge of, with a ridge already running alongside it (within
+  // `ridgeBesideM` over half its length: the planes cut a strip of roof along the ridge off as a face of its own, and
+  // this is the strip's other side), is no edge at all: a pitch break, drawn and never counted.
+  if (peaks.size > 0 && prm.ridgeBesideM > 0) {
+    const cosMax = Math.cos((25 * Math.PI) / 180);
+    const settled = lines.filter((l) => l.kind === 'ridge' && !peaks.has(l));
+    for (const l of lines) {
+      if (!peaks.has(l)) continue;
+      const len = dist(l.a, l.b);
+      const ux = (l.b.x - l.a.x) / len;
+      const uy = (l.b.y - l.a.y) / len;
+      const n = Math.max(2, Math.round(len / 0.2));
+      let covered = 0;
+      for (let q = 0; q < n; q++) {
+        const p = { x: l.a.x + (ux * len * (q + 0.5)) / n, y: l.a.y + (uy * len * (q + 0.5)) / n };
+        const beside = settled.some((o) => {
+          const ol = dist(o.a, o.b);
+          if (ol < 1e-6) return false;
+          const ox = (o.b.x - o.a.x) / ol;
+          const oy = (o.b.y - o.a.y) / ol;
+          if (Math.abs(ux * ox + uy * oy) < cosMax) return false;
+          const along = (p.x - o.a.x) * ox + (p.y - o.a.y) * oy;
+          return along >= -0.2 && along <= ol + 0.2 && Math.abs((p.x - o.a.x) * oy - (p.y - o.a.y) * ox) <= prm.ridgeBesideM;
+        });
+        if (beside) covered++;
+      }
+      if (covered >= n / 2) {
+        l.kind = 'pitch-break';
+        const row = peakNotes.get(l);
+        if (row !== undefined) row.kind = 'pitch-break';
+      } else settled.push(l);
+    }
+  }
   return { faces, lines: joinCollinear(lines) };
 }
 

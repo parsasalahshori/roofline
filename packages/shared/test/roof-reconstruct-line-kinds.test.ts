@@ -167,6 +167,33 @@ describe('a line the height map falls away from on both sides is a ridge (measur
     expect(off.total('eave') - on.total('eave')).toBeGreaterThan(8.5);
   });
 
+  it('is drawn once: the other side of a strip the planes cut off along a ridge is no second ridge', () => {
+    // A gable 10 x 8 m at 6/12 whose north slope's top 0.8 m is a face of its own (a strip along the ridge, with a
+    // plane falling to the south). The strip meets the north face in a ridge by the planes (0.8 m off the real one);
+    // its other side, on the real ridge, is a wall by the planes (the strip's plane is 0.6 m under the south face's
+    // there), and a ridge by the height map. One ridge is counted.
+    const seg: Segmentation = {
+      outline: rect(5, 4),
+      faceOf: ({ y }) => (y >= 0.8 ? 0 : y >= 0 ? 1 : 2),
+      planes: [
+        { a: 0, b: -0.5, c: 5 },
+        { a: 0, b: 0.3, c: 4.36 },
+        { a: 0, b: 0.5, c: 5 },
+      ],
+    };
+    const on = topologyOf(gableShape(10, 8, 6), seg);
+    expect(on.total('ridge')).toBeGreaterThan(9);
+    expect(on.total('ridge')).toBeLessThan(11);
+    expect(on.total('pitch-break')).toBeGreaterThan(8.5);
+    expect(on.total('flashing')).toBeLessThan(1);
+    // Every such line a ridge (the duplicate check off): two ridges.
+    expect(topologyOf(gableShape(10, 8, 6), seg, { ridgeBesideM: 0 }).total('ridge')).toBeGreaterThan(18.5);
+    // The planes alone: an eave over a wall along the real ridge.
+    const off = topologyOf(gableShape(10, 8, 6), seg, { measuredRidge: false });
+    expect(off.total('flashing')).toBeGreaterThan(8.5);
+    expect(off.total('eave') - on.total('eave')).toBeGreaterThan(8.5);
+  });
+
   it('a real eave over a lower roof stays an eave', () => {
     // An upper roof falling south to y = 0, 1 m above a lower roof that falls on south from there.
     const shape = halves('eave over a lower roof', ({ y }) => 5 + 0.5 * y, ({ y }) => 4 + 0.5 * y);
