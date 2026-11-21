@@ -72,6 +72,47 @@ export type TopologyParams = {
   cornerSnapM: number;
   /** A piece of a face's edge shorter than this between two longer pieces of one kind is a jog in it, metres. */
   jogM: number;
+  /**
+   * A face's edge is named by its plane (eave where it runs level along the face, rake where it climbs) unless the
+   * height map beside the edge clearly says otherwise (`measuredEdge`). The pixels along a roof's edge are often another
+   * face's than the roof behind them (a hip end merged into the main slope, a gable the planes missed, a corner placed a
+   * little off), so the face's plane says rake along a real eave and eave along a real rake. Measured on the roof 0.6 to
+   * 1.5 m in from the edge: how it climbs away from the edge, and how much it climbs or falls along it. The angle between
+   * the two is the edge's angle from level on the roof that is really there: under `measuredEaveDeg` an edge the plane
+   * calls a rake is an eave; at `measuredRakeDeg` or more an edge the plane calls an eave is a rake; between them the
+   * plane stands. Not asked where the roof there is flatter than `measuredMinSlope` (rise over run) or the face is low
+   * slope (the direction of next to no slope is noise), or the edge is too short to measure (about 1.3 m).
+   * Fitted on the benchmark's EagleView houses (dev): of the edge length it renames, 12 ft in 13 is renamed right.
+   */
+  measuredEdge: boolean;
+  measuredEaveDeg: number;
+  measuredRakeDeg: number;
+  measuredMinSlope: number;
+  /**
+   * A line the planes call an upper face's eave over a lower roof (a crease the upper face drains onto, or a wall under
+   * it), where the height map falls away from the line on BOTH sides by at least `fallAwaySlope` (rise over run, 0.6 to
+   * 1.5 m out) is a ridge (`measuredRidge`): the "upper" face's pixels there lie over the ridge, on roof its plane does
+   * not describe. Along a wall the line must also be level in the height map (under `ridgeAlongSlope` along it).
+   * On the benchmark's EagleView houses (dev) every foot this renames was not an eave, and two thirds are ridges.
+   */
+  measuredRidge: boolean;
+  fallAwaySlope: number;
+  ridgeAlongSlope: number;
+  /**
+   * A valley is a trough: the roof rises away from it on both sides. A crease the planes call a valley, where the
+   * height map 1 m out on the lower face's side lies `valleyDropM` or more BELOW the line, is no trough: the lower roof
+   * is a step down the planes smoothed over, and the line is the upper face's edge over it (eave or rake, as on a wall;
+   * the lower face is flashed). 0 turns it off. On the benchmark's EagleView houses (dev) none of the length this
+   * renames was a valley; it leaves the valley total short by what the reconstruction really misses (see
+   * docs/roof-3d/line-kinds.md: wrong valleys used to make up for missing ones).
+   */
+  valleyDropM: number;
+  /**
+   * A hip is a crest: the roof falls away from it on both sides. A crease the planes call a hip that climbs the upper
+   * face (it would be that face's rake), where the height map 1 m out on the upper face's side stands `hipStepM` or more
+   * ABOVE the line, is the upper roof's rake over the lower roof (the lower face is step flashed). 0 turns it off.
+   */
+  hipStepM: number;
 };
 
 export const DEFAULT_TOPOLOGY_PARAMS: TopologyParams = {
@@ -91,6 +132,15 @@ export const DEFAULT_TOPOLOGY_PARAMS: TopologyParams = {
   levelX12: 0.5,
   cornerSnapM: 0.6,
   jogM: 1.5,
+  measuredEdge: true,
+  measuredEaveDeg: 40,
+  measuredRakeDeg: 75,
+  measuredMinSlope: 0.1,
+  measuredRidge: true,
+  fallAwaySlope: 0.1,
+  ridgeAlongSlope: 0.3,
+  valleyDropM: 0.3,
+  hipStepM: 0.6,
 };
 
 /**
@@ -666,6 +716,63 @@ export function buildTopology(
     const slope = Math.hypot(pl.a, pl.b);
     return slope < levelSlope ? 1 : Math.abs((dx * -pl.b + dy * pl.a) / slope);
   };
+  const labelAt = (x: number, y: number): number => {
+    const c = Math.floor(x / s);
+    const r = Math.floor(-y / s);
+    return c < 0 || r < 0 || c >= g.w || r >= g.h ? -1 : labels[r * g.w + c]!;
+  };
+  const medianOf = (xs: number[]): number => {
+    const ok = xs.filter((x) => Number.isFinite(x)).sort((x, y) => x - y);
+    return ok.length === 0 ? Number.NaN : ok[Math.floor(ok.length / 2)]!;
+  };
+  // The height map on the roof beside a line from a to b, on its left (side 1) or its right (-1), read at stations
+  // every 0.4 m or so along the line (clear of its ends):
+  // - `rise`: how the roof climbs away from the line between 0.6 and 1.5 m out (rise over run, the median over the
+  //   stations; negative: it falls away). Clear of the first half metre, where the height map rounds a roof's edge off.
+  // - `along`: how much it climbs or falls along the line 1 m out, whichever way (the median |slope| between stations
+  //   about 1.2 m apart): a gable's edge climbs to the peak and falls again, an eave does neither.
+  // NaN where it cannot be read: the line is too short (under about 1.3 m for `along`) or the roof beside it too narrow.
+  const beside = (a: XY, b: XY, side: 1 | -1): { rise: number; along: number } => {
+    const len = dist(a, b);
+    if (len < 1e-6) return { rise: Number.NaN, along: Number.NaN };
+    const ux = (b.x - a.x) / len;
+    const uy = (b.y - a.y) / len;
+    const nx = -uy * side;
+    const ny = ux * side;
+    const inset = Math.min(0.4, len / 4);
+    const count = Math.max(1, Math.floor((len - 2 * inset) / 0.4) + 1);
+    const ts: number[] = [];
+    for (let q = 0; q < count; q++) ts.push(count === 1 ? len / 2 : inset + ((len - 2 * inset) * q) / (count - 1));
+    const zAt = (t: number, d: number): number => {
+      const x = a.x + ux * t + nx * d;
+      const y = a.y + uy * t + ny * d;
+      return labelAt(x, y) >= 0 ? dsmAt(x, y) : Number.NaN;
+    };
+    const rise = medianOf(ts.map((t) => (labelAt(a.x + ux * t + nx * 1.5, a.y + uy * t + ny * 1.5) >= 0 ? (dsmAt(a.x + ux * t + nx * 1.5, a.y + uy * t + ny * 1.5) - dsmAt(a.x + ux * t + nx * 0.6, a.y + uy * t + ny * 0.6)) / 0.9 : Number.NaN)));
+    const zs = ts.map((t) => zAt(t, 1));
+    const lag = Math.min(3, count - 1);
+    const slopes: number[] = [];
+    if (lag >= 1) for (let q = 0; q + lag < count; q++) if (ts[q + lag]! - ts[q]! > 0.5) slopes.push(Math.abs(zs[q + lag]! - zs[q]!) / (ts[q + lag]! - ts[q]!));
+    return { rise, along: medianOf(slopes) };
+  };
+  // How far the height map 1 m out from a -> b on one side stands above (positive) or lies below the line itself, the
+  // line's height being the mean of the two faces' planes there (the median over the stations; NaN off the grid).
+  const standBeside = (i: number, j: number, a: XY, b: XY, side: 1 | -1): number => {
+    const len = dist(a, b);
+    if (len < 1e-6) return Number.NaN;
+    const ux = (b.x - a.x) / len;
+    const uy = (b.y - a.y) / len;
+    const inset = Math.min(0.4, len / 4);
+    const count = Math.max(1, Math.floor((len - 2 * inset) / 0.4) + 1);
+    const hs: number[] = [];
+    for (let q = 0; q < count; q++) {
+      const t = count === 1 ? len / 2 : inset + ((len - 2 * inset) * q) / (count - 1);
+      const x = a.x + ux * t;
+      const y = a.y + uy * t;
+      hs.push(dsmAt(x - uy * side, y + ux * side) - (planeZ(planes[i]!, x, y) + planeZ(planes[j]!, x, y)) / 2);
+    }
+    return medianOf(hs);
+  };
   // Development only: the measurements behind each line's name (LineFeatures), when asked for.
   const faceStats =
     collect === undefined
@@ -685,15 +792,6 @@ export function buildTopology(
           }
           return { n, sum };
         })();
-  const labelAt = (x: number, y: number): number => {
-    const c = Math.floor(x / s);
-    const r = Math.floor(-y / s);
-    return c < 0 || r < 0 || c >= g.w || r >= g.h ? -1 : labels[r * g.w + c]!;
-  };
-  const medianOf = (xs: number[]): number => {
-    const ok = xs.filter((x) => Number.isFinite(x)).sort((x, y) => x - y);
-    return ok.length === 0 ? Number.NaN : ok[Math.floor(ok.length / 2)]!;
-  };
   const featuresOf = (a: XY, b: XY, left: number, right: number, k: number): Record<string, number> => {
     const len = dist(a, b);
     const ux = (b.x - a.x) / len;
@@ -805,6 +903,9 @@ export function buildTopology(
           v[`behZ${tag}`] = planeZ(pb, mid.x, mid.y);
         }
       }
+      const m = beside(a, b, sgn);
+      v[`mRise${tag}`] = m.rise;
+      v[`mAlong${tag}`] = m.along;
       if (f < 0) return;
       const pl = planes[f]!;
       const slope = Math.hypot(pl.a, pl.b);
@@ -842,14 +943,30 @@ export function buildTopology(
   // A face's own edge from a to b: an edge of the roof (`edge`: eave where it runs level along the face, rake where it
   // climbs; a low-slope face's edges too, as a report counts them), or where the face meets a wall rising above it (`wall`: flashing where the wall
   // runs level along the face, step flashing where it climbs). Its true length is along the face's plane.
-  const faceEdge = (f: number, a: XY, b: XY, role: 'edge' | 'wall'): TopoLine | null => {
+  // `side`: which side of a -> b the face is on (1 its left, -1 its right), for the height map's say on an edge.
+  const faceEdge = (f: number, a: XY, b: XY, role: 'edge' | 'wall', side: 1 | -1): TopoLine | null => {
     const len = dist(a, b);
     if (len < 0.05) return null;
     const pl = planes[f]!;
     const rise = Math.abs(planeZ(pl, b.x, b.y) - planeZ(pl, a.x, a.y));
-    const level = levelCos(f, (b.x - a.x) / len, (b.y - a.y) / len) >= eaveCos;
+    let level = levelCos(f, (b.x - a.x) / len, (b.y - a.y) / len) >= eaveCos;
+    if (role === 'edge' && prm.measuredEdge && !flat[f]) {
+      // The roof that is really beside the edge (TopologyParams.measuredEdge): its angle from level along the edge.
+      const m = beside(a, b, side);
+      if (Number.isFinite(m.rise) && Number.isFinite(m.along) && Math.hypot(m.rise, m.along) >= prm.measuredMinSlope) {
+        const deg = (Math.atan2(m.along, Math.abs(m.rise)) * 180) / Math.PI;
+        if (level && deg >= prm.measuredRakeDeg) level = false;
+        else if (!level && deg < prm.measuredEaveDeg) level = true;
+      }
+    }
     const kind: RoofLineKind3d = role === 'wall' ? (level ? 'flashing' : 'step-flashing') : level ? 'eave' : 'rake';
     return { kind, a, b, faces: [f], lengthM: Math.hypot(len, rise), riseM: rise };
+  };
+  // Whether the height map falls away from a -> b on both sides (TopologyParams.measuredRidge).
+  const peakBeside = (a: XY, b: XY): { left: { rise: number; along: number }; right: { rise: number; along: number }; both: boolean } => {
+    const left = beside(a, b, 1);
+    const right = beside(a, b, -1);
+    return { left, right, both: left.rise < -prm.fallAwaySlope && right.rise < -prm.fallAwaySlope };
   };
   // A crease from a to b between face i (on its left) and face j, by which way each face drains there.
   // - Both fall away from it: a ridge (level, or the two faces opposite each other) or a hip.
@@ -887,7 +1004,10 @@ export function buildTopology(
       const upper = onto(i, gi, ti) && off(j, gj, tj) ? i : onto(j, gj, tj) && off(i, gi, ti) ? j : -1;
       const facing = si > 0 && sj > 0 ? (pi.a * pj.a + pi.b * pj.b) / (si * sj) : 0;
       if (upper >= 0 && levelCos(upper, ux, uy) >= ontoEaveCos) {
-        if (!flat[i] && !flat[j] && facing >= breakCos && Math.abs(si - sj) * 12 < prm.breakX12) lk = 'pitch-break';
+        // The planes say the upper face comes down to this line; where the height map falls away from it on that side
+        // too, both sides fall away: a ridge the upper face's pixels lie over (TopologyParams.measuredRidge).
+        if (prm.measuredRidge && beside(a, b, upper === i ? 1 : -1).rise < -prm.fallAwaySlope) lk = 'ridge';
+        else if (!flat[i] && !flat[j] && facing >= breakCos && Math.abs(si - sj) * 12 < prm.breakX12) lk = 'pitch-break';
         else {
           const pu = planes[upper]!;
           const eaveRise = Math.abs(planeZ(pu, b.x, b.y) - planeZ(pu, a.x, a.y));
@@ -907,6 +1027,25 @@ export function buildTopology(
   const pushCrease = (i: number, j: number, a: XY, b: XY, k: number): void => {
     const l = creaseLine(i, j, a, b);
     if (l === null) return;
+    // A valley with a step down beside it, or a hip with a step up, is the upper face's edge over the lower roof
+    // (TopologyParams.valleyDropM, hipStepM): named as along a wall.
+    if ((l.kind === 'valley' && prm.valleyDropM > 0) || (l.kind === 'hip' && prm.hipStepM > 0)) {
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const [upper, lower] = planeZ(planes[i]!, mid.x, mid.y) >= planeZ(planes[j]!, mid.x, mid.y) ? [i, j] : [j, i];
+      const upperSide = upper === i ? 1 : -1;
+      const stepped = l.kind === 'valley' ? standBeside(i, j, a, b, upperSide === 1 ? -1 : 1) <= -prm.valleyDropM : standBeside(i, j, a, b, upperSide) >= prm.hipStepM;
+      const e = stepped ? faceEdge(upper, a, b, 'edge', upperSide) : null;
+      if (e !== null && (l.kind === 'valley' || e.kind === 'rake')) {
+        const w = faceEdge(lower, a, b, 'wall', upperSide === 1 ? -1 : 1);
+        lines.push(e);
+        note('step-edge', e.kind, a, b, k);
+        if (w !== null) {
+          lines.push(w);
+          note('step-wall', w.kind, a, b, k);
+        }
+        return;
+      }
+    }
     lines.push(l);
     note('crease', l.kind, a, b, k);
   };
@@ -927,7 +1066,7 @@ export function buildTopology(
       const f = c.left >= 0 ? c.left : c.right;
       const pieces: TopoLine[] = [];
       for (let n = 1; n < path.length; n++) {
-        const l = faceEdge(f, path[n - 1]!, path[n]!, 'edge');
+        const l = faceEdge(f, path[n - 1]!, path[n]!, 'edge', c.left >= 0 ? 1 : -1);
         if (l !== null) pieces.push(l);
       }
       const named = jogsFollow(pieces, prm.jogM);
@@ -963,10 +1102,21 @@ export function buildTopology(
           pushCrease(i, j, a, b, k);
           return;
         }
+        // No wall stands along a line both roofs fall away from: where the height map falls away on both sides of a
+        // level piece it is a ridge whose two sides the height map holds apart (TopologyParams.measuredRidge).
+        if (prm.measuredRidge) {
+          const m = peakBeside(a, b);
+          if (m.both && Math.max(m.left.along, m.right.along) < prm.ridgeAlongSlope) {
+            const rise = (Math.abs(planeZ(pi, b.x, b.y) - planeZ(pi, a.x, a.y)) + Math.abs(planeZ(pj, b.x, b.y) - planeZ(pj, a.x, a.y))) / 2;
+            lines.push({ kind: 'ridge', a, b, faces: [i, j], lengthM: Math.hypot(len, rise), riseM: rise });
+            note('crease', 'ridge', a, b, k);
+            return;
+          }
+        }
         const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
         const [upper, lower] = planeZ(pi, mid.x, mid.y) >= planeZ(pj, mid.x, mid.y) ? [i, j] : [j, i];
-        const e = faceEdge(upper, a, b, 'edge');
-        const w = faceEdge(lower, a, b, 'wall');
+        const e = faceEdge(upper, a, b, 'edge', upper === i ? 1 : -1);
+        const w = faceEdge(lower, a, b, 'wall', lower === i ? 1 : -1);
         if (e !== null) edges.push(e);
         if (w !== null) walls.push(w);
       });
