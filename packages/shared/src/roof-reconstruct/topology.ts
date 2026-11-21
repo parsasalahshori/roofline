@@ -79,6 +79,26 @@ export type TopologyParams = {
    * valley behind it; an upper storey's eave running on into a hip). 0: a boundary is typed once for its whole length.
    */
   stepPieceM: number;
+  /** Such a stretch is a wall only when the planes are this far apart (metres) over at least a fifth of it. */
+  stepPieceGapM: number;
+  /**
+   * A wall at the top of the upper face (the face falls away from it, and the lower face does not come down to it):
+   * with the planes less than this far apart (metres) the two faces meet there, in a ridge or hip the height map
+   * holds apart, and the line is named as their crease. 0: every such wall is a wall.
+   */
+  stepTopM: number;
+  /**
+   * A wall found for a stretch runs on, for at most this far (metres), to where the two planes meet when they close
+   * steadily beyond its end: a cheek wall tapers to nothing, and the height map shows no jump over its last, low part.
+   * The corner between the wall and the crease is then where the planes meet. 0: the wall ends where the jump does.
+   */
+  stepTaperM: number;
+  /**
+   * Beside such a stretch, on each face's own pixels, the height map lies on that face's plane within this (metres):
+   * a wall is a jump from one face's plane to the other's. Where the pixel boundary has strayed from a crease (round
+   * a tree crown or a chimney, or at the roof's edge) one side of it is not on its own plane. 0: not asked.
+   */
+  stepSideTolM: number;
 };
 
 export const DEFAULT_TOPOLOGY_PARAMS: TopologyParams = {
@@ -98,7 +118,11 @@ export const DEFAULT_TOPOLOGY_PARAMS: TopologyParams = {
   levelX12: 0.5,
   cornerSnapM: 0.6,
   jogM: 1.5,
-  stepPieceM: 1,
+  stepPieceM: 1.5,
+  stepPieceGapM: 0.8,
+  stepTopM: 1.2,
+  stepTaperM: 3,
+  stepSideTolM: 0.2,
 };
 
 export type TopoFace = { ring: XY[]; areaM2: number; fromPixels: boolean };
@@ -353,6 +377,29 @@ export function buildTopology(
     }
     return jump - wallWin * maxSlope;
   };
+  // Whether the height map lies on each face's own plane beside the boundary at point v (the left face on the left of
+  // the chord from point `from` to point `to`): on each side, three of the pixels 0.2 to 1.2 m out are that face's and
+  // within `tol` of its plane.
+  const sidesOnPlanes = (pts: readonly XY[], v: number, from: number, to: number, left: number, right: number, tol: number): boolean => {
+    const a = pts[from]!;
+    const b = pts[to]!;
+    const len = dist(a, b);
+    if (len < 1e-9) return false;
+    const n = { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
+    const p = pts[v]!;
+    for (const [sign, f] of [[1, left], [-1, right]] as const) {
+      const pl = planes[f]!;
+      let on = 0;
+      for (let t = 0.2; t <= 1.2 + 1e-9 && on < 3; t += s) {
+        const col = Math.floor((p.x + sign * t * n.x) / s);
+        const row = Math.floor(-(p.y + sign * t * n.y) / s);
+        if (col < 0 || row < 0 || col >= g.w || row >= g.h || labels[row * g.w + col] !== f) continue;
+        if (Math.abs(dsm[row * g.w + col]! - planeZ(pl, (col + 0.5) * s, -(row + 0.5) * s)) <= tol) on++;
+      }
+      if (on < 3) return false;
+    }
+    return true;
+  };
   // A low quantile, not the median: a tree or a chimney on part of the boundary does not make it a wall.
   const lowQuantile = (xs: number[]) => xs.sort((x, y) => x - y)[Math.floor(xs.length * 0.3)] ?? 0;
   // A whole boundary's measures: how far apart the two planes are in height along it, and the wall test.
@@ -401,10 +448,56 @@ export function buildTopology(
         const from = cyclic ? (v - wallHalf + 2 * m) % m : Math.max(0, v - wallHalf);
         const to = cyclic ? (v + wallHalf) % m : Math.min(m, v + wallHalf);
         const e = gap > prm.stepM ? wallExcess(pts, v, from, to, maxSlope) : null;
-        flag.push(e !== null && e > prm.stepM * 0.75);
+        flag.push(e !== null && e > prm.stepM * 0.75 && (prm.stepSideTolM <= 0 || sidesOnPlanes(pts, v, from, to, c.left, c.right, prm.stepSideTolM)));
       }
       flag = flipShortRuns(flag, false, closeRun, cyclic, true);
       flag = flipShortRuns(flag, true, minRun, cyclic, false);
+      if (prm.stepPieceGapM > 0 && flag.includes(true)) {
+        // Each stretch: far enough apart over a fifth of it, or not a wall.
+        const start = cyclic ? Math.max(0, flag.findIndex((f, v) => f !== flag[(v + n - 1) % n])) : 0;
+        for (let k0 = 0; k0 < n; ) {
+          let len = 1;
+          while (k0 + len < n && flag[(start + k0 + len) % n] === flag[(start + k0) % n]) len++;
+          if (flag[(start + k0) % n]) {
+            const gaps: number[] = [];
+            for (let q = 0; q < len; q++) {
+              const p = pts[(start + k0 + q) % n]!;
+              gaps.push(Math.abs(planeZ(pi, p.x, p.y) - planeZ(pj, p.x, p.y)));
+            }
+            gaps.sort((x, y) => x - y);
+            if (gaps[Math.floor(gaps.length * 0.8)]! < prm.stepPieceGapM) for (let q = 0; q < len; q++) flag[(start + k0 + q) % n] = false;
+          }
+          k0 += len;
+        }
+      }
+      if (prm.stepTaperM > 0 && flag.includes(true)) {
+        const gapAt = (v: number) => Math.abs(planeZ(pi, pts[v]!.x, pts[v]!.y) - planeZ(pj, pts[v]!.x, pts[v]!.y));
+        const reach = Math.round(prm.stepTaperM / s);
+        const was = [...flag];
+        for (let v = 0; v < n; v++) {
+          if (!was[v]) continue;
+          for (const dir of [1, -1]) {
+            const next = (q: number) => (cyclic ? (v + dir * q + n * (reach + 1)) % n : v + dir * q);
+            const first = next(1);
+            if (first < 0 || first >= n || was[first]) continue;
+            // From the wall's end outwards: the planes close (the pixel boundary's stair steps aside) down to nothing.
+            let low = gapAt(v);
+            let met = 0;
+            for (let q = 1; q <= reach; q++) {
+              const w = next(q);
+              if (w < 0 || w >= n || was[w]) break;
+              const gp = gapAt(w);
+              if (gp > low + 0.25) break;
+              low = Math.min(low, gp);
+              if (gp < 0.12) {
+                met = q;
+                break;
+              }
+            }
+            for (let q = 1; q <= met; q++) flag[next(q)] = true;
+          }
+        }
+      }
       flag = flipShortRuns(flag, false, minRun, cyclic, false);
       if (!flag.includes(true)) continue;
       if (!flag.includes(false)) {
@@ -868,6 +961,17 @@ export function buildTopology(
         }
         const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
         const [upper, lower] = planeZ(pi, mid.x, mid.y) >= planeZ(pj, mid.x, mid.y) ? [i, j] : [j, i];
+        if (prm.stepTopM > 0 && !flat[upper] && Math.abs(planeZ(pi, mid.x, mid.y) - planeZ(pj, mid.x, mid.y)) < prm.stepTopM) {
+          // Uphill into each face from the line (the left face is on (-dy, dx) from the path's direction).
+          const dx = (b.x - a.x) / len;
+          const dy = (b.y - a.y) / len;
+          const into = (f: number) => (planes[f]!.a * -dy + planes[f]!.b * dx) * (f === i ? 1 : -1);
+          const least = (f: number) => Math.max(prm.drainMinSlope, prm.drainShare * Math.hypot(planes[f]!.a, planes[f]!.b));
+          if (into(upper) < -least(upper) && !(!flat[lower] && into(lower) > least(lower))) {
+            pushCrease(i, j, a, b);
+            return;
+          }
+        }
         const e = faceEdge(upper, a, b, 'edge');
         const w = faceEdge(lower, a, b, 'wall');
         if (e !== null) edges.push(e);
