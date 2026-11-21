@@ -47,6 +47,11 @@ export type HouseMetrics = {
   slivers: number;
   /** Faces of 25 sq ft or more that are thinner than thinM: slivers along an edge. Informational. */
   thinFaces: number;
+  /**
+   * Those of the thin faces that stand on evidence of their own in the heights (Roof3dFace.evidence: a ridge, hip or
+   * facing of their own, a dormer's cheek or a hip end, not a strip of junk). Absent in reports made before the flag.
+   */
+  thinExcused?: number;
   /** Faces steeper than 18/12 without a Google segment that steep (the checker's steep faces). */
   steepJunk: number;
   /** Faces steeper than 18/12 whether or not Google has a steep segment (informational). */
@@ -105,6 +110,7 @@ export function emptyMetrics(status: 'no-roof' | 'failed', hash = ''): HouseMetr
     faces: 0,
     slivers: 0,
     thinFaces: 0,
+    thinExcused: 0,
     steepJunk: 0,
     steepAny: 0,
     vertices: 0,
@@ -193,13 +199,14 @@ function proxyOf(h: LoadedHouse, roof: Roof3d, plan: number): Proxy {
 export function houseMetrics(h: LoadedHouse, roof: Roof3d, check: Acceptance, json: string, unusable: boolean, p: MetricParams = DEFAULT_METRICS): HouseMetrics {
   const zone = zoneOfLngLat(roof.outline[0]![0], roof.outline[0]![1]);
   const outline = ringToXY(zone, roof.outline);
-  const thin = roof.faces.filter((f) => {
+  const thinOnes = roof.faces.filter((f) => {
     if (f.planAreaSqFt < TARGETS.junkSqFt) return false;
     const ring = ringToXY(zone, f.ring);
     let perimeter = 0;
     for (let i = 0; i + 1 < ring.length; i++) perimeter += Math.hypot(ring[i + 1]![0] - ring[i]![0], ring[i + 1]![1] - ring[i]![1]);
     return perimeter > 0 && (2 * Math.abs(ringArea(ring))) / perimeter < p.thinM;
-  }).length;
+  });
+  const thin = thinOnes.length;
   const plan = roof.faces.reduce((t, f) => t + f.planAreaSqFt, 0);
   const sloped = roof.faces.reduce((t, f) => t + f.slopedAreaSqFt, 0);
   const reasons = roof.quality?.reasons ?? [];
@@ -230,6 +237,7 @@ export function houseMetrics(h: LoadedHouse, roof: Roof3d, check: Acceptance, js
     faces: roof.faces.length,
     slivers: check.junkFaces,
     thinFaces: thin,
+    thinExcused: thinOnes.filter((f) => f.evidence !== undefined).length,
     steepJunk: check.steepFaces,
     steepAny: roof.faces.filter((f) => f.pitchX12 > TARGETS.steepX12).length,
     vertices: roof.outline.length,

@@ -3,8 +3,8 @@
 // on, whatever it meets across the ridge. And buildFaces' cleanup runs to its end (the round budget, the split that
 // was dissolved and split again). Hermetic: synthetic height maps only.
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_EVIDENCE, type EvidenceParams, fragmentOf, measureFaces, ownCreaseM, ownFacingOf, realFaces } from '../src/roof-reconstruct/faces-evidence.ts';
-import { reconstructRoof } from '../src/roof-reconstruct/index.ts';
+import { DEFAULT_EVIDENCE, type EvidenceParams, faceEvidence, fragmentOf, measureFaces, ownCreaseM, ownFacingOf, realFaces } from '../src/roof-reconstruct/faces-evidence.ts';
+import { reconstructRoof, toRoof3d } from '../src/roof-reconstruct/index.ts';
 import { buildFaces, DEFAULT_PLANE_PARAMS, type FaceHooks, type Faces, type FoundPlane, type Plane, type PlaneParams } from '../src/roof-reconstruct/planes.ts';
 
 const S = 0.1;
@@ -270,6 +270,35 @@ describe('reconstructRoof: the evidence switch', () => {
     const off = reconstructRoof(raster, { col: W / 2, row: W / 2 }, { seed: 7 });
     expect(on).not.toBeNull();
     expect(on!.faces.length).toBe(2);
-    expect(JSON.stringify(on)).toBe(JSON.stringify(off));
+    // The same roof; on, each face says what it stands on (a ridge of its own), off nothing does.
+    expect(on!.faces.map((f) => f.evidence)).toEqual(['crease', 'crease']);
+    expect(off!.faces.every((f) => f.evidence === undefined)).toBe(true);
+    const bare = on!.faces.map((f) => {
+      const g = { ...f };
+      delete g.evidence;
+      return g;
+    });
+    expect(JSON.stringify({ ...on, faces: bare })).toBe(JSON.stringify(off));
+    // Stored as it is measured; a stored roof without it reads as before.
+    const stored = toRoof3d(on!, (x, y) => [x, y], { imageryQuality: 'HIGH', imageryDate: null });
+    expect(stored.faces.map((f) => f.evidence)).toEqual(['crease', 'crease']);
+    expect(toRoof3d(off!, (x, y) => [x, y], { imageryQuality: 'HIGH', imageryDate: null }).faces.every((f) => !('evidence' in f))).toBe(true);
+  });
+});
+
+describe('faceEvidence: what a face stands on (stored as Roof3dFace.evidence)', () => {
+  it("a gable dormer's faces have a ridge of their own; the slope under them is the only face looking its way", () => {
+    const sc = dormer(false);
+    expect(faceEvidence(sc.g, S, sc.dsm, sc.faces, DEFAULT_PLANE_PARAMS, null, DEFAULT_EVIDENCE)).toEqual(['facing', 'crease', 'crease']);
+    // realFaces is 1 exactly where there is evidence.
+    expect([...realFaces(sc.g, S, sc.dsm, sc.faces, DEFAULT_PLANE_PARAMS, null, DEFAULT_EVIDENCE)]).toEqual([1, 1, 1]);
+  });
+
+  it('a strip along a ridge (a fragment of its slope) has none, whatever it meets across the ridge', () => {
+    const sc = roundedRidge();
+    const ev = faceEvidence(sc.g, S, sc.dsm, sc.faces, DEFAULT_PLANE_PARAMS, null, DEFAULT_EVIDENCE);
+    expect(ev[2]).toBeNull();
+    // ...while without the fragment rule it would stand on the ridge it meets.
+    expect(faceEvidence(sc.g, S, sc.dsm, sc.faces, DEFAULT_PLANE_PARAMS, null, { ...DEFAULT_EVIDENCE, fragWidthM: 0 })[2]).toBe('crease');
   });
 });

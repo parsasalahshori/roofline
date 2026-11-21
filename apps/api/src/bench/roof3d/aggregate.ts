@@ -41,6 +41,12 @@ export type CohortAgg = {
   faces: { median: number | null; total: number };
   slivers: number;
   thinFaces: number;
+  /**
+   * The thin faces that stand on evidence of their own (HouseMetrics.thinExcused), and the rest. Missing in reports
+   * made before the flag existed (read them as undefined: every thin face of such a report is unexcused).
+   */
+  thinExcused: number;
+  thinUnexcused: number;
   steepJunk: number;
   steepAny: number;
   vertices: { median: number | null };
@@ -217,6 +223,8 @@ export function aggregateSeed(ms: readonly HouseMetrics[]): CohortAgg {
     faces: { median: med(ok.map((m) => m.faces)), total: ok.reduce((t, m) => t + m.faces, 0) },
     slivers: ok.reduce((t, m) => t + m.slivers, 0),
     thinFaces: ok.reduce((t, m) => t + m.thinFaces, 0),
+    thinExcused: ok.reduce((t, m) => t + (m.thinExcused ?? 0), 0),
+    thinUnexcused: ok.reduce((t, m) => t + m.thinFaces - (m.thinExcused ?? 0), 0),
     steepJunk: ok.reduce((t, m) => t + m.steepJunk, 0),
     steepAny: ok.reduce((t, m) => t + m.steepAny, 0),
     vertices: { median: med(ok.map((m) => m.vertices)) },

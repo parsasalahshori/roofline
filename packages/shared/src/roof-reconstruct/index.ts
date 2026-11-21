@@ -13,7 +13,7 @@
 // 4. Topology: corners where faces meet, creases as straight plane intersections between corners, steps where the
 //    planes are far apart in height, eaves and rakes along the outline (topology.ts).
 import type { LngLat } from '../roof.ts';
-import type { Roof3d, Roof3dLineKind, RoofQuality, RoofQualityReason } from '../roof-3d.ts';
+import type { Roof3d, Roof3dFaceEvidence, Roof3dLineKind, RoofQuality, RoofQualityReason } from '../roof-3d.ts';
 import { dist, nearestOnSegment, pointInRing, signedArea, simplifyClosedIdx, type XY } from './geom.ts';
 import { DEFAULT_OUTLINE_PARAMS, mainAxis, maskBoundary, type OutlineParams, squareOutline } from './outline.ts';
 import { buildFaces, DEFAULT_PLANE_PARAMS, dissolve, type FaceHooks, type Faces, findPlanes, type FoundPlane, type Plane, type PlaneParams, refitFaces } from './planes.ts';
@@ -23,7 +23,7 @@ import { close, components, countSet, dilate, fillHoles, largestComponent, open,
 import { buildTopology, DEFAULT_TOPOLOGY_PARAMS, type LineFeatures, type TopologyParams } from './topology.ts';
 import { DEFAULT_PHOTO_EDGE, type PhotoEdge, type PhotoEdgeParams, photoEdges } from './outline-photo.ts';
 import { boxShare, crownFromGreen, EAVE_SUPPORT, integral } from './eave-support.ts';
-import { DEFAULT_EVIDENCE, type EvidenceParams, measureFaces, mergeFragments, nearTreesOf, realFaces } from './faces-evidence.ts';
+import { DEFAULT_EVIDENCE, type EvidenceParams, faceEvidence, measureFaces, mergeFragments, nearTreesOf, realFaces } from './faces-evidence.ts';
 import { DEFAULT_FACE_CLEANUP, type FaceCleanupParams, faceSupport, type WeakReason, weakCandidate, weakFaces } from './faces-cleanup.ts';
 import { inferHiddenEaves, type OutlinePlanesParams, type PlanesDecline } from './outline-planes.ts';
 import { DEFAULT_LIDAR_EDGE, type LidarCloud, type LidarEdgeParams, type LidarEdgeReport, lidarHiddenEdges } from './outline-lidar.ts';
@@ -185,6 +185,8 @@ export type LocalFace = {
    * from the slope across its ridge, or stacked strips on the plane through their crest and eave. Its heights are bowed.
    */
   fitted?: FittedKind;
+  /** The face's own evidence in the heights (faces-evidence.ts faceEvidence), set only while the evidence rule is on. */
+  evidence?: Roof3dFaceEvidence;
 };
 export type LocalLine = { kind: Roof3dLineKind; a: XY; b: XY; faces: number[]; lengthM: number; riseM: number };
 /** `clipped`: the roof runs off the height map's edge, so part of it is missing. */
@@ -816,6 +818,8 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   );
   if (opts.debug !== undefined) for (const gr of pitch.groups) opts.debug(`pitch group ${gr.pitchX12.toFixed(2)}/12: ${gr.faces.length} faces, ${gr.areaM2.toFixed(1)} m2`);
   if (opts.debug !== undefined) planes.forEach((p, k) => opts.debug!(`pitch face ${k}: fitted ${(Math.hypot(p.a, p.b) * 12).toFixed(4)}/12, ${(raw[k]! * scale).toFixed(3)} m2, reports ${pitch.pitchX12[k]!.toFixed(4)}${locked.has(p) ? `, ${locked.get(p)!}` : ''}`));
+  // Each face's own evidence (faces-evidence.ts), stored on it while the evidence rule is on (Roof3dFace.evidence).
+  const own = evidencePrm.enabled ? faceEvidence(g, s, dsm, { labels: faces.labels, planes }, planePrm, tree, evidencePrm) : null;
   const localFaces: LocalFace[] = planes.map((p0, k) => {
     // The plane in whole-raster coordinates: z = a (x - ox) + b (y - oy) + c.
     const plane: Plane = { a: p0.a, b: p0.b, c: p0.c - p0.a * ox - p0.b * oy };
@@ -834,6 +838,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
       flat: slope * 12 < FLAT_X12,
       label: shift(labelPoint(g, s, faces.labels, k, topo.faces[k]!.ring)),
       ...(locked.has(p0) ? { fitted: locked.get(p0)! } : {}),
+      ...(own?.[k] != null ? { evidence: own[k]! } : {}),
     };
   });
   // Largest first (ties: west to east, then north to south), with the lines' face numbers following.
@@ -2020,6 +2025,7 @@ export function toRoof3d(
       ...(f.source !== undefined ? { source: f.source } : {}),
       ...(f.lidarShare !== undefined ? { lidarShare: f.lidarShare } : {}),
       ...(f.fitted !== undefined ? { fitted: f.fitted } : {}),
+      ...(f.evidence !== undefined ? { evidence: f.evidence } : {}),
     })),
     lines: local.lines.map((l) => ({
       kind: l.kind,

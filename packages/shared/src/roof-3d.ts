@@ -57,7 +57,18 @@ export type Roof3dFace = {
    * bowed heights, so the face is not checked against it.
    */
   fitted?: 'gable' | 'stack';
+  /**
+   * Set when the face stands on evidence of its own in the height map, read at run time (roof-reconstruct's
+   * faces-evidence.ts; only while that rule is on): 'crease', a ridge or hip of its own (the heights turn over along a
+   * metre or more of its boundary with a face turned well away at about its pitch); 'facing', no pitched neighbour faces
+   * its way. Such a face is a roof face whatever its size or width (a dormer's cheek, a hip end), not a strip of junk.
+   * Informational: it changes no area, line or quote.
+   */
+  evidence?: Roof3dFaceEvidence;
 };
+
+/** What a face's own evidence is (Roof3dFace.evidence). */
+export type Roof3dFaceEvidence = 'crease' | 'facing';
 
 export type Roof3dLine = {
   kind: Roof3dLineKind;
