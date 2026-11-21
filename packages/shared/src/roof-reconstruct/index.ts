@@ -23,6 +23,7 @@ import { close, components, countSet, dilate, fillHoles, largestComponent, open,
 import { buildTopology, DEFAULT_TOPOLOGY_PARAMS, type LineFeatures, type TopologyParams } from './topology.ts';
 import { DEFAULT_PHOTO_EDGE, type PhotoEdge, type PhotoEdgeParams, photoEdges } from './outline-photo.ts';
 import { boxShare, crownFromGreen, EAVE_SUPPORT, integral } from './eave-support.ts';
+import { measureFaces } from './faces-evidence.ts';
 import { DEFAULT_FACE_CLEANUP, type FaceCleanupParams, faceSupport, type WeakReason, weakCandidate, weakFaces } from './faces-cleanup.ts';
 import { inferHiddenEaves, type OutlinePlanesParams, type PlanesDecline } from './outline-planes.ts';
 import { DEFAULT_LIDAR_EDGE, type LidarCloud, type LidarEdgeParams, type LidarEdgeReport, lidarHiddenEdges } from './outline-lidar.ts';
@@ -511,6 +512,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   let planes: Plane[];
   ({ faces, planes } = withPrimitives(g, dsm, roof, faces, tree));
   opts.trace?.('faces', { c0, r0, w: g.w, h: g.h, labels: faces.labels, planes });
+  if (opts.debug !== undefined && opts.trace !== undefined) for (const [k, m] of measureFaces(g, s, dsm, { labels: faces.labels, planes }, planePrm, tree).entries()) opts.debug(`evidence ${JSON.stringify({ k, ...m })}`);
 
   // 2a. Roof under canopy or in shade the mask missed: grown along the faces' own planes where the heights show it,
   //     bridged across notches a crown bites out of one roof line (canopy.ts). Only with Google's box (the bound) and the
