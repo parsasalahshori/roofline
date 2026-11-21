@@ -238,6 +238,12 @@ brief: ~/RooflineWork/plans/roof4-brief.md (addendum to roof3-brief.md). Base ro
 - lines: handover 18.0 -> 17.0 (evidence on 15.4 -> 14.3) but chords across bends and a ring not covering its face (7 gate fails, one house). Naming rule
   `topology.eaveAlong` (a line level on the draining upper face where the planes part = its eave): evidence-off 17.0 -> 16.3, on 14.3 -> 14.2.
 
+- refine merge v2 (205732ed -> integration 606dbc7a; evidence veto, drift guard): dev 17.5 / 14.8 (evidence on); unseen split STILL worse:
+  default 20.2 -> 21.6, evidence on 17.9 -> 19.5. One held-out house loses 8 of 25 faces (ev-47743011: valley 108 -> 59 / 229). Three pair kinds merged there:
+  coplanar big faces whose boundary carried scored length; same facing with pitch 3/12 apart on 3-5 m2 faces; low-slope different facings.
+  HELD-OUT HOUSE RELEASED for diagnosis to the refine agent: ev-47743011 (report held-out with and without it from now on). refine.enabled stays off.
+  tr-fort-smith checker failure with merge on COUNTS (two faces 1.4/12 apart each matching a Google segment are two faces).
+
 ## next
 - wait for the seven reports; merge winners behind the gates; sealed fresh set once; reviewer; remediation; algorithm 8;
   then ask the owner to merge + deploy.
