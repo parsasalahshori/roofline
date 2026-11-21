@@ -2,6 +2,8 @@ import { describe, expect, test } from 'vitest';
 import type { CohortReport, Stat } from '../../src/bench/roof3d/aggregate.ts';
 import { DEFAULT_GATES, GatesSchema, compareSplitGap, compareSplits, gatesFailed, formatGates } from '../../src/bench/roof3d/gates.ts';
 import type { SplitReport } from '../../src/bench/roof3d/report.ts';
+import { thinCounts } from '../../src/bench/roof3d/metrics.ts';
+import { rectRoof, toLngLat } from './helpers.ts';
 
 const st = (v: number): Stat => ({ mean: v, min: v, max: v });
 
@@ -181,6 +183,20 @@ describe('the gates are the contract', () => {
       gatesFailed(compareSplits({ houses: 5, cohorts: { 'canopy-light': before } }, { houses: 5, cohorts: { 'canopy-light': cohort(cur) } }, excusing, { base: 1, cur: 1 })).map((r) => r.rule);
     expect(vsOld({ thin: 5, excused: 3 })).toEqual([]);
     expect(vsOld({ thin: 5, excused: 2 })).toEqual(['thin faces without evidence of their own (simple and canopy cohorts)']);
+  });
+
+  test('a thin face counts as excused only when it says what it stands on (evidence) or was fitted from a shape', () => {
+    const origin: [number, number] = [-92.3, 34.75];
+    const roof = rectRoof(origin, 14, 9, 6);
+    // Three strips 0.6 m wide and 8 m long (52 sq ft, under the 0.9 m thin width): plain, with evidence, fitted.
+    const strip = (y0: number) => [toLngLat(origin, 2, y0), toLngLat(origin, 10, y0), toLngLat(origin, 10, y0 + 0.6), toLngLat(origin, 2, y0 + 0.6)];
+    const face = roof.faces[0]!;
+    const plain = { ...face, ring: strip(1), planAreaSqFt: 51.7, slopedAreaSqFt: 57.8 };
+    roof.faces.push(plain, { ...plain, ring: strip(2), evidence: 'crease' as const }, { ...plain, ring: strip(3), fitted: 'gable' as const });
+    expect(thinCounts(roof)).toEqual({ thin: 3, excused: 2 });
+    // Without the flags every thin face counts.
+    roof.faces = roof.faces.map((f) => ({ ...f, evidence: undefined, fitted: undefined }));
+    expect(thinCounts(roof)).toEqual({ thin: 3, excused: 0 });
   });
 
   test('a house that no longer reconstructs fails, by throwing or by finding no roof', () => {

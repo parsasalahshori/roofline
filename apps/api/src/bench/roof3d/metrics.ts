@@ -48,8 +48,9 @@ export type HouseMetrics = {
   /** Faces of 25 sq ft or more that are thinner than thinM: slivers along an edge. Informational. */
   thinFaces: number;
   /**
-   * Those of the thin faces that stand on evidence of their own in the heights (Roof3dFace.evidence: a ridge, hip or
-   * facing of their own, a dormer's cheek or a hip end, not a strip of junk). Absent in reports made before the flag.
+   * Those of the thin faces that stand on evidence of their own: Roof3dFace.evidence (a ridge, hip or facing of their
+   * own in the heights: a dormer's cheek, a hip end, not a strip of junk) or Roof3dFace.fitted (a face fitted from a
+   * roof shape, not cut from the heights by the plane search). Absent in reports made before the flags.
    */
   thinExcused?: number;
   /** Faces steeper than 18/12 without a Google segment that steep (the checker's steep faces). */
@@ -195,10 +196,12 @@ function proxyOf(h: LoadedHouse, roof: Roof3d, plan: number): Proxy {
   };
 }
 
-/** The metrics of one reconstruction of one house. `unusable`: the estimator's own verdict (roof-3d.ts unusable()). */
-export function houseMetrics(h: LoadedHouse, roof: Roof3d, check: Acceptance, json: string, unusable: boolean, p: MetricParams = DEFAULT_METRICS): HouseMetrics {
+/**
+ * Faces of 25 sq ft or more thinner than thinM (HouseMetrics.thinFaces), and how many of them stand on evidence of
+ * their own (HouseMetrics.thinExcused: Roof3dFace.evidence or Roof3dFace.fitted).
+ */
+export function thinCounts(roof: Roof3d, p: MetricParams = DEFAULT_METRICS): { thin: number; excused: number } {
   const zone = zoneOfLngLat(roof.outline[0]![0], roof.outline[0]![1]);
-  const outline = ringToXY(zone, roof.outline);
   const thinOnes = roof.faces.filter((f) => {
     if (f.planAreaSqFt < TARGETS.junkSqFt) return false;
     const ring = ringToXY(zone, f.ring);
@@ -206,7 +209,14 @@ export function houseMetrics(h: LoadedHouse, roof: Roof3d, check: Acceptance, js
     for (let i = 0; i + 1 < ring.length; i++) perimeter += Math.hypot(ring[i + 1]![0] - ring[i]![0], ring[i + 1]![1] - ring[i]![1]);
     return perimeter > 0 && (2 * Math.abs(ringArea(ring))) / perimeter < p.thinM;
   });
-  const thin = thinOnes.length;
+  return { thin: thinOnes.length, excused: thinOnes.filter((f) => f.evidence !== undefined || f.fitted !== undefined).length };
+}
+
+/** The metrics of one reconstruction of one house. `unusable`: the estimator's own verdict (roof-3d.ts unusable()). */
+export function houseMetrics(h: LoadedHouse, roof: Roof3d, check: Acceptance, json: string, unusable: boolean, p: MetricParams = DEFAULT_METRICS): HouseMetrics {
+  const zone = zoneOfLngLat(roof.outline[0]![0], roof.outline[0]![1]);
+  const outline = ringToXY(zone, roof.outline);
+  const { thin, excused } = thinCounts(roof, p);
   const plan = roof.faces.reduce((t, f) => t + f.planAreaSqFt, 0);
   const sloped = roof.faces.reduce((t, f) => t + f.slopedAreaSqFt, 0);
   const reasons = roof.quality?.reasons ?? [];
@@ -237,7 +247,7 @@ export function houseMetrics(h: LoadedHouse, roof: Roof3d, check: Acceptance, js
     faces: roof.faces.length,
     slivers: check.junkFaces,
     thinFaces: thin,
-    thinExcused: thinOnes.filter((f) => f.evidence !== undefined).length,
+    thinExcused: excused,
     steepJunk: check.steepFaces,
     steepAny: roof.faces.filter((f) => f.pitchX12 > TARGETS.steepX12).length,
     vertices: roof.outline.length,
