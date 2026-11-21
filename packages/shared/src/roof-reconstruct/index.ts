@@ -426,6 +426,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   }
 
   // 2. Planes and faces.
+  opts.debug?.(`crop: columns from ${c0}, rows from ${r0}, ${g.w} x ${g.h}`);
   const found = findPlanes(g, s, dsm, roof, rng, planePrm, tree, opts.debug);
   if (found.length === 0) return null;
   if (opts.trace !== undefined) {
@@ -435,7 +436,15 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     });
     opts.trace('planes', { c0, r0, w: g.w, h: g.h, labels: lab, planes: found.map((f) => f.plane) });
   }
-  let faces = buildFaces(g, s, dsm, roof, found, planePrm, tree, opts.debug);
+  // Unsure faces' pixels (faces-cleanup.ts, unsureThinM): the planes found late in a long search (after the first
+  // surePlanes), and the faces buildFaces keeps only for a ridge or a facing of their own. On this crop's pixels: a
+  // step that re-cuts the crop (canopy completion, a hidden-edge move) leaves the faces as they are.
+  const unsure = new Uint8Array(g.w * g.h);
+  for (let k = planePrm.surePlanes; k < found.length; k++) {
+    const patch = found[k]!.patch;
+    for (let i = 0; i < patch.length; i++) if (patch[i] === 1) unsure[i] = 1;
+  }
+  let faces = buildFaces(g, s, dsm, roof, found, planePrm, tree, opts.debug, unsure);
   if (faces.planes.length === 0) return null;
   let planes = refitFaces(g, s, dsm, faces, planePrm.tolM, planePrm.maxPitchX12);
   opts.trace?.('faces', { c0, r0, w: g.w, h: g.h, labels: faces.labels, planes });
@@ -574,12 +583,19 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     const crownBeside = cleanupPrm.enabled && cleanupPrm.crownShare <= 1 ? crownBesideOf(raster, g, c0, r0, dsm) : null;
     for (let pass = 0; pass < 4 && faces.planes.length > 1; pass++) {
       const tiny = new Set(topo.faces.map((f, k) => (Math.abs(signedArea(f.ring)) < planePrm.tinyFaceM2 ? k : -1)).filter((k) => k >= 0));
+      if (opts.debug !== undefined) {
+        for (const k of tiny) {
+          const at = labelPoint(g, s, faces.labels, k, topo.faces[k]!.ring);
+          opts.debug(`faces: tiny-polygon face at ${at.x.toFixed(1)},${at.y.toFixed(1)}: ${Math.abs(signedArea(topo.faces[k]!.ring)).toFixed(1)} m2, ${(Math.hypot(planes[k]!.a, planes[k]!.b) * 12).toFixed(1)}/12 facing ${azimuthOf(planes[k]!).toFixed(0)}`);
+        }
+      }
       if (cleanupPrm.enabled) {
-        const support = faceSupport(g, s, dsm, faces.labels, planes, topo.faces.map((f) => f.ring), planePrm, (f) => weakCandidate(f, cleanupPrm), crownBeside);
+        const support = faceSupport(g, s, dsm, faces.labels, planes, topo.faces.map((f) => f.ring), planePrm, (f) => weakCandidate(f, cleanupPrm), crownBeside, unsure.length === faces.labels.length ? unsure : null);
         if (opts.debug !== undefined) {
           support.forEach((f, k) => {
             if (weakCandidate(f, cleanupPrm) || f.crownShare > 0) {
-              opts.debug!(`face ${k} candidate: ${f.widthM.toFixed(2)} m wide, ${f.areaM2.toFixed(1)} m2, ${f.pitchX12.toFixed(1)}/12, on plane ${f.planeShare?.toFixed(2) ?? '-'}, neighbour ${f.minNeighbourDeg.toFixed(0)} deg, edge ${f.edgeShare.toFixed(2)}, thick ${f.thicknessM?.toFixed(2) ?? '-'}, crown ${f.crownShare.toFixed(2)}, main neighbour ${f.mainNeighbourX12?.toFixed(1) ?? '-'}/12`);
+              const at = labelPoint(g, s, faces.labels, k, topo.faces[k]!.ring);
+              opts.debug!(`pass ${pass} face ${k} at ${at.x.toFixed(1)},${at.y.toFixed(1)} facing ${azimuthOf(planes[k]!).toFixed(0)} candidate: ${f.widthM.toFixed(2)} m wide, ${f.areaM2.toFixed(1)} m2, ${f.pitchX12.toFixed(1)}/12, on plane ${f.planeShare?.toFixed(2) ?? '-'}, neighbour ${f.minNeighbourDeg.toFixed(0)} deg, edge ${f.edgeShare.toFixed(2)}, thick ${f.thicknessM?.toFixed(2) ?? '-'}, crown ${f.crownShare.toFixed(2)}, main neighbour ${f.mainNeighbourX12?.toFixed(1) ?? '-'}/12, unsure ${f.unsureShare.toFixed(2)}`);
             }
           });
         }
@@ -588,7 +604,10 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
           if (tiny.has(k)) continue;
           tiny.add(k);
           dissolved[why] = (dissolved[why] ?? 0) + 1;
-          opts.debug?.(`face ${k} dissolved: ${why}`);
+          if (opts.debug !== undefined) {
+            const at = labelPoint(g, s, faces.labels, k, topo.faces[k]!.ring);
+            opts.debug(`faces: ${why} face at ${at.x.toFixed(1)},${at.y.toFixed(1)}: ${support[k]!.areaM2.toFixed(1)} m2, ${support[k]!.pitchX12.toFixed(1)}/12 facing ${azimuthOf(planes[k]!).toFixed(0)}`);
+          }
         }
       }
       if (tiny.size === 0 || tiny.size >= faces.planes.length) break;
