@@ -3,6 +3,8 @@ import { FakeBillingProvider } from './fakes/billing.ts';
 import { stripeFor } from './stripe.ts';
 
 export interface BillingProvider { readonly configured: boolean;
+  /** True for the demo's stand-in: a checkout (or a plan change) finishes at once, with no page to pay on and no webhook to wait for. */
+  readonly settlesAtOnce?: boolean;
   ensureCustomer(i: { companyId: string; name: string; email: string | null; existingCustomerId: string | null }): Promise<{ customerId: string }>;
   createCheckout(i: { customerId: string; companyId: string; planKey: string; priceLookupKeys: string[]; trialEnd: Date | null;
     successUrl: string; cancelUrl: string }): Promise<{ url: string }>;
@@ -38,6 +40,6 @@ export class UnconfiguredBillingProvider implements BillingProvider {
 
 /** The billing provider the app uses: the fake under FAKE_PROVIDERS, else Stripe when configured. */
 export function createBillingProvider(config: Config): BillingProvider {
-  if (config.FAKE_PROVIDERS) return new FakeBillingProvider();
+  if (config.FAKE_PROVIDERS) return new FakeBillingProvider({ settlesAtOnce: true });
   return stripeFor(config) ?? new UnconfiguredBillingProvider();
 }
