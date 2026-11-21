@@ -42,6 +42,11 @@ export type PitchParams = {
    */
   offsetArea: boolean;
   /**
+   * Whether the calibration offset is taken off a face measured by lidar too (PitchFace.uncalibrated is then ignored),
+   * as before round 3. False (the default): the offset is for the height map it was measured on, not the lidar's.
+   */
+  offsetLidar: boolean;
+  /**
    * Whether a face whose plane was not fitted on its own heights (PitchFace.fitted: a gable slope mirrored from the
    * slope across its ridge, primitives.ts) counts as a reading of the roof's pitch. False (the default): it is a copy
    * of the reading it was mirrored from, so it joins that reading's group and reports the group's pitch, but neither
@@ -86,6 +91,7 @@ export const DEFAULT_PITCH_PARAMS: PitchParams = {
   offsetX12: 0,
   offsetShare: 0.1,
   offsetArea: false,
+  offsetLidar: false,
   fittedVote: false,
   stackChord: true,
   stepShare: 0.15,
@@ -149,7 +155,8 @@ export function reportedPitches(faces: readonly PitchFace[], prm: PitchParams = 
     if (!(prm.offsetX12 > 0) || !Number.isFinite(p) || p <= 0) return p;
     return prm.offsetShare * (p + prm.offsetX12) >= prm.offsetX12 ? p + prm.offsetX12 : p / (1 - prm.offsetShare);
   };
-  const out = faces.map((f) => (f.uncalibrated === true ? lift(f.pitchX12) : f.pitchX12));
+  const own = (f: PitchFace) => f.uncalibrated === true && !prm.offsetLidar;
+  const out = faces.map((f) => (own(f) ? lift(f.pitchX12) : f.pitchX12));
   const read: readonly number[] = out.slice();
   const grouped = new Set<number>();
   const groups: PitchGroup[] = [];
@@ -167,8 +174,8 @@ export function reportedPitches(faces: readonly PitchFace[], prm: PitchParams = 
     const readArea = (m: readonly number[]) => m.reduce((t, k) => t + (reads(k) ? faces[k]!.areaM2 : 0), 0);
     // A group's pitch: the median of its readings (of all its faces when none of them is a reading).
     const centre = (m: readonly number[]) => {
-      const own = m.filter(reads);
-      return weightedMedian((own.length > 0 ? own : m).map((k) => ({ v: read[k]!, w: faces[k]!.areaM2 })));
+      const readings = m.filter(reads);
+      return weightedMedian((readings.length > 0 ? readings : m).map((k) => ({ v: read[k]!, w: faces[k]!.areaM2 })));
     };
     while (free.length >= prm.minFaces) {
       // The pitch (one of the readings) with the most roof read within tolerance of it. With no reading left, as before.
@@ -229,9 +236,12 @@ export function reportedPitches(faces: readonly PitchFace[], prm: PitchParams = 
       if (Number.isFinite(p) && p > 0) out[k] = p - Math.min(prm.offsetX12, prm.offsetShare * p);
     }
   }
-  // A reading not taken on the calibrated map that stands alone: as read.
+  // A reading not taken on the calibrated map: alone, as read; in a group, the group's pitch on its own scale. Its
+  // sloped area follows the pitch it reports (keeping the pitch before the offset is for the calibrated map's faces).
   faces.forEach((f, k) => {
-    if (f.uncalibrated === true && !grouped.has(k)) out[k] = pooled[k] = f.pitchX12;
+    if (!own(f)) return;
+    if (!grouped.has(k)) out[k] = f.pitchX12;
+    pooled[k] = out[k]!;
   });
   return { pitchX12: out, areaPitchX12: prm.offsetArea ? out : pooled, groups };
 }
