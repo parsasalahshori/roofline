@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { OnCallMember } from '@roofline/shared';
@@ -110,7 +110,10 @@ describe('OnCallList', () => {
 
   it('gives the up, down and remove buttons a 40px minimum size in the stylesheet', () => {
     // The web tests run under jsdom, where import.meta.url is not a file URL, so the path comes from the working directory
-    const css = readFileSync(resolve(process.cwd(), 'apps/web/src/features/front-desk/settings/OnCallList.module.css'), 'utf8');
+    // (the repository root, or apps/web when the web project runs on its own).
+    const rel = 'src/features/front-desk/settings/OnCallList.module.css';
+    const file = [resolve(process.cwd(), 'apps/web', rel), resolve(process.cwd(), rel)].find((f) => existsSync(f)) ?? rel;
+    const css = readFileSync(file, 'utf8');
     expect(css).toContain('min-width: 40px');
     expect(css).toContain('min-height: 40px');
   });

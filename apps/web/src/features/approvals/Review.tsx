@@ -320,7 +320,8 @@ export function Review({ taskId, app = 'approvals' }: { taskId: string; app?: Re
         {mode === 'review' ? (
           <ReviewBar
             summary={summarizeApproval(reviewSteps)}
-            spends={reviewSteps.some((item) => item.approvalClass === 'spend')}
+            // The ad-accounts note is about ads only: an exact roof report also spends, from the Roofline bill.
+            spends={ordered.some((item) => item.approvalClass === 'spend' && item.type !== 'order_exact_report')}
             approving={approving}
             notice={notice}
             onApprove={onApprove}

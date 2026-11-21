@@ -631,6 +631,16 @@ describe('the review screen', () => {
     expect(within(steps).getByText('Turned off')).toBeInTheDocument();
   });
 
+  it('an exact roof report is a spend, but not ad spend: the bar does not talk about ad accounts', async () => {
+    const plan = planTwo();
+    const report = { ...plan, steps: plan.steps.map((step) => (step.approvalClass === 'spend' ? { ...step, type: 'order_exact_report' } : step)) };
+    api = stubApi({ 'GET /api/approvals/t1': () => ({ body: report }) });
+    renderAt(<Review taskId="t1" />, '/approvals/t1');
+    const bar = await screen.findByRole('group', { name: review.barLabel });
+    expect(within(bar).queryByText(review.footerNoteSpend)).toBeNull();
+    expect(within(bar).getByText(review.footerNote)).toBeInTheDocument();
+  });
+
   it('keeps Approve in a bar of its own, with Not now', async () => {
     api = stubApi({ 'GET /api/approvals/t1': () => ({ body: planTwo() }) });
     renderAt(<Review taskId="t1" />, '/approvals/t1');

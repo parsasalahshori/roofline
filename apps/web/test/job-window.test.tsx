@@ -591,6 +591,23 @@ describe('the details', () => {
 });
 
 describe('visits, quotes and agent tasks', () => {
+  it('New quote in a company with the back office opens the back office for this job, not the roof quote editor', async () => {
+    const withBackoffice = { ...ACCOUNT, company: { ...ACCOUNT.company, backofficeEnabled: true } } as typeof ACCOUNT;
+    const stub = signedIn(view(), {
+      // The back office the click lands on: its home lists, and the job choices of its New quote sheet.
+      'GET /api/backoffice/quotes': () => ({ body: { quotes: [] } }),
+      'GET /api/backoffice/orders': () => ({ body: { orders: [] } }),
+      'GET /api/backoffice/settings': () => ({ body: {} }),
+      'GET /api/jobs/board': () => ({ body: { columns: [] } }),
+    }, withBackoffice);
+    const { router, user } = renderJob();
+    const quotes = within(await screen.findByRole('region', { name: job.quotesTitle }));
+    await user.click(quotes.getByRole('button', { name: job.newQuote }));
+    await vi.waitFor(() => expect(router.state.location.pathname + router.state.location.search).toBe('/backoffice?job=j1'));
+    expect(stub.count('POST /api/jobs/j1/quotes')).toBe(0);
+  });
+
+
   it('a visit is a link to its page, with when and who', async () => {
     signedIn(view());
     renderJob();

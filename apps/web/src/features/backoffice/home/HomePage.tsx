@@ -1,7 +1,7 @@
 import { ORDER_STAGES } from '@roofline/shared';
 import { Banner, Button, Checkbox, EmptyState, Icon, Select, Skeleton, Tag, UiLink } from '@roofline/ui';
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import { ApiError } from '../../../api/client.ts';
 import { backoffice as copy } from '../../../copy/backoffice.ts';
 import { AppleSheet } from '../AppleSheet.tsx';
@@ -13,7 +13,14 @@ import styles from './home.module.css';
 
 /** Back office home: recent quotes with New quote, and the orders by stage with how many are stuck. */
 export function HomePage() {
-  const [starting, setStarting] = useState(false);
+  // A job page's New quote arrives as /backoffice?job=<id>: the sheet opens with that job picked.
+  const [params, setParams] = useSearchParams();
+  const forJob = params.get('job') ?? '';
+  const [starting, setStarting] = useState(forJob !== '');
+  const close = () => {
+    setStarting(false);
+    if (forJob !== '') setParams({}, { replace: true });
+  };
   return (
     <BackofficePage
       tab="home"
@@ -30,7 +37,7 @@ export function HomePage() {
             <QuotesPanel onNew={() => setStarting(true)} />
             <OrdersPanel />
           </div>
-          <NewQuoteSheet open={starting} onClose={() => setStarting(false)} />
+          <NewQuoteSheet open={starting} onClose={close} forJob={forJob} />
         </>
       )}
     </BackofficePage>
@@ -125,11 +132,11 @@ function OrdersPanel() {
   );
 }
 
-function NewQuoteSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+function NewQuoteSheet({ open, onClose, forJob }: { open: boolean; onClose: () => void; forJob: string }) {
   const navigate = useNavigate();
   const jobs = useJobChoices(open);
   const create = useCreateQuote();
-  const [jobId, setJobId] = useState('');
+  const [jobId, setJobId] = useState(forJob);
   const [importMeasured, setImportMeasured] = useState(false);
   const options = [
     { value: '', label: copy.home.jobPlaceholder },

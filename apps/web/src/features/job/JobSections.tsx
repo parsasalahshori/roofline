@@ -6,6 +6,8 @@ import { appointments } from '../../copy/appointments.ts';
 import { job } from '../../copy/job.ts';
 import { jobs } from '../../copy/jobs.ts';
 import { TASK_STATUS_LABEL } from '../../copy/status.ts';
+import { useMe } from '../../api/hooks.ts';
+import { canOpenBackoffice } from '../backoffice/access.ts';
 import { useIsPhone } from '../../shell/useIsPhone.ts';
 import { formatDollars } from '../jobs/format.ts';
 import { EmptyPanel } from '../jobs/states.tsx';
@@ -91,14 +93,24 @@ export function AppointmentsPanel({ view, className }: PanelProps) {
   );
 }
 
-/** The quotes on the job, each a link to its editor; New quote starts a draft and opens it. */
+/**
+ * The quotes on the job, each a link to its editor; New quote starts a draft and opens it. A company with the back
+ * office (a window company) quotes there, so New quote opens the back office's New quote for this job: the roof
+ * quote editor would price a window job as shingles.
+ */
 export function QuotesPanel({ view, className }: PanelProps) {
   const jobId = view.job.id;
   const navigate = useNavigate();
   const toast = useToast();
   const createQuote = useCreateQuote(jobId);
+  const me = useMe();
+  const inBackoffice = canOpenBackoffice(me.data);
 
   async function startQuote() {
+    if (inBackoffice) {
+      void navigate(`/backoffice?job=${encodeURIComponent(jobId)}`);
+      return;
+    }
     try {
       const { id } = await createQuote.mutateAsync();
       navigate(`/jobs/${jobId}/quotes/${id}`);
