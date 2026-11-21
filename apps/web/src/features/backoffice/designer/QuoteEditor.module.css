@@ -272,3 +272,21 @@
     grid-template-columns: minmax(0, 1fr) 420px;
   }
 }
+
+/* An accepted quote: price, extras and status are for reading only (the markup inside is made inert). */
+.lockable {
+  display: contents;
+}
+
+.approved {
+  color: var(--bo-green, #1f7a3d);
+  font-weight: 600;
+}
+
+.acceptRow {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  padding: 12px 16px;
+}

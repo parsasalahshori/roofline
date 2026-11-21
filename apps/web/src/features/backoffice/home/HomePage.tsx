@@ -1,5 +1,5 @@
 import { ORDER_STAGES } from '@roofline/shared';
-import { Banner, Button, EmptyState, Icon, Select, Skeleton, Tag, UiLink } from '@roofline/ui';
+import { Banner, Button, Checkbox, EmptyState, Icon, Select, Skeleton, Tag, UiLink } from '@roofline/ui';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { ApiError } from '../../../api/client.ts';
@@ -130,6 +130,7 @@ function NewQuoteSheet({ open, onClose }: { open: boolean; onClose: () => void }
   const jobs = useJobChoices(open);
   const create = useCreateQuote();
   const [jobId, setJobId] = useState('');
+  const [importMeasured, setImportMeasured] = useState(false);
   const options = [
     { value: '', label: copy.home.jobPlaceholder },
     ...(jobs.data ?? []).map((job) => ({ value: job.id, label: copy.home.jobOption(job.customerName, job.addressLine) })),
@@ -137,12 +138,15 @@ function NewQuoteSheet({ open, onClose }: { open: boolean; onClose: () => void }
   const message = create.error instanceof ApiError ? create.error.message : create.isError ? copy.saveFailed : null;
 
   function start() {
-    create.mutate(jobId, {
-      onSuccess: (id) => {
-        onClose();
-        void navigate('/backoffice/quotes/' + id);
+    create.mutate(
+      { jobId, importMeasured },
+      {
+        onSuccess: ({ id, measured }) => {
+          onClose();
+          void navigate('/backoffice/quotes/' + id, measured ? { state: { measured } } : undefined);
+        },
       },
-    });
+    );
   }
 
   return (
@@ -163,7 +167,10 @@ function NewQuoteSheet({ open, onClose }: { open: boolean; onClose: () => void }
         ) : jobs.data && jobs.data.length === 0 ? (
           <p className="bo-foot">{copy.home.noJobs}</p>
         ) : (
-          <Select label={copy.home.pickJob} help={copy.home.pickJobHelp} value={jobId} onChange={setJobId} options={options} />
+          <>
+            <Select label={copy.home.pickJob} help={copy.home.pickJobHelp} value={jobId} onChange={setJobId} options={options} />
+            <Checkbox label={copy.home.importMeasured} description={copy.home.importMeasuredHelp} checked={importMeasured} onChange={setImportMeasured} />
+          </>
         )}
         {message ? <Banner tone="danger">{message}</Banner> : null}
       </div>

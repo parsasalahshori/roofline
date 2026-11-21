@@ -13,10 +13,12 @@ import {
   getBackofficeSettings,
   getJob,
   getProductCatalog,
+  getQuoteDiscountApproval,
   listBackofficeOrderEvents,
   listBackofficeOrders,
   listBackofficeQuotes,
   moveBackofficeOrder,
+  recordQuoteDiscountApproval,
   saveBackofficeSettings,
   saveProductCatalog,
   setBackofficeQuoteVisual,
@@ -62,7 +64,8 @@ const LOCKED = 'This quote was accepted and is locked. Its order carries on from
 const ALREADY_ACCEPTED = 'This quote was already accepted.';
 const HAS_ERRORS = 'Fix the problems marked on the quote before accepting it.';
 const EMPTY = 'Draw at least one window or door before accepting the quote.';
-const NEEDS_APPROVAL = (max: number) => `A discount over ${max}% needs an office approval. Ask the office to accept this quote.`;
+const NEEDS_APPROVAL = (max: number) => `A discount over ${max}% needs an office approval. Ask the office to approve it.`;
+const NO_APPROVAL_NEEDED = 'This discount is within the limit, so it needs no approval.';
 const NO_MEASUREMENT = 'This address has no on-site window measurement to start from.';
 const WRONG_ADDRESS = 'That measurement is for a different address than this job.';
 const VISUAL_MESSAGE = 'Please check the house picture: the photo and the placed units.';
@@ -159,7 +162,7 @@ export function backofficeRoutes(deps: AppDeps): Router {
   async function loadQuote(ctx: TenantContext, id: string) {
     const found = await withTenant(pools, ctx, async (tx) => {
       const quote = await getBackofficeQuote(tx, ctx, id);
-      return quote === null ? null : { quote, catalog: await getProductCatalog(tx, ctx) };
+      return quote === null ? null : { quote, catalog: await getProductCatalog(tx, ctx), approval: await getQuoteDiscountApproval(tx, ctx, id) };
     });
     if (found === null) throw new AppError(404, MESSAGES.notFound);
     return found;
@@ -196,13 +199,13 @@ export function backofficeRoutes(deps: AppDeps): Router {
       return row === null ? null : { id: row.id, catalog, skippedMeasured };
     });
     if (created === null) throw new AppError(404, MESSAGES.notFound);
-    const { quote, catalog } = await loadQuote(ctx, created.id);
-    res.status(201).json({ ...toQuoteView(quote, catalog), ...(created.skippedMeasured !== undefined && { skippedMeasured: created.skippedMeasured }) });
+    const { quote, catalog, approval } = await loadQuote(ctx, created.id);
+    res.status(201).json({ ...toQuoteView(quote, catalog, approval), ...(created.skippedMeasured !== undefined && { skippedMeasured: created.skippedMeasured }) });
   });
 
   router.get('/quotes/:id', async (req, res) => {
-    const { quote, catalog } = await loadQuote(req.ctx, idParam(req.params.id));
-    res.json(toQuoteView(quote, catalog));
+    const { quote, catalog, approval } = await loadQuote(req.ctx, idParam(req.params.id));
+    res.json(toQuoteView(quote, catalog, approval));
   });
 
   router.put('/quotes/:id', async (req, res) => {
@@ -229,8 +232,28 @@ export function backofficeRoutes(deps: AppDeps): Router {
     });
     if (result === null) throw new AppError(404, MESSAGES.notFound);
     if (result === 'locked') throw new AppError(409, LOCKED);
-    const { quote, catalog } = await loadQuote(ctx, id);
-    res.json(toQuoteView(quote, catalog));
+    const { quote, catalog, approval } = await loadQuote(ctx, id);
+    res.json(toQuoteView(quote, catalog, approval));
+  });
+
+  // An owner or office user approves the discount as it stands now; the quote then counts it and a rep may accept it.
+  router.post('/quotes/:id/approve-discount', manage, async (req, res) => {
+    const { ctx } = req;
+    const id = idParam(req.params.id);
+    const now = clock.now();
+    const result = await withTenant(pools, ctx, async (tx) => {
+      const found = await getBackofficeQuote(tx, ctx, id);
+      if (found === null) return null;
+      if (found.quote.status === 'accepted') throw new AppError(409, ALREADY_ACCEPTED);
+      const catalog = await getProductCatalog(tx, ctx);
+      const priced = priceQuote({ designs: found.quote.designs, accessories: found.quote.accessories, discountPercent: found.quote.discountPercent }, catalog);
+      if (!priced.discountNeedsApproval) throw new AppError(409, NO_APPROVAL_NEEDED);
+      await recordQuoteDiscountApproval(tx, ctx, id, found.quote.discountPercent, now);
+      return true;
+    });
+    if (result === null) throw new AppError(404, MESSAGES.notFound);
+    const { quote, catalog, approval } = await loadQuote(ctx, id);
+    res.json(toQuoteView(quote, catalog, approval));
   });
 
   router.post('/quotes/:id/accept', async (req, res) => {
@@ -246,7 +269,14 @@ export function backofficeRoutes(deps: AppDeps): Router {
       const priced = priceQuote({ designs: quote.designs, accessories: quote.accessories, discountPercent: quote.discountPercent }, catalog);
       if (quote.designs.length === 0) throw new AppError(422, EMPTY);
       if (hasErrors(priced.issues)) throw new AppError(422, HAS_ERRORS);
-      if (priced.discountNeedsApproval && !can(ctx, 'approve_factory_order')) throw new AppError(403, NEEDS_APPROVAL(catalog.maxRepDiscountPercent));
+      if (priced.discountNeedsApproval) {
+        const approval = await getQuoteDiscountApproval(tx, ctx, id);
+        if (approval === null || approval.percent < quote.discountPercent) {
+          // The office and the owner may accept a discount over the limit: accepting it is their approval, and it is kept.
+          if (!can(ctx, 'approve_factory_order')) throw new AppError(403, NEEDS_APPROVAL(catalog.maxRepDiscountPercent));
+          await recordQuoteDiscountApproval(tx, ctx, id, quote.discountPercent, now);
+        }
+      }
       const totalCents = priced.totals[quote.tier].totalCents;
       const measurementIds = [...new Set(quote.designs.flatMap((d) => (d.sizeSource.kind === 'measured' ? [d.sizeSource.windowMeasurementId] : [])))];
       const windowOrderId = await findWindowOrderIdForMeasurements(tx, ctx, measurementIds);
@@ -355,7 +385,7 @@ export function backofficeRoutes(deps: AppDeps): Router {
     const { ctx } = req;
     const kind = req.params.kind as QuoteDocument;
     if (!QUOTE_DOCUMENTS.includes(kind)) throw new AppError(404, MESSAGES.notFound);
-    const { quote, catalog } = await loadQuote(ctx, idParam(req.params.id));
+    const { quote, catalog, approval } = await loadQuote(ctx, idParam(req.params.id));
     const extra = await withTenant(pools, ctx, async (tx) => {
       const [company] = await tx
         .select({ name: companies.name, phone: companies.phoneE164, email: companies.email, website: companies.website, street: companies.addressStreet, city: companies.addressCity, state: companies.addressState, zip: companies.addressZip, zone: companies.timezone })
@@ -368,7 +398,7 @@ export function backofficeRoutes(deps: AppDeps): Router {
     });
     const company = extra.company;
     const phone = extra.customer?.phones.find((p) => p.primary === true)?.e164 ?? extra.customer?.phones[0]?.e164 ?? null;
-    const view = toQuoteView(quote, catalog);
+    const view = toQuoteView(quote, catalog, approval);
     const doc = renderDocument({
       kind,
       company: {

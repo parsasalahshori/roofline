@@ -324,6 +324,67 @@ describe('accepting a quote', () => {
   });
 });
 
+describe('approving a discount', () => {
+  async function overLimitQuote(rep: SuperAgent, n = 1) {
+    const { jobId } = await jobFor(rep, { assignTo: t.seed.a.rep.userId, n });
+    const q = await newQuote(rep, jobId);
+    const saved = await save(rep, q, { designs: [unit()], discountPercent: 15 });
+    expect(saved.status).toBe(200);
+    expect((saved.body as BackofficeQuote).discountNeedsApproval).toBe(true);
+    expect((saved.body as BackofficeQuote).discountApprovedPercent).toBeNull();
+    return q;
+  }
+
+  it('lets only the owner or office approve; then the rep may accept, and the approval shows on the quote', async () => {
+    const rep = await who.as('rep');
+    const owner = await who.as('owner');
+    const q = await overLimitQuote(rep);
+
+    const byRep = await rep.post(`${BASE}/quotes/${q.id}/approve-discount`);
+    expect(byRep.status).toBe(403);
+    expect((await rep.post(`${BASE}/quotes/${q.id}/accept`)).status).toBe(403);
+
+    const approved = await owner.post(`${BASE}/quotes/${q.id}/approve-discount`);
+    expect(approved.status, JSON.stringify(approved.body)).toBe(200);
+    expect(approved.body).toMatchObject({ discountNeedsApproval: true, discountApprovedPercent: 15 });
+    expect((approved.body as BackofficeQuote).discountApprovedBy).toBeTruthy();
+    expect(((await rep.get(`${BASE}/quotes/${q.id}`)).body as BackofficeQuote).discountApprovedPercent).toBe(15);
+
+    const accepted = await rep.post(`${BASE}/quotes/${q.id}/accept`);
+    expect(accepted.status, JSON.stringify(accepted.body)).toBe(201);
+    expect(((await owner.post(`${BASE}/quotes/${q.id}/approve-discount`)).status)).toBe(409);
+  });
+
+  it('asks for a new approval when the discount goes up past the approved one, not when it comes down', async () => {
+    const rep = await who.as('rep');
+    const office = await who.as('office');
+    const q = await overLimitQuote(rep);
+    await office.post(`${BASE}/quotes/${q.id}/approve-discount`);
+    await save(rep, q, { designs: [unit()], discountPercent: 20 });
+    expect((await rep.post(`${BASE}/quotes/${q.id}/accept`)).status).toBe(403);
+    await save(rep, q, { designs: [unit()], discountPercent: 12 });
+    expect((await rep.post(`${BASE}/quotes/${q.id}/accept`)).status).toBe(201);
+  });
+
+  it('has nothing to approve inside the rep limit, and the office accepting an unapproved discount counts as approving it', async () => {
+    const rep = await who.as('rep');
+    const office = await who.as('office');
+    const { jobId } = await jobFor(rep, { assignTo: t.seed.a.rep.userId, n: 3 });
+    const q = await newQuote(rep, jobId);
+    await save(rep, q, { designs: [unit()], discountPercent: 5 });
+    expect((await office.post(`${BASE}/quotes/${q.id}/approve-discount`)).status).toBe(409);
+
+    const q2 = await overLimitQuote(rep, 2);
+    expect((await office.post(`${BASE}/quotes/${q2.id}/accept`)).status).toBe(201);
+    expect(((await office.get(`${BASE}/quotes/${q2.id}`)).body as BackofficeQuote).discountApprovedPercent).toBe(15);
+  });
+
+  it('is a 404 for a quote the person cannot see', async () => {
+    const owner = await who.as('owner');
+    expect((await owner.post(`${BASE}/quotes/00000000-0000-4000-8000-000000000000/approve-discount`)).status).toBe(404);
+  });
+});
+
 describe('orders and stage moves', () => {
   it('shows the board with days in stage, and an order with its events', async () => {
     const owner = await who.as('owner');

@@ -1,4 +1,4 @@
-import type { BackofficeOrderRow, BackofficeQuoteWithJob } from '@roofline/db';
+import type { BackofficeOrderRow, BackofficeQuoteWithJob, DiscountApproval } from '@roofline/db';
 import {
   priceQuote,
   totalUnits,
@@ -14,7 +14,7 @@ import {
 export const catalogFor = (found: BackofficeQuoteWithJob, current: ProductCatalog): ProductCatalog => found.quote.catalogSnapshot ?? current;
 
 /** The quote as GET/PUT answer it: stored drawings with every line, total and problem worked out now by the shared code. */
-export function toQuoteView(found: BackofficeQuoteWithJob, current: ProductCatalog): BackofficeQuote {
+export function toQuoteView(found: BackofficeQuoteWithJob, current: ProductCatalog, approval: DiscountApproval | null = null): BackofficeQuote {
   const { quote } = found;
   const catalog = catalogFor(found, current);
   const priced = priceQuote({ designs: quote.designs, accessories: quote.accessories, discountPercent: quote.discountPercent }, catalog);
@@ -33,6 +33,8 @@ export function toQuoteView(found: BackofficeQuoteWithJob, current: ProductCatal
     totals: priced.totals,
     issues: priced.issues,
     discountNeedsApproval: priced.discountNeedsApproval,
+    discountApprovedPercent: approval?.percent ?? null,
+    discountApprovedBy: approval?.byUserName ?? null,
     orderId: found.orderId,
     createdAt: quote.createdAt.toISOString(),
     updatedAt: quote.updatedAt.toISOString(),

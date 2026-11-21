@@ -2,9 +2,12 @@ import { BACKOFFICE_QUOTE_STATUSES, QUOTE_DOCUMENTS, TIERS, type BackofficeQuote
 import { Banner, Button, Icon, IconButton, Segmented, Skeleton } from '@roofline/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'react-router';
+import { useLocation, useNavigate, useParams } from 'react-router';
+import { useMe } from '../../../api/hooks.ts';
+import { ApiError } from '../../../api/client.ts';
 import { backofficeDesigner as copy } from '../../../copy/backofficeDesigner.ts';
-import { documentHref, pickDraft, quoteKey, useBackofficeCatalog, useBackofficeQuote, usePutQuote } from './api.ts';
+import { canEditBackoffice } from '../access.ts';
+import { documentHref, pickDraft, quoteKey, useAcceptQuote, useApproveDiscount, useBackofficeCatalog, useBackofficeQuote, usePutQuote } from './api.ts';
 import '../apple.css';
 import './apple.css';
 import { duplicateDesign, newDesign } from './designs.ts';
@@ -24,6 +27,11 @@ export function QuoteEditor() {
   const catalog = useBackofficeCatalog();
   const queryClient = useQueryClient();
   const put = usePutQuote(quoteId);
+  const approve = useApproveDiscount(quoteId);
+  const accept = useAcceptQuote(quoteId);
+  const me = useMe();
+  const navigate = useNavigate();
+  const imported = (useLocation().state as { measured?: { kept: number; skipped: number } } | null)?.measured;
   const autosave = useAutosave<QuoteDraft>((draft) => put.mutateAsync(draft));
   const draftRef = useRef<QuoteDraft | null>(null);
   const [draft, setDraftState] = useState<QuoteDraft | null>(null);
@@ -71,7 +79,12 @@ export function QuoteEditor() {
   const cat = catalog.data;
   const tier = current.tier;
   const total = preview.totals[tier];
-  const selected = current.designs.find((d) => d.id === selectedId) ?? null;
+  // An accepted quote is locked (its order carries on); everything on it is for reading.
+  const locked = quote.data.status === 'accepted';
+  const canApprove = canEditBackoffice(me.data?.role);
+  const approvedPercent = quote.data.discountApprovedPercent ?? null;
+  const discountApproved = !preview.discountNeedsApproval || (approvedPercent !== null && approvedPercent >= current.discountPercent);
+  const selected = locked ? null : (current.designs.find((d) => d.id === selectedId) ?? null);
   const issuesOf = (id: string) => preview.issues.filter((i) => i.designId === id);
   const errorCount = preview.issues.filter((i) => i.level === 'error').length;
 
@@ -91,6 +104,22 @@ export function QuoteEditor() {
     update((d) => ({ ...d, designs: d.designs.filter((x) => x.id !== design.id) }));
     setSelectedId(null);
   };
+
+  const blockedReason = current.designs.length === 0 ? copy.acceptNeedsDrawings : errorCount > 0 ? copy.acceptNeedsFixes : !discountApproved ? copy.acceptNeedsApproval : null;
+  const actionError = [approve, accept].find((m) => m.isError)?.error;
+  const actionMessage = actionError instanceof ApiError ? actionError.message : approve.isError ? copy.approveFailed : accept.isError ? copy.acceptFailed : null;
+
+  // What is on screen is saved first, so the server approves and accepts the same quote the person is looking at.
+  async function approveDiscount() {
+    accept.reset();
+    if (!(await autosave.flush())) return;
+    approve.mutate();
+  }
+  async function acceptQuote() {
+    approve.reset();
+    if (!(await autosave.flush())) return;
+    accept.mutate(undefined, { onSuccess: (order) => void navigate(`/backoffice/orders/${encodeURIComponent(order.id)}`) });
+  }
 
   const accessoryAmount = (accessoryId: string) => preview.lines[tier].find((l) => l.accessoryId === accessoryId)?.amountCents ?? 0;
   const addable = cat.accessories.filter((a) => !a.archived && !current.accessories.some((x) => x.accessoryId === a.id));
@@ -123,21 +152,29 @@ export function QuoteEditor() {
         <div className={styles.layout}>
           <main className={styles.main}>
             {autosave.state === 'error' ? (
-              <Banner tone="danger" action={<Button variant="default" size="sm" onClick={autosave.flush}>{copy.tryAgain}</Button>}>
+              <Banner tone="danger" action={<Button variant="default" size="sm" onClick={() => void autosave.flush()}>{copy.tryAgain}</Button>}>
                 {copy.saveFailedBody}
               </Banner>
             ) : null}
-            {errorCount > 0 ? <Banner tone="warning">{copy.problemsBanner(errorCount)}</Banner> : null}
+            {locked ? (
+              <Banner tone="info" action={quote.data.orderId ? <Button variant="default" size="sm" href={`/backoffice/orders/${encodeURIComponent(quote.data.orderId)}`}>{copy.openOrder}</Button> : undefined}>
+                {copy.lockedBanner}
+              </Banner>
+            ) : null}
+            {imported ? <Banner tone="info">{[copy.startedFromMeasured(imported.kept), imported.skipped > 0 ? copy.skippedMeasured(imported.skipped) : ''].filter(Boolean).join(' ')}</Banner> : null}
+            {errorCount > 0 && !locked ? <Banner tone="warning">{copy.problemsBanner(errorCount)}</Banner> : null}
 
             <section aria-labelledby="units-heading">
               <div className={styles.sectionHead}>
                 <h2 id="units-heading" className={styles.sectionTitle}>
                   {copy.units}
                 </h2>
-                <Button variant="primary" onClick={addUnit}>
-                  <Icon name="plus" size={18} />
-                  {copy.addUnit}
-                </Button>
+                {locked ? null : (
+                  <Button variant="primary" onClick={addUnit}>
+                    <Icon name="plus" size={18} />
+                    {copy.addUnit}
+                  </Button>
+                )}
               </div>
               {current.designs.length === 0 ? (
                 <p className={styles.empty}>{copy.noUnits}</p>
@@ -145,7 +182,7 @@ export function QuoteEditor() {
                 <ul className={styles.grid} data-compact={selected ? 'true' : undefined}>
                   {current.designs.map((d) => (
                     <li key={d.id}>
-                      <UnitCard design={d} catalog={cat} tier={tier} issues={issuesOf(d.id)} selected={d.id === selectedId} onOpen={() => setSelectedId(d.id === selectedId ? null : d.id)} />
+                      <UnitCard design={d} catalog={cat} tier={tier} issues={issuesOf(d.id)} selected={d.id === selectedId} onOpen={() => (locked ? undefined : setSelectedId(d.id === selectedId ? null : d.id))} />
                     </li>
                   ))}
                 </ul>
@@ -153,6 +190,7 @@ export function QuoteEditor() {
             </section>
 
             <div className={styles.summary}>
+              <div className={styles.lockable} inert={locked || undefined}>
               <Group title={copy.groups.price}>
                 <Row label={copy.tier} as="div" stacked>
                   <Segmented<Tier> label={copy.tier} value={tier} onChange={(t) => update((d) => ({ ...d, tier: t }))} options={TIERS.map((t) => ({ value: t, label: cat.tiers[t].label, count: dollars(preview.totals[t].totalCents) }))} />
@@ -206,9 +244,22 @@ export function QuoteEditor() {
                 ) : null}
                 {preview.discountNeedsApproval ? (
                   <Row label={copy.approvalLabel} as="div">
-                    <span className={styles.approval} role="status">
-                      {copy.needsApprovalShort}
-                    </span>
+                    {discountApproved ? (
+                      <span className={styles.approved} role="status">
+                        {copy.discountApprovedBy(quote.data.discountApprovedBy ?? null, approvedPercent ?? current.discountPercent)}
+                      </span>
+                    ) : (
+                      <>
+                        <span className={styles.approval} role="status">
+                          {canApprove ? copy.needsApprovalShort : copy.waitingForOffice}
+                        </span>
+                        {canApprove ? (
+                          <Button variant="default" size="sm" busy={approve.isPending} onClick={() => void approveDiscount()}>
+                            {approve.isPending ? copy.approving : copy.approveDiscount}
+                          </Button>
+                        ) : null}
+                      </>
+                    )}
                   </Row>
                 ) : null}
                 <Row label={copy.total} as="div">
@@ -220,9 +271,23 @@ export function QuoteEditor() {
 
               <Group title={copy.groups.status}>
                 <Row label={copy.status} as="div" stacked>
-                  <Segmented<BackofficeQuoteStatus> label={copy.status} value={current.status} onChange={(status) => update((d) => ({ ...d, status }))} options={BACKOFFICE_QUOTE_STATUSES.map((s) => ({ value: s, label: copy.statuses[s] }))} />
+                  {/* 'Accepted' is not a choice: only the Customer answer button below makes it (and the order). */}
+                  <Segmented<BackofficeQuoteStatus> label={copy.status} value={current.status} onChange={(status) => update((d) => ({ ...d, status }))} options={BACKOFFICE_QUOTE_STATUSES.filter((s) => s !== 'accepted' || locked).map((s) => ({ value: s, label: copy.statuses[s] }))} />
                 </Row>
               </Group>
+
+              </div>
+
+              {locked ? null : (
+                <Group title={copy.groups.accept} footer={blockedReason ?? copy.acceptHint}>
+                  <div className={styles.acceptRow}>
+                    <Button variant="primary" busy={accept.isPending} disabled={blockedReason !== null} onClick={() => void acceptQuote()}>
+                      {accept.isPending ? copy.accepting : copy.acceptQuote}
+                    </Button>
+                    {actionMessage ? <Banner tone="danger">{actionMessage}</Banner> : null}
+                  </div>
+                </Group>
+              )}
 
               <Group title={copy.groups.documents} footer={copy.documentsNote}>
                 {QUOTE_DOCUMENTS.map((kind) => (
