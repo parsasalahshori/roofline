@@ -194,6 +194,9 @@ brief: ~/RooflineWork/plans/roof3-brief.md. Base: roof2/integration 6a8b49ac + t
 | lines | roof3/lines | straight walls and creases, squared corners, no zig-zag round flat parts; low-slope hips | running |
 | pitch2 | roof3/pitch2 | steep and mixed-pitch roofs read low (9 for 12), pitch to area | running |
 
+- 14:5x: all five round-3 agents stopped on the Fable usage limit (reset 3 pm PT); work saved in their worktrees. Owner said
+  "Restart": all five resumed at 15:08 by message (same agents, same worktrees), told to land what they have first.
+
 ## next
 - wait for the five reports; merge winners behind the gates; sealed fresh set once; reviewer; remediation; algorithm 8;
   then ask the owner to merge + deploy.
