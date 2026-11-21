@@ -13,11 +13,13 @@ export function useJobsSubtitle(board: BoardView | undefined, filter: BoardFilte
   const waiting = useProposalsWaiting(board !== undefined && filter.archived !== true && !isNarrowed(filter));
   if (board === undefined) return null;
 
-  const open = board.columns.reduce((sum, column) => sum + column.count, 0);
-  if (filter.archived === true) return jobs.subtitle.archived(open);
+  if (filter.archived === true) return jobs.subtitle.archived(board.columns.reduce((sum, column) => sum + column.count, 0));
 
+  // Open means before Installed, as on Home: an installed job is finished, so it is neither counted nor in play
+  const openColumns = board.columns.filter((column) => column.stage !== 'installed');
+  const open = openColumns.reduce((sum, column) => sum + column.count, 0);
   const parts = [jobs.subtitle.open(open)];
-  const totals = board.columns.map((column) => column.totalCents).filter((total): total is number => total !== null);
+  const totals = openColumns.map((column) => column.totalCents).filter((total): total is number => total !== null);
   const inPlay = totals.reduce((sum, total) => sum + total, 0);
   if (totals.length > 0 && inPlay > 0) parts.push(jobs.subtitle.inPlay(formatDollars(inPlay)));
   if (waiting !== undefined && waiting > 0) parts.push(jobs.subtitle.waiting(waiting));

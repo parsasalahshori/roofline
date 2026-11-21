@@ -27,23 +27,25 @@ export const PAGE_SIZE = 50;
 
 export const customerKeys = {
   all: ['customers'] as const,
-  list: (params: { q: string; archived: boolean; offset: number }) => ['customers', 'list', params] as const,
+  list: (params: { q: string; archived: boolean; offset: number; tag: string; texting: '' | 'ok' | 'not' }) => ['customers', 'list', params] as const,
   view: (id: string) => ['customers', 'view', id] as const,
 };
 
-export type CustomersParams = { q: string; archived: boolean; offset: number };
+export type CustomersParams = { q: string; archived: boolean; offset: number; tag: string; texting: '' | 'ok' | 'not' };
 
-/** `GET /api/customers?q=&limit=50&offset=&includeArchived=true` (the last only when `archived`). Already sorted by name. */
-export function useCustomers({ q, archived, offset }: CustomersParams) {
+/** `GET /api/customers?q=&limit=50&offset=&includeArchived=true&tag=&texting=` (the last three only when set). Already sorted by name. */
+export function useCustomers({ q, archived, offset, tag, texting }: CustomersParams) {
   const term = q.trim();
   return useQuery({
-    queryKey: customerKeys.list({ q: term, archived, offset }),
+    queryKey: customerKeys.list({ q: term, archived, offset, tag, texting }),
     queryFn: ({ signal }) => {
       const query = new URLSearchParams();
       if (term !== '') query.set('q', term);
       query.set('limit', String(PAGE_SIZE));
       query.set('offset', String(offset));
       if (archived) query.set('includeArchived', 'true');
+      if (tag !== '') query.set('tag', tag);
+      if (texting !== '') query.set('texting', texting);
       return apiFetch<CustomerListPage>(`/api/customers?${query.toString()}`, { signal });
     },
     placeholderData: (previous) => previous,

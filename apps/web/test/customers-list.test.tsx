@@ -137,7 +137,7 @@ describe('customers list', () => {
     expect(table.getByText('Asked not to be texted')).toBeInTheDocument();
   });
 
-  it('the tag filter narrows the loaded rows with no new request', async () => {
+  it('the tag filter asks the server for that tag, so rows on every page can match, and the count is the server\'s', async () => {
     signedIn(ACCOUNT, {
       [listKey('limit=50&offset=0')]: () => ({
         body: page([
@@ -145,28 +145,33 @@ describe('customers list', () => {
           customer({ id: 'c2', displayName: 'Sam Gutter', tags: ['gutter'] }),
         ]),
       }),
+      [listKey('limit=50&offset=0&tag=gutter')]: () => ({ body: page([customer({ id: 'c2', displayName: 'Sam Gutter', tags: ['gutter'] })], 7) }),
     });
     const { user } = renderApp('/customers');
 
     await tableFor();
-    const before = api.count(listKey('limit=50&offset=0'));
     await chooseChip(user, customers.list.tagLabel, customers.list.allTags, 'gutter');
 
+    expect(await screen.findByText(customers.list.matches(7))).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Pat Homeowner' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Sam Gutter' })).toBeInTheDocument();
-    expect(api.count(listKey('limit=50&offset=0'))).toBe(before);
+    // The other tag is still on offer, though only the gutter rows are loaded now
+    await user.click(screen.getByRole('button', { name: `${customers.list.tagLabel}: gutter` }));
+    expect(await screen.findByRole('option', { name: 'roof' })).toBeInTheDocument();
   });
 
-  it('the texting filter OK shows only attested and written rows', async () => {
+  it('the texting filter OK asks the server for OK to text and shows what it sends', async () => {
     signedIn(ACCOUNT, {
-      [listKey('limit=50&offset=0')]: () =>
+      [listKey('limit=50&offset=0')]: () => ({ body: page(consentRows()) }),
+      [listKey('limit=50&offset=0&texting=ok')]: () =>
         ({
-          body: page([
-            customer({ id: 'c1', displayName: 'Pat Homeowner', smsConsent: { status: 'none', source: null, at: null } }),
-            customer({ id: 'c2', displayName: 'Sam Attested', smsConsent: { status: 'attested', source: null, at: null } }),
-            customer({ id: 'c3', displayName: 'Lee Written', smsConsent: { status: 'written', source: null, at: null } }),
-            customer({ id: 'c4', displayName: 'Robin Revoked', smsConsent: { status: 'revoked', source: null, at: null } }),
-          ]),
+          body: page(
+            [
+              customer({ id: 'c2', displayName: 'Sam Attested', smsConsent: { status: 'attested', source: null, at: null } }),
+              customer({ id: 'c3', displayName: 'Lee Written', smsConsent: { status: 'written', source: null, at: null } }),
+            ],
+            2,
+          ),
         }),
     });
     const { user } = renderApp('/customers');
@@ -174,23 +179,28 @@ describe('customers list', () => {
     await tableFor();
     await chooseChip(user, customers.list.textingLabel, customers.list.allTexting, customers.list.textingOk);
 
-    expect(screen.getByRole('link', { name: 'Sam Attested' })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Sam Attested' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Lee Written' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Pat Homeowner' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Robin Revoked' })).not.toBeInTheDocument();
+    expect(screen.getByText(customers.list.matches(2))).toBeInTheDocument();
   });
 
-  it('the Not OK to text filter shows only the rows that are not attested or written', async () => {
-    signedIn(ACCOUNT, { [listKey('limit=50&offset=0')]: () => ({ body: page(consentRows()) }) });
+  it('the Not OK to text filter asks the server for it, and a filter goes back to the first page', async () => {
+    const rows = (n: number) => Array.from({ length: n }, (_, i) => customer({ id: `c${i}`, displayName: `Person ${String(i).padStart(2, '0')}` }));
+    signedIn(ACCOUNT, {
+      [listKey('limit=50&offset=0')]: () => ({ body: page(rows(50), 120) }),
+      [listKey('limit=50&offset=50')]: () => ({ body: page(rows(50), 120) }),
+      [listKey('limit=50&offset=0&texting=not')]: () => ({ body: page([customer({ id: 'c9', displayName: 'Robin Revoked' })], 1) }),
+    });
     const { user } = renderApp('/customers');
 
     await tableFor();
+    await user.click(screen.getByRole('button', { name: customers.list.next }));
+    await waitFor(() => expect(api.calls.map((call) => call.url)).toContain('/api/customers?limit=50&offset=50'));
     await chooseChip(user, customers.list.textingLabel, customers.list.allTexting, customers.list.textingNot);
 
-    expect(screen.getByRole('link', { name: 'Pat Homeowner' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Sam Express' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Robin Revoked' })).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Lee Written' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Robin Revoked' })).toBeInTheDocument();
+    expect(api.calls.map((call) => call.url)).toContain('/api/customers?limit=50&offset=0&texting=not');
   });
 
   it('an owner sees the Download customers link; a rep does not', async () => {
@@ -378,6 +388,7 @@ describe('customers list', () => {
   it('a filter that matches nothing offers to clear the filters', async () => {
     signedIn(ACCOUNT, {
       [listKey('limit=50&offset=0')]: () => ({ body: page([customer({ id: 'c1', displayName: 'Pat Homeowner', tags: ['roof'] })]) }),
+      [listKey('limit=50&offset=0&texting=ok')]: () => ({ body: page([]) }),
     });
     const { user } = renderApp('/customers');
 

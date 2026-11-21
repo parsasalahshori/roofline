@@ -575,6 +575,32 @@ describe('search', () => {
   });
 });
 
+describe('the tag and texting filters', () => {
+  test('tag and texting narrow the whole list, not one page, and the total follows', async () => {
+    await create('owner', { displayName: 'Ann Roof', tags: ['roof'], smsConsentStatus: 'written', consentNote: 'signed form' });
+    await create('owner', { displayName: 'Bob Both', tags: ['roof', 'gutter'] });
+    await create('owner', { displayName: 'Cy Express', smsConsentStatus: 'express' });
+    await create('owner', { displayName: 'Di Written', smsConsentStatus: 'written', consentNote: 'signed form' });
+    const owner = await agentFor('owner');
+
+    const roof = await owner.get('/api/customers?tag=roof&limit=1&offset=1');
+    expect(roof.body.total).toBe(2);
+    expect(names(roof)).toEqual(['Bob Both']);
+    expect(names(await owner.get('/api/customers?tag=gutter'))).toEqual(['Bob Both']);
+    expect(names(await owner.get('/api/customers?tag=none-such'))).toEqual([]);
+
+    const ok = await owner.get('/api/customers?texting=ok');
+    expect(names(ok)).toEqual(['Ann Roof', 'Di Written']);
+    expect(ok.body.total).toBe(2);
+    expect(names(await owner.get('/api/customers?texting=not'))).toEqual(['Bob Both', 'Cy Express']);
+    expect(names(await owner.get('/api/customers?texting=ok&tag=roof'))).toEqual(['Ann Roof']);
+
+    const bad = await owner.get('/api/customers?texting=maybe');
+    expect(bad.status).toBe(400);
+    expect(bad.body.field).toBe('texting');
+  });
+});
+
 describe('archiving', () => {
   test('archived customers are hidden from the list unless includeArchived=true', async () => {
     const keep = await create('owner', { displayName: 'Keep' });

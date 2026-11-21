@@ -1,5 +1,5 @@
-import { and, asc, count, eq, isNull, ne, sql, type SQL } from 'drizzle-orm';
-import type { ConsentStatus } from '@roofline/shared';
+import { and, asc, count, eq, inArray, isNull, ne, notInArray, sql, type SQL } from 'drizzle-orm';
+import { MARKETING_CONSENT_STATUSES, type ConsentStatus } from '@roofline/shared';
 import { customers, type CustomerPhone, optOuts } from '../schema/index.ts';
 import { ForbiddenError } from '../errors.ts';
 import type { TenantContext, Tx } from '../tenant.ts';
@@ -254,6 +254,10 @@ export type ListCustomersOptions = {
   limit?: number;
   offset?: number;
   includeArchived?: boolean;
+  /** Only customers carrying this tag. */
+  tag?: string;
+  /** `ok`: customers who agreed to marketing texts; `not`: everyone else. */
+  texting?: 'ok' | 'not';
 };
 
 /** The customers the member may see, by name, with the count before paging. */
@@ -268,6 +272,9 @@ export async function listCustomers(
 
   const q = options.q?.trim() ?? '';
   if (q !== '') conditions.push(customerMatch(q));
+  if (options.tag !== undefined && options.tag !== '') conditions.push(sql`${customers.tags} @> ARRAY[${options.tag}]::text[]`);
+  if (options.texting === 'ok') conditions.push(inArray(customers.smsConsentStatus, [...MARKETING_CONSENT_STATUSES]));
+  if (options.texting === 'not') conditions.push(notInArray(customers.smsConsentStatus, [...MARKETING_CONSENT_STATUSES]));
 
   const where = and(...conditions);
   const rows = await tx

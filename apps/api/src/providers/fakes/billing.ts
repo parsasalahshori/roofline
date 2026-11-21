@@ -4,11 +4,16 @@ import {
   type BillingProvider,
 } from '../billing.ts';
 
-type Input<K extends Exclude<keyof BillingProvider, 'configured'>> = Parameters<BillingProvider[K]>[0];
+type Input<K extends Exclude<keyof BillingProvider, 'configured' | 'settlesAtOnce'>> = Parameters<BillingProvider[K]>[0];
 
 /** Deterministic billing provider: no network. Ids count up from 1 in call order. */
 export class FakeBillingProvider implements BillingProvider {
   readonly configured = true;
+  /**
+   * When true (the demo and the end-to-end stack), the checkout and portal addresses lead straight back into the app and the
+   * routes settle the checkout themselves: there is no Stripe page to pay on and no webhook to wait for.
+   */
+  readonly settlesAtOnce: boolean;
   readonly calls: { method: string; args: unknown[] }[] = [];
   readonly checkouts: Input<'createCheckout'>[] = [];
   readonly portals: Input<'createPortal'>[] = [];
@@ -24,6 +29,10 @@ export class FakeBillingProvider implements BillingProvider {
   private invoiceSeq = 0;
   private meterIds = new Set<string>();
   private invoiceByKey = new Map<string, string>();
+
+  constructor(opts: { settlesAtOnce?: boolean } = {}) {
+    this.settlesAtOnce = opts.settlesAtOnce === true;
+  }
 
   /** Makes the next `n` calls throw BillingUnavailableError. */
   failNext(n = 1, kind: 'unavailable' | 'refused' = 'unavailable'): void {
@@ -55,14 +64,14 @@ export class FakeBillingProvider implements BillingProvider {
     this.record('createCheckout', [i]);
     this.checkoutSeq++;
     this.checkouts.push(i);
-    return { url: `https://checkout.stripe.test/c/cs_fake_${this.checkoutSeq}` };
+    return { url: this.settlesAtOnce ? i.successUrl : `https://checkout.stripe.test/c/cs_fake_${this.checkoutSeq}` };
   }
 
   async createPortal(i: Input<'createPortal'>): Promise<{ url: string }> {
     this.record('createPortal', [i]);
     this.portalSeq++;
     this.portals.push(i);
-    return { url: `https://billing.stripe.test/p/bps_fake_${this.portalSeq}` };
+    return { url: this.settlesAtOnce ? i.returnUrl : `https://billing.stripe.test/p/bps_fake_${this.portalSeq}` };
   }
 
   async changePlan(i: Input<'changePlan'>): Promise<void> {

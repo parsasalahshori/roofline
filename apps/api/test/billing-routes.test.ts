@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import { recordUsage, withTenant } from '@roofline/db';
 import { createApp } from '../src/app.ts';
 import { UnconfiguredBillingProvider } from '../src/providers/billing.ts';
+import { FakeBillingProvider } from '../src/providers/fakes/billing.ts';
 import { loginAs, makeTestApp, type SuperAgent, type TestApp } from './helpers.ts';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -255,6 +256,32 @@ describe('POST /api/billing/checkout', () => {
     expect(unreachable.status).toBe(503);
     expect(unreachable.body).toEqual({ error: CANT_REACH });
     expect(t.billing.checkouts).toHaveLength(0);
+  });
+});
+
+describe('the demo stand-in settles a checkout at once', () => {
+  test('checkout comes straight back to the app, the company has a plan, and the portal and a plan change work', async () => {
+    const settling = new FakeBillingProvider({ settlesAtOnce: true });
+    const app = createApp({ ...t.deps, billing: settling });
+    const agent = await loginAs(app, t.seed.a.owner);
+
+    const checkout = await agent.post('/api/billing/checkout').send({ planKey: 'starter' });
+    expect(checkout.status).toBe(200);
+    expect(checkout.body).toEqual({ url: `${APP_ORIGIN}/settings/billing?checkout=done` });
+
+    const view = await agent.get('/api/billing');
+    expect(view.body.status).toBe('active');
+    expect(view.body.planKey).toBe('starter');
+    expect(view.body.hasPaymentMethod).toBe(true);
+
+    const portal = await agent.post('/api/billing/portal').send({});
+    expect(portal.body).toEqual({ url: `${APP_ORIGIN}/settings/billing` });
+
+    const change = await agent.post('/api/billing/plan').send({ planKey: 'pro' });
+    expect(change.status).toBe(200);
+    expect((await agent.get('/api/billing')).body.planKey).toBe('pro');
+    // A second checkout is still refused: the company already has a card
+    expect((await agent.post('/api/billing/checkout').send({ planKey: 'pro' })).status).toBe(409);
   });
 });
 

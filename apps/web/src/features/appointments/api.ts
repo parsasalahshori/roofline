@@ -29,6 +29,7 @@ export function useAppointment(id: string | undefined): {
   data: AppointmentView | undefined;
   isPending: boolean;
   isError: boolean;
+  error: Error | null;
   refetch: () => Promise<unknown>;
 } {
   return useQuery({

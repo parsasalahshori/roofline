@@ -301,4 +301,18 @@ describe('SuggestedTimes', () => {
     await user.click(screen.getByRole('button', { name: appointments.tryAgain }));
     expect(await screen.findByText(appointments.detailTime)).toBeInTheDocument();
   });
+
+  it('an appointment that is not there says it is not found, with a way back, and no Try again', async () => {
+    stubSheet(
+      { slots: SLOTS },
+      {
+        'GET /api/appointments/a1': () => ({ status: 404, body: { error: 'Not found.' } }),
+        'GET /api/calendar/connection': () => ({ body: { provider: null } }),
+      },
+    );
+    renderRoute(<AppointmentWindow />, '/calendar/appointments/:appointmentId', '/calendar/appointments/a1');
+    expect(await screen.findByText(appointments.notFound)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: appointments.backToCalendar })).toHaveAttribute('href', '/calendar');
+    expect(screen.queryByRole('button', { name: appointments.tryAgain })).toBeNull();
+  });
 });

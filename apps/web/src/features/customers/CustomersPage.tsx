@@ -1,4 +1,3 @@
-import type { ConsentStatus } from '@roofline/shared';
 import { Avatar, Button, Chip, Icon, Listbox, Table, Tag, Td, Th, Tr, UiLink, type ListboxOption } from '@roofline/ui';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
@@ -20,8 +19,6 @@ const SEARCH_DEBOUNCE_MS = 300;
 
 /** The texting filter: '' anyone, 'ok' attested or written, 'not' every other status. */
 type TextingFilter = '' | 'ok' | 'not';
-
-const isTextingOk = (status: ConsentStatus): boolean => status === 'attested' || status === 'written';
 
 /** The primary phone when one is marked, else the first one; '' when there is none. */
 const primaryPhone = (row: CustomerListItem): string => {
@@ -154,7 +151,7 @@ export function CustomersPage() {
   const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(searchTimer.current), []);
 
-  const list = useCustomers({ q: term, archived, offset });
+  const list = useCustomers({ q: term, archived, offset, tag, texting });
 
   const onSearch = (value: string) => {
     setSearchText(value);
@@ -165,19 +162,15 @@ export function CustomersPage() {
     }, SEARCH_DEBOUNCE_MS);
   };
 
-  // Follow-up: server filter. Tag and texting filter only the rows already loaded, not the whole list.
+  // The server applies the search, tag, texting and archived filters, so the page shows what it was sent
   const loaded = list.data?.customers ?? [];
-  const rows = loaded.filter((row) => {
-    if (tag !== '' && !row.tags.includes(tag)) return false;
-    if (texting === 'ok' && !isTextingOk(row.smsConsent.status)) return false;
-    if (texting === 'not' && isTextingOk(row.smsConsent.status)) return false;
-    return true;
-  });
+  const rows = loaded;
 
-  // The tags on the loaded page, sorted; the chosen tag stays an option even when this page lacks it
-  const tagValues = [...new Set([...loaded.flatMap((row) => row.tags), ...(tag === '' ? [] : [tag])])].sort((a, b) =>
-    a.localeCompare(b),
-  );
+  // The tags seen so far, sorted: filtering by one leaves only its rows loaded, so the others are remembered
+  const [knownTags, setKnownTags] = useState<string[]>([]);
+  const seenTags = loaded.flatMap((row) => row.tags);
+  if (seenTags.some((value) => !knownTags.includes(value))) setKnownTags([...new Set([...knownTags, ...seenTags])]);
+  const tagValues = [...new Set([...knownTags, ...(tag === '' ? [] : [tag])])].sort((a, b) => a.localeCompare(b));
   const tagOptions: ListboxOption[] = [{ value: '', label: customers.list.allTags }, ...tagValues.map((value) => ({ value, label: value }))];
   const textingOptions: ListboxOption<TextingFilter>[] = [
     { value: '', label: customers.list.allTexting },
@@ -287,13 +280,20 @@ export function CustomersPage() {
     >
       <div role="group" aria-label={customers.list.filtersLabel} className={styles.bar}>
         <div className={styles.chips}>
-          <Listbox variant="chip" label={customers.list.tagLabel} value={tag} options={tagOptions} onChange={setTag} />
+          <Listbox variant="chip" label={customers.list.tagLabel} value={tag} options={tagOptions} onChange={(value) => {
+              setTag(value);
+              setOffset(0);
+            }}
+          />
           <Listbox
             variant="chip"
             label={customers.list.textingLabel}
             value={texting}
             options={textingOptions}
-            onChange={setTexting}
+            onChange={(value) => {
+              setTexting(value);
+              setOffset(0);
+            }}
           />
           <Chip
             pressed={archived}

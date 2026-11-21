@@ -1,7 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 import { audit, billingFacts, usageTotals, withTenant } from '@roofline/db';
-import { setStripeCustomerIfMissing } from '@roofline/db/system';
+import { applyBillingEvent, setStripeCustomerIfMissing } from '@roofline/db/system';
 import { type BillingView, planByKey, type PlanSummary, priceLookupKeys } from '@roofline/shared';
 import type { AppDeps } from '../app.ts';
 import { requireVerifiedEmail } from '../auth/middleware.ts';
@@ -143,6 +144,20 @@ export function billingRoutes(deps: AppDeps): Router {
         at: now,
       }),
     );
+    // The demo's stand-in has no page to pay on and sends no webhook, so the checkout is settled here, as the webhook would
+    if (deps.billing.settlesAtOnce === true) {
+      await applyBillingEvent(deps.pools.system, ctx.companyId, {
+        customerId,
+        eventId: `fake_checkout_${randomUUID()}`,
+        eventCreated: now,
+        set: {
+          status: 'active',
+          stripeSubscriptionId: `sub_fake_${ctx.companyId}`,
+          planKey,
+          billingPeriodStart: now,
+        },
+      });
+    }
     res.json({ url: checkout.url });
   });
 
@@ -185,6 +200,14 @@ export function billingRoutes(deps: AppDeps): Router {
         at: deps.clock.now(),
       }),
     );
+    if (deps.billing.settlesAtOnce === true && facts.stripeCustomerId !== null) {
+      await applyBillingEvent(deps.pools.system, ctx.companyId, {
+        customerId: facts.stripeCustomerId,
+        eventId: `fake_plan_${randomUUID()}`,
+        eventCreated: deps.clock.now(),
+        set: { planKey },
+      });
+    }
     res.json({ ok: true });
   });
 

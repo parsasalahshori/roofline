@@ -178,14 +178,17 @@ function FormBody({ existing, onDone, onCancel, account, zone }: FormBodyProps) 
   const peopleParam = existing === undefined ? (params.get('people') ?? '') : '';
   const queryPerson = !isRep && peopleParam !== '' && !peopleParam.includes(',') ? peopleParam : null;
   const [assigned, setAssigned] = useState<string>(existing ? (existing.assigned?.userId ?? '') : (queryPerson ?? user.id));
-  const person = isRep ? user.id : assigned;
+  // A new inspection goes to an owner or a rep: office staff are not offered times for one (the times lookup answers 404 for them)
+  const takesKind = (memberRole: string | undefined) => existing !== undefined || kind !== 'inspection' || memberRole !== 'office';
   const memberOptions = (team.data?.members ?? [])
-    .filter((member) => member.status === 'active')
+    .filter((member) => member.status === 'active' && takesKind(member.role))
     .map((member) => ({ value: member.userId, label: member.name }));
-  if (!memberOptions.some((option) => option.value === user.id)) memberOptions.unshift({ value: user.id, label: user.name });
+  if (takesKind(role) && !memberOptions.some((option) => option.value === user.id)) memberOptions.unshift({ value: user.id, label: user.name });
   const personOptions = isRep
     ? [{ value: user.id, label: user.name }]
     : [{ value: '', label: appointments.anyone }, ...memberOptions];
+  // Whoever was picked stays only while the kind still offers them; otherwise it is Anyone
+  const person = isRep ? user.id : personOptions.some((option) => option.value === assigned) ? assigned : '';
 
   // Date and time, in the company zone
   // A new appointment may start from a clicked calendar slot (?start=<iso>)
