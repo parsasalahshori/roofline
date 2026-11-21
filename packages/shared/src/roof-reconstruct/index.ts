@@ -29,6 +29,7 @@ import { DEFAULT_LIDAR_EDGE, type LidarCloud, type LidarEdgeParams, type LidarEd
 import { DEFAULT_LIDAR_FUSION, fuseLidar, type LidarFusionParams, type LidarFusionReport } from './lidar-fusion.ts';
 import { DEFAULT_PITCH_PARAMS, type PitchParams, reportedPitches } from './pitch.ts';
 import { DEFAULT_PRIMITIVE_PARAMS, fitGables, type FittedGable, type FittedKind, type MergedStack, mergeStacks, type PrimitiveParams } from './primitives.ts';
+import { fitRidgeRoofs, type RidgeRoof } from './ridge-roofs.ts';
 
 export { lngLatToUtm, utmToLngLat, utmZoneOfEpsg, type UtmZone } from './utm.ts';
 export { MAX_RASTER_PIXELS, MAX_ROOF_PART_M2, RASTER_PROBLEMS, type RasterProblem, rasterProblem, roofPartAreaM2 } from './guard.ts';
@@ -211,6 +212,8 @@ export type LocalRoof = {
   gables?: FittedGable[];
   /** Stacked strips of one bowed slope merged onto the plane through its crest and its eave (primitives.ts), absent when none. */
   stacks?: MergedStack[];
+  /** Small roofs with a ridge of their own fitted as shapes (ridge-roofs.ts), absent when none. */
+  ridgeRoofs?: RidgeRoof[];
   /**
    * What the hidden-edge step did (only when ReconstructOptions.hiddenEdge is set): edges moved onto a plane's eave line
    * and chamfers turned into corners, their length (metres, inferred, not seen), candidate edges left alone by reason,
@@ -699,6 +702,24 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     break;
   }
 
+  // 4a. Small roofs with a ridge of their own that the settled faces lack (ridge-roofs.ts): a gable over an entry, a
+  //     dormer. Fitted as shapes on the height map's crests; their planes are locked like the other primitives'.
+  let ridgeRoofs: RidgeRoof[] = [];
+  if (primPrm.enabled && primPrm.ridgeRoofs) {
+    const lock = (ps: readonly Plane[], on: boolean) => ps.forEach((p) => (on ? locked.set(p, 'ridge-roof') : locked.delete(p)));
+    const rebuild = (f: { labels: Int32Array; planes: Plane[] }, settled: boolean) => {
+      const p = refit(g, dsm, f);
+      return { planes: p, topo: buildTopology(g, s, f.labels, p, outline, dsm, settled ? settlePrm : topoPrm, opts.debug) };
+    };
+    const done = fitRidgeRoofs({ g, s, dsm, roof, tree, outline, faces, planes, topo }, primPrm, planePrm, lock, rebuild, opts.debug);
+    if (done !== null) {
+      ({ faces, planes } = done);
+      ridgeRoofs = done.fitted;
+      lineRows = opts.lineFeatures !== undefined ? [] : undefined;
+      topo = buildTopology(g, s, faces.labels, planes, outline, dsm, settlePrm, opts.debug, lineRows);
+    }
+  }
+
   // 4b. The walls typed piece by piece on the settled faces (topology.ts, stepPieceM): a dormer's cheek wall is its
   //     eave over the main roof's flashing, the valley behind it still a valley. Kept unless a face the first topology
   //     drew well comes out worse: from its pixels, under the smallest face size, or a thin strip (a wall's path
@@ -815,6 +836,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     ...(Object.keys(dissolved).length > 0 ? { dissolved } : {}),
     ...(gables.length > 0 ? { gables } : {}),
     ...(stacks.length > 0 ? { stacks } : {}),
+    ...(ridgeRoofs.length > 0 ? { ridgeRoofs: ridgeRoofs.map((r) => ({ ...r, at: shift(r.at) })) } : {}),
     ...(lidarEdges !== undefined ? { lidarEdges } : {}),
     ...(canopyOut !== undefined ? { canopy: { ...canopyOut, occluded: canopyOut.occluded.map(shift) } } : {}),
     ...(hiddenOut !== undefined ? { hiddenEdge: hiddenOut.summary } : {}),

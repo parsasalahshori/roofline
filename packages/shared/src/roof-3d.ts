@@ -56,7 +56,7 @@ export type Roof3dFace = {
    * strips, on the plane through its crest and its eave. Google's own segment under such a face is fitted to the
    * bowed heights, so the face is not checked against it.
    */
-  fitted?: 'gable' | 'stack';
+  fitted?: 'gable' | 'stack' | 'ridge-roof';
 };
 
 export type Roof3dLine = {

@@ -24,6 +24,7 @@
 // A fitted plane is locked (a later refit on the bowed heights would bend it back) and its face marked `fitted`.
 import type { Grid, Mask } from './raster.ts';
 import { adjacency, compact, dissolve, type Faces, interiorFit, pixelX, pixelY, type Plane, type PlaneParams, planeZ, splitParts } from './planes.ts';
+import { DEFAULT_RIDGE_ROOF_PARAMS, type RidgeRoofParams } from './ridge-roofs.ts';
 
 export type PrimitiveParams = {
   /** Off: the faces stand as the plane search left them. */
@@ -157,7 +158,7 @@ export type PrimitiveParams = {
    */
   stackChordTolX12: number;
   stackUpperOffX12: number;
-};
+} & RidgeRoofParams;
 
 export const DEFAULT_PRIMITIVE_PARAMS: PrimitiveParams = {
   enabled: true,
@@ -214,13 +215,14 @@ export const DEFAULT_PRIMITIVE_PARAMS: PrimitiveParams = {
   stackFitShare: 0.9,
   stackChordTolX12: 1,
   stackUpperOffX12: 1,
+  ...DEFAULT_RIDGE_ROOF_PARAMS,
 };
 
 /** One merged stack: the upper and lower faces' pitches, the chord's, the merged face's area. */
 export type MergedStack = { upperX12: number; lowerX12: number; pitchX12: number; areaM2: number };
 
 /** How a face's plane was fitted when not on its own heights: a gable's slope from across its ridge, or a stack's chord. */
-export type FittedKind = 'gable' | 'stack';
+export type FittedKind = 'gable' | 'stack' | 'ridge-roof';
 
 /** One fitted gable slope: the clean face it was mirrored from (label before the fit), the faces it replaced, its pitch. */
 export type FittedGable = { from: number; absorbed: number; ridgeM: number; pitchX12: number; areaM2: number };
