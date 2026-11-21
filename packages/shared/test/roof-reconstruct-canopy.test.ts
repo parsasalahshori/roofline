@@ -294,6 +294,27 @@ describe('reconstructRoof with completion', () => {
     expect(Math.abs(area(on) - 126)).toBeLessThan(Math.abs(area(off) - 126));
     expect(Math.abs(area(on) - 126) / 126).toBeLessThan(0.1);
   });
+  it('the unsure faces are known on the re-cut crop too (the thin-unsure rule used to be off after a completion)', () => {
+    // Every plane unsure (surePlanes 0) and every face a candidate of the weak-face cleanup (so its record is told to
+    // the debug output), no rule dissolving anything: the unsure share of each face must be there after the re-crop.
+    const sc = scene({ seed: 7, turnDeg: 17, size: 34, inMask: (q) => q.x < 4 });
+    const raster = { width: sc.W, height: sc.W, pixelSizeM: sc.s, dsm: sc.dsm, mask: sc.mask };
+    const lines: string[] = [];
+    const roof = reconstructRoof(raster, { col: sc.W / 2 - 15, row: sc.W / 2 }, {
+      seed: 7,
+      building: toPx(sc),
+      canopy: { complete: true },
+      planes: { surePlanes: 0 },
+      faces: { thinWidthM: 100, thinMaxM2: 1e6, edgeShare: 2, unsureThinM: 0, distinctDeg: 0, crownShare: 2 },
+      debug: (m) => lines.push(m),
+    });
+    expect(roof?.canopy?.grownM2 ?? 0).toBeGreaterThan(10);
+    expect(roof?.canopy?.undone).toBeUndefined();
+    const shares = lines.filter((l) => l.startsWith('pass 0 face')).map((l) => Number(/unsure ([\d.]+)/.exec(l)?.[1]));
+    expect(shares.length).toBeGreaterThan(1);
+    // The grown pixels are on no found plane, so a face is not unsure all over; without the mask every share is 0.
+    expect(Math.min(...shares)).toBeGreaterThan(0.3);
+  });
   it.each([7, 8, 9])('an undone completion gives exactly the roof without completion, faces cleanup included (seed %i)', (seed) => {
     // Merge composition (canopy x faces): the undone roof is no longer a second reconstruction but the state before
     // completion restored and steps 3-4 (outline, topology, weak-face cleanup) run again on it. A slack of 0 forces the

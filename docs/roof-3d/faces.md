@@ -92,3 +92,49 @@ the commits. No stored data changes shape (`dissolved` lives on LocalRoof only, 
 - Slope-proportional tolerance in the first RANSAC pass for steep roofs (FM08); Google segments as a plane prior.
 - Line tidying after merges (jagged valleys); valley overshoot is only slightly down.
 - A per-face support/confidence value in the stored Roof3d (would change the snapshot schema owned by another track).
+
+## Round 3: faces kept on evidence, not on size (`faces-evidence.ts`; off by default)
+
+Switches: `evidence.enabled` (the rule), `evidence.thinM` (0.9: a face kept on evidence must not be a thin face; 0: whatever
+its width), `planes.cleanupRoundsPerFace` 1 + `planes.splitOnce` true (buildFaces' cleanup runs to its end). All off by
+default: the default run is byte-identical to before and passes every gate.
+
+Labelled data (18 dev answer keys): with every dissolve rule off the plane search leaves 472 candidate faces; from
+EagleView's faces 322 are REAL (a face of matching normal under 60 % of it), 92 FRAG (a second candidate on the same
+EagleView face, touching a bigger one), 44 JUNK, 14 outside EagleView's roof. The size rules keep REAL 260, FRAG 41, JUNK 20.
+By rule: `explained` removes fragments (42 of 48); `sliver/steep` removes real faces (15 of 20), `chamfer/riser` 8 of 23.
+
+The rule (two physical conditions and one veto, measured on each boundary of a face in the height map itself):
+- **a ridge or hip of its own**: at least 1 m of boundary where the heights turn over (slope falls by 0.15 or more across
+  it), shared with a face turned 60 degrees or more away at a pitch within 4/12; or
+- **a facing of its own**: pitched 3/12 or more, and no pitched neighbour faces within 60 degrees of its way;
+- **never a fragment**: a face under 1 m wide beside a bigger one facing its way (within 30 degrees, planes within 20) with
+  no step between them (under 0.25 m) is the rounded top or smeared foot of that face, whatever it meets on its other side;
+- not within a metre of a tree crown over a fifth of it.
+Such a face is passed over by buildFaces' steps 2 to 5 and by the thin-face rules, and marked unsure. Leave-one-house-out
+(parameters picked on 17 houses, scored on the 18th; candidates under 15 m2): REAL 138/193, FRAG 13/88, JUNK 10/43
+protected, against 142, 11, 7 in sample: not memorised.
+
+Results (scorer OBJECTIVE dev / held-out; labelled candidates kept REAL, FRAG, JUNK on dev):
+| run | dev | held-out | area dev / held-out | kept |
+|---|---|---|---|---|
+| default | 18.0 | 20.2 | 3.9 / 2.3 % | 260, 41, 20 |
+| cleanup to its end alone | 17.9 | 20.9 | 4.1 / 3.8 % | 241, 34, 18 |
+| evidence, thinM 0.9 | 16.9 | 20.2 | 4.4 / 3.2 % | - |
+| evidence, thinM 0 | 15.4 | 17.9 | 4.9 / 3.5 % | 290, 45, 23 |
+| evidence + cleanup to its end, thinM 0.9 | 16.9 | 20.8 | 4.4 / 3.2 % | 267, 38, 19 |
+| evidence + cleanup to its end, thinM 0 | 14.9 | 19.5 | 4.8 / 3.5 % | 286, 38, 21 |
+No evidence run passes the gates: thin faces rise (dev answer-key houses, thinM 0: 24 -> 63 thin faces, 53 of them real by
+the answer key; EagleView's own faces are thin 122 of 390 times), the median area error rises (the faces that come back
+are steeper than what stood in for them, on plans that are already too big: 18 of 32 houses are over), two houses fail the
+checker, one sliver on held-out.
+
+Dead ends: joining fragments to their face instead of dissolving them (`evidence.joinFragments`; with the answer key
+picking the fragments the oracle is 14.7 on dev, with the run-time rule 18.2: hips lost); dissolving the JUNK-labelled
+faces (oracle 15.4 against 14.7 keeping them); no single measurement separates real from junk among the faces with no
+crease or facing of their own (AUC 0.64 at best, 24 against 18).
+
+The cleanup loop (review finding): 12 rounds end it unfinished on complex roofs, and a neck split that is dissolved was
+split again every two rounds. Both are fixed behind `planes.cleanupRoundsPerFace` and `planes.splitOnce`, and both are off
+by default because the unfinished cleanup is the better one while the size rules decide alone (run to the end they
+dissolve 19 more real faces on dev and fail 17 gates). The unsure mask is now rebuilt after a canopy re-crop.
