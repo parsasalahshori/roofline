@@ -197,10 +197,32 @@ brief: ~/RooflineWork/plans/roof3-brief.md. Base: roof2/integration 6a8b49ac + t
 - 14:5x: all five round-3 agents stopped on the Fable usage limit (reset 3 pm PT); work saved in their worktrees. Owner said
   "Restart": all five resumed at 15:08 by message (same agents, same worktrees), told to land what they have first.
 
+## round 3 results
+- pitch2 (Fable) DONE b1eca76a, MERGED: partial. Main pitch exact dev 14 -> 15/18, faces within 0.5/12 72 -> 75 %; held-out pitch 8/14 flat,
+  area 2.3 -> 2.6 % from pitch.stepShare (5/12 and 6/12 stay two groups: kept on for correctness). Blur is NOT why steep faces
+  read low (ridge blur 0.14 m); pitch is limited by missing faces. offsetLidar guard in. roof-model override now scales rise from fitPitchX12.
+- faces (Fable) DONE 3705deeb, MERGED, OFF by default: evidence rule (faces-evidence.ts). On: dev 18.0 -> 15.4, held-out 20.2 -> 17.9,
+  faces 58 -> 68 %; area 3.9 -> 4.9 / 2.6 -> 3.5 %, thin-face + area gates fail. Thin gate is wrong (53/63 thin faces real). P1 loop fix
+  in but off (run to the end the size rules delete 19 more real faces). Oracle: joining fragments by answer key = dev 14.7.
+- area, small, lines (Fable): stopped by the orchestrator on the owner's order to switch models; work committed, base merged in.
+
+# ROOF ROUND 4 (2026-11-21, owner: "replace the agents with Opus 5.5 MAX... accuracy on all levels to the point where it is insane...
+#   new solutions that have not been tried before... as many agents as needed")
+brief: ~/RooflineWork/plans/roof4-brief.md (addendum to roof3-brief.md). Base roof2/integration 87646a15. All agents Opus 5.5, max effort.
+| track | worktree / branch | kind | idea | result |
+|-------|-------------------|------|------|--------|
+| area | wt-r3-area / roof3/area | continue | eave trim, non-roof covers, under-coverage vs Google on 84 houses; must bring area with evidence on back under default | running |
+| small | wt-r3-small / roof3/small | continue | fitted small gables, hip ends, bump-out hips, turrets | running |
+| lines | wt-r3-lines / roof3/lines | continue | regularise.ts: straight walls/creases, spurs, low-slope names; global corner solve | running |
+| faces2 | wt-r4-faces2 / roof4/faces2 | continue | per-face evidence flag + gates-v4 thin check, fragment join by model selection, negative-evidence size rules | running |
+| skeleton | wt-r4-skeleton / roof4/skeleton | NEW | roof as the weighted straight skeleton of the outline, per-edge eave/gable + pitch fitted to the heights; hybrid per part | running |
+| refine | wt-r4-refine / roof4/refine | NEW | analysis-by-synthesis: render model through the blur, energy with complexity cost, continuous solve + split/merge/drop moves | running |
+| sharpen | wt-r4-sharpen / roof4/sharpen | NEW | restore the height map first (piecewise-planar + photo-guided normals) so the unchanged pipeline sees small faces | running |
+
 ## next
-- wait for the five reports; merge winners behind the gates; sealed fresh set once; reviewer; remediation; algorithm 8;
+- wait for the seven reports; merge winners behind the gates; sealed fresh set once; reviewer; remediation; algorithm 8;
   then ask the owner to merge + deploy.
 
 ## status
-state: running (roof round 3; agents in flight)
+state: running (roof round 4; seven Opus max agents in flight)
 needs-me: nothing now
