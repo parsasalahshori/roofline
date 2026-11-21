@@ -5,6 +5,7 @@ import { measurements, proposals } from '@roofline/db';
 import { addressFor, Actors, inCompany, mustCreate, NO_UUID, NOT_FOUND } from './crm-helpers.ts';
 import { makeTestApp, type TestApp } from './helpers.ts';
 import { SENT_PROPOSAL_MESSAGE } from '../src/routes/proposals.ts';
+import { PHONE_INVALID_MESSAGE, PHONE_TAKEN_MESSAGE } from '../src/estimator/build.ts';
 
 let t: TestApp;
 let who: Actors;
@@ -78,6 +79,36 @@ describe('building a proposal', () => {
     expect(noName.body.field).toBe('customer.name');
     const noPhone = await s.owner.post('/api/proposals').send({ measurementId: s.measurementId, customer: { name: 'A', askedByText: false } });
     expect(noPhone.body.field).toBe('customer.phone');
+  });
+});
+
+describe('a new customer on a home with none', () => {
+  async function homeWithoutCustomer() {
+    const owner = await who.as('owner');
+    const property = await mustCreate(owner, '/api/properties', { ...addressFor(3) });
+    const [row] = await inCompany(t, t.seed.a.companyId, (tx) =>
+      tx
+        .insert(measurements)
+        .values({ companyId: t.seed.a.companyId, propertyId: property.id, kind: 'estimate', method: 'outline', surfaceSqFt: 2400, pitchX12: 6, edgeFt: 220, ridgeFt: 60, valleyFt: 20 })
+        .returning({ id: measurements.id }),
+    );
+    return { owner, measurementId: row!.id };
+  }
+
+  test('a phone another customer already has is named, not "check this field"', async () => {
+    const { owner, measurementId } = await homeWithoutCustomer();
+    await mustCreate(owner, '/api/customers', { displayName: 'Existing Pat', phones: [{ number: '(402) 555-0100', primary: true }] });
+    const res = await owner.post('/api/proposals').send({ measurementId, customer: { name: 'Sam Roe', phone: '(402) 555-0100', askedByText: true } });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('customer.phone');
+    expect(res.body.error).toBe(PHONE_TAKEN_MESSAGE);
+  });
+
+  test('a phone that is not a number says so', async () => {
+    const { owner, measurementId } = await homeWithoutCustomer();
+    const res = await owner.post('/api/proposals').send({ measurementId, customer: { name: 'Sam Roe', phone: '12', askedByText: true } });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe(PHONE_INVALID_MESSAGE);
   });
 });
 

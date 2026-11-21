@@ -73,6 +73,10 @@ async function loadTemplates(tx: Tx, ctx: TenantContext): Promise<TierTemplate[]
   });
 }
 
+/** A new customer's phone that is not a number, or that another customer of the company already has. */
+export const PHONE_INVALID_MESSAGE = 'Enter a 10-digit phone number.';
+export const PHONE_TAKEN_MESSAGE = 'Another customer already has this phone number. Open that customer to measure their home, or use a different number.';
+
 /** The measurement has no roof to price: no outline drawn, or every structure left out. */
 export const NO_ROOF_MESSAGE = 'Draw the roof outline first.';
 /** An estimate too large for the pricing engine: an exact report prices it. */
@@ -180,7 +184,7 @@ export async function buildProposal(deps: AppDeps, ctx: TenantContext, i: BuildI
         if (!property) throw new AppError(404, MESSAGES.notFound);
         if (i.customer) {
           const phone = toE164(i.customer.phone);
-          if (!phone) throw new AppError(400, MESSAGES.checkField, 'customer.phone');
+          if (!phone) throw new AppError(400, PHONE_INVALID_MESSAGE, 'customer.phone');
           try {
             const created = await createCustomer(
               tx,
@@ -196,7 +200,7 @@ export async function buildProposal(deps: AppDeps, ctx: TenantContext, i: BuildI
             customerId = created.id;
             if (property.customerId === null) await linkPropertyToCustomer(tx, ctx, property.id, { id: created.id, displayName: created.displayName }, { now });
           } catch (err) {
-            if (err instanceof DuplicatePhoneError) throw new AppError(400, MESSAGES.checkField, 'customer.phone');
+            if (err instanceof DuplicatePhoneError) throw new AppError(400, PHONE_TAKEN_MESSAGE, 'customer.phone');
             throw err;
           }
         } else if (property.customerId) {
