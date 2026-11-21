@@ -134,7 +134,7 @@ brief: ~/RooflineWork/plans/roof2-brief.md
 ## roof2 tracks
 | track | worktree / branch | idea | result |
 |-------|-------------------|------|--------|
-| dormers | wt-r-dormers / roof2/dormers | small faces from the height map (bumps on a face, finer plane pass, hip ends) | running |
+| dormers | wt-r-dormers / roof2/dormers | small faces from the height map (bumps on a face, finer plane pass, hip ends) | DONE cbfd8de7 (partial): plane search to 80 planes + thin guard; dev OBJECTIVE 21.9->21.2, held-out same (no held-out house reaches 40 planes); gates pass. KEY FINDING: with every dissolve rule off + 80 planes dev OBJECTIVE is 18.8 and missing shares halve, but 19 gates fail (the thin-face gate counts real dormer faces as junk; EagleView's own faces are thin 121 of 389 times). Decision for the orchestrator: re-base the thin gate on complex roofs. Also: a loop in buildFaces (splitNecks vs explained) on 4 houses |
 | photo | wt-r-photo / roof2/photo-faces | straight photo edges as evidence for creases inside the roof | running |
 | walls | wt-r-walls / roof2/walls | steps typed piece by piece: upper eave/rake + flashing, not a valley | running |
 | primitives | wt-r-primitives / roof2/primitives | fitted gable/hip shapes for simple wings the plane search cut into strips | running |
