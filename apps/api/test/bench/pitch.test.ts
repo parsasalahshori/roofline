@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { LngLat } from '@roofline/shared';
+import type { LngLat, Roof3d } from '@roofline/shared';
 import { GOOGLE_PITCH_OFFSET_X12, roofOnLayers } from '../../src/estimator/roof-3d.ts';
+import { checkRoof, differsFromGoogle } from '../../src/estimator/roof-3d-compare.ts';
 import { hipLayers } from '../roof-3d-fixture.ts';
 
 /*
@@ -30,7 +31,15 @@ describe('the pitch the server reports on Google\'s height maps', () => {
     served.faces.forEach((f, k) => {
       expect(f.pitchX12).toBeCloseTo(uncalibrated.faces[k]!.pitchX12 - GOOGLE_PITCH_OFFSET_X12, 2);
       expect(Math.abs(f.pitchX12 - (7 - GOOGLE_PITCH_OFFSET_X12))).toBeLessThan(0.15);
-      expect(f.slopedAreaSqFt).toBeLessThan(uncalibrated.faces[k]!.slopedAreaSqFt);
+      // The sloped area stays with the pitch before the calibration (PitchParams.offsetArea is off)...
+      expect(f.slopedAreaSqFt).toBe(uncalibrated.faces[k]!.slopedAreaSqFt);
+      expect(f.slopedAreaSqFt / f.planAreaSqFt).toBeCloseTo(Math.hypot(1, uncalibrated.faces[k]!.pitchX12 / 12), 2);
+    });
+    // ...and follows it when asked to.
+    const follow = roofOnLayers(layers, INSIDE, { tuning: { pitch: { offsetArea: true } } })!;
+    follow.faces.forEach((f, k) => {
+      expect(f.pitchX12).toBe(served.faces[k]!.pitchX12);
+      expect(f.slopedAreaSqFt).toBeLessThan(served.faces[k]!.slopedAreaSqFt);
       expect(f.slopedAreaSqFt / f.planAreaSqFt).toBeCloseTo(Math.hypot(1, f.pitchX12 / 12), 2);
     });
   });
@@ -47,5 +56,29 @@ describe('the pitch the server reports on Google\'s height maps', () => {
     expect(served.lines).toEqual(asFitted.lines);
     expect(served.faces.map((f) => f.ring)).toEqual(asFitted.faces.map((f) => f.ring));
     expect(served.faces.map((f) => f.planAreaSqFt)).toEqual(asFitted.faces.map((f) => f.planAreaSqFt));
+  });
+
+  it('keeps each face\'s own fitted pitch beside the reported one, only where they differ', () => {
+    served.faces.forEach((f, k) => {
+      expect(f.fitPitchX12).toBe(asFitted.faces[k]!.pitchX12);
+      expect(Math.abs(f.fitPitchX12! - 7)).toBeLessThan(0.15);
+    });
+    for (const f of asFitted.faces) expect(f.fitPitchX12).toBeUndefined();
+  });
+
+  it('Google\'s segment is held against the fitted plane: a face whose reported pitch was pooled away from it still agrees', () => {
+    // Google's own fit of the same heights: 7/12 under every face, each segment as big as the face over it.
+    const seven = (Math.atan(7 / 12) * 180) / Math.PI;
+    const building = { center: INSIDE, box: null, segments: served.faces.map((f) => ({ center: f.labelAt, pitchDeg: seven, azimuthDeg: f.azimuthDeg, groundAreaM2: f.planAreaSqFt / 10.7639104167 })) } as never;
+    // The same roof as it would be stored had pooling and calibration moved every face 1.3/12 from its plane.
+    const moved: Roof3d = { ...served, faces: served.faces.map((f) => ({ ...f, pitchX12: f.fitPitchX12! - 1.3 })) };
+    expect(checkRoof(moved, building).rows.every((r) => r.main && r.pitchOk)).toBe(true);
+    expect(differsFromGoogle(moved, building)).toBe(false);
+    // Without the fitted pitch on the face (a roof stored before), the reported one is all there is to compare.
+    const old: Roof3d = { ...moved, faces: moved.faces.map(({ fitPitchX12: _fit, ...f }) => f) };
+    expect(checkRoof(old, building).rows.every((r) => !r.pitchOk)).toBe(true);
+    // And a plane that really differs from Google's still fails, whatever is reported.
+    const off: Roof3d = { ...served, faces: served.faces.map((f) => ({ ...f, pitchX12: 7, fitPitchX12: 9 })) };
+    expect(differsFromGoogle(off, building)).toBe(true);
   });
 });

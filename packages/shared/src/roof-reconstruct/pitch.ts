@@ -34,6 +34,13 @@ export type PitchParams = {
    */
   offsetX12: number;
   offsetShare: number;
+  /**
+   * Whether the sloped area follows the calibrated pitch (true) or the pitch before the offset (false, the default).
+   * Off because the benchmark's area error rises when it does: against EagleView on the held-out houses by 0.9 points
+   * (2.4 to 3.3 %) and against lidar by 0.7 to 0.8 on every cohort. Our plan areas run under on those houses and the
+   * steep reading was hiding about 1 % of it; the area should follow once the outline no longer runs under.
+   */
+  offsetArea: boolean;
 };
 
 export const DEFAULT_PITCH_PARAMS: PitchParams = {
@@ -47,6 +54,7 @@ export const DEFAULT_PITCH_PARAMS: PitchParams = {
   minPitchX12: 2,
   offsetX12: 0,
   offsetShare: 0.1,
+  offsetArea: false,
 };
 
 /** A face as the pooling sees it: its own plane's pitch (x/12) and its plan area (square metres). */
@@ -77,10 +85,11 @@ export function weightedMedian(items: readonly { v: number; w: number }[]): numb
 }
 
 /**
- * The pitch each face reports (x/12, same order as `faces`) and the groups found, largest first. Deterministic: ties
+ * The pitch each face reports (x/12, same order as `faces`), the pitch its sloped area is worked out with (the same,
+ * or the pitch before the calibration offset: `offsetArea`), and the groups found, largest first. Deterministic: ties
  * go to the earlier face.
  */
-export function reportedPitches(faces: readonly PitchFace[], prm: PitchParams = DEFAULT_PITCH_PARAMS): { pitchX12: number[]; groups: PitchGroup[] } {
+export function reportedPitches(faces: readonly PitchFace[], prm: PitchParams = DEFAULT_PITCH_PARAMS): { pitchX12: number[]; areaPitchX12: number[]; groups: PitchGroup[] } {
   const out = faces.map((f) => f.pitchX12);
   const groups: PitchGroup[] = [];
   if (prm.pool) {
@@ -120,11 +129,12 @@ export function reportedPitches(faces: readonly PitchFace[], prm: PitchParams = 
       free = free.filter((k) => !taken.has(k));
     }
   }
+  const pooled = out.slice();
   if (prm.offsetX12 > 0) {
     for (let k = 0; k < out.length; k++) {
       const p = out[k]!;
       if (Number.isFinite(p) && p > 0) out[k] = p - Math.min(prm.offsetX12, prm.offsetShare * p);
     }
   }
-  return { pitchX12: out, groups };
+  return { pitchX12: out, areaPitchX12: prm.offsetArea ? out : pooled, groups };
 }

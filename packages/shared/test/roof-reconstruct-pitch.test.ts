@@ -109,6 +109,17 @@ describe('reportedPitches', () => {
     expect(off[4]).toBe(0);
   });
 
+  it('the sloped area is worked out with the pitch before the offset unless offsetArea says to follow it', () => {
+    const faces = [face(6.2, 60), face(6.3, 60), face(9, 50)];
+    const base = reportedPitches(faces);
+    expect(base.areaPitchX12).toEqual(base.pitchX12);
+    const off = reportedPitches(faces, { ...DEFAULT_PITCH_PARAMS, offsetX12: 0.25 });
+    expect(off.areaPitchX12).toEqual(base.pitchX12);
+    const follow = reportedPitches(faces, { ...DEFAULT_PITCH_PARAMS, offsetX12: 0.25, offsetArea: true });
+    expect(follow.areaPitchX12).toEqual(follow.pitchX12);
+    expect(follow.pitchX12).toEqual(off.pitchX12);
+  });
+
   it('is the same for the same faces, and does not depend on the order of equal readings', () => {
     const faces = [face(7.2, 30), face(6.8, 30), face(7.0, 12), face(12.4, 40), face(11.8, 40), face(3, 9)];
     const a = reportedPitches(faces);
@@ -152,8 +163,10 @@ describe('the pitch a reconstructed roof reports', () => {
       expect(f.planAreaM2).toBe(g.planAreaM2);
       expect(f.azimuthDeg).toBe(g.azimuthDeg);
       expect(f.slopedAreaM2).toBeCloseTo(f.planAreaM2 * Math.hypot(1, f.pitchX12 / 12), 9);
-      // The plane still says what the heights said.
+      // The plane still says what the heights said, and the face keeps that reading beside the one it reports.
       expect(Math.hypot(f.plane.a, f.plane.b) * 12).toBeCloseTo(g.pitchX12, 9);
+      expect(f.fitPitchX12).toBe(g.pitchX12);
+      expect(g.fitPitchX12).toBe(g.pitchX12);
     });
     // The leaning roof's sloped area: 160 m2 of plan at 6/12.
     const sloped = pooled.faces.reduce((t, f) => t + f.slopedAreaM2, 0);
@@ -174,12 +187,17 @@ describe('the pitch a reconstructed roof reports', () => {
     expect(Math.abs(p.faces.find((g) => inside(porch.toLocal({ x: 0, y: 2 }), g.ring))!.pitchX12 - 6)).toBeLessThan(0.3);
   });
 
-  it('the offset option lowers every sloped face by that much and the sloped area with it; the flat flag is the plane\'s', () => {
+  it('the offset option lowers every sloped face by that much; the sloped area follows only with offsetArea; the flat flag is the plane\'s', () => {
     const off = reconstructRoof(syn.raster, syn.point, { pitch: { offsetX12: 0.25 } })!;
+    const follow = reconstructRoof(syn.raster, syn.point, { pitch: { offsetX12: 0.25, offsetArea: true } })!;
     off.faces.forEach((f, k) => {
       expect(f.pitchX12).toBeCloseTo(pooled.faces[k]!.pitchX12 - 0.25, 9);
-      expect(f.slopedAreaM2).toBeLessThan(pooled.faces[k]!.slopedAreaM2);
+      expect(f.fitPitchX12).toBe(pooled.faces[k]!.fitPitchX12);
+      expect(f.slopedAreaM2).toBe(pooled.faces[k]!.slopedAreaM2);
       expect(f.flat).toBe(pooled.faces[k]!.flat);
+      expect(follow.faces[k]!.pitchX12).toBe(f.pitchX12);
+      expect(follow.faces[k]!.slopedAreaM2).toBeCloseTo(f.planAreaM2 * Math.hypot(1, f.pitchX12 / 12), 9);
+      expect(follow.faces[k]!.slopedAreaM2).toBeLessThan(f.slopedAreaM2);
     });
     expect(off.lines).toEqual(pooled.lines);
   });

@@ -143,8 +143,13 @@ export type LocalFace = {
   ring: XY[];
   /** The plane fitted on this face's own heights (what the creases are cut from). */
   plane: Plane;
-  /** The pitch the face reports (pitch.ts): its plane's, or its pitch group's, less the calibration offset. */
+  /**
+   * The pitch the face reports (pitch.ts): its plane's, or its pitch group's, less the calibration offset. The sloped
+   * area is worked out with it, or with the pitch before the offset (PitchParams.offsetArea).
+   */
   pitchX12: number;
+  /** The plane's own pitch, x/12: what the heights say on this face alone. */
+  fitPitchX12: number;
   azimuthDeg: number;
   planAreaM2: number;
   slopedAreaM2: number;
@@ -651,7 +656,8 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   const oy = -r0 * s;
   const shift = (p: XY): XY => ({ x: p.x + ox, y: p.y + oy });
   // The pitch each face reports: its own plane's, pooled with the faces of the roof that agree with it (pitch.ts). The
-  // planes, and so the creases and every line, stay as fitted; the sloped area follows the reported pitch.
+  // planes, and so the creases and every line, stay as fitted; the sloped area follows the pooled pitch (and the
+  // calibration offset only when pitch.offsetArea says so).
   const pitch = reportedPitches(planes.map((p, k) => ({ pitchX12: Math.hypot(p.a, p.b) * 12, areaM2: raw[k]! * scale })), { ...DEFAULT_PITCH_PARAMS, ...opts.pitch });
   if (opts.debug !== undefined) for (const gr of pitch.groups) opts.debug(`pitch group ${gr.pitchX12.toFixed(2)}/12: ${gr.faces.length} faces, ${gr.areaM2.toFixed(1)} m2`);
   const localFaces: LocalFace[] = planes.map((p0, k) => {
@@ -660,13 +666,15 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     const slope = Math.hypot(plane.a, plane.b);
     const plan = raw[k]! * scale;
     const reported = pitch.pitchX12[k]!;
+    const forArea = pitch.areaPitchX12[k]!;
     return {
       ring: topo.faces[k]!.ring.map(shift),
       plane,
       pitchX12: reported,
+      fitPitchX12: slope * 12,
       azimuthDeg: azimuthOf(plane),
       planAreaM2: plan,
-      slopedAreaM2: plan * Math.sqrt(1 + (reported / 12) ** 2),
+      slopedAreaM2: plan * Math.sqrt(1 + (forArea / 12) ** 2),
       flat: slope * 12 < FLAT_X12,
       label: shift(labelPoint(g, s, faces.labels, k, topo.faces[k]!.ring)),
     };
@@ -1826,6 +1834,7 @@ export function toRoof3d(
     faces: local.faces.map((f) => ({
       ring: f.ring.map(ll),
       pitchX12: round(f.pitchX12, 2),
+      ...(round(f.fitPitchX12, 2) !== round(f.pitchX12, 2) ? { fitPitchX12: round(f.fitPitchX12, 2) } : {}),
       azimuthDeg: round(f.azimuthDeg, 1),
       planAreaSqFt: round(f.planAreaM2 * SQ_FT_PER_SQ_M, 1),
       slopedAreaSqFt: round(f.slopedAreaM2 * SQ_FT_PER_SQ_M, 1),
