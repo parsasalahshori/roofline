@@ -280,7 +280,11 @@ describe('the plan', () => {
 
     // Both reps take the doors; the newest photo is the one the Meta ad uses.
     const routes = payloadOf(steps[2]!);
-    expect(routes.maxDoors).toBe(1500);
+    // The cap follows the homes the storm hit (10 here), up to 1,500.
+    expect(routes.maxDoors).toBe(10);
+    await q(`update company_storms set homes_hit = 5000 where id = $1`, [companyStormId]);
+    steps = await stepsOf((await draft()).taskId);
+    expect(payloadOf(steps[2]!).maxDoors).toBe(1500);
     expect(routes.companyStormId).toBe(companyStormId);
     expect(sorted(routes.repUserIds as string[])).toEqual(sorted([t.seed.a.rep.userId, t.seed.a.otherRep.userId]));
     const older = await q(

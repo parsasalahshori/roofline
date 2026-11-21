@@ -37,6 +37,12 @@ const ROUTE_2 = {
 };
 
 describe('my routes', () => {
+  it('says "1 door" for a one-door route', () => {
+    expect(doors.progress(0, 1)).toBe('0 of 1 door');
+    expect(doors.routeLinkLabel('Omaha · Route 1 (Sam)', 0, 1)).toBe('Omaha · Route 1 (Sam), 0 of 1 door');
+    expect(doors.progress(0, 2)).toBe('0 of 2 doors');
+  });
+
   it('lists the rep routes with progress', async () => {
     api = stubApi({ 'GET /api/routes/mine': () => ({ body: { routes: [ROUTE_1, ROUTE_2] } }) });
     renderAt(<MyRoutes />, '/storm/routes');

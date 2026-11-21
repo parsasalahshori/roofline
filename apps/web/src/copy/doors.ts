@@ -12,9 +12,9 @@ export const doors = {
   myRoutesError: "We couldn't load your routes.",
   routeStatus: { ready: 'Ready', in_progress: 'In progress', done: 'Done' },
   /** "3 of 12 doors" */
-  progress: (done: number, total: number) => `${done} of ${total} doors`,
+  progress: (done: number, total: number) => `${done} of ${total} ${total === 1 ? 'door' : 'doors'}`,
   /** The route link's accessible name: the route name then its progress. */
-  routeLinkLabel: (name: string, done: number, total: number) => `${name}, ${done} of ${total} doors`,
+  routeLinkLabel: (name: string, done: number, total: number) => `${name}, ${done} of ${total} ${total === 1 ? 'door' : 'doors'}`,
 
   // One route
   routeLoading: 'Loading the route',

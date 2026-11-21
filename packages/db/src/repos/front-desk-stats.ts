@@ -152,11 +152,14 @@ export async function frontDeskDayStats(
       (select count(*)::int from day_convs where outcome = 'booked') as booked,
       (select count(*)::int from day_calls where transfer_result in ('answered', 'no_answer') or status = 'transferred') as escalated,
       (select round(avg(g.ms))::int from (
-          select greatest(0, extract(epoch from (
-            coalesce(k.ai_started_at, (select min(t.at) from conversation_turns t
-              where t.company_id = ${company} and t.call_id = k.id and t.speaker = 'assistant')) - k.started_at
-          )) * 1000) as ms
-          from day_calls k
+          select case when w.answered_at is null then null
+                 else greatest(0, extract(epoch from (w.answered_at - w.started_at)) * 1000) end as ms
+          from (
+            select k.started_at,
+              coalesce(k.ai_started_at, (select min(t.at) from conversation_turns t
+                where t.company_id = ${company} and t.call_id = k.id and t.speaker = 'assistant')) as answered_at
+            from day_calls k
+          ) w
         ) g where g.ms is not null) as avg_answer_ms,
       (select count(*)::int from day_calls k
         where extract(isodow from (k.started_at at time zone ${timeZone})) > 5

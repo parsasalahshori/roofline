@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import {
   appointments,
   calls,
@@ -8,6 +8,7 @@ import {
   jobs,
   companyPhoneNumbers,
   conversations,
+  conversationTurns,
   createPools,
   decrypt,
   customers,
@@ -35,6 +36,7 @@ import { FakeVoiceSession } from '../providers/fakes/voice-session.ts';
 import { signResolvedProposal } from '../public/proposal-sign.ts';
 import { systemContext } from '../permissions.ts';
 import { matchCompany } from '../storm/match.ts';
+import { draftStormPlan } from '../storm/plan.ts';
 import { DEMO_CALL_LINES, DEMO_TEXTS, demoLlm } from './script.ts';
 
 /*
@@ -90,17 +92,32 @@ async function companyNumber(deps: AppDeps, companyId: string): Promise<string> 
 
 type Homeowner = { customerId: string | null; name: string | null; phone: string };
 
-/** A customer of the company with a phone number, picked at random so repeated runs vary; else a stranger. */
-async function pickHomeowner(deps: AppDeps, companyId: string): Promise<Homeowner> {
+/**
+ * A customer of the company with a phone number, picked at random so repeated runs vary; else a stranger.
+ * `withHome`: the call books an inspection at the caller's home, so it prefers customers who have one on file.
+ */
+async function pickHomeowner(deps: AppDeps, companyId: string, withHome = false): Promise<Homeowner> {
   const ctx = systemContext(companyId);
-  const rows = await withTenant(deps.pools, ctx, (tx) =>
-    tx
-      .select({ id: customers.id, name: customers.displayName, phones: customers.phones })
-      .from(customers)
-      .where(and(isNull(customers.archivedAt), eq(customers.doNotContact, false), sql`jsonb_array_length(${customers.phones}) > 0`))
-      .orderBy(desc(customers.updatedAt))
-      .limit(25),
-  );
+  const find = (needHome: boolean) =>
+    withTenant(deps.pools, ctx, (tx) =>
+      tx
+        .select({ id: customers.id, name: customers.displayName, phones: customers.phones })
+        .from(customers)
+        .where(
+          and(
+            isNull(customers.archivedAt),
+            eq(customers.doNotContact, false),
+            sql`jsonb_array_length(${customers.phones}) > 0`,
+            needHome
+              ? sql`exists (select 1 from ${properties} p where p.customer_id = ${customers.id} and p.archived_at is null)`
+              : undefined,
+          ),
+        )
+        .orderBy(desc(customers.updatedAt))
+        .limit(25),
+    );
+  let rows = withHome ? await find(true) : [];
+  if (rows.length === 0) rows = await find(false);
   const withPhone = rows.flatMap((r) => {
     const phone = r.phones.find((p) => p.primary)?.e164 ?? r.phones[0]?.e164;
     return phone ? [{ customerId: r.id, name: r.name, phone }] : [];
@@ -155,13 +172,13 @@ const DEMO_PICKUP_MS = 800;
  * The inspection the demo call's script promises: Thursday at 10 AM (company time zone), an hour, at the
  * homeowner's first home and open job, booked by Front Desk. Skipped when the homeowner has no home on file.
  */
-async function bookDemoInspection(tx: Parameters<Parameters<typeof withTenant>[2]>[0], ctx: TenantContext, customerId: string, now: Date): Promise<void> {
+async function bookDemoInspection(tx: Parameters<Parameters<typeof withTenant>[2]>[0], ctx: TenantContext, customerId: string, now: Date): Promise<string | null> {
   const [home] = await tx
     .select({ id: properties.id })
     .from(properties)
     .where(and(eq(properties.companyId, ctx.companyId), eq(properties.customerId, customerId), isNull(properties.archivedAt)))
     .limit(1);
-  if (!home) return;
+  if (!home) return null;
   const [job] = await tx
     .select({ id: jobs.id })
     .from(jobs)
@@ -174,15 +191,34 @@ async function bookDemoInspection(tx: Parameters<Parameters<typeof withTenant>[2
   const result = await tx.execute<{ start: Date | string }>(sql`
     with d as (select (${now}::timestamptz at time zone ${tz})::date as today)
     select ((today + (((4 - extract(isodow from today)::int + 6) % 7) + 1))::date + time '10:00') at time zone ${tz} as start from d`);
-  const start = new Date(result.rows[0]!.start);
-  const end = new Date(start.getTime() + 60 * 60 * 1000);
+  const thursday = new Date(result.rows[0]!.start);
+  // Front Desk books a person, so the visit shows on that person's calendar: the first rep (else the owner) who is
+  // free at that time, trying the following Thursdays when everyone is booked (the call's script says "Thursday").
+  const team = await tx.execute<{ user_id: string }>(
+    sql`select user_id from company_members where status = 'active' and role in ('rep', 'owner') order by (role = 'rep') desc, name, user_id`,
+  );
+  if (team.rows.length === 0) return null;
+  let start = thursday;
+  let end = new Date(start.getTime() + 60 * 60 * 1000);
+  let assignedUserId: string | null = null;
+  for (let week = 0; week < 8 && assignedUserId === null; week += 1) {
+    start = new Date(thursday.getTime() + week * 7 * 24 * 60 * 60 * 1000);
+    end = new Date(start.getTime() + 60 * 60 * 1000);
+    const taken = await tx
+      .select({ userId: appointments.assignedUserId })
+      .from(appointments)
+      .where(and(eq(appointments.companyId, ctx.companyId), isNull(appointments.canceledAt), lt(appointments.startsAt, end), gt(appointments.endsAt, start)));
+    const busy = new Set(taken.map((r) => r.userId));
+    assignedUserId = team.rows.find((m) => !busy.has(m.user_id))?.user_id ?? null;
+  }
+  if (assignedUserId === null) return null;
   const [already] = await tx
     .select({ id: appointments.id })
     .from(appointments)
     .where(and(eq(appointments.companyId, ctx.companyId), eq(appointments.customerId, customerId), eq(appointments.startsAt, start)))
     .limit(1);
-  if (already) return;
-  await createAppointment(
+  if (already) return null;
+  const booked = await createAppointment(
     tx,
     ctx,
     {
@@ -191,7 +227,7 @@ async function bookDemoInspection(tx: Parameters<Parameters<typeof withTenant>[2
       jobId: job?.id ?? null,
       customerId,
       propertyId: home.id,
-      assignedUserId: null,
+      assignedUserId,
       startsAt: start,
       endsAt: end,
       allDay: false,
@@ -200,12 +236,13 @@ async function bookDemoInspection(tx: Parameters<Parameters<typeof withTenant>[2
     },
     now,
   );
+  return booked.row.id;
 }
 
 /** "Incoming call": a homeowner calls, talks with Front Desk over the fake voice session, and hangs up. */
 export async function simulateCall(deps: AppDeps, companyId: string): Promise<SimulateResult> {
   const to = await companyNumber(deps, companyId);
-  const homeowner = await pickHomeowner(deps, companyId);
+  const homeowner = await pickHomeowner(deps, companyId, true);
   const ctx = systemContext(companyId);
   const demo = demoDeps(deps);
   const callSid = `CA${randomUUID().replace(/-/g, '')}`;
@@ -255,7 +292,22 @@ export async function simulateCall(deps: AppDeps, companyId: string): Promise<Si
     await updateCall(tx, ctx, callSid, { status: 'ended', endedAt, aiSeconds: DEMO_CALL_SECONDS });
     if (homeowner.customerId !== null) {
       await updateConversation(tx, ctx, conversationId, { customerId: homeowner.customerId, identity: 'matched' });
-      await bookDemoInspection(tx, ctx, homeowner.customerId, endedAt);
+      const appointmentId = await bookDemoInspection(tx, ctx, homeowner.customerId, endedAt);
+      if (appointmentId !== null) {
+        // The booking shows under the assistant's last line as a "Booked an inspection" card that opens the visit.
+        const [last] = await tx
+          .select({ id: conversationTurns.id })
+          .from(conversationTurns)
+          .where(and(eq(conversationTurns.companyId, companyId), eq(conversationTurns.conversationId, conversationId), eq(conversationTurns.speaker, 'assistant')))
+          .orderBy(desc(conversationTurns.position))
+          .limit(1);
+        if (last) {
+          await tx
+            .update(conversationTurns)
+            .set({ toolCalls: [{ name: 'book_inspection', input: { appointmentId }, result: 'Booked', ok: true }] })
+            .where(and(eq(conversationTurns.companyId, companyId), eq(conversationTurns.id, last.id)));
+        }
+      }
     }
   });
   await runAfterCall(demo, { companyId, callSid });
@@ -322,7 +374,8 @@ export async function simulateStorm(deps: AppDeps, companyId: string): Promise<S
   if (center === null) throw new AppError(409, 'Set a service area first, so the storm has somewhere to land.');
 
   const now = deps.clock.now();
-  const stormId = await insertFixtureStorm(ownerQuery(url), {
+  const query = ownerQuery(url);
+  const stormId = await insertFixtureStorm(query, {
     convectiveDay: now.toISOString().slice(0, 10),
     status: 'provisional',
     contours: [
@@ -332,6 +385,17 @@ export async function simulateStorm(deps: AppDeps, companyId: string): Promise<S
       { thresholdIn: 2.0, box: around(center, 0.015, 0.012) },
     ],
   });
+  // A name for the map and the list: the city of the homes the storm is over (a real storm is named from its centre).
+  const place = await withTenant(deps.pools, ctx, async (tx) => {
+    const [home] = await tx
+      .select({ city: properties.city, state: properties.state })
+      .from(properties)
+      .where(and(isNull(properties.archivedAt), isNotNull(properties.geom)))
+      .orderBy(sql`${properties.geom} <-> ST_SetSRID(ST_MakePoint(${center[0]}, ${center[1]}), 4326)`)
+      .limit(1);
+    return home ? `${home.city}, ${home.state}` : null;
+  });
+  if (place !== null) await query(`update storms set place_name = $2 where id = $1`, [stormId, place]);
   const matched = await matchCompany(deps, companyId, now);
   const [companyStorm] = await withTenant(deps.pools, ctx, (tx) =>
     tx.execute(sql`select id, customers_hit, homes_hit from company_storms where storm_id = ${stormId}::uuid`).then((r) => r.rows),
@@ -340,6 +404,8 @@ export async function simulateStorm(deps: AppDeps, companyId: string): Promise<S
     return { ok: true, stormId, companyStormId: null, message: 'A hail storm passed nearby, but it stayed under your alert threshold.' };
   }
   const row = companyStorm as { id: string; customers_hit: number; homes_hit: number };
+  // A real storm gets its plan once it settles (90 minutes on); the demo does not wait, so Storm Scout drafts it now.
+  const plan = await draftStormPlan(deps, companyId, row.id, now);
   return {
     ok: true,
     stormId,
@@ -347,7 +413,10 @@ export async function simulateStorm(deps: AppDeps, companyId: string): Promise<S
     created: matched.created.length > 0,
     customersHit: Number(row.customers_hit),
     homesHit: Number(row.homes_hit),
-    message: `Hail up to 2 inches hit ${String(row.homes_hit)} homes, ${String(row.customers_hit)} of them your customers.`,
+    taskId: plan?.taskId ?? null,
+    message:
+      `Hail up to 2 inches hit ${String(row.homes_hit)} homes, ${String(row.customers_hit)} of them your customers.` +
+      (plan ? ' Storm Scout drafted a plan and it is waiting for your OK.' : ''),
   };
 }
 

@@ -878,15 +878,20 @@ describe('what F2 added to the approvals API', () => {
 
   test('a signed-out request is refused before its body is read', async () => {
     const zero = '00000000-0000-0000-0000-000000000000';
+    // The refusal is answered while the body is still arriving. supertest asks for "Connection: close", and a
+    // server that answers early on such a connection closes it under the client's writes (EPIPE/ECONNRESET on
+    // Node 22). Browsers keep the connection alive, so the test does too and sees the 401 like they do.
+    const keepAlive = { Connection: 'keep-alive' };
     // Over 1 MB: if the 1 MB parser ran before the sign-in gate this would be a 413.
     const big = await request(t.app)
       .patch(`/api/approvals/${zero}/steps/${zero}`)
+      .set(keepAlive)
       .send({ version: 1, payload: { label: 'x'.repeat(1100 * 1024) } });
     expect(big.status).toBe(401);
     expect(big.body).toEqual({ error: 'Please sign in.' });
 
     // Over 256 KB, under 1 MB: still a 401, not a 413.
-    const mid = await request(t.app).post(rerunUrl(zero)).send({ note: 'x'.repeat(300 * 1024) });
+    const mid = await request(t.app).post(rerunUrl(zero)).set(keepAlive).send({ note: 'x'.repeat(300 * 1024) });
     expect(mid.status).toBe(401);
   });
 });
