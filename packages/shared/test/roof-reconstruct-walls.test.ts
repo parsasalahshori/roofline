@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { reconstructRoof, type LocalRoof } from '../src/roof-reconstruct/index.ts';
 import type { Plane } from '../src/roof-reconstruct/planes.ts';
 import { buildTopology, DEFAULT_TOPOLOGY_PARAMS, flipShortRuns } from '../src/roof-reconstruct/topology.ts';
-import { HIP_FLAT, type Shape, synthesize } from './fixtures/synthetic-roofs.ts';
+import { HIP_FLAT, PORCH, type Shape, synthesize, TWO_STOREY } from './fixtures/synthetic-roofs.ts';
 
 // A boundary between two faces typed piece by piece (topology.ts, stepPieceM): where one face ends above the other
 // for a stretch (a dormer's front and cheek walls) the upper face has its rake or eave there and the lower face its
@@ -136,6 +136,24 @@ describe('walls for a stretch of a boundary', () => {
     const high = lengths(reconstructRoof(tall.raster, tall.point, { seed: 7 })!);
     expect(high.flashing ?? 0).toBeGreaterThan(10);
   }, 30_000);
+});
+
+describe('the faces are settled before the walls are typed piece by piece', () => {
+  it('the same faces as with every boundary typed once (their count, planes and order), whatever the lines become', () => {
+    for (const shape of [TALL_DORMER, PORCH, TWO_STOREY, HIP_FLAT]) {
+      for (const turnDeg of [17, 45]) {
+        const syn = synthesize(shape, { turnDeg, seed: 5 });
+        const pieces = reconstructRoof(syn.raster, syn.point, { seed: 7 })!;
+        const whole = reconstructRoof(syn.raster, syn.point, { seed: 7, topology: { stepPieceM: 0 } })!;
+        expect(pieces.faces.length, shape.name).toBe(whole.faces.length);
+        expect(pieces.dissolved, shape.name).toEqual(whole.dissolved);
+        // The same planes; a face's area (its polygon's) may differ a little, so may the order of two alike in size.
+        const planesOf = (r: LocalRoof) => r.faces.map((f) => `${f.pitchX12.toFixed(3)}@${f.azimuthDeg.toFixed(2)}`).sort();
+        expect(planesOf(pieces), shape.name).toEqual(planesOf(whole));
+        expect(pieces.outline, shape.name).toEqual(whole.outline);
+      }
+    }
+  }, 60_000);
 });
 
 describe('a stretch on the diagonal', () => {
