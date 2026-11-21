@@ -28,6 +28,7 @@ import { inferHiddenEaves, type OutlinePlanesParams, type PlanesDecline } from '
 import { DEFAULT_LIDAR_EDGE, type LidarCloud, type LidarEdgeParams, type LidarEdgeReport, lidarHiddenEdges } from './outline-lidar.ts';
 import { DEFAULT_LIDAR_FUSION, fuseLidar, type LidarFusionParams, type LidarFusionReport } from './lidar-fusion.ts';
 import { DEFAULT_PITCH_PARAMS, type PitchParams, reportedPitches } from './pitch.ts';
+import { stackChords } from './pitch-stacks.ts';
 import { DEFAULT_PRIMITIVE_PARAMS, fitGables, type FittedGable, type FittedKind, type MergedStack, mergeStacks, type PrimitiveParams } from './primitives.ts';
 
 export { lngLatToUtm, utmToLngLat, utmZoneOfEpsg, type UtmZone } from './utm.ts';
@@ -769,8 +770,27 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   // The pitch each face reports: its own plane's, pooled with the faces of the roof that agree with it (pitch.ts). The
   // planes, and so the creases and every line, stay as fitted; the sloped area follows the pooled pitch (and the
   // calibration offset only when pitch.offsetArea says so).
-  const pitch = reportedPitches(planes.map((p, k) => ({ pitchX12: Math.hypot(p.a, p.b) * 12, areaM2: raw[k]! * scale })), { ...DEFAULT_PITCH_PARAMS, ...opts.pitch });
+  const pitchPrm: PitchParams = { ...DEFAULT_PITCH_PARAMS, ...opts.pitch };
+  // A bowed slope's two strips read its chord (pitch-stacks.ts); a gable slope mirrored from across its ridge is a copy
+  // of that slope's reading, not one of its own (PitchParams.fittedVote).
+  const chords = pitchPrm.stackChord && !(primPrm.enabled && primPrm.stacks) ? stackChords(g, s, dsm, roof, faces, planes, locked, primPrm, FLAT_X12, opts.debug) : null;
+  const copied = (p: Plane) => locked.get(p) === 'gable' && primPrm.pitch === 'mirror';
+  // A face measured by the lidar (lidar fusion: the same test as its `source`, withLidarProvenance) is not a reading of
+  // the calibrated height map: the calibration offset is not taken off it (PitchFace.uncalibrated).
+  const lidarPx = opts.lidarPixels != null && opts.lidarPixels.length === W * H ? opts.lidarPixels : null;
+  const byLidar = (k: number) => lidarPx !== null && lidarShareIn(lidarPx, W, H, s, topo.faces[k]!.ring.map(shift)) >= LIDAR_SOURCE_SHARE;
+  const pitch = reportedPitches(
+    planes.map((p, k) => ({
+      pitchX12: chords?.[k] ?? Math.hypot(p.a, p.b) * 12,
+      areaM2: raw[k]! * scale,
+      azimuthDeg: azimuthOf(p),
+      ...(copied(p) ? { fitted: true } : {}),
+      ...(byLidar(k) ? { uncalibrated: true } : {}),
+    })),
+    pitchPrm,
+  );
   if (opts.debug !== undefined) for (const gr of pitch.groups) opts.debug(`pitch group ${gr.pitchX12.toFixed(2)}/12: ${gr.faces.length} faces, ${gr.areaM2.toFixed(1)} m2`);
+  if (opts.debug !== undefined) planes.forEach((p, k) => opts.debug!(`pitch face ${k}: fitted ${(Math.hypot(p.a, p.b) * 12).toFixed(4)}/12, ${(raw[k]! * scale).toFixed(3)} m2, reports ${pitch.pitchX12[k]!.toFixed(4)}${locked.has(p) ? `, ${locked.get(p)!}` : ''}`));
   const localFaces: LocalFace[] = planes.map((p0, k) => {
     // The plane in whole-raster coordinates: z = a (x - ox) + b (y - oy) + c.
     const plane: Plane = { a: p0.a, b: p0.b, c: p0.c - p0.a * ox - p0.b * oy };
@@ -834,32 +854,43 @@ const THIN_FACE_M = 0.9;
 /** A face with less than this share on lidar pixels is Google's (the seam's pixels, a crown's edge). */
 const LIDAR_FACE_MIN_SHARE = 0.05;
 
+/** A face with this share or more of its polygon on lidar pixels is the lidar's: `source` 'lidar', its pitch not calibrated as Google's. */
+const LIDAR_SOURCE_SHARE = 0.5;
+
+/** The share of a polygon's pixels (raster-local metres, on a W x H raster of `s` metre pixels) that are set in `px`; 0 for an empty polygon. */
+function lidarShareIn(px: Uint8Array, W: number, H: number, s: number, ring: readonly XY[]): number {
+  const { on, all } = pixelsIn(px, W, H, s, ring);
+  return all > 0 ? on / all : 0;
+}
+
+function pixelsIn(px: Uint8Array, W: number, H: number, s: number, ring: readonly XY[]): { on: number; all: number } {
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const p of ring) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); }
+  const c0 = Math.max(0, Math.floor(x0 / s)), c1 = Math.min(W - 1, Math.ceil(x1 / s));
+  const r0 = Math.max(0, Math.floor(-y1 / s)), r1 = Math.min(H - 1, Math.ceil(-y0 / s));
+  let on = 0, all = 0;
+  for (let r = r0; r <= r1; r++) {
+    for (let c = c0; c <= c1; c++) {
+      if (!pointInRing({ x: (c + 0.5) * s, y: -(r + 0.5) * s }, ring)) continue;
+      all++;
+      if (px[r * W + c] === 1) on++;
+    }
+  }
+  return { on, all };
+}
+
 function withLidarProvenance(local: LocalRoof, report: LidarFusionReport, px: Uint8Array | null, evidence: { dsm: Float32Array; groundPx: Uint8Array } | null, W: number, H: number): LocalRoof {
   const s = local.pixelSizeM;
   const outlineArea = Math.abs(signedArea(local.outline));
   if (px === null) return { ...local, lidarFusion: { ...report, addedPlanM2: 0, addedSlopedM2: 0, addedShare: 0 } };
-  const shareIn = (ring: readonly XY[]): { on: number; all: number } => {
-    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    for (const p of ring) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); }
-    const c0 = Math.max(0, Math.floor(x0 / s)), c1 = Math.min(W - 1, Math.ceil(x1 / s));
-    const r0 = Math.max(0, Math.floor(-y1 / s)), r1 = Math.min(H - 1, Math.ceil(-y0 / s));
-    let on = 0, all = 0;
-    for (let r = r0; r <= r1; r++) {
-      for (let c = c0; c <= c1; c++) {
-        if (!pointInRing({ x: (c + 0.5) * s, y: -(r + 0.5) * s }, ring)) continue;
-        all++;
-        if (px[r * W + c] === 1) on++;
-      }
-    }
-    return { on, all };
-  };
+  const shareIn = (ring: readonly XY[]): { on: number; all: number } => pixelsIn(px, W, H, s, ring);
   let addedSloped = 0;
   const faces = local.faces.map((f) => {
     const { on, all } = shareIn(f.ring);
     const share = all > 0 ? on / all : 0;
     addedSloped += share * f.slopedAreaM2;
     if (!(share >= LIDAR_FACE_MIN_SHARE)) return f;
-    return { ...f, lidarShare: round(share, 3), ...(share >= 0.5 ? { source: 'lidar' as const } : {}) };
+    return { ...f, lidarShare: round(share, 3), ...(share >= LIDAR_SOURCE_SHARE ? { source: 'lidar' as const } : {}) };
   });
   const addedPlan = shareIn(local.outline).on * s * s;
   const addedShare = outlineArea > 0 ? addedPlan / outlineArea : 0;
