@@ -3,7 +3,7 @@
 // of the surveyed pitch three times in four, a face of 150 sq ft less than half the time. But a roof is built with one
 // pitch, or two or three, and every face of one pitch is a reading of the same number. So the readings are pooled
 // before anything is rounded: the pitch that holds the most roof is found first and every face within its tolerance
-// reports it (the group's area-weighted median), then the next pitch among the faces left, and so on. A face that
+// reports it (the group's area-weighted median, interpolated), then the next pitch among the faces left, and so on. A face that
 // stands apart (a low porch roof, a steep dormer) keeps its own reading.
 //
 // Planes, creases and line lengths are not touched: only a face's reported pitch and the sloped area that follows
@@ -54,17 +54,26 @@ export type PitchFace = { pitchX12: number; areaM2: number };
 /** A pitch group: the pitch its faces report (before the calibration offset), their indices and plan area. */
 export type PitchGroup = { pitchX12: number; faces: number[]; areaM2: number };
 
-/** The area-weighted median: the value at which half the area lies at or below (ties by the order given). */
-function weightedMedian(items: readonly { v: number; w: number }[]): number {
+/**
+ * The area-weighted median, interpolated: each value sits at the middle of its own share of the area, and the result is
+ * read at half the area on the line between the two values either side. Two faces of one size give their mean, a face
+ * holding most of the area gives its own value, and a small change in an area never makes the result jump.
+ */
+export function weightedMedian(items: readonly { v: number; w: number }[]): number {
   const sorted = items.map((it, k) => ({ ...it, k })).sort((a, b) => a.v - b.v || a.k - b.k);
+  if (sorted.length === 0) return 0;
   let total = 0;
   for (const it of sorted) total += it.w;
+  if (!(total > 0)) return sorted[Math.floor(sorted.length / 2)]!.v;
   let run = 0;
+  let prev: { v: number; at: number } | null = null;
   for (const it of sorted) {
+    const at = (run + it.w / 2) / total;
+    if (at >= 0.5) return prev === null || at === prev.at ? it.v : prev.v + ((0.5 - prev.at) / (at - prev.at)) * (it.v - prev.v);
+    prev = { v: it.v, at };
     run += it.w;
-    if (run >= total / 2) return it.v;
   }
-  return sorted.length > 0 ? sorted[sorted.length - 1]!.v : 0;
+  return sorted[sorted.length - 1]!.v;
 }
 
 /**

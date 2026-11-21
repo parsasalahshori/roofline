@@ -271,11 +271,12 @@ export function roofOnLayers(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
 export const DEFAULT_HIDDEN_EDGE: Readonly<HiddenEdgeOption> | null = null;
 
 /**
- * Google's height maps read a roof steep: on the 18 dev houses with an EagleView key the pitch holding the most roof
- * came out above the report's whole number on 17, by 0.21/12 at the median, at 5/12 as at 12/12 (docs/roof-3d/pitch.md).
- * Taken off every face's pitch (reconstructRoof's pitch.offsetX12; `tuning.pitch.offsetX12` overrides it, 0 = off).
+ * Google's height maps read a roof steep: on the 18 dev houses with an EagleView key the pitch group holding the most
+ * roof came out above the report's whole number on 17, by 0.23/12 at the median (0.27 mean), at 5/12 as at 12/12: an
+ * offset, not a scale (docs/roof-3d/pitch.md). Taken off every face's pitch (reconstructRoof's pitch.offsetX12);
+ * `tuning.pitch.offsetX12` overrides it, 0 = off.
  */
-export const GOOGLE_PITCH_OFFSET_X12 = 0.2;
+export const GOOGLE_PITCH_OFFSET_X12 = 0.25;
 
 /** The reconstruction's own parameters, for the benchmark's studies (development only; the server never sets them). */
 export type RoofTuning = Pick<NonNullable<Parameters<typeof reconstructRoof>[2]>, 'planes' | 'outline' | 'topology' | 'faces' | 'pitch'>;
