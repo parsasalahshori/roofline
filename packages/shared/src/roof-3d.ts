@@ -20,8 +20,18 @@ export type Roof3dLineKind = (typeof ROOF_3D_LINE_KINDS)[number] | 'step';
 export type Roof3dFace = {
   /** [lng, lat], open ring, counter-clockwise. */
   ring: LngLat[];
-  /** Measured pitch, x/12 (two decimals). */
+  /**
+   * The pitch the face reports, x/12 (two decimals): its own plane's, or the pitch of the roof's faces that agree with
+   * it, less the calibration of the height map's source (roof-reconstruct/pitch.ts). The sloped area follows it up to
+   * that calibration (PitchParams.offsetArea).
+   */
   pitchX12: number;
+  /**
+   * The pitch of the face's own fitted plane, x/12 (two decimals), when it is not the pitch reported (absent: the
+   * same, and on reconstructions stored before the two could differ). It is what is compared with Google's own segment
+   * under the face (roof-3d-compare.ts): two fits of the same heights.
+   */
+  fitPitchX12?: number;
   /** Compass direction the face slopes down towards, degrees (0 north, 90 east). */
   azimuthDeg: number;
   planAreaSqFt: number;

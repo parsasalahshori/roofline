@@ -24,12 +24,14 @@ import { DEFAULT_FACE_CLEANUP, type FaceCleanupParams, faceSupport, type WeakRea
 import { inferHiddenEaves, type OutlinePlanesParams, type PlanesDecline } from './outline-planes.ts';
 import { DEFAULT_LIDAR_EDGE, type LidarCloud, type LidarEdgeParams, type LidarEdgeReport, lidarHiddenEdges } from './outline-lidar.ts';
 import { DEFAULT_LIDAR_FUSION, fuseLidar, type LidarFusionParams, type LidarFusionReport } from './lidar-fusion.ts';
+import { DEFAULT_PITCH_PARAMS, type PitchParams, reportedPitches } from './pitch.ts';
 
 export { lngLatToUtm, utmToLngLat, utmZoneOfEpsg, type UtmZone } from './utm.ts';
 export { MAX_RASTER_PIXELS, MAX_ROOF_PART_M2, RASTER_PROBLEMS, type RasterProblem, rasterProblem, roofPartAreaM2 } from './guard.ts';
 export type { XY } from './geom.ts';
 export { DEFAULT_PHOTO_EDGE, PHOTO_EDGE_REASONS, type PhotoEdge, type PhotoEdgeParams, type PhotoEdgeReason } from './outline-photo.ts';
 export type { Plane } from './planes.ts';
+export { DEFAULT_PITCH_PARAMS, type PitchFace, type PitchGroup, type PitchParams, reportedPitches } from './pitch.ts';
 export { DEFAULT_LIDAR_FUSION, fuseLidar, LIDAR_FUSION_REASONS, type LidarFusionParams, type LidarFusionReason, type LidarFusionReport, type LidarFusionResult } from './lidar-fusion.ts';
 export { DEFAULT_LIDAR_EDGE, densify, LIDAR_EDGE_REASONS, type LidarCloud, type LidarEdgeParams, type LidarEdgeReason, type LidarEdgeReport } from './outline-lidar.ts';
 
@@ -85,6 +87,11 @@ export type ReconstructOptions = {
   /** The weak-face cleanup on the finished faces (faces-cleanup.ts). */
   faces?: Partial<FaceCleanupParams>;
   /**
+   * The pitch each face reports (pitch.ts): faces of one roof that agree on a pitch report one pitch (`pool`, on by
+   * default), and a calibration offset for the height map's source (`offsetX12`, 0 here).
+   */
+  pitch?: Partial<PitchParams>;
+  /**
    * Roof the mask missed under canopy or in shade, completed from the roof's own planes (canopy.ts). Off by default
    * since the remediation (on the DEV split it changed 2 of 54 roofs by 1.25 m2 in all, undid itself on 6, and cost
    * about 60 ms a house; the area it adds is inferred, not seen, and was not reported on the stored roof);
@@ -134,8 +141,15 @@ export type ReconstructOptions = {
 /** Raster-local metres: x east from the raster's left edge, y north from its top edge (so y <= 0). */
 export type LocalFace = {
   ring: XY[];
+  /** The plane fitted on this face's own heights (what the creases are cut from). */
   plane: Plane;
+  /**
+   * The pitch the face reports (pitch.ts): its plane's, or its pitch group's, less the calibration offset. The sloped
+   * area is worked out with it, or with the pitch before the offset (PitchParams.offsetArea).
+   */
   pitchX12: number;
+  /** The plane's own pitch, x/12: what the heights say on this face alone. */
+  fitPitchX12: number;
   azimuthDeg: number;
   planAreaM2: number;
   slopedAreaM2: number;
@@ -641,18 +655,26 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
   const ox = c0 * s;
   const oy = -r0 * s;
   const shift = (p: XY): XY => ({ x: p.x + ox, y: p.y + oy });
+  // The pitch each face reports: its own plane's, pooled with the faces of the roof that agree with it (pitch.ts). The
+  // planes, and so the creases and every line, stay as fitted; the sloped area follows the pooled pitch (and the
+  // calibration offset only when pitch.offsetArea says so).
+  const pitch = reportedPitches(planes.map((p, k) => ({ pitchX12: Math.hypot(p.a, p.b) * 12, areaM2: raw[k]! * scale })), { ...DEFAULT_PITCH_PARAMS, ...opts.pitch });
+  if (opts.debug !== undefined) for (const gr of pitch.groups) opts.debug(`pitch group ${gr.pitchX12.toFixed(2)}/12: ${gr.faces.length} faces, ${gr.areaM2.toFixed(1)} m2`);
   const localFaces: LocalFace[] = planes.map((p0, k) => {
     // The plane in whole-raster coordinates: z = a (x - ox) + b (y - oy) + c.
     const plane: Plane = { a: p0.a, b: p0.b, c: p0.c - p0.a * ox - p0.b * oy };
     const slope = Math.hypot(plane.a, plane.b);
     const plan = raw[k]! * scale;
+    const reported = pitch.pitchX12[k]!;
+    const forArea = pitch.areaPitchX12[k]!;
     return {
       ring: topo.faces[k]!.ring.map(shift),
       plane,
-      pitchX12: slope * 12,
+      pitchX12: reported,
+      fitPitchX12: slope * 12,
       azimuthDeg: azimuthOf(plane),
       planAreaM2: plan,
-      slopedAreaM2: plan * Math.sqrt(1 + slope * slope),
+      slopedAreaM2: plan * Math.sqrt(1 + (forArea / 12) ** 2),
       flat: slope * 12 < FLAT_X12,
       label: shift(labelPoint(g, s, faces.labels, k, topo.faces[k]!.ring)),
     };
@@ -1812,6 +1834,7 @@ export function toRoof3d(
     faces: local.faces.map((f) => ({
       ring: f.ring.map(ll),
       pitchX12: round(f.pitchX12, 2),
+      ...(round(f.fitPitchX12, 2) !== round(f.pitchX12, 2) ? { fitPitchX12: round(f.fitPitchX12, 2) } : {}),
       azimuthDeg: round(f.azimuthDeg, 1),
       planAreaSqFt: round(f.planAreaM2 * SQ_FT_PER_SQ_M, 1),
       slopedAreaSqFt: round(f.slopedAreaM2 * SQ_FT_PER_SQ_M, 1),

@@ -14,6 +14,7 @@ export const TARGETS = { mainFaceSqFt: 150, pitchX12: 1, facingDeg: 15, junkSqFt
 export type FaceRow = {
   face: string;
   planSqFt: number;
+  /** The face's own fitted plane's pitch (Roof3dFace.fitPitchX12, or its pitchX12 where the two are the same). */
   pitchX12: number;
   azimuthDeg: number;
   flat: boolean;
@@ -62,10 +63,13 @@ export function checkRoof(roof: Roof3d, building: SolarBuilding | null): Accepta
     // A face mostly measured by leaf-off lidar (source 'lidar') lies where Google's leaf-on view saw a crown: the segment
     // under it was fitted to the canopy, so it is not checked against it (the roof carries 'roof-from-lidar' instead).
     const main = f.planAreaSqFt >= TARGETS.mainFaceSqFt && segment !== null && f.source !== 'lidar';
-    const pitchOk = segment === null || Math.abs(f.pitchX12 - segment.pitchX12) <= TARGETS.pitchX12;
+    // Google's segment is a plane fitted to the same heights, so it is held against this face's own fitted plane, not
+    // the pitch the face reports (pooled with the roof's other faces and calibrated: roof-reconstruct/pitch.ts).
+    const fit = f.fitPitchX12 ?? f.pitchX12;
+    const pitchOk = segment === null || Math.abs(fit - segment.pitchX12) <= TARGETS.pitchX12;
     // Facing means nothing on a flat face (or a flat segment).
     const facingOk = segment === null || f.flat || segment.pitchX12 < 2 || arcDeg(f.azimuthDeg, segment.azimuthDeg) <= TARGETS.facingDeg;
-    return { face: String.fromCharCode(65 + (k % 26)) + (k >= 26 ? String(Math.floor(k / 26) + 1) : ''), planSqFt: f.planAreaSqFt, pitchX12: f.pitchX12, azimuthDeg: f.azimuthDeg, flat: f.flat, segment, main, pitchOk, facingOk };
+    return { face: String.fromCharCode(65 + (k % 26)) + (k >= 26 ? String(Math.floor(k / 26) + 1) : ''), planSqFt: f.planAreaSqFt, pitchX12: fit, azimuthDeg: f.azimuthDeg, flat: f.flat, segment, main, pitchOk, facingOk };
   });
   const steepAllowed = segments.some((seg) => x12(seg.pitchDeg) > TARGETS.steepX12);
   const checked = rows.filter((r) => r.main);
