@@ -77,12 +77,18 @@ export type PrimitiveParams = {
   /** Heights of the far slope lie between sagM under its plane and aboveM over it, metres. */
   sagM: number;
   aboveM: number;
-  /** A far-side face becomes part of the slope when this share of its pixels is in the strip, between those heights. */
+  /**
+   * A far-side face becomes part of the slope when this share of its pixels is in the strip, between those heights, and
+   * at most absorbAboveShare of them stand above the plane (a dormer's faces rise out of their slope; a bowed slope's
+   * strips and pockets do not).
+   */
   absorbShare: number;
-  /** ...and the faces taken must hold this share of the strip. */
+  absorbAboveShare: number;
+  /** ...and the faces taken must hold this share of the strip (of what in it does not stand above the slope's plane). */
   coverShare: number;
-  /** One far face already within this angle (degrees) of the slope's plane is left as it is. */
+  /** Far faces already within this angle (degrees) and this height (metres, on average) of the slope's plane are left as they are. */
   fineDeg: number;
+  fineGapM: number;
   /**
    * A face along a fitted ridge that both slopes explain (absorbShare of it within pocketM of the ridge line and under
    * the two planes within the sag), that lies on both sides of the line (pocketSideShare of it on each) and is close to
@@ -154,8 +160,10 @@ export const DEFAULT_PRIMITIVE_PARAMS: PrimitiveParams = {
   sagM: 1,
   aboveM: 0.3,
   absorbShare: 0.7,
+  absorbAboveShare: 0.15,
   coverShare: 0.5,
   fineDeg: 4,
+  fineGapM: 0.15,
   pocketM: 1.5,
   pocketSideShare: 0.15,
   pocketFlatX12: 3,
@@ -447,6 +455,8 @@ export function fitGables(
     const byRidgeNear = new Array<number>(n).fill(0);
     const aboveStrip = new Array<number>(n).fill(0);
     const belowStrip = new Array<number>(n).fill(0);
+    // Per face: how far its own plane is from the slope's over its pixels in the strip (summed, metres).
+    const offSlope = new Array<number>(n).fill(0);
     let strip = 0;
     for (let i = 0; i < labels.length; i++) {
       const k = labels[i]!;
@@ -463,8 +473,10 @@ export function fitGables(
       if (tp < -0.3 || tp > farRun[b]! + 0.3) continue;
       strip++;
       const r = dsm[i]! - (zR - p2 * tp);
-      if (r >= -prm.sagM && r <= prm.aboveM) inStrip[k]!++;
-      else if (r > prm.aboveM) aboveStrip[k]!++;
+      if (r >= -prm.sagM && r <= prm.aboveM) {
+        inStrip[k]!++;
+        offSlope[k]! += Math.abs(planeZ(planes[k]!, x, y) - (zR - p2 * tp));
+      } else if (r > prm.aboveM) aboveStrip[k]!++;
       else belowStrip[k]!++;
     }
     if (debug !== undefined) {
@@ -477,17 +489,20 @@ export function fitGables(
     let covered = 0;
     for (let k = 0; k < n; k++) {
       if (k === f || gone.has(k) || made.has(k) || area[k] === 0) continue;
-      if (inStrip[k]! >= prm.absorbShare * area[k]!) {
+      if (inStrip[k]! >= prm.absorbShare * area[k]! && aboveStrip[k]! <= prm.absorbAboveShare * area[k]!) {
         take.push(k);
         covered += inStrip[k]!;
       }
     }
     const M: Plane = { a: -p2 * gx, b: -p2 * gy, c: zR + p2 * tr };
-    if (take.length === 0 || covered < prm.coverShare * strip) {
-      debug?.(`gable from face ${f}: far strip ${(strip * s * s).toFixed(1)} m2, faces under the slope cover ${(covered * s * s).toFixed(1)} m2, not fitted`);
+    // The slope's part of the strip: what does not stand above its plane (another roof joining it there, a dormer).
+    const slopePx = strip - aboveStrip.reduce((t, v) => t + v, 0);
+    if (take.length === 0 || covered < prm.coverShare * slopePx) {
+      debug?.(`gable from face ${f}: far strip ${(strip * s * s).toFixed(1)} m2 (${(slopePx * s * s).toFixed(1)} m2 not above the slope), faces under the slope cover ${(covered * s * s).toFixed(1)} m2, not fitted`);
       continue;
     }
-    if (take.length === 1 && planeAngleDeg(planes[take[0]!]!, M) <= prm.fineDeg) continue;
+    // Faces already on the slope's plane (one face, or the pieces another roof cuts one slope into) are left as they are.
+    if (take.every((k) => planeAngleDeg(planes[k]!, M) <= prm.fineDeg && offSlope[k]! <= prm.fineGapM * inStrip[k]!)) continue;
     const target = take[0]!;
     const set = new Set(take);
     let px = 0;
