@@ -142,10 +142,39 @@ brief: ~/RooflineWork/plans/roof2-brief.md
 | labels | wt-r-labels / roof2/labels | line kinds learned from the per-line answer key, written back as rules | DONE 4f01dc71 (partial win): the height map beside a line checks its name (measuredEdge, measuredRidge, hipStepM on; valleyDropM off); dev OBJECTIVE 21.9->20.5 (eave 19->10, rake 26->24), held-out 20.9->20.5 (chosen on held-out, not clean); gates pass. Ceiling for naming alone on dev: 19.4. valleyDropM 0.3 is right line by line but exposes missing real valleys: turn on once geometry finds them |
 | data | wt-r-data / roof2/data | more EagleView sandbox answer keys as a sealed fresh set | DONE 3c91f4ce: 20 new keys in testset-ev2 (7 fresh, 6 fresh-derived, 7 fresh-medium; manifest-ev2.json); score with work-data/score_ev2.sh; baseline alg 7 on high (13): OBJECTIVE 26.5, area 6.1 %, pitch exact 10/13; SEALED (tracks never see it); delete by 2026-12-21 |
 
+## roof2 integration (roof2/integration, wt-roof2), scorer after each merge (OBJECTIVE dev / held-out)
+| step | commit | dev | held-out | notes |
+|------|--------|-----|----------|-------|
+| algorithm 7 (baseline) | e1e06dea | 21.9 | 20.9 | area 4.0 / 2.4 %, main pitch exact 14/18, 7/14 |
+| + data, pitch | ea233ef1 | 21.9 | 20.9 | main pitch exact 15/18, 8/14 |
+| + labels | 6d9e8b99 | 20.5 | 20.5 | conflict in roof-3d-dump.ts only |
+| + walls | 04f4776a | 20.1 | 20.2 | labels' measuredRidge and walls' stepTopM named the same line: a tall step (height map jumps stepTopM across the line) stays a wall; three test controls switch both rules |
+| + primitives | 35c0955a | 18.1 | 20.2 | main pitch exact 14/18 (the fitted gable) |
+| + dormers | 6a8b49ac | 18.0 | 20.2 | ALL GATES PASS (349 dev, 264 held-out); roof tests 458/458 |
+| photo-faces | not merged | - | - | no win, off by default, 13 conflict hunks: left on its branch |
+Per-line table, 31 houses (algorithm 7 -> integrated): same kind within 0.75 m ridge 79->81, hip 70->73, valley 64->64,
+eave 73->76, rake 60->66 %; nothing of ours there 7/13/17/10/12 -> 7/12/16/10/12 %.
+Switch studies on the integrated branch (dev / held-out): faces.unsureThinM 0: 16.2 / 20.2; topology.stepPieceSettled false:
+17.4 / 19.9 (fails thin-face gates on its own branch); topology.valleyDropM 0.3: 16.7 / 22.2 (kill: held-out valleys);
+topology.flatX12 1.5: 17.4 / 20.2.
+EXPECTED: held-out to follow dev. SAW: dev 21.9 -> 18.0, held-out 20.9 -> 20.2. The rules name lines better; what is left
+is geometry that is not there at all: small features (turrets, nested hips, small gables: faces are 58-68 % of EagleView's),
+non-roof covers counted as roof (area), jagged wall lines. Held-out hip total is a third short, eave and valley a fifth.
+
+# ROOF ROUND 3 (2026-11-21): aimed at what is missing, not at names
+brief: ~/RooflineWork/plans/roof3-brief.md. Base: roof2/integration 6a8b49ac + this note. Worktrees ~/RooflineWork/wt-r3-*.
+| track | branch | idea | result |
+|-------|--------|------|--------|
+| area | roof3/area | houses over 5 % area error: non-roof covers, dropped parts, overhang, pitch share | running |
+| faces | roof3/faces | keep or drop a candidate face on evidence learned from EagleView's faces, not on size | running |
+| small | roof3/small | features the plane search never finds: nested hips, hip ends, bays/turrets, small gables, fitted from residuals | running |
+| lines | roof3/lines | straight walls and creases, squared corners, no zig-zag round flat parts; low-slope hips | running |
+| pitch2 | roof3/pitch2 | steep and mixed-pitch roofs read low (9 for 12), pitch to area | running |
+
 ## next
-- wait for the seven reports; merge winners into roof2/integration one at a time behind the gates, measuring combinations
-  through ROOF3D_TUNING; reviewer; remediation; bump the algorithm version once; then ask the owner to merge + deploy.
+- wait for the five reports; merge winners behind the gates; sealed fresh set once; reviewer; remediation; algorithm 8;
+  then ask the owner to merge + deploy.
 
 ## status
-state: running (roof round 2; agents in flight)
+state: running (roof round 3; agents in flight)
 needs-me: nothing now
