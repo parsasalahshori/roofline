@@ -12,7 +12,16 @@ export type PlaneParams = {
   minPlaneM2: number;
   /** Steeper (x/12) is a wall or a tree, not a roof plane (18/12 unless Google's own segments show a steeper roof). */
   maxPitchX12: number;
+  /**
+   * The search stops at this many planes. 80: at 40 it was cut short on the most complex roofs (4 of the 18 dev houses
+   * with an EagleView key, the ones with 40 to 130 faces), before their small hip and dormer faces were reached.
+   */
   maxPlanes: number;
+  /**
+   * The planes found after this many are unsure (small faces late in a long search on a complex roof): the faces they
+   * make stay only when not thin (faces-cleanup.ts, unsureThinM). A roof whose search ends before it is untouched.
+   */
+  surePlanes: number;
   /** RANSAC candidates per plane, and how many of the best are checked for their connected patch. */
   candidates: number;
   topK: number;
@@ -77,13 +86,35 @@ export type PlaneParams = {
   /** interiorFit: pixels this far in from a face's boundary, on its plane within this (square to the plane), metres. */
   interiorEdgeM: number;
   interiorTolM: number;
+  /**
+   * A ridge of its own (ridgePartner; pairFacingDeg 0: off): a face has one when a neighbour faces the other way (their
+   * downhill directions at least pairFacingDeg apart) at nearly its pitch (within pairX12), both pitched, and the two
+   * planes meet in a convex crease that runs along the boundary they share (at least pairSharedM of it, the crease
+   * within pairCreaseM of it): the two faces of a gable dormer or of a small gable. Such a face is no steep junk by
+   * the edge and no sliver (buildFaces, step 5): a gutter, a wall or a crown over the eave has no partner across a
+   * ridge, and the strips a bowed slope is cut into all face the slope's own way.
+   */
+  pairFacingDeg: number;
+  pairX12: number;
+  pairSharedM: number;
+  pairCreaseM: number;
+  /**
+   * A facing direction of its own (ownFacing; ownFacingDeg 0: off): a pitched face (3/12 or more) whose downhill
+   * direction is at least ownFacingDeg from that of every pitched face it shares pairSharedM of boundary with, with
+   * ownShare of its interior on one plane (interiorFit): a dormer's face, a small hip end. It is no steep junk by the
+   * edge and no sliver either. A gutter or a crown over an eave faces the way the roof beside it does, and so does
+   * every strip of a bowed slope.
+   */
+  ownFacingDeg: number;
+  ownShare: number;
 };
 
 export const DEFAULT_PLANE_PARAMS: PlaneParams = {
   tolM: 0.1,
   minPlaneM2: 2,
   maxPitchX12: 18,
-  maxPlanes: 40,
+  maxPlanes: 80,
+  surePlanes: 40,
   candidates: 320,
   topK: 12,
   sampleSize: 6000,
@@ -114,6 +145,12 @@ export const DEFAULT_PLANE_PARAMS: PlaneParams = {
   steepKeepShare: 0.88,
   interiorEdgeM: 0.3,
   interiorTolM: 0.1,
+  pairFacingDeg: 0,
+  pairX12: 4,
+  pairSharedM: 1,
+  pairCreaseM: 0.5,
+  ownFacingDeg: 0,
+  ownShare: 0.75,
 };
 
 /** Pixel centre coordinates in metres: x east from the grid's left edge, y north from its top edge (so y <= 0). */
@@ -292,7 +329,7 @@ function rankTop(x: { score: number; fill: number; rms: number; seed: number }, 
  * When what is left has no patch of minPlaneM2, the search goes on once more with rescueTolX times the tolerance,
  * measured square to the plane (steep faces in a height map are rougher), then stops: trees, edges, clutter.
  */
-export function findPlanes(g: Grid, s: number, dsm: Float32Array, roof: Mask, rng: () => number, prm: PlaneParams, tree: Mask | null = null): FoundPlane[] {
+export function findPlanes(g: Grid, s: number, dsm: Float32Array, roof: Mask, rng: () => number, prm: PlaneParams, tree: Mask | null = null, debug?: (msg: string) => void): FoundPlane[] {
   const { w, h } = g;
   const free = erode(g, roof, Math.max(1, Math.round(0.2 / s)));
   // No plane is fitted on missing heights or on tree crowns.
@@ -391,6 +428,7 @@ export function findPlanes(g: Grid, s: number, dsm: Float32Array, roof: Mask, rn
       patch = again.patch;
     }
     out.push({ plane, patch });
+    debug?.(`plane ${out.length - 1}: ${(countSet(patch) * s * s).toFixed(1)} m2, ${(slopeOf(plane) * 12).toFixed(1)}/12 facing ${azimuth(plane).toFixed(0)}${square ? ' (rescue pass)' : ''}`);
     // The patch and a pixel round it are used.
     for (let i = 0; i < patch.length; i++) {
       if (patch[i] !== 1) continue;
@@ -601,6 +639,9 @@ export function buildFaces(
   found: readonly FoundPlane[],
   prm: PlaneParams,
   tree: Mask | null = null,
+  debug?: (msg: string) => void,
+  /** Set (1) on the pixels of faces that stay only for a ridge or a facing of their own (step 5): unsure faces. */
+  unsure: Mask | null = null,
 ): Faces {
   const n0 = found.length;
   let planes = found.map((f) => f.plane);
@@ -614,6 +655,20 @@ export function buildFaces(
   }
   let faces = splitParts(g, compact(floodAssign(g, s, dsm, roof, planes, seeds, null, tree), planes));
   const px2 = s * s;
+  // Development: what happened to a face (its centre in crop metres, its size and plane).
+  const say = (what: string, f: Faces, k: number, area: number): void => {
+    if (debug === undefined) return;
+    let sx = 0;
+    let sy = 0;
+    let m = 0;
+    for (let i = 0; i < f.labels.length; i++) {
+      if (f.labels[i] !== k) continue;
+      sx += pixelX(g, s, i);
+      sy += pixelY(g, s, i);
+      m++;
+    }
+    debug(`faces: ${what} face at ${(sx / Math.max(1, m)).toFixed(1)},${(sy / Math.max(1, m)).toFixed(1)}: ${(area * px2).toFixed(1)} m2, ${(slopeOf(f.planes[k]!) * 12).toFixed(1)}/12 facing ${azimuth(f.planes[k]!).toFixed(0)}`);
+  };
   for (let round = 0; round < 12; round++) {
     // 0. A face in two parts joined by a narrow neck becomes two faces (each then checked like any other).
     const split = splitNecks(g, s, dsm, faces, prm);
@@ -655,6 +710,7 @@ export function buildFaces(
         const joint = p80(p, idx);
         if (!(joint <= prm.mergeFitM && joint <= Math.max(own[a]!, own[b]!) + 0.05)) continue;
       }
+      say(`merged (${ang.toFixed(1)} deg${strict ? '' : ', loose'}) into ${a}`, faces, b, adj.area[b]!);
       for (const i of idx) labels[i] = a;
       planes[a] = p;
       merged.add(a);
@@ -676,6 +732,7 @@ export function buildFaces(
       const small = m2 < prm.tinyFaceM2 || (m2 < prm.smallFaceM2 && onEdge < 0.25);
       if (!small || gone.size >= n - 1) continue;
       if (m2 >= prm.tinyFaceM2 && prm.smallKeepDeg > 0 && realPlane(g, s, dsm, faces, k, neighbours(adj, s, k), prm)) continue;
+      say('small', faces, k, adj.area[k]!);
       gone.add(k);
     }
     if (gone.size > 0) {
@@ -687,6 +744,7 @@ export function buildFaces(
     //    heights over most of the face. One at a time, the best explained first.
     const worst = explainedFace(g, s, dsm, faces, adj, prm);
     if (worst >= 0) {
+      say('explained', faces, worst, adj.area[worst]!);
       faces = dissolve(g, s, dsm, roof, faces, new Set([worst]), tree);
       continue;
     }
@@ -695,13 +753,20 @@ export function buildFaces(
     //    facing the same way (a terrace in the height map). Flat faces stay (a deck on a hip roof is real).
     const chamfer = chamferFace(g, s, faces, adj, prm);
     if (chamfer >= 0) {
+      say('chamfer/riser', faces, chamfer, adj.area[chamfer]!);
       faces = dissolve(g, s, dsm, roof, faces, new Set([chamfer]), tree);
       continue;
     }
     // 5. Dissolve a sliver: a thin strip, or a small face much steeper than its main neighbour on the roof's edge, by
-    //    trees or on rough heights (a gutter, a wall, a crown leaning over the eave).
-    const sliver = sliverFace(g, s, dsm, faces, adj, prm, tree);
-    if (sliver < 0) break;
+    //    trees or on rough heights (a gutter, a wall, a crown leaning over the eave). When the evidence rules are on
+    //    (pairFacingDeg, ownFacingDeg), a face with a ridge partner or a facing direction of its own is neither.
+    const why: { text: string; kept?: string } = { text: '' };
+    const sliver = sliverFace(g, s, dsm, faces, adj, prm, tree, debug !== undefined ? why : undefined, unsure);
+    if (sliver < 0) {
+      if (why.kept !== undefined) debug?.(`faces: kept for a ridge or a facing of their own: ${why.kept.slice(1).split('|').join('; ')}`);
+      break;
+    }
+    say(`sliver/steep (${why.text})`, faces, sliver, adj.area[sliver]!);
     faces = dissolve(g, s, dsm, roof, faces, new Set([sliver]), tree);
   }
   return faces;
@@ -989,12 +1054,101 @@ function chamferFace(g: Grid, s: number, faces: Faces, adj: ReturnType<typeof ad
 }
 
 /**
+ * The neighbour face f has a ridge with (see PlaneParams.pairFacingDeg), or -1: it faces the other way at nearly the
+ * same pitch, and the two planes meet in a convex crease along their shared boundary.
+ */
+export function ridgePartner(g: Grid, s: number, faces: Faces, adj: ReturnType<typeof adjacency>, f: number, prm: PlaneParams): number {
+  if (!(prm.pairFacingDeg > 0)) return -1;
+  const P = faces.planes;
+  const pf = P[f]!;
+  const sf = slopeOf(pf);
+  if (sf * 12 < 2) return -1;
+  const cands: number[] = [];
+  for (const [key, cracks] of adj.shared) {
+    if (cracks * s < prm.pairSharedM) continue;
+    const a = Math.floor(key / 100000);
+    const b = key % 100000;
+    const m = a === f ? b : b === f ? a : -1;
+    if (m < 0) continue;
+    const sm = slopeOf(P[m]!);
+    if (sm * 12 < 2 || Math.abs(sf - sm) * 12 > prm.pairX12) continue;
+    if (arc(azimuth(pf), azimuth(P[m]!)) < prm.pairFacingDeg) continue;
+    cands.push(m);
+  }
+  if (cands.length === 0) return -1;
+  cands.sort((x, y) => x - y);
+  const { w, h } = g;
+  for (const m of cands) {
+    const pm = P[m]!;
+    // The crease: A x + B y + C = 0 where the two planes are level with each other.
+    const A = pf.a - pm.a;
+    const B = pf.b - pm.b;
+    const C = pf.c - pm.c;
+    const norm = Math.hypot(A, B);
+    if (norm < 1e-6) continue;
+    // f's pixels on the shared boundary: how far the crease is from them; and each face's side of the crease.
+    const off: number[] = [];
+    let below = 0;
+    let all = 0;
+    for (let i = 0; i < faces.labels.length; i++) {
+      const k = faces.labels[i]!;
+      if (k !== f && k !== m) continue;
+      const x = pixelX(g, s, i);
+      const y = pixelY(g, s, i);
+      // Convex: each face lies under the other's plane carried on over it.
+      all++;
+      if (k === f ? planeZ(pf, x, y) <= planeZ(pm, x, y) : planeZ(pm, x, y) <= planeZ(pf, x, y)) below++;
+      if (k !== f) continue;
+      const c = i % w;
+      const r = (i - c) / w;
+      if ((c > 0 && faces.labels[i - 1] === m) || (c < w - 1 && faces.labels[i + 1] === m) || (r > 0 && faces.labels[i - w] === m) || (r < h - 1 && faces.labels[i + w] === m)) {
+        off.push(Math.abs(A * x + B * y + C) / norm);
+      }
+    }
+    if (off.length === 0 || below < 0.8 * all) continue;
+    off.sort((x, y) => x - y);
+    if (off[Math.floor(off.length / 2)]! <= prm.pairCreaseM) return m;
+  }
+  return -1;
+}
+
+/** Whether face f has a facing direction of its own (see PlaneParams.ownFacingDeg). */
+export function ownFacing(g: Grid, s: number, dsm: Float32Array, faces: Faces, adj: ReturnType<typeof adjacency>, f: number, prm: PlaneParams): boolean {
+  if (!(prm.ownFacingDeg > 0)) return false;
+  const P = faces.planes;
+  if (slopeOf(P[f]!) * 12 < 3) return false;
+  let pitched = 0;
+  for (const [key, cracks] of adj.shared) {
+    if (cracks * s < prm.pairSharedM) continue;
+    const a = Math.floor(key / 100000);
+    const b = key % 100000;
+    const m = a === f ? b : b === f ? a : -1;
+    if (m < 0 || slopeOf(P[m]!) * 12 < 2) continue;
+    if (arc(azimuth(P[f]!), azimuth(P[m]!)) < prm.ownFacingDeg) return false;
+    pitched++;
+  }
+  if (pitched === 0) return false;
+  const fit = interiorFit(g, s, dsm, faces.labels, f, P[f]!, prm);
+  return fit !== null && fit.share >= prm.ownShare;
+}
+
+/**
  * The smallest sliver (see buildFaces, step 5), or -1: a face thinner on average than sliverWidthM and under sliverM2;
  * or a face under steepM2, at least steepX12, steeper by steeperX12 than the neighbour it shares most boundary with,
  * that lies along the roof's edge (15% of its boundary), next to tree crowns (a fifth of it within a metre of one),
  * or on rough heights (a fifth of its pixels more than 12 cm off its own plane).
  */
-function sliverFace(g: Grid, s: number, dsm: Float32Array, faces: Faces, adj: ReturnType<typeof adjacency>, prm: PlaneParams, tree: Mask | null): number {
+function sliverFace(g: Grid, s: number, dsm: Float32Array, faces: Faces, adj: ReturnType<typeof adjacency>, prm: PlaneParams, tree: Mask | null, why?: { text: string; kept?: string }, unsure: Mask | null = null): number {
+  // A face that stays only for its ridge partner or its own facing is unsure (and told to the debug output).
+  const keptForRidge = (f: number): void => {
+    if (why !== undefined) {
+      const fit = interiorFit(g, s, dsm, faces.labels, f, faces.planes[f]!, prm);
+      const partner = ridgePartner(g, s, faces, adj, f, prm) >= 0;
+      why.kept = `${why.kept ?? ''}|${(adj.area[f]! * s * s).toFixed(1)} m2 ${(slopeOf(faces.planes[f]!) * 12).toFixed(1)}/12 facing ${azimuth(faces.planes[f]!).toFixed(0)}, on plane ${fit?.share.toFixed(2) ?? '-'}, ${partner ? 'ridge partner' : 'own facing'}`;
+    }
+    if (unsure === null) return;
+    for (let i = 0; i < faces.labels.length; i++) if (faces.labels[i] === f) unsure[i] = 1;
+  };
   const n = faces.planes.length;
   if (n < 2) return -1;
   const shared: Map<number, number>[] = Array.from({ length: n }, () => new Map());
@@ -1027,13 +1181,21 @@ function sliverFace(g: Grid, s: number, dsm: Float32Array, faces: Faces, adj: Re
     // Steeper than any roof plane may be (a wall or a crown that merged into a face).
     if (Math.hypot(faces.planes[f]!.a, faces.planes[f]!.b) * 12 > prm.maxPitchX12 + 0.5) {
       pick = f;
+      if (why !== undefined) why.text = 'steeper than a roof plane';
       continue;
     }
+    // A face with a ridge or a facing direction of its own (a gable dormer's, a small hip end), away from trees, is
+    // neither (looked up only when a rule below would take the face).
+    let pairedMemo: boolean | null = null;
+    const paired = (): boolean => (pairedMemo ??= treeCount[f]! < 0.2 * area && (ridgePartner(g, s, faces, adj, f, prm) >= 0 || ownFacing(g, s, dsm, faces, adj, f, prm)));
     if (width < prm.sliverWidthM && m2 < prm.sliverM2) {
       // A narrow face that is a real plane of its own (a dormer's face) is not a sliver.
-      const real = width >= prm.sliverKeepWidthM && prm.smallKeepDeg > 0 && realPlane(g, s, dsm, faces, f, [...shared[f]!.keys()], prm);
+      const own = width >= prm.sliverKeepWidthM && prm.smallKeepDeg > 0 && realPlane(g, s, dsm, faces, f, [...shared[f]!.keys()], prm);
+      const real = own || paired();
+      if (!own && real) keptForRidge(f);
       if (!real) {
         pick = f;
+        if (why !== undefined) why.text = `narrow, ${width.toFixed(2)} m wide`;
         continue;
       }
     }
@@ -1052,7 +1214,13 @@ function sliverFace(g: Grid, s: number, dsm: Float32Array, faces: Faces, adj: Re
       const fit = interiorFit(g, s, dsm, faces.labels, f, faces.planes[f]!, prm);
       if (fit !== null && fit.share >= prm.steepKeepShare) continue;
     }
+    // ...or has a ridge or a facing direction of its own.
+    if (paired()) {
+      keptForRidge(f);
+      continue;
+    }
     pick = f;
+    if (why !== undefined) why.text = `steep by the edge, ${width.toFixed(2)} m wide, main neighbour ${mainSlope.toFixed(1)}/12`;
   }
   return pick;
 }

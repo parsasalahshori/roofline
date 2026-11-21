@@ -32,6 +32,7 @@ const face = (o: Partial<FaceSupport>): FaceSupport => ({
   thicknessM: 2,
   crownShare: 0,
   mainNeighbourX12: 6,
+  unsureShare: 0,
   ...o,
 });
 

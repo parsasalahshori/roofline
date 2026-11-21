@@ -288,6 +288,8 @@ export type RoofOnLayersOptions = {
   debug?: (msg: string) => void;
   /** Development only (roof3d:dump --features): reconstructRoof's lineFeatures, in the layers' raster metres. */
   lineFeatures?: NonNullable<Parameters<typeof reconstructRoof>[2]>['lineFeatures'];
+  /** Development only: the reconstruction's label images by stage (reconstructRoof's trace). */
+  trace?: NonNullable<Parameters<typeof reconstructRoof>[2]>['trace'];
   steep?: boolean;
   building?: SolarBuilding | null;
   seed?: number;
@@ -416,6 +418,7 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
     ...(o.tuning?.primitives !== undefined ? { primitives: o.tuning.primitives } : {}),
     ...(o.debug !== undefined ? { debug: o.debug } : {}),
     ...(o.lineFeatures !== undefined ? { lineFeatures: o.lineFeatures } : {}),
+    ...(o.trace !== undefined ? { trace: o.trace } : {}),
     ...(ownBox ? { building: [box.sw, [box.ne[0], box.sw[1]] as LngLat, box.ne, [box.sw[0], box.ne[1]] as LngLat].map(toPixel) } : {}),
     ...(lidarCloud !== null ? { lidar: { cloud: lidarCloud, ...(o.lidarParams !== undefined ? { params: o.lidarParams } : {}) } } : {}),
     ...(fusionCloud !== null ? { lidarFusion: { cloud: fusionCloud, ...(o.lidarFusion?.params !== undefined ? { params: o.lidarFusion.params } : {}) } } : {}),

@@ -46,6 +46,14 @@ export type FaceCleanupParams = {
   crownMaxM2: number;
   crownShare: number;
   crownPitchX12: number;
+  /**
+   * An unsure face (unsureShare or more of its pixels marked unsure: found late in a long plane search, or kept only
+   * for its ridge partner or its own facing; PlaneParams.surePlanes, pairFacingDeg, ownFacingDeg) narrower than this
+   * (2 area / perimeter, metres) goes: a small face is added to the roof only when it is not a thin one. 0: unsure
+   * faces stay whatever their width.
+   */
+  unsureThinM: number;
+  unsureShare: number;
 };
 
 export const DEFAULT_FACE_CLEANUP: FaceCleanupParams = {
@@ -59,10 +67,12 @@ export const DEFAULT_FACE_CLEANUP: FaceCleanupParams = {
   crownMaxM2: 15,
   crownShare: 0.5,
   crownPitchX12: 3,
+  unsureThinM: 0.9,
+  unsureShare: 1 / 3,
 };
 
 /** Why a face was dissolved: machine-readable, counted by the caller's debug output and tests. */
-export type WeakReason = 'thin-coplanar' | 'thin-edge' | 'steep-unsupported' | 'crown-edge';
+export type WeakReason = 'thin-coplanar' | 'thin-edge' | 'steep-unsupported' | 'crown-edge' | 'thin-unsure';
 
 export type FaceSupport = {
   /** Polygon width (2 area / perimeter) and plan area. */
@@ -81,6 +91,8 @@ export type FaceSupport = {
   crownShare: number;
   /** Pitch (x/12) of the neighbour it shares the most boundary with; null without one. */
   mainNeighbourX12: number | null;
+  /** Share of the face's pixels marked unsure (see FaceCleanupParams.unsureThinM); 0 without a mask. */
+  unsureShare: number;
 };
 
 function ringWidth(ring: readonly XY[]): { area: number; width: number } {
@@ -134,12 +146,14 @@ export function faceSupport(
   rings: readonly (readonly XY[])[],
   prm: PlaneParams,
   /** Only faces this says need it get the (costly) interior plane fit; the others report planeShare null. */
-  needsFit: (f: Omit<FaceSupport, 'planeShare' | 'thicknessM' | 'crownShare' | 'mainNeighbourX12'>) => boolean = () => true,
+  needsFit: (f: Omit<FaceSupport, 'planeShare' | 'thicknessM' | 'crownShare' | 'mainNeighbourX12' | 'unsureShare'>) => boolean = () => true,
   /**
    * Whether a tree crown stands beside roof-edge pixel `i` (labelled, with a non-roof 4-neighbour `j`): null when no
    * crown map is known (no photo), and then every face's crownShare is 0.
    */
   crownBeside: ((i: number, j: number) => boolean) | null = null,
+  /** Pixels of unsure faces (1), or null. */
+  unsure: Uint8Array | null = null,
 ): FaceSupport[] {
   const n = planes.length;
   const adj = adjacency(g, labels, n);
@@ -184,6 +198,10 @@ export function faceSupport(
       if (crownBeside(i, out)) crownPx[k]!++;
     }
   }
+  const unsurePx = new Array<number>(n).fill(0);
+  if (unsure !== null && unsure.length === labels.length) {
+    for (let i = 0; i < labels.length; i++) if (unsure[i] === 1 && labels[i]! >= 0) unsurePx[labels[i]!]!++;
+  }
   return planes.map((p, k) => {
     const { area, width } = rings[k] !== undefined && rings[k]!.length >= 3 ? ringWidth(rings[k]!) : { area: adj.area[k]! * s * s, width: 0 };
     const minNeighbourDeg = near[k]!.length === 0 ? 180 : Math.min(...near[k]!.map((m) => planeAngleDeg(p, planes[m]!)));
@@ -196,6 +214,7 @@ export function faceSupport(
       thicknessM: need ? thickness(g, s, labels, k) : null,
       crownShare: edgePx[k]! > 0 ? crownPx[k]! / edgePx[k]! : 0,
       mainNeighbourX12: mostShared[k]! >= 0 ? slopeOf(planes[mostShared[k]!]!) * 12 : null,
+      unsureShare: adj.area[k]! > 0 ? unsurePx[k]! / adj.area[k]! : 0,
     };
   });
 }
@@ -208,7 +227,7 @@ export function faceSupport(
  * (it is the roof), and at least one face always stays.
  */
 /** Whether a face is a candidate at all (and so needs its interior fit). */
-export function weakCandidate(f: Omit<FaceSupport, 'planeShare' | 'thicknessM' | 'crownShare' | 'mainNeighbourX12'>, prm: FaceCleanupParams = DEFAULT_FACE_CLEANUP): boolean {
+export function weakCandidate(f: Omit<FaceSupport, 'planeShare' | 'thicknessM' | 'crownShare' | 'mainNeighbourX12' | 'unsureShare'>, prm: FaceCleanupParams = DEFAULT_FACE_CLEANUP): boolean {
   return f.minNeighbourDeg < 180 && (f.pitchX12 > prm.steepX12 || (f.widthM < prm.thinWidthM && f.areaM2 < prm.thinMaxM2));
 }
 
@@ -221,6 +240,7 @@ export function weakFaces(support: readonly FaceSupport[], prm: FaceCleanupParam
     if (f.pitchX12 > prm.steepX12 && (thin || !strong)) out.set(k, 'steep-unsupported');
     else if (thin && f.minNeighbourDeg <= prm.distinctDeg) out.set(k, 'thin-coplanar');
     else if (thin && f.edgeShare >= prm.edgeShare) out.set(k, 'thin-edge');
+    else if (prm.unsureThinM > 0 && f.unsureShare >= prm.unsureShare && f.unsureShare > 0 && f.widthM < prm.unsureThinM) out.set(k, 'thin-unsure');
     else if (
       f.areaM2 <= prm.crownMaxM2 &&
       f.edgeShare >= prm.edgeShare &&

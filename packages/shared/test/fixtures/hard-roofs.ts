@@ -29,3 +29,30 @@ export const DORMER_GABLE: Shape = {
   lines: {},
   planAreaM2: 160,
 };
+
+/**
+ * A steep gable dormer wide enough to be no thin face: a 16 x 10 m gable at 6/12 (ridge along X) with a dormer 5 m wide
+ * at 10/12 on its south face at X 0, its eaves 0.3 m above the main eave, its front on the roof's edge. Each dormer
+ * face is about 6.7 m2 and 1.05 m wide (2 area / perimeter): small, steeper than the roof by 4/12 and along the edge,
+ * which is what the plane search's steep-face-by-the-edge rule dissolves when the heights are rough.
+ */
+const STEEP_HALF = 2.5;
+export const STEEP_DORMER: Shape = {
+  name: 'gable with a steep dormer',
+  extent: 11,
+  height: ({ x, y }) => {
+    if (Math.abs(x) > 8 || Math.abs(y) > 5) return null;
+    const main = EAVE + (5 - Math.abs(y)) * 0.5;
+    const d = Math.abs(x);
+    const dormer = y < 0 && d <= STEEP_HALF ? EAVE + 0.3 + (STEEP_HALF - d) * (10 / 12) : -Infinity;
+    return Math.max(main, dormer);
+  },
+  faces: [
+    { name: 'north', probe: { x: 0, y: 2.5 }, pitchX12: 6, downDeg: 90, planAreaM2: 80 },
+    { name: 'south', probe: { x: 6, y: -2.5 }, pitchX12: 6, downDeg: -90, planAreaM2: 66.6 },
+    { name: 'dormer east', probe: { x: 1.2, y: -3.6 }, pitchX12: 10, downDeg: 0, planAreaM2: 6.7 },
+    { name: 'dormer west', probe: { x: -1.2, y: -3.6 }, pitchX12: 10, downDeg: 180, planAreaM2: 6.7 },
+  ],
+  lines: {},
+  planAreaM2: 160,
+};
