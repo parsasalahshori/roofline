@@ -46,9 +46,10 @@ export const GatesSchema = z.object({
     maxRise: z.number().nonnegative(),
     cohorts: z.array(z.string()),
     /**
-     * true: a thin face that stands on evidence of its own (Roof3dFace.evidence, HouseMetrics.thinExcused) is not
-     * counted: a dormer's cheek or a hip end is a real face however narrow (EagleView's own faces are thin one time in
-     * three). A baseline made before the flag excused nothing (its count is all its thin faces). Absent: as before.
+     * true: a thin face that stands on evidence of its own (Roof3dFace.evidence or Roof3dFace.fitted,
+     * HouseMetrics.thinExcused) is not counted: a dormer's cheek or a hip end is a real face however narrow
+     * (EagleView's own faces are thin one time in three). A baseline made before the flags excused nothing (its count
+     * is all its thin faces). Absent: as before.
      */
     excuseEvidence: z.boolean().optional(),
   }),
