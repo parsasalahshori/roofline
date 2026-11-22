@@ -10,7 +10,7 @@ import { useMe } from '../../api/hooks.ts';
 import { paidReports } from '../../copy/billing.ts';
 import { liftMeasure, liftMeasureSteps, liftProposal } from '../../copy/liftMeasure.ts';
 import { measure } from '../../copy/measure.ts';
-import { makeFailureMessage, useBuildProposal, useEstimateFromFootprint, useEstimateFromPoint, useSendProposal } from '../estimator/api.ts';
+import { makeFailureMessage, useBuildProposal, useEstimateFromFootprint, useEstimateFromPoint, useMeasure, useSendProposal } from '../estimator/api.ts';
 import type { MapEnv } from '../../shell/map/types.ts';
 import type { NewCustomerInput } from '../estimator/types.ts';
 import { useExactReport, useMeasurement, usePatchMeasurement } from './api.ts';
@@ -137,6 +137,9 @@ function format(value: number): string {
   return value.toLocaleString();
 }
 
+/** Measurements this window made by measuring again: their first scan plays them, it never measures a third time. */
+const measuredHere = new Set<string>();
+
 function Loaded({ m, preview, onProposalReady }: { m: MeasurementView; preview: UseQueryResult<MeasurementPreview>; onProposalReady: (ready: boolean) => void }) {
   const navigate = useNavigate();
   const [lng, lat] = m.center;
@@ -151,7 +154,25 @@ function Loaded({ m, preview, onProposalReady }: { m: MeasurementView; preview: 
   // A roof whose proposal is already out links to it instead of offering to send again
   const { rows: requestRows, list: requestList } = useRequestRows('');
   const sentRow = requestRows.find((r) => r.measurementId === m.id && (r.status === 'estimate_sent' || r.status === 'signed'));
-  const scan = useRoofScan(m, model?.totals.facetCount ?? m.facets);
+  const playback = useRoofScan(m, model?.totals.facetCount ?? m.facets);
+  // Re-measure measures the home again for real (a new measurement, on the job this one is on) and opens it; the
+  // scan then plays over the new one. A saved roof the 3D measuring never looked at (an old or sample measurement:
+  // no 3D roof and no reason for its absence) is measured for real on the first Measure press too.
+  const again = useMeasure();
+  const measureAgain = () => {
+    if (again.isPending) return;
+    again.mutate(
+      { propertyId: m.propertyId, ...(m.jobId !== null ? { jobId: m.jobId } : {}) },
+      {
+        onSuccess: (next) => {
+          measuredHere.add(next.id);
+          void navigate(`/estimator/measure/${next.id}`, { state: { ...handoff, autoScan: true } satisfies MeasureHandoff });
+        },
+      },
+    );
+  };
+  const neverMeasured3d = m.kind !== 'exact' && !m.locked && !measuredHere.has(m.id) && (m.roof3d ?? null) === null && (m.roof3dMissing ?? null) === null;
+  const scan = { ...playback, restart: measureAgain, start: neverMeasured3d ? measureAgain : playback.start };
   // Opened by a Measure press: the scan plays straight away
   const autoScan = handoff.autoScan === true;
   const startScan = useRef(scan.start);

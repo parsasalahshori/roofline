@@ -68,10 +68,10 @@ export function useHomeSearch(q: string): UseQueryResult<{ properties: PropertyR
   });
 }
 
-/** POST /api/measurements { propertyId | address } -> MeasurementView */
-export function useMeasure(): UseMutationResult<MeasurementView, Error, { propertyId?: string; address?: string }> {
+/** POST /api/measurements { propertyId | address, jobId? } -> MeasurementView */
+export function useMeasure(): UseMutationResult<MeasurementView, Error, { propertyId?: string; address?: string; jobId?: string }> {
   return useMutation({
-    mutationFn: (input: { propertyId?: string; address?: string }) =>
+    mutationFn: (input: { propertyId?: string; address?: string; jobId?: string }) =>
       apiFetch<MeasurementView>('/api/measurements', { method: 'POST', body: input }),
   });
 }
