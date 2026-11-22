@@ -550,6 +550,11 @@ export type FaceHooks = {
   fragments?: (f: Faces) => Faces | null;
   /** 1 for each face that is real on its evidence: no size rule (steps 2 to 5) dissolves it; such a face is unsure. */
   real?: (f: Faces) => Uint8Array;
+  /**
+   * Whether face k may be dissolved by steps 4 and 5 (chamfer/riser, sliver/steep): only when the heights say it is not
+   * a face of its own (faces-evidence.ts bowExplained). Absent: always (the size rules alone decide, as before).
+   */
+  negative?: (f: Faces, k: number, near: readonly number[]) => boolean;
 };
 
 /** Residuals above this (metres) mean the pixel is not on that plane at all. */
@@ -808,7 +813,8 @@ export function buildFaces(
     // 4. Dissolve a chamfer: a shallower face between two neighbours that meet in a convex crease (a hip or ridge the
     //    height map has rounded off), facing between them; or a riser: a small strip far steeper than a neighbour
     //    facing the same way (a terrace in the height map). Flat faces stay (a deck on a hip roof is real).
-    const chamfer = chamferFace(g, s, faces, adj, prm, keep, saved);
+    const may = evidence?.negative === undefined ? null : (k: number, near: readonly number[]) => evidence.negative!(faces, k, near);
+    const chamfer = chamferFace(g, s, faces, adj, prm, keep, saved, may);
     if (chamfer >= 0) {
       markSaved();
       say('chamfer/riser', faces, chamfer, adj.area[chamfer]!);
@@ -819,7 +825,7 @@ export function buildFaces(
     //    trees or on rough heights (a gutter, a wall, a crown leaning over the eave). When the evidence rules are on
     //    (pairFacingDeg, ownFacingDeg), a face with a ridge partner or a facing direction of its own is neither.
     const why: { text: string; kept?: string } = { text: '' };
-    const sliver = sliverFace(g, s, dsm, faces, adj, prm, tree, debug !== undefined ? why : undefined, unsure, keep, saved);
+    const sliver = sliverFace(g, s, dsm, faces, adj, prm, tree, debug !== undefined ? why : undefined, unsure, keep, saved, may);
     markSaved();
     if (sliver < 0) {
       if (why.kept !== undefined) debug?.(`faces: kept for a ridge or a facing of their own: ${why.kept.slice(1).split('|').join('; ')}`);
@@ -1064,7 +1070,7 @@ function arc(a: number, b: number): number {
 }
 
 /** The smallest chamfer or riser face (see buildFaces, step 4), or -1. */
-function chamferFace(g: Grid, s: number, faces: Faces, adj: ReturnType<typeof adjacency>, prm: PlaneParams, keep: Uint8Array | null = null, saved: Set<number> | null = null): number {
+function chamferFace(g: Grid, s: number, faces: Faces, adj: ReturnType<typeof adjacency>, prm: PlaneParams, keep: Uint8Array | null = null, saved: Set<number> | null = null, may: ((k: number, near: readonly number[]) => boolean) | null = null): number {
   const n = faces.planes.length;
   const near: number[][] = Array.from({ length: n }, () => []);
   for (const [key, cracks] of adj.shared) {
@@ -1101,7 +1107,7 @@ function chamferFace(g: Grid, s: number, faces: Faces, adj: ReturnType<typeof ad
     );
     if (riser) {
       if (keep?.[f] === 1) saved?.add(f);
-      else pick = f;
+      else if (may === null || may(f, nb)) pick = f;
       continue;
     }
     let found = false;
@@ -1117,7 +1123,7 @@ function chamferFace(g: Grid, s: number, faces: Faces, adj: ReturnType<typeof ad
     }
     if (found) {
       if (keep?.[f] === 1) saved?.add(f);
-      else pick = f;
+      else if (may === null || may(f, nb)) pick = f;
     }
   }
   return pick;
@@ -1208,7 +1214,7 @@ export function ownFacing(g: Grid, s: number, dsm: Float32Array, faces: Faces, a
  * that lies along the roof's edge (15% of its boundary), next to tree crowns (a fifth of it within a metre of one),
  * or on rough heights (a fifth of its pixels more than 12 cm off its own plane).
  */
-function sliverFace(g: Grid, s: number, dsm: Float32Array, faces: Faces, adj: ReturnType<typeof adjacency>, prm: PlaneParams, tree: Mask | null, why?: { text: string; kept?: string }, unsure: Mask | null = null, keep: Uint8Array | null = null, saved: Set<number> | null = null): number {
+function sliverFace(g: Grid, s: number, dsm: Float32Array, faces: Faces, adj: ReturnType<typeof adjacency>, prm: PlaneParams, tree: Mask | null, why?: { text: string; kept?: string }, unsure: Mask | null = null, keep: Uint8Array | null = null, saved: Set<number> | null = null, may: ((k: number, near: readonly number[]) => boolean) | null = null): number {
   // A face that stays only for its ridge partner or its own facing is unsure (and told to the debug output).
   const keptForRidge = (f: number): void => {
     if (why !== undefined) {
@@ -1268,6 +1274,7 @@ function sliverFace(g: Grid, s: number, dsm: Float32Array, faces: Faces, adj: Re
           saved?.add(f);
           continue;
         }
+        if (may !== null && !may(f, [...shared[f]!.keys()])) continue;
         pick = f;
         if (why !== undefined) why.text = `narrow, ${width.toFixed(2)} m wide`;
         continue;
@@ -1297,6 +1304,7 @@ function sliverFace(g: Grid, s: number, dsm: Float32Array, faces: Faces, adj: Re
       saved?.add(f);
       continue;
     }
+    if (may !== null && !may(f, [...shared[f]!.keys()])) continue;
     pick = f;
     if (why !== undefined) why.text = `steep by the edge, ${width.toFixed(2)} m wide, main neighbour ${mainSlope.toFixed(1)}/12`;
   }

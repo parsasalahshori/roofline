@@ -333,6 +333,22 @@ export type EvidenceParams = {
    * a thin face; 0: whatever its width (a dormer's cheek is often narrower: EagleView's own faces are, one in three).
    */
   thinM: number;
+  /**
+   * Negative evidence before a size rule deletes a face (buildFaces steps 4 and 5, chamfer/riser and sliver/steep): the
+   * face's pixels must lie on its neighbours' planes within the height map's bow (median over its pixels of the
+   * distance to the nearest neighbour plane under bowM, metres; Google's slopes bow and sag 0.1-0.3 m over a few
+   * metres). A face the heights hold off every neighbour's plane is a face of its own (a dormer's cheek, a small hip end)
+   * however narrow or steep, and stays. 0: off (size alone decides, as before).
+   */
+  bowM: number;
+  /**
+   * ...or the face lies on the band along the roof's edge where the height map bleeds outward at an eave (bandShare
+   * or more of its pixels within bandM of the edge, metres): a gutter's or an eave's smear, whatever plane it reads.
+   * 0: off. Measured on the dev answer keys it caught two junk strips and no real face, but lost eave length (OBJECTIVE
+   * 14.4 -> 15.0 with bowM 0.25), so it is off.
+   */
+  bandM: number;
+  bandShare: number;
 };
 
 export const DEFAULT_EVIDENCE: EvidenceParams = {
@@ -353,6 +369,9 @@ export const DEFAULT_EVIDENCE: EvidenceParams = {
   ownPitchX12: 3,
   treeShare: 0.2,
   thinM: 0.9,
+  bowM: 0,
+  bandM: 0,
+  bandShare: 0.35,
 };
 
 /**
@@ -475,4 +494,52 @@ export function faceEvidence(
     else if (ownFacingOf(m, prm)) out[k] = 'facing';
   });
   return out;
+}
+
+/**
+ * The median over face k's pixels of the height distance to the nearest of the planes of the faces `near` (metres):
+ * how far its heights stand off what dissolving it would leave there (its pixels go to those planes); Infinity when it
+ * has no neighbour or no finite height.
+ */
+export function offNeighbours(g: Grid, s: number, dsm: Float32Array, faces: Faces, k: number, near: readonly number[]): number {
+  if (near.length === 0) return Infinity;
+  const d: number[] = [];
+  for (let i = 0; i < faces.labels.length; i++) {
+    if (faces.labels[i] !== k) continue;
+    const z = dsm[i]!;
+    if (!Number.isFinite(z)) continue;
+    const x = pixelX(g, s, i);
+    const y = pixelY(g, s, i);
+    let best = Infinity;
+    for (const m of near) best = Math.min(best, Math.abs(z - planeZ(faces.planes[m]!, x, y)));
+    d.push(best);
+  }
+  return d.length === 0 ? Infinity : median(d);
+}
+
+/**
+ * Whether a size rule may dissolve face k (EvidenceParams.bowM): its heights lie on its neighbours' planes within the
+ * bow, or it lies on the eave's bleed band (bandM, bandShare). `edgeD2`: each pixel's squared distance (pixels) to the
+ * roof's edge.
+ */
+export function bowExplained(g: Grid, s: number, dsm: Float32Array, faces: Faces, k: number, near: readonly number[], prm: EvidenceParams, edgeD2: Float64Array | null = null, debug?: (msg: string) => void): boolean {
+  const off = offNeighbours(g, s, dsm, faces, k, near);
+  let c = 0;
+  let band = 0;
+  let sx = 0;
+  let sy = 0;
+  const r2 = (prm.bandM / s) ** 2;
+  for (let i = 0; i < faces.labels.length; i++) {
+    if (faces.labels[i] !== k) continue;
+    c++;
+    if (edgeD2 !== null && edgeD2[i]! <= r2) band++;
+    if (debug !== undefined) {
+      sx += pixelX(g, s, i);
+      sy += pixelY(g, s, i);
+    }
+  }
+  const onBand = prm.bandM > 0 && c > 0 && band >= prm.bandShare * c;
+  const ok = off < prm.bowM || onBand;
+  debug?.(`faces: ${ok ? 'off neighbours' : 'held off neighbours'} ${off.toFixed(3)} m, band ${(band / Math.max(1, c)).toFixed(2)}, face at ${(sx / Math.max(1, c)).toFixed(1)},${(sy / Math.max(1, c)).toFixed(1)}: ${(c * s * s).toFixed(1)} m2`);
+  return ok;
 }
