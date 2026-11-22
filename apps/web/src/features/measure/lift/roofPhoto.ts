@@ -14,10 +14,17 @@ export const ROOF_PHOTO_LAYER = 'roof-photo';
 
 export type RoofPhoto = NonNullable<MeasurementView['roofPhoto']>;
 
-/** The photo to show for this measurement, or null (none, or not over Google's tiles). */
-export function roofPhotoFor(m: MeasurementView, googleTiles: boolean = usesGoogleImagery()): RoofPhoto | null {
+/**
+ * Whether the roof view lays the Data Layers photo over the map at all. Off unless the build sets
+ * VITE_ROOF_TRUE_ORTHO=1: that photo is softer than Google's satellite tiles (MEDIUM-quality homes are 0.25 m a pixel),
+ * and the owner wants the sharp photo under every roof.
+ */
+export const TRUE_ORTHO_PHOTO = (import.meta.env.VITE_ROOF_TRUE_ORTHO ?? '').trim() === '1';
+
+/** The photo to show for this measurement, or null (switched off, none, or not over Google's tiles). */
+export function roofPhotoFor(m: MeasurementView, googleTiles: boolean = usesGoogleImagery(), wanted: boolean = TRUE_ORTHO_PHOTO): RoofPhoto | null {
   const photo = m.roofPhoto ?? null;
-  return photo !== null && googleTiles && photo.corners.length === 4 ? photo : null;
+  return wanted && photo !== null && googleTiles && photo.corners.length === 4 ? photo : null;
 }
 
 /** Adds the photo above the map's photos (call before the roof's own layers, so they draw on top). */

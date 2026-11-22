@@ -9,4 +9,6 @@ interface ImportMetaEnv {
   readonly VITE_MAP_IMAGERY?: string;
   /** The Google Maps Platform key: the roof view draws Google satellite photos (Map Tiles API) when it is set. */
   readonly VITE_GOOGLE_MAPS_KEY?: string;
+  /** "1" lays Google Solar's Data Layers photo over the roof (softer than the satellite tiles; off by default). */
+  readonly VITE_ROOF_TRUE_ORTHO?: string;
 }
