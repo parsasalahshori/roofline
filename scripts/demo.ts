@@ -207,6 +207,18 @@ try {
   } finally {
     await pools.end();
   }
+  // A demo company is never on a trial that can run out: a demo database lives for weeks, and a trial that ended
+  // would leave the whole demo read-only behind a "pick a plan" banner.
+  {
+    const { default: pg } = await import('pg');
+    const client = new pg.Client({ connectionString: OWNER_URL });
+    await client.connect();
+    try {
+      await client.query(`update companies set status = 'active', trial_ends_at = null where status in ('trial', 'trial_ended')`);
+    } finally {
+      await client.end();
+    }
+  }
   if (DB_ONLY) {
     log('Database ready (--db-only).');
     process.exit(0);
