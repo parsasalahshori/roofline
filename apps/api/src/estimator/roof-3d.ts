@@ -18,6 +18,7 @@ import {
   type SolarBuilding,
 } from '@roofline/shared';
 import {
+  DEFAULT_AREA_PARAMS,
   type HiddenEdgeOption,
   lngLatToUtm,
   MAX_ROOF_PART_M2,
@@ -278,8 +279,16 @@ export const DEFAULT_HIDDEN_EDGE: Readonly<HiddenEdgeOption> | null = null;
  */
 export const GOOGLE_PITCH_OFFSET_X12 = 0.25;
 
+/**
+ * Google's roof mask runs past the eave (its height map bleeds outward at a roof's edge): the rim, metres, taken off
+ * the priced area along every eave and rake the photo cannot read (roof-reconstruct/area.ts, AreaParams.eaveInsetM). A
+ * calibration of this source like the pitch offset: round 4 measured +0.17 m (mean) between Google's outline and the
+ * EagleView eave on the development houses' edges where the photo shows no edge. The engine's own default is 0.
+ */
+export const GOOGLE_EAVE_RIM_M = 0.17;
+
 /** The reconstruction's own parameters, for the benchmark's studies (development only; the server never sets them). */
-export type RoofTuning = Pick<NonNullable<Parameters<typeof reconstructRoof>[2]>, 'planes' | 'outline' | 'topology' | 'faces' | 'pitch' | 'primitives' | 'evidence' | 'refine'>;
+export type RoofTuning = Pick<NonNullable<Parameters<typeof reconstructRoof>[2]>, 'planes' | 'outline' | 'topology' | 'faces' | 'pitch' | 'primitives' | 'area' | 'covers' | 'evidence' | 'refine'>;
 
 export type RoofOnLayersOptions = {
   /** Development only: parameter overrides for a benchmark study. */
@@ -400,7 +409,8 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
   const raster = {
     ...layers.raster,
     green: layers.raster.green ?? greenOf(layers),
-    ...(hiddenEdge !== null && hiddenEdge.method !== 'planes' ? { rgb: rgbOf(layers) } : {}),
+    // The photo: for the photo method for hidden edges, and for the eave trim (roof-reconstruct/area.ts) when it is on.
+    ...((hiddenEdge !== null && hiddenEdge.method !== 'planes') || (o.tuning?.area?.eavePhoto ?? DEFAULT_AREA_PARAMS.eavePhoto) ? { rgb: rgbOf(layers) } : {}),
   };
   const lidarCloud = o.lidar != null ? lidarOnLayers(layers, o.lidar) : null;
   const fusionCloud = o.lidarFusion != null ? lidarOnLayers(layers, o.lidarFusion.points) : null;
@@ -416,6 +426,8 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
     ...(o.tuning?.faces !== undefined ? { faces: o.tuning.faces } : {}),
     pitch: { offsetX12: GOOGLE_PITCH_OFFSET_X12, ...o.tuning?.pitch },
     ...(o.tuning?.primitives !== undefined ? { primitives: o.tuning.primitives } : {}),
+    area: { eaveInsetM: GOOGLE_EAVE_RIM_M, ...o.tuning?.area },
+    ...(o.tuning?.covers !== undefined ? { covers: o.tuning.covers } : {}),
     ...(o.tuning?.evidence !== undefined ? { evidence: o.tuning.evidence } : {}),
     ...(o.tuning?.refine !== undefined ? { refine: o.tuning.refine } : {}),
     ...(o.debug !== undefined ? { debug: o.debug } : {}),
@@ -452,6 +464,8 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
       ...(hiddenEdge !== null ? { hiddenEdge: { ...hiddenEdge } as HiddenEdgeOption } : {}),
       // The same pitch reporting as the main roof (one height map, one calibration).
       pitch: { offsetX12: GOOGLE_PITCH_OFFSET_X12, ...o.tuning?.pitch },
+      area: { eaveInsetM: GOOGLE_EAVE_RIM_M, ...o.tuning?.area },
+      ...(o.tuning?.covers !== undefined ? { covers: o.tuning.covers } : {}),
     });
     if (found === null || found.clipped || found.faces.length === 0) continue;
     const r = toRoof3d(found, toLngLat, meta);

@@ -16,7 +16,7 @@
 // 4. Anything else (a footprint that is not nearly rectilinear, or a result that does not cover it) is one
 //    gable on the bounding rectangle, clipped to the footprint.
 import { instantEstimate, perimeterFt, pitchFactor, polygonAreaSqFt, type InstantEstimate, type InstantInput, type LngLat, type Outline, type Ring } from './roof.ts';
-import { isRoof3d, type Roof3d, sameOutline } from './roof-3d.ts';
+import { isRoof3d, pricedPlanSqFt, type Roof3d, sameOutline } from './roof-3d.ts';
 
 /**
  * 'flashing' and 'step-flashing' (where a lower roof meets a wall rising above it: the wall level along the lower roof,
@@ -1442,7 +1442,7 @@ export function roofModelFrom3d(roof: Roof3d, o: { pitchX12: number; ownPitch: b
   };
   const facets: RoofFacet[] = roof.faces.map((f, k) => {
     const own = pitchOf(k);
-    const sloped = o.ownPitch || f.flat ? f.slopedAreaSqFt : f.planAreaSqFt * pitchFactor(own);
+    const sloped = o.ownPitch || f.flat ? f.slopedAreaSqFt : pricedPlanSqFt(f) * pitchFactor(own);
     return {
       id: facetId(k),
       ring: closedRing3d(f.ring),
