@@ -491,8 +491,15 @@ export const ROOF_3D_SNAPSHOT_SCHEMA = 2;
  * labelled by which way each face drains (docs/roof-3d/line-kinds.md): an upper face draining onto a lower one ends in
  * an eave (it was a valley), opposite faces meet in a ridge even when it climbs a little (it was a hip), and a pitch
  * break is its own kind. Faces, areas, pitches and the outline are unchanged; line kinds and their totals change.
+ * 8: the November 2026 accuracy rounds (docs/roof-3d/line-kinds.md, pitch.md, area.md, PROGRESS.md): line kinds are
+ * checked against the height map beside each line and walls are typed piece by piece; a bowed gable is fitted as one
+ * shape; the plane search looks for up to 80 planes; reported pitch is pooled over like faces and calibrated for
+ * Google's height map (fitPitchX12 keeps the raw fit); slopedAreaSqFt is the PRICED area (the eave rim Google's mask
+ * adds is taken off, roof under an upper overhang is added; planAreaSqFt and the rings stay as drawn). Faces, pitches,
+ * areas and line totals all change. Built and off by default: faces kept on evidence, the fragment merge, the height
+ * restoration, fitted small ridge roofs, the corner tie, the canopy extension.
  */
-export const ROOF_3D_ALGORITHM_VERSION = 7;
+export const ROOF_3D_ALGORITHM_VERSION = 8;
 
 function versionField(value: unknown): number | null {
   if (value === undefined) return 1;
