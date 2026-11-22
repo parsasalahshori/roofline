@@ -869,6 +869,20 @@ export async function roof3dForHome(
 }
 
 /**
+ * Whether a kept snapshot names a photo the file store no longer has (a server whose disk is wiped on every deploy
+ * loses it while the row still names it): such a snapshot is worked out again, so the roof keeps its photo.
+ */
+async function photoLost(deps: AppDeps, snapshot: Roof3dSnapshot): Promise<boolean> {
+  const photo = snapshot.photo ?? null;
+  if (photo === null || !deps.objectStore.configured) return false;
+  try {
+    return (await deps.objectStore.get(photo.key)) === null;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * roof3dForHome after the newest kept snapshot is read (`kept`, null when there is none): reused when fresh and made by
  * this algorithm, else worked out again; ROOF_3D_MODE applied. Never rejects.
  */
@@ -886,7 +900,13 @@ export async function roof3dFromKept(
   }
   const usable = kept === null ? null : fromShadow(kept);
   let snapshot: Roof3dSnapshot | null;
-  if (usable !== null && roof3dSnapshotFresh(usable, point, deps.clock.now()) && !lidarUsedButOff(deps, usable) && !(await lidarNowReady(deps, usable, point))) {
+  if (
+    usable !== null &&
+    roof3dSnapshotFresh(usable, point, deps.clock.now()) &&
+    !lidarUsedButOff(deps, usable) &&
+    !(await lidarNowReady(deps, usable, point)) &&
+    !(await photoLost(deps, usable))
+  ) {
     countRoof3d(deps, 'reused', { version: roof3dSnapshotVersion(usable).algorithm ?? 0 });
     snapshot = usable;
   } else {

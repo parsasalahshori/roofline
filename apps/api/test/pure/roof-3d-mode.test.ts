@@ -86,6 +86,36 @@ describe('ROOF_3D_MODE', () => {
   });
 });
 
+describe('a kept roof whose photo the file store lost', () => {
+  const memoryStore = () => {
+    const files = new Map<string, Uint8Array>();
+    return { configured: true, files, put: async (key: string, bytes: Uint8Array) => void files.set(key, bytes), get: async (key: string) => files.get(key) ?? null };
+  };
+
+  it('is worked out again (the photo comes back); with the photo still there it is reused', async () => {
+    const layers = new ScriptedLayers(() => LAYERS);
+    const store = memoryStore();
+    const { deps } = pureDeps(layers);
+    (deps as { objectStore: unknown }).objectStore = store;
+    const first = await roof3dFromKept(deps, null, INSIDE, Promise.resolve(buildingOf(HOUSE)));
+    expect(first?.photo?.key).toBeDefined();
+    expect(layers.calls).toHaveLength(1);
+    // The photo is still there: reused, nothing bought
+    const { deps: same } = pureDeps(layers);
+    (same as { objectStore: unknown }).objectStore = store;
+    await roof3dFromKept(same, first, INSIDE, Promise.resolve(buildingOf(HOUSE)));
+    expect(layers.calls).toHaveLength(1);
+    // The server's disk was wiped (a redeploy): the photo is gone, so the roof is worked out again and stores it again
+    const wiped = memoryStore();
+    const { deps: later } = pureDeps(layers);
+    (later as { objectStore: unknown }).objectStore = wiped;
+    const again = await roof3dFromKept(later, first, INSIDE, Promise.resolve(buildingOf(HOUSE)));
+    expect(layers.calls).toHaveLength(2);
+    expect(again?.photo?.key).toBeDefined();
+    expect(wiped.files.has(again!.photo!.key)).toBe(true);
+  });
+});
+
 describe('failures are typed, never thrown', () => {
   it('layers that never come: a typed timeout after the budget, not kept, and the Measure goes on', async () => {
     vi.useFakeTimers();
