@@ -301,10 +301,26 @@ Tracks closed: skeleton (no win), refine (merge parked; hybrid fails unseen), fa
 completion topology bug in walkFaces open: small faces with self-crossing rings). Still running: lines, small (told to wrap up), sharpen (report), roof-newflow session.
 Open for the owner: evidence on by default? (lines better on dev + held-out, flat on sealed; area within 5 % 14 -> 12 on dev; 2 held-out houses fail the checker).
 
+## ROUND 4 CLOSED (all seven agents reported)
+- lines final 54d2e960 (roof3/lines, NOT merged): dev 15.4 / 23.5 / 18.1, held-out 21.7 / 30.4 / 28.3 (worse), sealed MED 22.0 -> 22.6. Cleaner pictures, no accuracy win.
+- small final 88ae2090: ridge roofs 11 of 11 fitted faces real (dev 8, unseen 3), sealed unchanged (nothing fits there), +19 % runtime: merged, OFF. Fans, hip fronts dead.
+- sharpen cd126f9f merged, OFF: sharpen + evidence dev 14.5 / 20.0 / 17.5, held-out 23.6 / 32.2 / 29.9, sealed MED 20.1 (mixed across sets: off).
+- new-flow session: block-union flow no win (held-out 27.6); 3D Tiles prohibited by Google's terms; photo line-first dead; lidar no help on small faces
+  (9 % vs 28 % under 2.5 m2); routing: complexity predictable (AUC 0.90-0.95), error not; tap-count simulation pending.
+- Owner asked for a PRIVATE look at Google 3D Tiles anyway ("just for me, not releasing"): one agent, two dev houses, private folder work-3dtiles-private/, running.
+## FINAL BUILD = roof2/integration b00f9f4f, ROOF_3D_ALGORITHM_VERSION 8
+On by default: round 2 (labels, walls, primitives gable, dormers plane search), pitch2, area (priced-area rim + under-overhang). Off: evidence, refine, sharpen,
+ridge roofs, corner tie (not merged), canopy.extend/priceUnmeasured (on roof3/area 80a483e9, not merged), lines regularise (not merged).
+Checks: tsc clean, lint clean, shared 2239/2239, web 2690/2690, api measurements + pure 333/333, roof 554/554, roof-bench 171/171.
+Gates (v4, load ~5-10): dev 347 pass 0 fail; held-out 263 pass 1 fail = truth-lidar median area 3.22 -> 3.77 (7 houses; 6 improve; set by ev-50264667,
+a crown-bitten house): ACCEPTED by the orchestrator (lidar sees no under-overhang roof; documented in docs/roof-3d/area.md).
+Sealed 13 houses vs algorithm 7: MED 26.5 -> 22.0; area within 5 % 5 -> 6 of 13; main pitch exact 10 -> 11 of 13.
+needs-owner: "ship it" = merge to real-lookups (push), restart 4500/4600, redeploy Render + Vercel. Not done.
+
 ## next
-- wait for the remaining reports; merge winners behind the gates; sealed fresh set once; reviewer; remediation; algorithm 8;
+- owner's go for the release; 3D Tiles private look; new-flow tap numbers; merge winners behind the gates; sealed fresh set once; reviewer; remediation; algorithm 8;
   then ask the owner to merge + deploy.
 
 ## status
-state: running (round 4 closing: lines, small, sharpen finishing; new-flow session ranking better inputs)
+state: converged for this data source (waiting for the owner's go to release algorithm 8; private 3D Tiles look running)
 needs-me: nothing now
