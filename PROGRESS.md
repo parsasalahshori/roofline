@@ -281,10 +281,30 @@ brief: ~/RooflineWork/plans/roof4-brief.md (addendum to roof3-brief.md). Base ro
   outline 25 of 200 ft on EV hips; corner tie dev 17.2 / 23.6 / 18.5, held-out 20.9 / 30.0 / 27.4, pitch worse: OFF. Assets: skeleton.ts (exact weighted
   straight skeleton, tested) and corner-tie.ts (off). Not merged yet (nothing on by default). Fans handed back to the small track (detect on heights, not outline).
 
+## ROUND 4 INTEGRATION + SEALED VERDICT (integration head bce4ff06: area, faces2, sharpen, small merged; pitch2, refine v2 earlier)
+Panel MED / MEAN / POOL (dev | held-out), all on bce4ff06:
+| config | dev | held-out | area dev (mean, within 5 %) | area held-out |
+| default (area corrections on) | 18.0 / 23.5 / 18.3 | 20.2 / 29.6 / 27.3 | 3.9 %, 14/18 | 8.4 %, 9/14 |
+| evidence on (thinM 0) | 15.5 / 21.2 / 18.0 | 17.9 / 27.5 / 25.6 | 4.3 %, 12/18 | 8.7 %, 9/14 |
+| sharpen + evidence + minPlaneM2 1 | 13.6 / 22.4 / 17.7 | 21.7 / 30.7 / 27.4 | 4.3 %, 12/18 | 8.8 %, 10/14 | LOSS unseen: off
+| + ridge roofs | 13.6 / 22.5 / 17.9 | 21.8 / 30.2 / 27.1 | | | neutral
+| refine hybrid (pick by energy; Python) | 13.6 / 20.6 / 17.1 | 20.3 / 28.4 / 26.6 | | | LOSS unseen vs evidence: not ported
+Gates v4 with evidence on (load 14-19): dev 4 fail (lidar sloped area 1.49 -> 2.06), held-out 11 fail (houses passing all targets 20 -> 18; truth-lidar area 3.2 -> 3.8).
+SEALED fresh 13 ("high"), MED / MEAN / POOL, area mean / median / within 5 %:
+| algorithm 7 (live today) | 26.5 / - / - | - / 6.1 % / 5 of 13 |
+| round 2 (int-5) | 22.0 / 28.9 / 25.1 | 7.8 / 5.7 % / 5 |
+| round 4 default (area on) | 22.0 / 28.9 / 25.1 | 7.6 / 6.6 % / 6 |
+| round 4 evidence on | 22.0 / 29.2 / 24.6 | 7.5 / 6.0 % / 6 |
+Signed area on sealed houses runs from -26 % to +18 %. VERDICT: rounds 3-4 did not move line accuracy on unseen houses beyond round 2; area within 5 % 5 -> 6 of 13.
+The measured reason (sharpen oracle): with clean heights the same engine reaches 10.9 / 17.3 / 12.7 and closes every line sum to 4 %: the INPUT is the limit.
+Tracks closed: skeleton (no win), refine (merge parked; hybrid fails unseen), faces2 (flag + gates-v4 done), area (done; canopy.extend + priceUnmeasured off;
+completion topology bug in walkFaces open: small faces with self-crossing rings). Still running: lines, small (told to wrap up), sharpen (report), roof-newflow session.
+Open for the owner: evidence on by default? (lines better on dev + held-out, flat on sealed; area within 5 % 14 -> 12 on dev; 2 held-out houses fail the checker).
+
 ## next
-- wait for the seven reports; merge winners behind the gates; sealed fresh set once; reviewer; remediation; algorithm 8;
+- wait for the remaining reports; merge winners behind the gates; sealed fresh set once; reviewer; remediation; algorithm 8;
   then ask the owner to merge + deploy.
 
 ## status
-state: running (roof round 4; seven Opus max agents in flight)
+state: running (round 4 closing: lines, small, sharpen finishing; new-flow session ranking better inputs)
 needs-me: nothing now
