@@ -260,6 +260,18 @@ brief: ~/RooflineWork/plans/roof4-brief.md (addendum to roof3-brief.md). Base ro
 - skeleton: hip-end graft dead (nothing to graft on any of 32 houses; veto 6/6 on gables). Now: corner tie, then bay fans.
 - small: shapes judged through 0.35 m smoothing, not by the merge's gain floor; fitted faces never merged away.
 
+- OWNER RULE (Nov 21): chat updates in practical terms only: effect on end-result accuracy, no roofing or algorithm terms. (This file stays technical.)
+- area MERGED (5c0b9445 -> integration): priced-area corrections on by default (eave rim from the photo, constant 0.17 m fallback; under-overhang 0.3 m); covers off.
+  dev area mean 4.8 -> 3.9 %, within 5 %: 10 -> 14/18 (evidence on 9 -> 12/18, median 4.9 -> 3.9); held-out mean 8.9 -> 8.4, 9/14 both; lines unchanged; 521 roof tests.
+  Under-coverage = roof under tree crowns (4 flagged houses; ev-52191132 -56 %): canopy.extend being built, OFF by default (owner decides the default).
+  ev-47747994 -22 %: no crown, no cut, unexplained. Townhouse ev-51881964 +15 %: definition question.
+- lines as committed (afed6a41) on the panel: default faces dev 16.3 / 25.4 / 19.7, held-out 22.0 / 30.0 / 28.9 (LOSS on mean and pooled); evidence on dev 14.2 / 21.9 / 18.0,
+  held-out 18.5 / 27.7 / 26.4. Sent back: fidelity, per-rule switches, eaveAlong standalone.
+- faces2: plane-search floor opened up is NOT a win; below 5 m2 faces must be drawn. Item 4 evidence (photo, Google segments, twins) no use. Wrapping up with the gates-v4 table.
+- refine: missing ridge/hip/valley on dev = 1958 ft of 7676: 54 % beside a boundary we draw (wrong kind or 0.75-1.5 m off), 24 % small EV faces inside our big faces,
+  under-segmented big faces only 55-300 ft (split move cancelled). Merge PARKED (off). Small faces are NOT shallow: noisy +-1/12 (attenuation hypothesis dropped).
+  Now testing: regularise small-face planes (facing snapped to building directions, pooled pitch, offset refit) before lines are derived.
+
 ## next
 - wait for the seven reports; merge winners behind the gates; sealed fresh set once; reviewer; remediation; algorithm 8;
   then ask the owner to merge + deploy.
