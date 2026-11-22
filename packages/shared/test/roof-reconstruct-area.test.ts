@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { type AreaParams, type AreaPhoto, DEFAULT_AREA_PARAMS, eaveDropShare, eaveMoves, moveEdges, roofEndInPhoto, trimmedPoint, trimRoof, tuckUnder } from '../src/roof-reconstruct/area.ts';
+import { type AreaParams, type AreaPhoto, DEFAULT_AREA_PARAMS, eaveDropShare, eaveMoves, moveEdges, rimAlong, roofEndInPhoto, trimmedPoint, trimRoof, tuckUnder } from '../src/roof-reconstruct/area.ts';
+import { pricedPlanSqFt } from '../src/roof-3d.ts';
 import { selfIntersects, signedArea, type XY } from '../src/roof-reconstruct/geom.ts';
 import { reconstructRoof, type RoofRaster } from '../src/roof-reconstruct/index.ts';
 import { GABLE, PORCH, type SyntheticRoof, synthesize, TWO_STOREY } from './fixtures/synthetic-roofs.ts';
@@ -170,7 +171,61 @@ describe('eaveMoves: how far each outline edge moves', () => {
     const noPhoto = eaveMoves(ring, 0.1, null, heights, { ...P, eaveInsetM: 0.1 });
     expect(noPhoto.map((e) => e.by)).toEqual(['inset', 'inset', 'none', 'inset']);
     expect(eaveMoves(ring, 0.1, null, heights, P).every((e) => e.moveM === 0)).toBe(true);
-    expect(eaveMoves(ring, 0.1, photo, heights, DEFAULT_AREA_PARAMS)).toEqual([]);
+    expect(eaveMoves(ring, 0.1, photo, heights, { ...DEFAULT_AREA_PARAMS, eavePhoto: false })).toEqual([]);
+  });
+
+  it('reads the eave at the outer side of the trim: the photo rim is eavePhotoOffsetM less than the colour change', () => {
+    const at = eaveMoves(ring, 0.1, photo, heights, { ...P, eavePhotoOffsetM: 0 })[1]!.moveM;
+    const off = eaveMoves(ring, 0.1, photo, heights, { ...P, eavePhotoOffsetM: 0.06 })[1]!.moveM;
+    expect(off - at).toBeCloseTo(0.06, 9);
+    // Never outwards: a change nearer the edge than the offset leaves the edge where it is.
+    expect(eaveMoves(ring, 0.1, photo, heights, { ...P, eavePhotoOffsetM: 1 })[1]!.moveM).toBe(0);
+  });
+});
+
+describe('rimAlong: the rim taken off the priced area along eaves and rakes', () => {
+  const ring: XY[] = [
+    { x: 6, y: -16 },
+    { x: 20, y: -16 },
+    { x: 20, y: -4 },
+    { x: 6, y: -4 },
+  ];
+  const W = 300;
+  const H = 200;
+  const dsm = new Float32Array(W * H);
+  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) dsm[r * W + c] = (c + 0.5) * 0.1 > 6 && (c + 0.5) * 0.1 < 20 && -(r + 0.5) * 0.1 > -16 && -(r + 0.5) * 0.1 < -4 ? 6 : 0;
+  const heights = { dsm, w: W, h: H };
+  // The south face (0) has the south eave and the east rake; the north face (1) the north eave and a wall line.
+  const lines = [
+    { kind: 'eave', a: ring[0]!, b: ring[1]!, faces: [0] },
+    { kind: 'rake', a: ring[1]!, b: { x: 20, y: -10 }, faces: [0] },
+    { kind: 'rake', a: { x: 20, y: -10 }, b: ring[2]!, faces: [1] },
+    { kind: 'eave', a: ring[2]!, b: ring[3]!, faces: [1] },
+    { kind: 'flashing', a: ring[3]!, b: { x: 6, y: -10 }, faces: [1] },
+    { kind: 'ridge', a: { x: 6, y: -10 }, b: { x: 20, y: -10 }, faces: [0, 1] },
+  ];
+  it('takes the line length times the rim width read for its outline edge, on the line face, not along walls', () => {
+    const { rimM2, edges } = rimAlong(ring, 0.1, null, heights, { ...P, eaveInsetM: 0.17 }, lines, [84, 84]);
+    expect(edges.map((e) => e.by)).toEqual(['inset', 'inset', 'inset', 'inset']);
+    expect(rimM2[0]!).toBeCloseTo((14 + 6) * 0.17, 9);
+    // The north face: its eave and rake, not its wall line (a flashing line is not an eave).
+    expect(rimM2[1]!).toBeCloseTo((14 + 6) * 0.17, 9);
+    const noWall = rimAlong(ring, 0.1, null, heights, { ...P, eaveInsetM: 0.17 }, lines.filter((l) => l.kind !== 'flashing'), [84, 84]);
+    expect(noWall.rimM2).toEqual(rimM2);
+  });
+  it('is nothing with the outline mode, with no rim read, and at most half a face', () => {
+    expect(rimAlong(ring, 0.1, null, heights, { ...P, eaveInsetM: 0.17, eaveApply: 'outline' }, lines, [84, 84]).rimM2).toEqual([0, 0]);
+    expect(rimAlong(ring, 0.1, null, heights, { ...P, eaveInsetM: 0 }, lines, [84, 84]).rimM2).toEqual([0, 0]);
+    expect(rimAlong(ring, 0.1, null, heights, { ...P, eaveInsetM: 0.17 }, lines, [4, 84]).rimM2[0]).toBeCloseTo(2, 9);
+  });
+});
+
+describe('pricedPlanSqFt: the plan area a manual pitch multiplies', () => {
+  it('is the drawn plan area with the rim off and the roof under an overhang on, in proportion', () => {
+    expect(pricedPlanSqFt({ planAreaSqFt: 100, slopedAreaSqFt: 111.8 })).toBe(100);
+    // Drawn sloped 111.8: 5.59 sq ft of rim off, 3.354 under an overhang on.
+    const f = { planAreaSqFt: 100, slopedAreaSqFt: 111.8 - 5.59 + 3.354, eaveRimSqFt: 5.59, underOverhangSqFt: 3.354 };
+    expect(pricedPlanSqFt(f)).toBeCloseTo(100 - 5 + 3, 9);
   });
 });
 
@@ -248,7 +303,7 @@ describe('tuckUnder: the roof a lower face has under the overhang of the roof ab
       { kind: 'valley', a: { x: 0, y: 0 }, b: { x: 3, y: 3 }, faces: [0, 1] },
     ];
     expect(tuckUnder(lines, 3, { ...P, tuckUnderM: 0.3 })).toEqual([0, 3 * 0.3, 14 * 0.3]);
-    expect(tuckUnder(lines, 3, P)).toEqual([0, 0, 0]);
+    expect(tuckUnder(lines, 3, { ...P, tuckUnderM: 0 })).toEqual([0, 0, 0]);
   });
 });
 
@@ -275,8 +330,8 @@ describe('reconstructRoof: area at the roof edges', () => {
     const syn = synthesize(GABLE, { trees: 0 });
     // The roof truly ends 0.4 m short of the mask at its east gable end: a bright band of wall is in the mask there.
     const raster = withPhoto(syn, (p) => p.x < 7 - 0.4);
-    const off = reconstructRoof(raster, syn.point)!;
-    const on = reconstructRoof(raster, syn.point, { area: { eavePhoto: true } })!;
+    const off = reconstructRoof(raster, syn.point, { area: { eavePhoto: false } })!;
+    const on = reconstructRoof(raster, syn.point, { area: { eavePhoto: true, eaveApply: 'outline' } })!;
     expect(off.eaveTrim).toBeUndefined();
     expect(on.eaveTrim).toBeDefined();
     // 0.4 m off a 9 m gable end.
@@ -295,8 +350,8 @@ describe('reconstructRoof: area at the roof edges', () => {
   it('gives the same roof trimming before the topology or after it', () => {
     const syn = synthesize(GABLE, { trees: 0 });
     const raster = withPhoto(syn, (p) => p.x < 7 - 0.4);
-    const before = reconstructRoof(raster, syn.point, { area: { eavePhoto: true, eaveBeforeTopology: true } })!;
-    const after = reconstructRoof(raster, syn.point, { area: { eavePhoto: true, eaveBeforeTopology: false } })!;
+    const before = reconstructRoof(raster, syn.point, { area: { eavePhoto: true, eaveApply: 'outline', eaveBeforeTopology: true } })!;
+    const after = reconstructRoof(raster, syn.point, { area: { eavePhoto: true, eaveApply: 'outline', eaveBeforeTopology: false } })!;
     expect(Math.abs(outlineArea(before.outline) - outlineArea(after.outline))).toBeLessThan(0.05);
     expect(after.faces).toHaveLength(before.faces.length);
     expect(Math.abs(after.faces[0]!.planAreaM2 - before.faces[0]!.planAreaM2)).toBeLessThan(0.3);
@@ -304,38 +359,60 @@ describe('reconstructRoof: area at the roof edges', () => {
 
   it('leaves a roof whose colour runs to the mask edge alone, and without a photo moves nothing unless the inset is set', () => {
     const syn = synthesize(GABLE, { trees: 0 });
-    const exact = reconstructRoof(withPhoto(syn, () => true), syn.point, { area: { eavePhoto: true } })!;
+    const exact = reconstructRoof(withPhoto(syn, () => true), syn.point, { area: { eavePhoto: true, eaveApply: 'outline' } })!;
     const plain = reconstructRoof(syn.raster, syn.point)!;
     expect(plain.eaveTrim).toBeUndefined();
     expect(outlineArea(plain.outline) - outlineArea(exact.outline)).toBeLessThan(0.02 * outlineArea(plain.outline));
-    const inset = reconstructRoof(syn.raster, syn.point, { area: { eaveInsetM: 0.1 } })!;
+    const inset = reconstructRoof(syn.raster, syn.point, { area: { eaveInsetM: 0.1, eaveApply: 'outline' } })!;
     // 0.1 m off each side of a 14 x 9 m roof: about 4.6 m2.
     expect(outlineArea(plain.outline) - outlineArea(inset.outline)).toBeGreaterThan(3.5);
     expect(outlineArea(plain.outline) - outlineArea(inset.outline)).toBeLessThan(5.5);
     expect(inset.eaveTrim!.every((e) => e.by === 'inset')).toBe(true);
   });
 
-  it('adds the roof under the upper storey overhang to a porch roof and to a lower wing, only when asked', () => {
+  it('prices the roof under the upper storey overhang of a porch roof and a lower wing, without drawing it', () => {
     for (const [shape, wallM] of [
       [PORCH, 10],
       [TWO_STOREY, 10],
     ] as const) {
       const syn = synthesize(shape, { trees: 0 });
-      const off = reconstructRoof(syn.raster, syn.point)!;
-      const on = reconstructRoof(syn.raster, syn.point, { area: { tuckUnderM: 0.3 } })!;
+      const off = reconstructRoof(syn.raster, syn.point, { area: { tuckUnderM: 0 } })!;
+      const on = reconstructRoof(syn.raster, syn.point)!;
       expect(off.faces.every((f) => f.underOverhangM2 === undefined)).toBe(true);
-      const sum = (r: typeof on) => r.faces.reduce((t, f) => t + f.planAreaM2, 0);
-      expect(sum(off)).toBeCloseTo(outlineArea(off.outline), 6);
+      const plan = (r: typeof on) => r.faces.reduce((t, f) => t + f.planAreaM2, 0);
+      const sloped = (r: typeof on) => r.faces.reduce((t, f) => t + f.slopedAreaM2, 0);
+      // The drawing is the same: the faces tile the outline either way, and the lines do not change.
+      expect(plan(on)).toBeCloseTo(outlineArea(on.outline), 6);
+      expect(plan(on)).toBeCloseTo(plan(off), 6);
+      expect(on.lines.map((l) => [l.kind, l.lengthM])).toEqual(off.lines.map((l) => [l.kind, l.lengthM]));
+      // The wall line's plan length (10 m in both shapes) times 0.3 m, at the lower face's slope, priced on.
       const tucked = on.faces.reduce((t, f) => t + (f.underOverhangM2 ?? 0), 0);
-      // The wall line's plan length (10 m in both shapes) times 0.3 m, within the line's own tolerance.
       expect(tucked).toBeGreaterThan(0.8 * wallM * 0.3);
-      expect(tucked).toBeLessThan(1.2 * wallM * 0.3);
-      expect(sum(on) - sum(off)).toBeCloseTo(tucked, 6);
-      // Only faces with a wall line have any, and their sloped area grows at their own pitch.
+      expect(tucked).toBeLessThan(1.2 * wallM * 0.3 * Math.hypot(1, 6 / 12));
+      expect(sloped(on) - sloped(off)).toBeCloseTo(tucked, 6);
+      // Only faces with a wall line have any.
       const walled = new Set(on.lines.filter((l) => l.kind === 'flashing' || l.kind === 'step-flashing').map((l) => l.faces[0]));
       on.faces.forEach((f, k) => expect(f.underOverhangM2 !== undefined).toBe(walled.has(k)));
-      // The lines are the same either way.
-      expect(on.lines.map((l) => [l.kind, l.lengthM])).toEqual(off.lines.map((l) => [l.kind, l.lengthM]));
     }
+  });
+
+  it("takes a fat gable end's rim off the priced area, and leaves the outline, faces and lines as drawn", () => {
+    const syn = synthesize(GABLE, { trees: 0 });
+    // The roof truly ends 0.4 m short of the mask at its east gable end: a bright band of wall is in the mask there.
+    const raster = withPhoto(syn, (p) => p.x < 7 - 0.4);
+    const off = reconstructRoof(raster, syn.point, { area: { eavePhoto: false } })!;
+    const on = reconstructRoof(raster, syn.point)!;
+    expect(on.outline).toEqual(off.outline);
+    expect(on.lines).toEqual(off.lines);
+    expect(on.faces.map((f) => f.planAreaM2)).toEqual(off.faces.map((f) => f.planAreaM2));
+    const sloped = (r: typeof on) => r.faces.reduce((t, f) => t + f.slopedAreaM2, 0);
+    const rim = on.faces.reduce((t, f) => t + (f.eaveRimM2 ?? 0), 0);
+    // (0.4 - 0.06) m off the 9 m gable end, at 6/12.
+    expect(rim).toBeGreaterThan(0.25 * 9 * Math.hypot(1, 0.5));
+    expect(rim).toBeLessThan(0.45 * 9 * Math.hypot(1, 0.5));
+    expect(sloped(off) - sloped(on)).toBeCloseTo(rim, 6);
+    // Both faces end on the gable: both carry part of it.
+    expect(on.faces.filter((f) => (f.eaveRimM2 ?? 0) > 0)).toHaveLength(2);
+    expect(on.eaveTrim!.some((e) => e.by === 'photo')).toBe(true);
   });
 });

@@ -202,8 +202,11 @@ export function lidarMetrics(roof: Roof3d, t: LidarTruth, layers: RoofLayers, p:
   const shift = bestTranslation(ours, theirs, 3);
   const abd = boundaryDistance(ours, translate(theirs, shift.dx, shift.dy), p.boundaryStepM);
   const plan = area(ours);
-  const sloped = roof.faces.reduce((s, f) => s + f.slopedAreaSqFt, 0) / 10.7639104167;
-  const oursMain = dominantPitch(roof.faces.filter((f) => !f.flat).map((f) => ({ pitch: f.pitchX12, area: f.slopedAreaSqFt })));
+  // The lidar sees the roof from above: it is compared with our faces' sloped area as drawn, not as priced (no roof
+  // under an upper overhang, the mask's rim along the eaves kept: roof-reconstruct/area.ts).
+  const drawn = (f: Roof3d['faces'][number]) => f.slopedAreaSqFt - (f.underOverhangSqFt ?? 0) + (f.eaveRimSqFt ?? 0);
+  const sloped = roof.faces.reduce((s, f) => s + drawn(f), 0) / 10.7639104167;
+  const oursMain = dominantPitch(roof.faces.filter((f) => !f.flat).map((f) => ({ pitch: f.pitchX12, area: drawn(f) })));
   let hidden = EMPTY_EDGES;
   let visible = EMPTY_EDGES;
   let edgeError: string | null = null;

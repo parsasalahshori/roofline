@@ -30,6 +30,12 @@ export type AreaParams = {
    * Google's as measured on the dev houses (docs/roof-3d/area.md).
    */
   eaveInsetM: number;
+  /**
+   * The photo's first colour change is the inner edge of the eave trim (a light fascia, a dark gutter), which a measurer
+   * counts as roof: the rim read there is this much less, metres (0 = the colour change itself). Round 4 measured 0.06 on
+   * the development houses' edges (docs/roof-3d/area.md).
+   */
+  eavePhotoOffsetM: number;
   /** A colour change deeper inside the edge than this is not the mask's rim (a band of other roofing, a shadow): no evidence. Metres. */
   eaveMaxInM: number;
   /**
@@ -37,6 +43,11 @@ export type AreaParams = {
    * pixels or so): the photo then vouches for the edge where it is, and it does not move (nor by the inset).
    */
   eaveMinInM: number;
+  /**
+   * An edge whose roof colour carries on in the photo to `SEARCH_OUT_M` past it has no rim (the photo vouches for it):
+   * it does not take the inset either.
+   */
+  eaveHeldByPhoto: boolean;
   /** Edges shorter than this are not read in the photo, metres. */
   eaveMinEdgeM: number;
   /**
@@ -51,6 +62,13 @@ export type AreaParams = {
    * judged, and dissolved, by the usual cleanup); false, on the finished roof (no face or line is made or lost).
    */
   eaveBeforeTopology: boolean;
+  /**
+   * What the eave rim changes: 'priced' (the default) leaves the outline, faces and lines as drawn and takes the rim off
+   * the priced (sloped) area of the faces along each eave and rake (`rimAlong`); 'outline' moves the outline's edges in
+   * (trimRoof, or trimOutline with `eaveBeforeTopology`). A rim of a decimetre is a pixel: invisible in the drawing, and
+   * the from-above comparisons (lidar) would see the outline move for nothing.
+   */
+  eaveApply: 'priced' | 'outline';
   /** The roof's colour has ended where the photo is this far from it (RGB distance, 0-441), or `eaveMadK` robust spreads of the roof's own colour if that is more. */
   eaveMinChange: number;
   eaveMadK: number;
@@ -65,18 +83,21 @@ export type AreaParams = {
 };
 
 export const DEFAULT_AREA_PARAMS: AreaParams = {
-  eavePhoto: false,
+  eavePhoto: true,
   eaveInsetM: 0,
+  eavePhotoOffsetM: 0.06,
   eaveMaxInM: 0.5,
   eaveMinInM: 0,
+  eaveHeldByPhoto: false,
   eaveMinEdgeM: 2,
   eaveDropM: 0.5,
   eaveDropShare: 0.5,
   eaveBeforeTopology: false,
+  eaveApply: 'priced',
   eaveMinChange: 22,
   eaveMadK: 4,
   eaveReachM: 0.5,
-  tuckUnderM: 0,
+  tuckUnderM: 0.3,
 };
 
 /** The photo (3 bytes a pixel) and where it is green, on the whole raster's grid, and the crop's first column and row in it. */
@@ -113,7 +134,7 @@ function median(v: number[]): number {
  * shows no change in reach, or one already there at the search's start or deeper than `eaveMaxInM`. `canopy`: leaves
  * just outside the edge.
  */
-export function roofEndInPhoto(a: XY, b: XY, n: XY, s: number, photo: AreaPhoto, prm: AreaParams): { atM: number | null; canopy: boolean } {
+export function roofEndInPhoto(a: XY, b: XY, n: XY, s: number, photo: AreaPhoto, prm: AreaParams): { atM: number | null; canopy: boolean; continues?: boolean } {
   const L = dist(a, b);
   const none = { atM: null, canopy: false };
   if (!(L > 0)) return none;
@@ -191,14 +212,17 @@ export function roofEndInPhoto(a: XY, b: XY, n: XY, s: number, photo: AreaPhoto,
   const threshold = Math.max(prm.eaveMinChange, prm.eaveMadK * mad);
   if (!(delta[start]! <= threshold)) return { atM: null, canopy };
   let first = -1;
+  let read = start;
   for (let j = start + 1; j < nOff; j++) {
     if (Number.isNaN(delta[j]!)) break;
+    read = j;
     if (delta[j]! > threshold) {
       first = j;
       break;
     }
   }
-  if (first < 0) return { atM: null, canopy };
+  // The roof's colour carries on to the search's end, past the edge: the photo sees no rim here.
+  if (first < 0) return { atM: null, canopy, ...(read === nOff - 1 ? { continues: true } : {}) };
   const last = Math.min(nOff - 1, first + Math.round(prm.eaveReachM / STEP_M));
   let peak = delta[first]!;
   for (let j = first; j <= last; j++) if (delta[j]! > peak) peak = delta[j]!;
@@ -332,11 +356,14 @@ export function eaveMoves(outline: readonly XY[], s: number, photo: AreaPhoto | 
       const seen = roofEndInPhoto(a, b, normal, s, photo, prm);
       photoM = seen.atM;
       if (seen.atM !== null) {
-        move = seen.atM > -prm.eaveMinInM ? 0 : Math.min(0, seen.atM);
+        move = seen.atM > -prm.eaveMinInM ? 0 : Math.min(0, seen.atM + prm.eavePhotoOffsetM);
         by = 'photo';
       } else if (seen.canopy) {
         move = 0;
         by = 'canopy';
+      } else if (prm.eaveHeldByPhoto && seen.continues === true) {
+        move = 0;
+        by = 'photo';
       }
     }
     edges.push({ from: k, lengthM: L, moveM: move === 0 ? 0 : move, by, photoM });
@@ -487,4 +514,49 @@ export function tuckUnder(lines: readonly { kind: string; a: XY; b: XY; faces: r
     out[f]! += dist(l.a, l.b) * prm.tuckUnderM;
   }
   return out;
+}
+
+/** A line lies on an outline edge when both its ends are this near it, metres (topology puts them on it exactly). */
+const ON_EDGE_M = 0.05;
+/** A face's rim is at most this share of its drawn area (a sliver along the edge stays a face with some area). */
+const RIM_MAX_SHARE = 0.5;
+
+/**
+ * The rim the mask adds along the roof's edge, per face, plan square metres (area.eaveApply 'priced'): along every
+ * eave and rake line on the outline, the line's plan length times the rim width read for the outline edge it lies on
+ * (eaveMoves: the photo's edge, else the source's calibration `eaveInsetM`; none under a crown or where the heights
+ * show no eave), on the line's face, and at most RIM_MAX_SHARE of the face's drawn area. `drawn`: each face's drawn
+ * plan area, square metres.
+ */
+export function rimAlong(
+  outline: readonly XY[],
+  s: number,
+  photo: AreaPhoto | null,
+  heights: AreaHeights | null,
+  prm: AreaParams,
+  lines: readonly { kind: string; a: XY; b: XY; faces: readonly number[] }[],
+  drawn: readonly number[],
+): { rimM2: number[]; edges: EaveTrimEdge[] } {
+  const rimM2 = new Array<number>(drawn.length).fill(0);
+  if (prm.eaveApply !== 'priced') return { rimM2, edges: [] };
+  const edges = eaveMoves(outline, s, photo, heights, prm);
+  const n = outline.length;
+  if (edges.length !== n || edges.every((e) => e.moveM === 0)) return { rimM2, edges };
+  for (const l of lines) {
+    if (l.kind !== 'eave' && l.kind !== 'rake') continue;
+    const f = l.faces[0];
+    if (f === undefined || f < 0 || f >= drawn.length) continue;
+    let width = 0;
+    for (let k = 0; k < n; k++) {
+      const a = outline[k]!;
+      const b = outline[(k + 1) % n]!;
+      if (nearestOnSegment(l.a, a, b).d <= ON_EDGE_M && nearestOnSegment(l.b, a, b).d <= ON_EDGE_M) {
+        width = -edges[k]!.moveM;
+        break;
+      }
+    }
+    if (width > 0) rimM2[f]! += dist(l.a, l.b) * width;
+  }
+  for (let k = 0; k < rimM2.length; k++) rimM2[k] = Math.min(rimM2[k]!, RIM_MAX_SHARE * Math.max(0, drawn[k]!));
+  return { rimM2, edges };
 }

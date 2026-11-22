@@ -58,11 +58,17 @@ export type Roof3dFace = {
    */
   fitted?: 'gable' | 'stack';
   /**
-   * Plan area (part of planAreaSqFt, and of the sloped area at the face's pitch) the face has under the overhang of a
-   * roof above it, along its flashing and step-flashing lines (roof-reconstruct/area.ts): priced, but outside `ring`,
-   * which is what is seen from above. Absent: none.
+   * Sloped area the face has under the overhang of a roof above it, along its flashing and step-flashing lines
+   * (roof-reconstruct/area.ts): part of slopedAreaSqFt (priced), not of planAreaSqFt or `ring` (what is seen from above).
+   * Absent: none.
    */
   underOverhangSqFt?: number;
+  /**
+   * Sloped area of the rim the height map's mask adds along the face's eaves and rakes (roof-reconstruct/area.ts): part
+   * of `ring` and planAreaSqFt (drawn), taken off slopedAreaSqFt (priced). The face's sloped area as drawn is
+   * slopedAreaSqFt - underOverhangSqFt + eaveRimSqFt. Absent: none.
+   */
+  eaveRimSqFt?: number;
 };
 
 export type Roof3dLine = {
@@ -604,6 +610,16 @@ function openRing(ring: readonly LngLat[]): LngLat[] {
  * The reconstruction's faces as measured roof planes (whole x/12): what an outline drawn by hand over this roof takes
  * its facets' pitch from, as it would from Google Solar's segments.
  */
+/**
+ * A face's priced plan area, square feet: its drawn plan area with the roof under an upper overhang added and the
+ * mask's rim along its eaves taken off (in the proportion its sloped area has them). What a pitch other than the
+ * face's own multiplies (roof-model.ts); on faces stored before these corrections existed, the plan area itself.
+ */
+export function pricedPlanSqFt(f: Pick<Roof3dFace, 'planAreaSqFt' | 'slopedAreaSqFt' | 'underOverhangSqFt' | 'eaveRimSqFt'>): number {
+  const drawn = f.slopedAreaSqFt - (f.underOverhangSqFt ?? 0) + (f.eaveRimSqFt ?? 0);
+  return drawn > 0 && Number.isFinite(drawn) && Number.isFinite(f.slopedAreaSqFt) ? (f.planAreaSqFt * f.slopedAreaSqFt) / drawn : f.planAreaSqFt;
+}
+
 export function roofPlanesFrom3d(roof: Roof3d): RoofPlane[] {
   return roof.faces.map((f) => ({
     pitchX12: Math.max(0, Math.min(24, Math.round(f.pitchX12))),
