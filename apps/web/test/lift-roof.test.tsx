@@ -254,11 +254,9 @@ describe('the measure card', () => {
   it("shows Google's roof photo only over Google's tiles, and credits Microsoft only while its outlines show", () => {
     const corners: [[number, number], [number, number], [number, number], [number, number]] = [ring[3]!, ring[2]!, ring[1]!, ring[0]!];
     const m = view({ roofPhoto: { url: '/api/measurements/m1/roof-photo', corners } });
-    expect(roofPhotoFor(m, true, true)).toEqual({ url: '/api/measurements/m1/roof-photo', corners });
-    expect(roofPhotoFor(m, false, true)).toBeNull();
-    expect(roofPhotoFor(view(), true, true)).toBeNull();
-    // Off unless the build asks for it: the sharp satellite photo shows under the roof
-    expect(roofPhotoFor(m, true)).toBeNull();
+    expect(roofPhotoFor(m, true)).toEqual({ url: '/api/measurements/m1/roof-photo', corners });
+    expect(roofPhotoFor(m, false)).toBeNull();
+    expect(roofPhotoFor(view(), true)).toBeNull();
     const roof3d = { version: 1 as const, outline: ring, faces: [], lines: [], pixelSizeM: 0.1, imageryQuality: 'HIGH', imageryDate: null };
     const shed = { footprintId: '2', included: false, areaSqFt: 120, ring };
     expect(footprintsShown(view(), false)).toBe(true);
