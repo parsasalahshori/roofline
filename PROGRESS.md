@@ -244,6 +244,22 @@ brief: ~/RooflineWork/plans/roof4-brief.md (addendum to roof3-brief.md). Base ro
   HELD-OUT HOUSE RELEASED for diagnosis to the refine agent: ev-47743011 (report held-out with and without it from now on). refine.enabled stays off.
   tr-fort-smith checker failure with merge on COUNTS (two faces 1.4/12 apart each matching a Google segment are two faces).
 
+- JUDGING CHANGED (orchestrator): the median OBJECTIVE jumps on 18/14 houses and hid the worst ones. New panel ~/RooflineWork/roof-bench/better/panel.py:
+  MED (old OBJECTIVE) / MEAN (mean per-house error, capped 100) / POOL (sum |ours-EV| / sum EV), + area mean and median. Win = all three fall on dev, then unseen.
+  | run | dev MED/MEAN/POOL | held-out MED/MEAN/POOL | verdict |
+  | base (int-8-faces) | 18.0 / 23.5 / 18.3 | 20.2 / 29.6 / 27.3 | area mean 4.8 / 8.9 % |
+  | evidence on | 15.4 / 21.8 / 18.5 | 17.9 / 27.5 / 25.6 | real (pooled flat on dev) |
+  | evidence + merge v2 | 14.8 / 20.6 / 17.2 | 19.5 / 28.9 / 27.3 | overfits: off |
+  | ridge roofs (small 7dcf7e28) | 17.1 / 22.3 / 18.4 | 22.7 / 29.7 / 27.0 | neutral unseen; decide on precision |
+  | evidence + bowM 0.25 (faces2 bc4952e6) | 14.4 / 21.8 / 17.7 | 18.9 / 28.3 / 26.4 | not confirmed: off |
+  Held-out pooled without the two under-coverage houses (ev-52191132, ev-47747994): 22.3: under-coverage is the biggest unseen lever (area track).
+- sharpen: PERFECT heights give the engine only 15.7 / 15.4 (MED); 214 of 216 EV faces < 2.5 m2 never found; their edges are in EV's totals.
+  Classification of EV faces < 5 m2 (dev): turret/bay facets 71 faces / 9 houses / 798 ft hip; dormer faces 82 / 16 houses / 620 ft valley, 287 ridge, 305 hip;
+  eave returns, porches second tier; strips/slivers = bookkeeping. ROUTED: bays -> skeleton (fan = skeleton of the polygonal bump-out), dormers -> small.
+  evtruth fix (tiny steep faces' creases were 'unknown'): work-r4-sharpen/evtruth_r4.py; ADOPT for final scoring only.
+- skeleton: hip-end graft dead (nothing to graft on any of 32 houses; veto 6/6 on gables). Now: corner tie, then bay fans.
+- small: shapes judged through 0.35 m smoothing, not by the merge's gain floor; fitted faces never merged away.
+
 ## next
 - wait for the seven reports; merge winners behind the gates; sealed fresh set once; reviewer; remediation; algorithm 8;
   then ask the owner to merge + deploy.
