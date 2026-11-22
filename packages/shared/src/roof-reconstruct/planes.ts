@@ -124,6 +124,12 @@ export type PlaneParams = {
    * rounds run out. false (the default, for the same reason as cleanupRoundsPerFace): as before.
    */
   splitOnce: boolean;
+  /**
+   * Development (the engine's ceiling on restored heights): the plane search starts this far in from the roof's edge
+   * (metres, 0.2), and a pixel joins a plane's patch only when its four neighbours are on the plane too (innerPatch).
+   */
+  freeErodeM: number;
+  innerPatch: boolean;
 };
 
 export const DEFAULT_PLANE_PARAMS: PlaneParams = {
@@ -171,6 +177,8 @@ export const DEFAULT_PLANE_PARAMS: PlaneParams = {
   cleanupRounds: 12,
   cleanupRoundsPerFace: 0,
   splitOnce: false,
+  freeErodeM: 0.2,
+  innerPatch: true,
 };
 
 /** Pixel centre coordinates in metres: x east from the grid's left edge, y north from its top edge (so y <= 0). */
@@ -258,7 +266,7 @@ function tolFor(p: Plane, tol: number, square: boolean): number {
  * the plane whose four neighbours are within it too (so a one-pixel thread along a crease does not join two faces),
  * grown back by a pixel. Only the patch is visited, never the whole grid.
  */
-function patchFrom(g: Grid, s: number, dsm: Float32Array, free: Mask, p: Plane, tol0: number, square: boolean, starts: ArrayLike<number>): { patch: Mask; size: number } {
+function patchFrom(g: Grid, s: number, dsm: Float32Array, free: Mask, p: Plane, tol0: number, square: boolean, starts: ArrayLike<number>, innerPatch = true): { patch: Mask; size: number } {
   const { w } = g;
   const tol = tolFor(p, tol0, square);
   const n = free.length;
@@ -269,7 +277,7 @@ function patchFrom(g: Grid, s: number, dsm: Float32Array, free: Mask, p: Plane, 
   };
   const inner = (i: number): boolean => {
     const c = i % w;
-    return on(i) && c > 0 && on(i - 1) && c < w - 1 && on(i + 1) && i >= w && on(i - w) && i + w < n && on(i + w);
+    return on(i) && (!innerPatch || (c > 0 && on(i - 1) && c < w - 1 && on(i + 1) && i >= w && on(i - w) && i + w < n && on(i + w)));
   };
   const patch = new Uint8Array(n);
   const queue: number[] = [];
@@ -351,7 +359,7 @@ function rankTop(x: { score: number; fill: number; rms: number; seed: number }, 
  */
 export function findPlanes(g: Grid, s: number, dsm: Float32Array, roof: Mask, rng: () => number, prm: PlaneParams, tree: Mask | null = null, debug?: (msg: string) => void): FoundPlane[] {
   const { w, h } = g;
-  const free = erode(g, roof, Math.max(1, Math.round(0.2 / s)));
+  const free = prm.freeErodeM > 0 ? erode(g, roof, Math.max(1, Math.round(prm.freeErodeM / s))) : roof.slice();
   // No plane is fitted on missing heights or on tree crowns.
   for (let i = 0; i < free.length; i++) if (!Number.isFinite(dsm[i]!) || tree?.[i] === 1) free[i] = 0;
   const minPx = prm.minPlaneM2 / (s * s);
@@ -429,7 +437,7 @@ export function findPlanes(g: Grid, s: number, dsm: Float32Array, roof: Mask, rn
     for (const cand of top) {
       // Grown from the whole window the candidate was fitted on, not its one seed pixel: a seed on the free region's
       // edge (its neighbours not free) cannot start a patch on its own, and that lost whole faces.
-      const { patch, size } = patchFrom(g, s, dsm, free, cand.plane, tol, square, cand.support);
+      const { patch, size } = patchFrom(g, s, dsm, free, cand.plane, tol, square, cand.support, prm.innerPatch);
       if (best === null || size > best.size) best = { plane: cand.plane, patch, size };
     }
     if (best === null || best.size < minPx) {
@@ -442,7 +450,7 @@ export function findPlanes(g: Grid, s: number, dsm: Float32Array, roof: Mask, rn
     for (let it = 0; it < 3; it++) {
       const refit = fitPlane(g, s, dsm, indicesOf(patch));
       if (refit === null || slopeOf(refit) > maxSlope) break;
-      const again = patchFrom(g, s, dsm, free, refit, tol, square, indicesOf(patch));
+      const again = patchFrom(g, s, dsm, free, refit, tol, square, indicesOf(patch), prm.innerPatch);
       if (again.size < minPx) break;
       plane = refit;
       patch = again.patch;
