@@ -34,6 +34,7 @@ import { DEFAULT_PRIMITIVE_PARAMS, fitGables, type FittedGable, type FittedKind,
 import { DEFAULT_REFINE, mergeByEnergy, type RefineParams } from './refine.ts';
 import { type AreaParams, DEFAULT_AREA_PARAMS, type EaveTrimEdge, rimAlong, trimOutline, trimRoof, tuckUnder } from './area.ts';
 import { type CoverParams, type CoverPiece, coverPixels, cutCovers, DEFAULT_COVER_PARAMS, judgeCovers } from './covers.ts';
+import { type FittedShape, fitShapes } from './fitted-shapes.ts';
 
 export { lngLatToUtm, utmToLngLat, utmZoneOfEpsg, type UtmZone } from './utm.ts';
 export { MAX_RASTER_PIXELS, MAX_ROOF_PART_M2, RASTER_PROBLEMS, type RasterProblem, rasterProblem, roofPartAreaM2 } from './guard.ts';
@@ -43,6 +44,7 @@ export type { Plane } from './planes.ts';
 export { DEFAULT_PITCH_PARAMS, type PitchFace, type PitchGroup, type PitchParams, reportedPitches } from './pitch.ts';
 export { DEFAULT_PRIMITIVE_PARAMS, type FittedGable, type FittedKind, type MergedStack, type PrimitiveParams } from './primitives.ts';
 export { type AreaParams, DEFAULT_AREA_PARAMS, type EaveTrimEdge } from './area.ts';
+export type { FittedShape, ShapeKind, ShapeParams } from './fitted-shapes.ts';
 export { DEFAULT_LIDAR_FUSION, fuseLidar, LIDAR_FUSION_REASONS, type LidarFusionParams, type LidarFusionReason, type LidarFusionReport, type LidarFusionResult } from './lidar-fusion.ts';
 export { DEFAULT_LIDAR_EDGE, densify, LIDAR_EDGE_REASONS, type LidarCloud, type LidarEdgeParams, type LidarEdgeReason, type LidarEdgeReport } from './outline-lidar.ts';
 
@@ -239,6 +241,8 @@ export type LocalRoof = {
   gables?: FittedGable[];
   /** Stacked strips of one bowed slope merged onto the plane through its crest and its eave (primitives.ts), absent when none. */
   stacks?: MergedStack[];
+  /** Small shapes fitted on the height map (fitted-shapes.ts: ridge roofs, hip ends), absent when none. */
+  shapes?: FittedShape[];
   /**
    * What the hidden-edge step did (only when ReconstructOptions.hiddenEdge is set): edges moved onto a plane's eave line
    * and chamfers turned into corners, their length (metres, inferred, not seen), candidate edges left alone by reason,
@@ -804,13 +808,35 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     }
   }
 
+  // 4a. Small shapes the settled faces lack (fitted-shapes.ts): a small roof with a ridge of its own (a gable over an
+  //     entry, a dormer), a hip end merged into the long slopes. Fitted on the height map as shapes; their planes are
+  //     locked like the other primitives'.
+  let shapes: FittedShape[] = [];
+  let shapePieces: ReturnType<typeof buildTopology> | undefined;
+  if (primPrm.enabled && (primPrm.ridgeRoofs || primPrm.hipEnds)) {
+    const lock = (ps: readonly Plane[], kind: FittedKind | null) => ps.forEach((p) => (kind !== null ? locked.set(p, kind) : locked.delete(p)));
+    const rebuild = (f: { labels: Int32Array; planes: Plane[] }, settled: boolean) => {
+      const p = refit(g, dsm, f);
+      return { planes: p, topo: buildTopology(g, s, f.labels, p, outline, dsm, settled ? settlePrm : topoPrm, opts.debug) };
+    };
+    const done = fitShapes({ g, s, dsm, roof, tree, outline, faces, planes, topo, fixed: (p) => locked.has(p) }, primPrm, planePrm, lock, rebuild, opts.debug);
+    if (done !== null) {
+      ({ faces, planes } = done);
+      shapes = done.fitted;
+      shapePieces = done.pieces;
+      lineRows = opts.lineFeatures !== undefined ? [] : undefined;
+      topo = buildTopology(g, s, faces.labels, planes, outline, dsm, settlePrm, opts.debug, lineRows);
+    }
+  }
+
   // 4b. The walls typed piece by piece on the settled faces (topology.ts, stepPieceM): a dormer's cheek wall is its
   //     eave over the main roof's flashing, the valley behind it still a valley. Kept unless a face the first topology
   //     drew well comes out worse: from its pixels, under the smallest face size, or a thin strip (a wall's path
   //     follows the boundary's pixels, and a narrow face's polygon can come out narrower for it).
   if (settlePrm !== topoPrm) {
     const pieceRows: LineFeatures[] | undefined = opts.lineFeatures !== undefined ? [] : undefined;
-    const pieces = buildTopology(g, s, faces.labels, planes, outline, dsm, topoPrm, opts.debug, pieceRows);
+    // (With shapes fitted, that topology was drawn to check them: the same faces, planes and parameters.)
+    const pieces = shapePieces !== undefined && pieceRows === undefined ? shapePieces : buildTopology(g, s, faces.labels, planes, outline, dsm, topoPrm, opts.debug, pieceRows);
     // A polygon's mean width: twice its area over its perimeter.
     const widthOf = (ring: readonly XY[]): number => {
       let perimeter = 0;
@@ -972,6 +998,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     ...(coversCut.length > 0 ? { covers: coversCut } : {}),
     ...(gables.length > 0 ? { gables } : {}),
     ...(stacks.length > 0 ? { stacks } : {}),
+    ...(shapes.length > 0 ? { shapes: shapes.map((r) => ({ ...r, at: shift(r.at) })) } : {}),
     ...(lidarEdges !== undefined ? { lidarEdges } : {}),
     ...(canopyOut !== undefined ? { canopy: { ...canopyOut, occluded: canopyOut.occluded.map(shift) } } : {}),
     ...(hiddenOut !== undefined ? { hiddenEdge: hiddenOut.summary } : {}),

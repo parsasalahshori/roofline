@@ -56,7 +56,7 @@ export type Roof3dFace = {
    * strips, on the plane through its crest and its eave. Google's own segment under such a face is fitted to the
    * bowed heights, so the face is not checked against it.
    */
-  fitted?: 'gable' | 'stack';
+  fitted?: 'gable' | 'stack' | 'ridge-roof' | 'hip-end';
   /**
    * Set when the face stands on evidence of its own in the height map, read at run time (roof-reconstruct's
    * faces-evidence.ts; only while that rule is on): 'crease', a ridge or hip of its own (the heights turn over along a
