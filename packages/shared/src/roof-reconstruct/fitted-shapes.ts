@@ -14,7 +14,7 @@
 // polygon drawn from pixels), or that spoils a face beside it, is taken out again.
 import type { XY } from './geom.ts';
 import { findHipEnds } from './hip-ends.ts';
-import { compact, dissolve, type Faces, pixelX, pixelY, type Plane, planeZ, splitParts } from './planes.ts';
+import { compact, dissolve, type Faces, fitPlane, pixelX, pixelY, type Plane, planeZ, splitParts } from './planes.ts';
 import type { Grid, Mask } from './raster.ts';
 import { findRidgeRoofs } from './ridge-roofs.ts';
 import type { Topology } from './topology.ts';
@@ -130,7 +130,8 @@ export type ShapeParams = {
    * the faces with the shape in, each rendered as a surface round the shape and smoothed like the height map (a
    * Gaussian of judgeSmoothM metres; measured 0.30-0.40 m for faces this small), and over the shape's footprint the
    * smoothed shape must leave the heights closer than the smoothed faces it replaces, by judgeGainM or more of RMS
-   * (metres; about the height map's noise). An attenuated real gable matches its smoothed model closely; a crease
+   * (metres; about the height map's noise); and a shape of two new slopes or more closer than its footprint on ONE
+   * plane fitted to its heights, by as much (two slopes, not a lump on a near-flat patch). An attenuated real gable matches its smoothed model closely; a crease
    * invented on a smooth slope gains nothing. (The faces' common test, refine.ts judgeChange, is measured on every
    * shape for the record, FittedShape.judge, with its numbers judgeLossM, judgePerPx, judgeMedM: its gain floor was
    * set for faces the plane search finds on their own heights, and a small attenuated feature cannot reach it.)
@@ -204,6 +205,11 @@ export type ShapeJudge = {
   /** Through the smoothing (ShapeParams.shapeJudge): RMS of the heights over the footprint against the smoothed faces before and with the shape (metres). */
   rmsBefore: number;
   rmsAfter: number;
+  /** With two new slopes or more: the RMS with the footprint on one plane fitted to its heights instead (metres; NaN otherwise). */
+  rmsSingle: number;
+  /** The median |residual| the smoothed shape leaves on its footprint, and the height its planes span there (metres). */
+  medAfter: number;
+  reliefM: number;
 };
 
 /** One fitted shape: what it is, a point on it (its ridge's middle, its eave's), its pitch, its footprint's plan area. */
@@ -253,7 +259,7 @@ export function judgeShape(scene: Pick<ShapeScene, 'g' | 's' | 'dsm' | 'tree' | 
  * among the roof's own pixels (the height map does not pull a roof's edge down into the yard: the higher surface
  * bleeds over the lower one).
  */
-function smoothedFit(scene: Pick<ShapeScene, 'g' | 's' | 'dsm' | 'tree' | 'model'>, sides: readonly { px: Int32Array; plane: Plane }[], sigma: number): { rmsBefore: number; rmsAfter: number } {
+function smoothedFit(scene: Pick<ShapeScene, 'g' | 's' | 'dsm' | 'tree' | 'model'>, sides: readonly { px: Int32Array; plane: Plane }[], sigma: number): { rmsBefore: number; rmsAfter: number; rmsSingle: number; medAfter: number; reliefM: number } {
   const { g, s, dsm, tree, model } = scene;
   let c0 = Infinity;
   let r0 = Infinity;
@@ -269,7 +275,7 @@ function smoothedFit(scene: Pick<ShapeScene, 'g' | 's' | 'dsm' | 'tree' | 'model
       r1 = Math.max(r1, r);
     }
   }
-  if (!Number.isFinite(c0)) return { rmsBefore: Number.NaN, rmsAfter: Number.NaN };
+  if (!Number.isFinite(c0)) return { rmsBefore: Number.NaN, rmsAfter: Number.NaN, rmsSingle: Number.NaN, medAfter: Number.NaN, reliefM: 0 };
   const rad = sigma > 0 ? Math.ceil((3 * sigma) / s) : 0;
   c0 = Math.max(0, c0 - rad);
   r0 = Math.max(0, r0 - rad);
@@ -338,8 +344,20 @@ function smoothedFit(scene: Pick<ShapeScene, 'g' | 's' | 'dsm' | 'tree' | 'model
   };
   const sb = blur(before, valid);
   const sa = blur(after, valid);
+  // The simplest rival: the whole footprint on one plane fitted to its heights (a lump on a slope, no ridge).
+  const all: number[] = [];
+  for (const side of sides) for (const i of side.px) if (Number.isFinite(dsm[i]!) && tree?.[i] !== 1) all.push(i);
+  const one = sides.length >= 2 ? fitPlane(g, s, dsm, all) : null;
+  const single = after.slice();
+  if (one !== null) {
+    for (const side of sides) {
+      for (const i of side.px) single[(Math.floor(i / g.w) - r0) * w + (i % g.w) - c0] = planeZ(one, pixelX(g, s, i), pixelY(g, s, i));
+    }
+  }
+  const s1 = one !== null ? blur(single, valid) : null;
   let eb = 0;
   let ea = 0;
+  let e1 = 0;
   let n = 0;
   for (let r = 0; r < h; r++) {
     for (let c = 0; c < w; c++) {
@@ -349,10 +367,26 @@ function smoothedFit(scene: Pick<ShapeScene, 'g' | 's' | 'dsm' | 'tree' | 'model
       if (!Number.isFinite(z) || tree?.[i] === 1 || !Number.isFinite(sb[r * w + c]!) || !Number.isFinite(sa[r * w + c]!)) continue;
       eb += (z - sb[r * w + c]!) ** 2;
       ea += (z - sa[r * w + c]!) ** 2;
+      if (s1 !== null) e1 += (z - s1[r * w + c]!) ** 2;
       n++;
     }
   }
-  return n > 0 ? { rmsBefore: Math.sqrt(eb / n), rmsAfter: Math.sqrt(ea / n) } : { rmsBefore: Number.NaN, rmsAfter: Number.NaN };
+  // The shape's own relief over its footprint (the height its planes span there) and the median |residual| left on it.
+  const res: number[] = [];
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let r = 0; r < h; r++) {
+    for (let c = 0; c < w; c++) {
+      if (foot[r * w + c] !== 1) continue;
+      lo = Math.min(lo, after[r * w + c]!);
+      hi = Math.max(hi, after[r * w + c]!);
+      const i = (r + r0) * g.w + c + c0;
+      if (Number.isFinite(dsm[i]!) && Number.isFinite(sa[r * w + c]!)) res.push(Math.abs(dsm[i]! - sa[r * w + c]!));
+    }
+  }
+  const medAfter = median(res);
+  const rmsSingle = n > 0 && s1 !== null ? Math.sqrt(e1 / n) : Number.NaN;
+  return n > 0 ? { rmsBefore: Math.sqrt(eb / n), rmsAfter: Math.sqrt(ea / n), rmsSingle, medAfter, reliefM: hi - lo } : { rmsBefore: Number.NaN, rmsAfter: Number.NaN, rmsSingle, medAfter, reliefM: hi - lo };
 }
 
 /** A shape as its finder proposes it: its faces-to-be (pixels and plane, with what each gains), and its evidence. */
@@ -489,6 +523,12 @@ export function fitShapes(
       debug?.(`shape: ${name(sh)}: not placed (through the smoothing it leaves the heights ${j.rmsAfter.toFixed(3)} m RMS off against ${j.rmsBefore.toFixed(3)} m without it)`);
       continue;
     }
+    // Two new slopes must be two: their footprint on one plane fitted to its heights (a lump on a near-flat patch, a
+    // bump on a slope) must explain the heights worse than the shape does, by the same margin.
+    if (prm.shapeJudge && Number.isFinite(j.rmsSingle) && !(j.rmsSingle - j.rmsAfter >= prm.judgeGainM)) {
+      debug?.(`shape: ${name(sh)}: not placed (one plane over its footprint explains the heights as well: ${j.rmsSingle.toFixed(3)} m RMS against ${j.rmsAfter.toFixed(3)} m)`);
+      continue;
+    }
     found.push(sh);
   }
   if (found.length === 0) return null;
@@ -610,7 +650,7 @@ export function fitShapes(
     if (bad.length === 0) {
       for (const a of applied) {
         const j = judged.get(a.shape)!;
-        debug?.(`shape: ${name(a.shape)}: fitted, ${a.planes.length} faces at ${a.shape.pitchX12.toFixed(1)}/12 over ${a.shape.areaM2.toFixed(1)} m2 (smoothed RMS ${j.rmsBefore.toFixed(3)} -> ${j.rmsAfter.toFixed(3)} m; common test ${j.accept ? 'passes' : 'fails'}: ${j.gainPerPx.toFixed(4)} m2 a pixel, ${j.medianM.toFixed(2)} m off)`);
+        debug?.(`shape: ${name(a.shape)}: fitted, ${a.planes.length} faces at ${a.shape.pitchX12.toFixed(1)}/12 over ${a.shape.areaM2.toFixed(1)} m2 (smoothed RMS ${j.rmsBefore.toFixed(3)} -> ${j.rmsAfter.toFixed(3)} m, one plane ${Number.isFinite(j.rmsSingle) ? j.rmsSingle.toFixed(3) : '-'} m, median left ${j.medAfter.toFixed(3)} m of a ${j.reliefM.toFixed(2)} m relief; common test ${j.accept ? 'passes' : 'fails'}: ${j.gainPerPx.toFixed(4)} m2 a pixel, ${j.medianM.toFixed(2)} m off)`);
       }
       return { faces: next, planes: built.planes, pieces: built.topo, fitted: applied.map((a) => ({ kind: a.shape.kind, at: a.shape.at, pitchX12: a.shape.pitchX12, areaM2: a.shape.areaM2, faces: a.planes.length, judge: judged.get(a.shape)! })) };
     }
