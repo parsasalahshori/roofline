@@ -3,7 +3,7 @@
 // on, whatever it meets across the ridge. And buildFaces' cleanup runs to its end (the round budget, the split that
 // was dissolved and split again). Hermetic: synthetic height maps only.
 import { describe, expect, it } from 'vitest';
-import { bowExplained, DEFAULT_EVIDENCE, type EvidenceParams, faceEvidence, fragmentOf, measureFaces, offNeighbours, ownCreaseM, ownFacingOf, realFaces } from '../src/roof-reconstruct/faces-evidence.ts';
+import { bowExplained, DEFAULT_EVIDENCE, type EvidenceParams, evidenceStands, faceEvidence, fragmentOf, measureFaces, offNeighbours, ownCreaseM, ownFacingOf, realFaces } from '../src/roof-reconstruct/faces-evidence.ts';
 import { squaredDistance } from '../src/roof-reconstruct/raster.ts';
 import { reconstructRoof, toRoof3d } from '../src/roof-reconstruct/index.ts';
 import { buildFaces, DEFAULT_PLANE_PARAMS, type FaceHooks, type Faces, type FoundPlane, type Plane, type PlaneParams } from '../src/roof-reconstruct/planes.ts';
@@ -334,5 +334,19 @@ describe('negative evidence before a size rule deletes a face (evidence.bowM)', 
     const sc = strip(0.4, 13);
     expect(offNeighbours(sc.g, S, sc.dsm, sc.faces, 1, [0])).toBeLessThan(0.25);
     expect(buildFaces(sc.g, S, sc.dsm, sc.roof, sc.found, DEFAULT_PLANE_PARAMS, null, undefined, null, negative(sc, ON)).planes.length).toBe(1);
+  });
+});
+
+describe('what a face real on its evidence stands against in the weak-face cleanup (evidenceStands)', () => {
+  const ON: EvidenceParams = { ...DEFAULT_EVIDENCE, enabled: true, thinM: 0 };
+  it('a thin piece on a neighbour plane is that face cut in two, like a fragment: it goes unless keepCoplanar', () => {
+    expect(evidenceStands('thin-coplanar', 0.6, ON)).toBe(false);
+    expect(evidenceStands('thin-coplanar', 0.6, { ...ON, keepCoplanar: true })).toBe(true);
+  });
+  it('it stands against the edge and unsure rules when not thinner than thinM, never against steep-unsupported', () => {
+    expect(evidenceStands('thin-edge', 0.6, ON)).toBe(true);
+    expect(evidenceStands('thin-unsure', 0.6, ON)).toBe(true);
+    expect(evidenceStands('thin-edge', 0.6, { ...ON, thinM: 0.9 })).toBe(false);
+    expect(evidenceStands('steep-unsupported', 2, ON)).toBe(false);
   });
 });

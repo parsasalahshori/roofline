@@ -334,6 +334,14 @@ export type EvidenceParams = {
    */
   thinM: number;
   /**
+   * Whether a face real on its evidence also stands against the weak-face cleanup's 'thin-coplanar' (faces-cleanup.ts: a
+   * thin face within a few degrees of a neighbour's plane, one face cut in two). true: as round 3 shipped it. false (the
+   * default): a thin piece on a neighbour's plane goes whatever it meets on its other side, as a fragment does
+   * (fragmentOf). Measured on dev with the rule on: 3 houses change, 81 ft less line error (MEAN 21.8 -> 21.2, POOL
+   * 18.5 -> 18.0, MED 15.4 -> 15.5), and the one face under 25 sq ft the rule left on ev-51883109 goes.
+   */
+  keepCoplanar: boolean;
+  /**
    * Negative evidence before a size rule deletes a face (buildFaces steps 4 and 5, chamfer/riser and sliver/steep): the
    * face's pixels must lie on its neighbours' planes within the height map's bow (median over its pixels of the
    * distance to the nearest neighbour plane under bowM, metres; Google's slopes bow and sag 0.1-0.3 m over a few
@@ -369,6 +377,7 @@ export const DEFAULT_EVIDENCE: EvidenceParams = {
   ownPitchX12: 3,
   treeShare: 0.2,
   thinM: 0.9,
+  keepCoplanar: false,
   bowM: 0,
   bandM: 0,
   bandShare: 0.35,
@@ -542,4 +551,16 @@ export function bowExplained(g: Grid, s: number, dsm: Float32Array, faces: Faces
   const ok = off < prm.bowM || onBand;
   debug?.(`faces: ${ok ? 'off neighbours' : 'held off neighbours'} ${off.toFixed(3)} m, band ${(band / Math.max(1, c)).toFixed(2)}, face at ${(sx / Math.max(1, c)).toFixed(1)},${(sy / Math.max(1, c)).toFixed(1)}: ${(c * s * s).toFixed(1)} m2`);
   return ok;
+}
+
+/**
+ * Whether a face that is real on its evidence stands against the weak-face cleanup (faces-cleanup.ts) dissolving it for
+ * `why`: never against 'steep-unsupported' (steeper than a roof plane may be without strong support), not against
+ * 'thin-coplanar' unless keepCoplanar (a thin piece on a neighbour's plane is that face cut in two, like a fragment),
+ * and only when not thinner than thinM.
+ */
+export function evidenceStands(why: string, widthM: number, prm: EvidenceParams): boolean {
+  if (why === 'steep-unsupported') return false;
+  if (why === 'thin-coplanar' && !prm.keepCoplanar) return false;
+  return widthM >= prm.thinM;
 }
