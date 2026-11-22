@@ -3,7 +3,8 @@
 // on, whatever it meets across the ridge. And buildFaces' cleanup runs to its end (the round budget, the split that
 // was dissolved and split again). Hermetic: synthetic height maps only.
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_EVIDENCE, type EvidenceParams, faceEvidence, fragmentOf, measureFaces, ownCreaseM, ownFacingOf, realFaces } from '../src/roof-reconstruct/faces-evidence.ts';
+import { bowExplained, DEFAULT_EVIDENCE, type EvidenceParams, evidenceStands, faceEvidence, fragmentOf, measureFaces, offNeighbours, ownCreaseM, ownFacingOf, realFaces } from '../src/roof-reconstruct/faces-evidence.ts';
+import { squaredDistance } from '../src/roof-reconstruct/raster.ts';
 import { reconstructRoof, toRoof3d } from '../src/roof-reconstruct/index.ts';
 import { buildFaces, DEFAULT_PLANE_PARAMS, type FaceHooks, type Faces, type FoundPlane, type Plane, type PlaneParams } from '../src/roof-reconstruct/planes.ts';
 
@@ -300,5 +301,52 @@ describe('faceEvidence: what a face stands on (stored as Roof3dFace.evidence)', 
     expect(ev[2]).toBeNull();
     // ...while without the fragment rule it would stand on the ridge it meets.
     expect(faceEvidence(sc.g, S, sc.dsm, sc.faces, DEFAULT_PLANE_PARAMS, null, { ...DEFAULT_EVIDENCE, fragWidthM: 0 })[2]).toBe('crease');
+  });
+});
+
+describe('negative evidence before a size rule deletes a face (evidence.bowM)', () => {
+  // A slope down to the south at 6/12 (y from -1 to -7), and along its eave a steeper strip facing the same way: a
+  // porch roof 1.4 m deep at 12/12 (a face of its own: its heights fall 0.7 m below the slope's plane carried on), or a
+  // smear 0.4 m deep at 13/12 (the height map's roll-off at the eave: within 0.2 m of the slope's plane). Rough heights
+  // on the strip (every third pixel 0.2 m up), so the steep rule's "clean plane of its own" exception does not hold.
+  const main: Plane = { a: 0, b: 0.5, c: 6 };
+  const strip = (depthM: number, x12: number) => {
+    const top = -7 + depthM;
+    const steep: Plane = { a: 0, b: x12 / 12, c: main.b * top + main.c - (x12 / 12) * top };
+    const sc = scene(8, 8, (x, y) => (x < 0.5 || x > 7.5 || y > -1 || y < -7 ? -1 : y < top && x > 1.5 && x < 6.5 ? 1 : 0), [main, steep]);
+    for (let i = 0; i < sc.dsm.length; i++) if (sc.faces.labels[i] === 1 && i % 3 === 0) sc.dsm[i]! += 0.2;
+    return sc;
+  };
+  const negative = (sc: ReturnType<typeof strip>, prm: EvidenceParams): FaceHooks => ({
+    real: (f) => realFaces(sc.g, S, sc.dsm, f, DEFAULT_PLANE_PARAMS, null, prm),
+    negative: (f, k, near) => bowExplained(sc.g, S, sc.dsm, f, k, near, prm, squaredDistance(sc.g, (i) => f.labels[i]! < 0, true)),
+  });
+  const ON: EvidenceParams = { ...DEFAULT_EVIDENCE, enabled: true, thinM: 0, bowM: 0.25 };
+
+  it('a porch roof along the eave stands off the slope it meets and stays; the size rule alone dissolves it', () => {
+    const sc = strip(1.4, 12);
+    expect(offNeighbours(sc.g, S, sc.dsm, sc.faces, 1, [0])).toBeGreaterThan(0.25);
+    expect(buildFaces(sc.g, S, sc.dsm, sc.roof, sc.found, DEFAULT_PLANE_PARAMS, null, undefined, null, negative(sc, ON)).planes.length).toBe(2);
+    expect(buildFaces(sc.g, S, sc.dsm, sc.roof, sc.found, DEFAULT_PLANE_PARAMS, null, undefined, null, hooks(sc, ON)).planes.length).toBe(1);
+  });
+
+  it("the eave's smear lies on the slope's plane within the bow and is still dissolved", () => {
+    const sc = strip(0.4, 13);
+    expect(offNeighbours(sc.g, S, sc.dsm, sc.faces, 1, [0])).toBeLessThan(0.25);
+    expect(buildFaces(sc.g, S, sc.dsm, sc.roof, sc.found, DEFAULT_PLANE_PARAMS, null, undefined, null, negative(sc, ON)).planes.length).toBe(1);
+  });
+});
+
+describe('what a face real on its evidence stands against in the weak-face cleanup (evidenceStands)', () => {
+  const ON: EvidenceParams = { ...DEFAULT_EVIDENCE, enabled: true, thinM: 0 };
+  it('a thin piece on a neighbour plane is that face cut in two, like a fragment: it goes unless keepCoplanar', () => {
+    expect(evidenceStands('thin-coplanar', 0.6, ON)).toBe(false);
+    expect(evidenceStands('thin-coplanar', 0.6, { ...ON, keepCoplanar: true })).toBe(true);
+  });
+  it('it stands against the edge and unsure rules when not thinner than thinM, never against steep-unsupported', () => {
+    expect(evidenceStands('thin-edge', 0.6, ON)).toBe(true);
+    expect(evidenceStands('thin-unsure', 0.6, ON)).toBe(true);
+    expect(evidenceStands('thin-edge', 0.6, { ...ON, thinM: 0.9 })).toBe(false);
+    expect(evidenceStands('steep-unsupported', 2, ON)).toBe(false);
   });
 });

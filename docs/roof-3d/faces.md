@@ -138,3 +138,56 @@ The cleanup loop (review finding): 12 rounds end it unfinished on complex roofs,
 split again every two rounds. Both are fixed behind `planes.cleanupRoundsPerFace` and `planes.splitOnce`, and both are off
 by default because the unfinished cleanup is the better one while the size rules decide alone (run to the end they
 dissolve 19 more real faces on dev and fail 17 gates). The unsure mask is now rebuilt after a canopy re-crop.
+
+## Round 4: the flag, the corrected thin check, and what the cleanup can and cannot do
+
+**The flag.** A stored face says when it stands on evidence of its own: `Roof3dFace.evidence` is `'crease'` (a ridge or
+hip of its own) or `'facing'` (no pitched neighbour faces its way), from `faceEvidence` (faces-evidence.ts, the same test
+as `realFaces`: never a fragment, never by trees). Set only while `evidence.enabled`; optional, ignored by `isRoof3d`,
+changes no area, line or quote. With the rule off the stored roof is byte-identical to before.
+
+**The corrected thin check.** The benchmark counts the thin faces that carry `evidence` or `fitted`
+(`HouseMetrics.thinExcused`, `thinCounts` in bench/roof3d/metrics.ts) and the gates option `thinFaces.excuseEvidence`
+compares the run's unexcused thin faces with the baseline's (a baseline made before the flags counts all its thin
+faces). The gates file with it on is gates-v4 (outside the repo, beside gates-v3: only that key differs).
+
+**Where evidence-on stands** (`{"evidence":{"enabled":true,"thinM":0}}`, with `keepCoplanar` false, the default since
+round 4: a thin piece within a few degrees of a neighbour's plane goes whatever crease it meets elsewhere, as a fragment
+does). Line error, three views (MED = the scorer's OBJECTIVE, MEAN = mean per-house error, POOL = summed |ours - EagleView|
+over summed EagleView): dev 18.0 / 23.5 / 18.3 -> 15.5 / 21.2 / 18.0; held-out 20.2 / 29.6 / 27.3 -> 17.9 / 27.5 / 25.6.
+Labelled candidates kept (dev): REAL 260 -> 288 of 322, FRAG 41 -> 43 of 92, JUNK 20 -> 23 of 44. Gates-v4: every thin
+check passes; what fails is the median area error (the outline's, with the area track), held-out checker 20 -> 18
+(orlando-college-park: two doubtful faces in a dark low-slope part; ev-51881844: a new face moves a Google segment's centre
+into a south face), and runtime p95 under load (same-process timing: evidence costs 0-3 %). Of the excused thin faces on
+EagleView houses, 35 read nearer EagleView's normal than what the default run had there, 13 the same, 7 worse. Where
+evidence-on still loses feet on dev: restored faces' lower edges drawn as valleys where EagleView has eaves (the lines
+track's eaveAlong), and two complex roofs whose 3.5 m2 faces sit below the plane search's floor (a hip becomes a valley
+or the reverse there, with or without the rule). buildFaces' loose coplanar merge (`planes.mergeLooseDeg` 6 or 10) makes
+evidence-on worse (MED 16.8-17.0, MEAN 22.6-22.8) and the default no better on the mean (10: 15.1 / 24.5 / 18.9).
+
+**Negative evidence before a size rule deletes a face** (`evidence.bowM`, off). `chamfer/riser` and `sliver/steep`
+dissolve a face only when the median distance of its heights from the nearest neighbour plane is under bowM (the bow of
+Google's slopes, 0.1-0.3 m); an eave-band variant (`evidence.bandM`, off) also lets a face within 0.4 m of the roof's
+edge go. On the faces these two rules took (evidence on, dev): REAL stood 0.16-0.56 m off every neighbour plane, JUNK
+0.12-2.3 m. Dev OBJECTIVE 15.4 -> 14.2 (0.15) / 14.4 (0.25) with 5-7 more real faces kept, but leave-one-house-out does
+not confirm it and the unseen split got worse (17.9 -> 18.9 at 0.25): physically reasonable, not a measured win.
+
+**The fragment join** is the refine track's (`refine.enabled`); a model-selection join tried here (one bowed surface,
+Cauchy loss 0.1 m, against two planes; never across a wall, a turn of 30 degrees or a deck) reached 14.5 on dev with
+evidence on against the answer-key oracle's 14.7 on the all-off candidates; not kept.
+
+**The plane-search floor.** What sets it (planes.ts findPlanes): no plane is seeded or fitted within 0.2 m of the roof's
+edge; a candidate is fitted on a 13 x 13 pixel window (windowM 0.6) that must be half free and fit within 6 cm RMS; the
+patch must be minPlaneM2 (2 m2) of pixels within tolM whose four neighbours are within it too; buildFaces then dissolves
+every face under tinyFaceM2 (2.35 m2). EagleView's dev faces found, under 2.5 / 2.5-5 / 5-10 m2: default 0/262, 19/115,
+32/78; evidence on 2/262, 29/115, 42/78; every dissolve rule off 2/262, 31/115, 47/78 (the search's ceiling). Lowering
+the floor (minPlaneM2 1, tinyFaceM2 1.2, windowM 0.4) with small faces kept only on their own evidence finds 7/262 and
+34/115 but is no win on the mean (windowM 0.4 moves the big planes of bowed slopes): faces under about 5 m2 have to be
+drawn from shapes, not found.
+
+**Pitch of restored small faces.** Against the EagleView face under each (dev, evidence on): under 5 m2 the plane's own
+fit reads +1.3/12 steep (median) but the pitch reported (pooled) is +0.2/12; 5-10 m2 0.0; larger faces -0.1. The fit on a
+small face's core (eroded 0.1-0.3 m) is what reads steep; a robust fit on all its pixels reads +0.1. Not over-read as
+reported. Where restored faces change the sloped area (11 of 18 dev houses), most of the change moves toward EagleView's
+slope factor at those pixels on 10 (the exception, ev-53863159, restores faces read too shallow); the median area error
+still rises because the outlines those faces sit on are too big (plan +6 % median, the area track's).

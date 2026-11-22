@@ -23,7 +23,7 @@ import { close, components, countSet, dilate, fillHoles, largestComponent, open,
 import { buildTopology, DEFAULT_TOPOLOGY_PARAMS, type LineFeatures, type TopologyParams } from './topology.ts';
 import { DEFAULT_PHOTO_EDGE, type PhotoEdge, type PhotoEdgeParams, photoEdges } from './outline-photo.ts';
 import { boxShare, crownFromGreen, EAVE_SUPPORT, integral } from './eave-support.ts';
-import { DEFAULT_EVIDENCE, type EvidenceParams, faceEvidence, measureFaces, mergeFragments, nearTreesOf, realFaces } from './faces-evidence.ts';
+import { bowExplained, DEFAULT_EVIDENCE, type EvidenceParams, evidenceStands, faceEvidence, measureFaces, mergeFragments, nearTreesOf, realFaces } from './faces-evidence.ts';
 import { DEFAULT_FACE_CLEANUP, type FaceCleanupParams, faceSupport, type WeakReason, weakCandidate, weakFaces } from './faces-cleanup.ts';
 import { inferHiddenEaves, type OutlinePlanesParams, type PlanesDecline } from './outline-planes.ts';
 import { DEFAULT_LIDAR_EDGE, type LidarCloud, type LidarEdgeParams, type LidarEdgeReport, lidarHiddenEdges } from './outline-lidar.ts';
@@ -520,9 +520,12 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
     if (!evidencePrm.enabled) return undefined;
     // The crowns grown by a metre once for this crop (every round of buildFaces reads them).
     const near = tree === null ? null : nearTreesOf(gr, s, tree);
+    // Each pixel's squared distance to the roof's edge (the faces cover the same roof in every round).
+    let edgeD2: Float64Array | undefined;
     return {
       ...(evidencePrm.joinFragments ? { fragments: (f: Faces) => mergeFragments(gr, s, z, f, planePrm, evidencePrm, opts.debug) } : {}),
       real: (f) => realFaces(gr, s, z, f, planePrm, tree, evidencePrm, near),
+      ...(evidencePrm.bowM > 0 ? { negative: (f: Faces, k: number, nb: readonly number[]) => bowExplained(gr, s, z, f, k, nb, evidencePrm, (edgeD2 ??= squaredDistance(gr, (i) => f.labels[i]! < 0, true)), opts.debug) } : {}),
     };
   };
   let faces = buildFaces(g, s, dsm, roof, found, planePrm, tree, opts.debug, unsure, hooksOn(g, dsm));
@@ -750,7 +753,7 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
         const real = evidencePrm.enabled && weak.size > 0 ? realFaces(g, s, dsm, { labels: faces.labels, planes }, planePrm, tree, evidencePrm) : null;
         for (const [k, why] of weak) {
           if (tiny.has(k)) continue;
-          if (real?.[k] === 1 && why !== 'steep-unsupported' && support[k]!.widthM >= evidencePrm.thinM) {
+          if (real?.[k] === 1 && evidenceStands(why, support[k]!.widthM, evidencePrm)) {
             opts.debug?.(`faces: kept on evidence against ${why}: face ${k}, ${support[k]!.areaM2.toFixed(1)} m2, ${support[k]!.widthM.toFixed(2)} m wide`);
             continue;
           }

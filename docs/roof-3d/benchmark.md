@@ -194,7 +194,7 @@ integrator and verifiers: do not tune on it. `--house` of a held-out house is re
 | failed or no-roof houses | may not rise |
 | determinism | every house byte-identical on a rerun (absolute) |
 | runtime p95 | at most 1.5 × the baseline's, after the calibration |
-| thin faces (added by the bench) | may not rise, in `simple`, `canopy-heavy` and `canopy-light` only |
+| thin faces (added by the bench) | may not rise, in `simple`, `canopy-heavy` and `canopy-light` only. With `thinFaces.excuseEvidence: true` (gates-v4) a thin face that stands on evidence of its own (`Roof3dFace.evidence`: a ridge, hip or facing of its own; or `Roof3dFace.fitted`) is not counted on the run's side (`thinUnexcused`); a baseline made before the flags counts all its thin faces |
 | lidar (gates-v3) | median IoU and boundary distance against lidar truth, median sloped area error, and the hidden-edge shares within 0.5 m and mean distances (see "Lidar truth"); skipped under 3 lidar houses or 50 edge samples |
 
 Two rules the owner's list did not have, both from an A/A test (the same code at other seeds against the baseline):
