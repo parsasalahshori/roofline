@@ -137,9 +137,6 @@ function format(value: number): string {
   return value.toLocaleString();
 }
 
-/** Measurements this window made by measuring again: their first scan plays them, it never measures a third time. */
-const measuredHere = new Set<string>();
-
 function Loaded({ m, preview, onProposalReady }: { m: MeasurementView; preview: UseQueryResult<MeasurementPreview>; onProposalReady: (ready: boolean) => void }) {
   const navigate = useNavigate();
   const [lng, lat] = m.center;
@@ -156,8 +153,7 @@ function Loaded({ m, preview, onProposalReady }: { m: MeasurementView; preview: 
   const sentRow = requestRows.find((r) => r.measurementId === m.id && (r.status === 'estimate_sent' || r.status === 'signed'));
   const playback = useRoofScan(m, model?.totals.facetCount ?? m.facets);
   // Re-measure measures the home again for real (a new measurement, on the job this one is on) and opens it; the
-  // scan then plays over the new one. A saved roof the 3D measuring never looked at (an old or sample measurement:
-  // no 3D roof and no reason for its absence) is measured for real on the first Measure press too.
+  // scan then plays over the new one. The first Measure press still plays the saved measurement.
   const again = useMeasure();
   const measureAgain = () => {
     if (again.isPending) return;
@@ -165,14 +161,12 @@ function Loaded({ m, preview, onProposalReady }: { m: MeasurementView; preview: 
       { propertyId: m.propertyId, ...(m.jobId !== null ? { jobId: m.jobId } : {}) },
       {
         onSuccess: (next) => {
-          measuredHere.add(next.id);
           void navigate(`/estimator/measure/${next.id}`, { state: { ...handoff, autoScan: true } satisfies MeasureHandoff });
         },
       },
     );
   };
-  const neverMeasured3d = m.kind !== 'exact' && !m.locked && !measuredHere.has(m.id) && (m.roof3d ?? null) === null && (m.roof3dMissing ?? null) === null;
-  const scan = { ...playback, restart: measureAgain, start: neverMeasured3d ? measureAgain : playback.start };
+  const scan = { ...playback, restart: measureAgain };
   // Opened by a Measure press: the scan plays straight away
   const autoScan = handoff.autoScan === true;
   const startScan = useRef(scan.start);
