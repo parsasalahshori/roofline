@@ -288,7 +288,7 @@ export const GOOGLE_PITCH_OFFSET_X12 = 0.25;
 export const GOOGLE_EAVE_RIM_M = 0.17;
 
 /** The reconstruction's own parameters, for the benchmark's studies (development only; the server never sets them). */
-export type RoofTuning = Pick<NonNullable<Parameters<typeof reconstructRoof>[2]>, 'planes' | 'outline' | 'topology' | 'faces' | 'pitch' | 'primitives' | 'area' | 'covers' | 'evidence' | 'refine'>;
+export type RoofTuning = Pick<NonNullable<Parameters<typeof reconstructRoof>[2]>, 'planes' | 'outline' | 'topology' | 'faces' | 'pitch' | 'primitives' | 'area' | 'covers' | 'evidence' | 'refine' | 'sharpen'>;
 
 export type RoofOnLayersOptions = {
   /** Development only: parameter overrides for a benchmark study. */
@@ -430,6 +430,7 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
     ...(o.tuning?.covers !== undefined ? { covers: o.tuning.covers } : {}),
     ...(o.tuning?.evidence !== undefined ? { evidence: o.tuning.evidence } : {}),
     ...(o.tuning?.refine !== undefined ? { refine: o.tuning.refine } : {}),
+    ...(o.tuning?.sharpen !== undefined ? { sharpen: o.tuning.sharpen } : {}),
     ...(o.debug !== undefined ? { debug: o.debug } : {}),
     ...(o.lineFeatures !== undefined ? { lineFeatures: o.lineFeatures } : {}),
     ...(o.trace !== undefined ? { trace: o.trace } : {}),

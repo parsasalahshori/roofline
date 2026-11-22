@@ -35,6 +35,7 @@ import { DEFAULT_REFINE, mergeByEnergy, type RefineParams } from './refine.ts';
 import { type AreaParams, DEFAULT_AREA_PARAMS, type EaveTrimEdge, rimAlong, trimOutline, trimRoof, tuckUnder } from './area.ts';
 import { type CoverParams, type CoverPiece, coverPixels, cutCovers, DEFAULT_COVER_PARAMS, judgeCovers } from './covers.ts';
 import { type FittedShape, fitShapes } from './fitted-shapes.ts';
+import { DEFAULT_SHARPEN, sharpenHeights, type SharpenParams } from './sharpen.ts';
 
 export { lngLatToUtm, utmToLngLat, utmZoneOfEpsg, type UtmZone } from './utm.ts';
 export { MAX_RASTER_PIXELS, MAX_ROOF_PART_M2, RASTER_PROBLEMS, type RasterProblem, rasterProblem, roofPartAreaM2 } from './guard.ts';
@@ -45,6 +46,7 @@ export { DEFAULT_PITCH_PARAMS, type PitchFace, type PitchGroup, type PitchParams
 export { DEFAULT_PRIMITIVE_PARAMS, type FittedGable, type FittedKind, type MergedStack, type PrimitiveParams } from './primitives.ts';
 export { type AreaParams, DEFAULT_AREA_PARAMS, type EaveTrimEdge } from './area.ts';
 export type { FittedShape, ShapeKind, ShapeParams } from './fitted-shapes.ts';
+export { DEFAULT_SHARPEN, type SharpenParams } from './sharpen.ts';
 export { DEFAULT_LIDAR_FUSION, fuseLidar, LIDAR_FUSION_REASONS, type LidarFusionParams, type LidarFusionReason, type LidarFusionReport, type LidarFusionResult } from './lidar-fusion.ts';
 export { DEFAULT_LIDAR_EDGE, densify, LIDAR_EDGE_REASONS, type LidarCloud, type LidarEdgeParams, type LidarEdgeReason, type LidarEdgeReport } from './outline-lidar.ts';
 
@@ -101,6 +103,8 @@ export type ReconstructOptions = {
   faces?: Partial<FaceCleanupParams>;
   /** Faces kept, joined or dropped on evidence read off the height map, not on size (faces-evidence.ts). */
   evidence?: Partial<EvidenceParams>;
+  /** The heights sharpened before the plane search: rounded ridges and hips filled out to their faces' planes (sharpen.ts, off by default). */
+  sharpen?: Partial<SharpenParams>;
   /** Roof primitives: a gable's bowed slope fitted from its ridge, its eave and the slope across the ridge (primitives.ts). */
   primitives?: Partial<PrimitiveParams>;
   /**
@@ -495,6 +499,11 @@ export function reconstructRoof(raster: RoofRaster, point: { col: number; row: n
       }
     }
   }
+
+  // 1c. Sharpen (sharpen.ts, off by default): each curved pixel of the roof takes the nearby face plane the heights
+  //     rounded or filled it from (a ridge, a hip, a valley), before anything reads the heights.
+  const sharpenPrm: SharpenParams = { ...DEFAULT_SHARPEN, ...opts.sharpen };
+  if (sharpenPrm.enabled) dsm = sharpenHeights(g, s, dsm, roof, tree, sharpenPrm, planePrm.maxPitchX12 / 12);
 
   // 2. Planes and faces.
   opts.debug?.(`crop: columns from ${c0}, rows from ${r0}, ${g.w} x ${g.h}`);
