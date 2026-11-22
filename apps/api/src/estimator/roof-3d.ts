@@ -279,7 +279,7 @@ export const DEFAULT_HIDDEN_EDGE: Readonly<HiddenEdgeOption> | null = null;
 export const GOOGLE_PITCH_OFFSET_X12 = 0.25;
 
 /** The reconstruction's own parameters, for the benchmark's studies (development only; the server never sets them). */
-export type RoofTuning = Pick<NonNullable<Parameters<typeof reconstructRoof>[2]>, 'planes' | 'outline' | 'topology' | 'faces' | 'pitch' | 'primitives' | 'evidence'>;
+export type RoofTuning = Pick<NonNullable<Parameters<typeof reconstructRoof>[2]>, 'planes' | 'outline' | 'topology' | 'faces' | 'pitch' | 'primitives' | 'evidence' | 'sharpen'>;
 
 export type RoofOnLayersOptions = {
   /** Development only: parameter overrides for a benchmark study. */
@@ -417,6 +417,7 @@ function roofOnLayersOrThrow(layers: RoofLayers, point: LngLat, o: RoofOnLayersO
     pitch: { offsetX12: GOOGLE_PITCH_OFFSET_X12, ...o.tuning?.pitch },
     ...(o.tuning?.primitives !== undefined ? { primitives: o.tuning.primitives } : {}),
     ...(o.tuning?.evidence !== undefined ? { evidence: o.tuning.evidence } : {}),
+    ...(o.tuning?.sharpen !== undefined ? { sharpen: o.tuning.sharpen } : {}),
     ...(o.debug !== undefined ? { debug: o.debug } : {}),
     ...(o.lineFeatures !== undefined ? { lineFeatures: o.lineFeatures } : {}),
     ...(o.trace !== undefined ? { trace: o.trace } : {}),
