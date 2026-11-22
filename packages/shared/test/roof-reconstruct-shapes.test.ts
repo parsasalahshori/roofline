@@ -3,6 +3,7 @@
 // its own (ridge-roofs.ts). And what must stay as it is: a plain gable, a clean hip roof, a slope fitted as a gable.
 import { describe, expect, it } from 'vitest';
 import { type LocalRoof, reconstructRoof } from '../src/roof-reconstruct/index.ts';
+import { judgeShape } from '../src/roof-reconstruct/fitted-shapes.ts';
 import { roofDirections } from '../src/roof-reconstruct/ridge-roofs.ts';
 import { hipWithGableBump, NARROW_HIP, soften } from './fixtures/small-shapes.ts';
 import { BOWED_GABLE, GABLE, HIP, L_CROSS, type Shape, synthesize, type SyntheticRoof, type XY } from './fixtures/synthetic-roofs.ts';
@@ -119,6 +120,100 @@ describe('fitted shapes: a gable over a bump-out, one slope lost', () => {
     const only = reconstructRoof(syn.raster, syn.point, { primitives: { ridgeRoofs: false, hipEnds: true } })!;
     expect(only.shapes?.filter((x) => x.kind === 'ridge-roof') ?? []).toEqual([]);
     expect(lengths(only).valley!).toBeLessThan(0.6 * shape.lines.valley!);
+  });
+});
+
+describe('fitted shapes: a narrow gable is drawn whole, thin faces and all', () => {
+  // A gable 2.8 m wide over a 1.5 m bump-out at 12/12, turned 12 degrees: each slope is under 0.9 m wide on average
+  // (twice its area over its perimeter), like most of EagleView's dormer faces. The thin-face rule must not decide
+  // the geometry: a fitted face is marked `fitted` for the checks that count thin faces.
+  const shape = hipWithGableBump(1.4, 1.5, 12);
+  const syn = soften(synthesize(shape, { trees: 0, turnDeg: 12 }), 0.4, 2, 0.12);
+
+  it('its ridge and both valleys are there, its new slope marked fitted', () => {
+    const roof = reconstructRoof(syn.raster, syn.point, ON)!;
+    const got = lengths(roof);
+    expect(roof.shapes?.map((x) => x.kind)).toEqual(['ridge-roof']);
+    expect(Math.abs(got.ridge! / shape.lines.ridge! - 1), `ridge ${got.ridge}`).toBeLessThan(0.05);
+    expect(Math.abs(got.valley! / shape.lines.valley! - 1), `valleys ${got.valley}`).toBeLessThan(0.1);
+    const fitted = roof.faces.filter((f) => f.fitted === 'ridge-roof');
+    expect(fitted.length).toBeGreaterThan(0);
+    const width = (ring: readonly XY[]) => {
+      let a = 0;
+      let p = 0;
+      ring.forEach((q, k) => {
+        const r = ring[(k + 1) % ring.length]!;
+        a += q.x * r.y - r.x * q.y;
+        p += Math.hypot(r.x - q.x, r.y - q.y);
+      });
+      return Math.abs(a) / p;
+    };
+    expect(Math.min(...fitted.map((f) => width(f.ring))), 'a thin fitted face').toBeLessThan(0.9);
+  });
+
+  it('with the old width rule (shapeFaceWidthM 0.9) nothing is fitted and the valleys are missing', () => {
+    const roof = reconstructRoof(syn.raster, syn.point, { primitives: { ...ON.primitives, shapeFaceWidthM: 0.9 } })!;
+    expect(roof.shapes).toBeUndefined();
+    expect(lengths(roof).valley ?? 0).toBeLessThan(0.5 * shape.lines.valley!);
+  });
+});
+
+describe('fitted shapes: judged through the smoothing', () => {
+  // judgeShape on a 7 x 7 m patch of a slope falling south at 6/12: the faces as they stand are that slope. Heights
+  // are the true surface smoothed like Google's height map (a Gaussian of 0.35 m) plus a little noise.
+  const s = 0.1;
+  const g = { w: 70, h: 70 };
+  const n = g.w * g.h;
+  const px = (i: number) => ({ x: ((i % g.w) + 0.5) * s, y: -(Math.floor(i / g.w) + 0.5) * s });
+  const host = { a: 0, b: 0.5, c: 10 };
+  const z = (p: { a: number; b: number; c: number }, i: number) => p.a * px(i).x + p.b * px(i).y + p.c;
+  const blur = (src: Float64Array): Float32Array => {
+    const r = 10;
+    const k = Array.from({ length: 2 * r + 1 }, (_, j) => Math.exp(-(((j - r) * s) ** 2) / (2 * 0.35 * 0.35)));
+    const tmp = new Float64Array(n);
+    const out = new Float32Array(n);
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < n; i++) {
+        const c = i % g.w;
+        const row = Math.floor(i / g.w);
+        let sv = 0;
+        let sw = 0;
+        for (let j = -r; j <= r; j++) {
+          const cc = pass === 0 ? c + j : c;
+          const rr = pass === 0 ? row : row + j;
+          if (cc < 0 || rr < 0 || cc >= g.w || rr >= g.h) continue;
+          sv += k[j + r]! * (pass === 0 ? src[rr * g.w + cc]! : tmp[rr * g.w + cc]!);
+          sw += k[j + r]!;
+        }
+        if (pass === 0) tmp[i] = sv / sw;
+        else out[i] = sv / sw + 0.01 * Math.sin(i * 12.9898);
+      }
+    }
+    return out;
+  };
+  const model = Float32Array.from({ length: n }, (_, i) => z(host, i));
+  const prm = { judgeLossM: 0.1, judgePerPx: 0.0115, judgeMedM: 0.15, judgeSmoothM: 0.35 };
+  // A gable 3 m wide at 12/12 standing on the slope, its ridge running north-south down the middle at 11.2 m.
+  const west = { a: 1, b: 0, c: 11.2 - 3.5 };
+  const east = { a: -1, b: 0, c: 11.2 + 3.5 };
+  const tent = (i: number) => Math.min(z(west, i), z(east, i));
+
+  it('a small gable the height map smoothed explains its heights better than the slope under it', () => {
+    const dsm = blur(Float64Array.from({ length: n }, (_, i) => Math.max(z(host, i), tent(i))));
+    const sides = [west, east].map((plane) => ({ plane, px: Int32Array.from([...Array(n).keys()].filter((i) => tent(i) > z(host, i) && z(plane, i) === tent(i))) }));
+    const j = judgeShape({ g, s, dsm, tree: null, model }, sides, prm);
+    expect(j.rmsBefore - j.rmsAfter, `${j.rmsBefore} -> ${j.rmsAfter}`).toBeGreaterThan(0.03);
+  });
+
+  it('a crease cut into a smooth slope explains nothing', () => {
+    const dsm = blur(Float64Array.from({ length: n }, (_, i) => z(host, i)));
+    // Two planes meeting in a ridge 0.15 m proud of the slope, over the same footprint as the gable's.
+    const ridgeZ = (i: number) => z(host, i) + 0.15 - 0.2 * Math.abs(px(i).x - 3.5);
+    const l = { a: 0.2, b: 0.5, c: 10 + 0.15 - 0.2 * 3.5 };
+    const r = { a: -0.2, b: 0.5, c: 10 + 0.15 + 0.2 * 3.5 };
+    const sides = [l, r].map((plane) => ({ plane, px: Int32Array.from([...Array(n).keys()].filter((i) => ridgeZ(i) > z(host, i) && Math.abs(z(plane, i) - ridgeZ(i)) < 1e-9)) }));
+    const j = judgeShape({ g, s, dsm, tree: null, model }, sides, prm);
+    expect(j.rmsBefore - j.rmsAfter, `${j.rmsBefore} -> ${j.rmsAfter}`).toBeLessThan(0.03);
   });
 });
 
