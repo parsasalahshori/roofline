@@ -38,6 +38,11 @@ type Tent = {
   /** Whether the ridge ended, at its low-v and high-v end, where the roof beyond stands above it (it runs into a higher slope). */
   roseLo: boolean;
   roseHi: boolean;
+  /** Where the ridge ends in a hip face at its low-v and high-v end (v, metres along the ridge), or null (ShapeParams.ridgeHipEnds). */
+  hipLo: number | null;
+  hipHi: number | null;
+  /** How far the slopes run out to their eaves (metres): the hip faces' eaves lie as far from the ridge's ends. */
+  reachEnd: number;
   ridgeM: number;
 };
 
@@ -494,6 +499,7 @@ export function findRidgeRoofs(scene: ShapeScene, prm: ShapeParams, debug?: (msg
     // A ridge that ends within reach of its face's edge (the roof's edge, or the next face: a lower roof in front of a
     // gable's end) runs to it, rounded off like an eave; and so do its slopes there, as wide as they are just behind
     // (the height map rounds the gable's end off from its eaves inward).
+    const edge = { lo: false, hi: false };
     for (const dir of [-1, 1]) {
       if (dir < 0 ? roseLo : roseHi) continue;
       const end = dir < 0 ? lo : hi;
@@ -501,6 +507,7 @@ export function findRidgeRoofs(scene: ShapeScene, prm: ShapeParams, debug?: (msg
       for (let k = end + dir; Math.abs(k - end) * s <= EDGE_M + 1e-9; k += dir) {
         const i = at(u0, va + k * s);
         if (i < 0 || roof[i] !== 1 || labels[i] !== own) {
+          edge[dir < 0 ? 'lo' : 'hi'] = true;
           const wide: Col = { l: 0, r: 0, roseL: false, roseR: false };
           for (let q = end; Math.abs(q - end) * s <= 1.5; q -= dir) {
             const c = cols.get(q);
@@ -538,10 +545,60 @@ export function findRidgeRoofs(scene: ShapeScene, prm: ShapeParams, debug?: (msg
         if (nxt < run.length && nxt - k <= stopAfter && run[k - 1]! >= 0) run[k] = Math.min(run[k - 1]!, run[nxt]!);
       }
     }
-    if (cols.size * s < prm.ridgeMinM) return `the ridge holds for ${(cols.size * s).toFixed(1)} m`;
     const reach = median([...cols.values()].flatMap((c) => [c.l, c.r]));
+    const outs = [...cols.values()].flatMap((c) => [c.l, c.r]).sort((a, b) => a - b);
+    const reachEnd = outs.length > 0 ? outs[Math.min(outs.length - 1, Math.floor(0.75 * outs.length))]! : 0;
+    // Hip ends: at an end that runs neither into a higher roof nor to the roof's edge, a face through the ridge's end
+    // falling away along the ridge at the slopes' pitch, its end point moved back by up to a metre (the ridge's
+    // columns hold a little way into a hip), kept when it explains the heights round the end better than the faces
+    // there (the shape's own gain a pixel of that face).
+    const hips: { lo: number | null; hi: number | null } = { lo: null, hi: null };
+    if (prm.ridgeHipEnds && prm.ridgeFootprint === 'planes' && reachEnd > 0) {
+      for (const dir of [-1, 1]) {
+        const key = dir < 0 ? 'lo' : 'hi';
+        if ((dir < 0 ? roseLo : roseHi) || edge[key]) continue;
+        const vEnd = va + (dir < 0 ? lo : hi) * s;
+        const span = (hi - lo) * s;
+        const box = (fn: (u: number, v: number, i: number) => void) => {
+          for (let dv = -1; dv <= reachEnd + 0.3 + 1e-9; dv += s) {
+            for (let du = -(reachEnd + 0.3); du <= reachEnd + 0.3 + 1e-9; du += s) {
+              const i = at(u0 + du, vEnd + dir * dv);
+              if (!usable(i) || labels[i]! < 0) continue;
+              fn(du, dir * dv, i);
+            }
+          }
+        };
+        let cut = 0;
+        box((du, dvs, i) => {
+          const m = model[i]!;
+          const c = dir * dvs <= 0 ? Math.max(m, zr - q * Math.abs(du)) : m;
+          cut += Math.min(1, Math.abs(dsm[i]! - c));
+        });
+        let best: { back: number; cost: number; px: number } | null = null;
+        for (let back = 0; back <= Math.min(1, span) + 1e-9; back += 0.1) {
+          let cost = 0;
+          let px = 0;
+          box((du, dvs, i) => {
+            const e = dir * dvs + back;
+            const zS = zr - q * Math.max(Math.abs(du), e);
+            if (e > Math.abs(du) && zS >= model[i]!) px++;
+            cost += Math.min(1, Math.abs(dsm[i]! - Math.max(model[i]!, zS)));
+          });
+          if (best === null || cost < best.cost - 1e-9) best = { back, cost, px };
+        }
+        const hipGain = best !== null && best.px > 0 ? (cut - best.cost) / best.px : 0;
+        // (A hip face under the smallest face size could not be placed: the end stays as it was.)
+        if (best !== null && best.px * s * s >= prm.shapeFaceM2 && hipGain >= prm.shapeGainM) hips[key] = vEnd - dir * best.back;
+        debug?.(`ridge roof: hip end at ${(u0 * fr.ex + vEnd * fr.dx).toFixed(1)},${(u0 * fr.ey + vEnd * fr.dy).toFixed(1)}: ${hips[key] !== null ? 'kept' : 'not kept'} (gain ${hipGain.toFixed(2)} m over ${best?.px ?? 0} px, back ${best?.back.toFixed(1) ?? '-'} m)`);
+      }
+    }
+    if (cols.size * s < prm.ridgeMinM) {
+      // A short ridge stands when each end is hipped or runs into a higher roof (a small hipped roof, a hip dormer).
+      const ok = (hips.lo !== null || roseLo) && (hips.hi !== null || roseHi) && (hips.lo !== null || hips.hi !== null);
+      if (!ok) return `the ridge holds for ${(cols.size * s).toFixed(1)} m`;
+    }
     if (q * reach < prm.shapeReliefM) return `the ridge ${(q * reach).toFixed(2)} m above its slopes' ends`;
-    return { fr, u0, zr, q, v0: va + lo * s, runL, runR, roseL, roseR, roseLo, roseHi, ridgeM: (hi - lo + 1) * s };
+    return { fr, u0, zr, q, v0: va + lo * s, runL, runR, roseL, roseR, roseLo, roseHi, hipLo: hips.lo, hipHi: hips.hi, reachEnd, ridgeM: (hi - lo + 1) * s };
   }
 
   // 3. The footprint and the evidence.
@@ -565,32 +622,56 @@ export function findRidgeRoofs(scene: ShapeScene, prm: ShapeParams, debug?: (msg
     // follow the slope (that face reaches over from the other side of the ridge). Past an end where the ridge runs
     // into a higher slope, the tip between the two valleys; past a gable's end, nothing. Then only what hangs
     // together with the ridge.
-    const collect = (pl: Plane, pr: Plane): void => {
+    // A hip end's face (ShapeParams.ridgeHipEnds): through the ridge's end at height `top`, falling away along the
+    // ridge at `pitch` (dir -1: the low-v end, 1: the high-v end).
+    const endPlane = (dir: number, vEnd: number, top: number, pitch: number): Plane => ({ a: -dir * pitch * fr.dx, b: -dir * pitch * fr.dy, c: top + dir * pitch * vEnd });
+    const endLo: number[] = [];
+    const endHi: number[] = [];
+    const hipPast = Math.ceil((t.reachEnd + 1.3) / s);
+    const collect = (pl: Plane, pr: Plane, ends: { lo: Plane | null; hi: Plane | null } = { lo: null, hi: null }): void => {
       left.length = 0;
       right.length = 0;
+      endLo.length = 0;
+      endHi.length = 0;
+      // -1 left, 1 right, 2 the low end's hip face, 3 the high end's.
       const side = new Int8Array(n);
       for (let i = 0; i < n; i++) {
         if (!usable(i) || labels[i]! < 0) continue;
         const x = pixelX(g, s, i);
         const y = pixelY(g, s, i);
-        const k = Math.round((x * fr.dx + y * fr.dy - t.v0) / s);
-        if (k < -past || k > last + past || (k < 0 && !t.roseLo) || (k > last && !t.roseHi)) continue;
+        const v = x * fr.dx + y * fr.dy;
+        const k = Math.round((v - t.v0) / s);
+        const lowOk = k >= 0 || (t.roseLo && k >= -past) || (ends.lo !== null && k >= -hipPast);
+        const highOk = k <= last || (t.roseHi && k <= last + past) || (ends.hi !== null && k <= last + hipPast);
+        if (!lowOk || !highOk) continue;
         const u = x * fr.ex + y * fr.ey - u0;
         const d = Math.abs(u);
-        // The side: the lower of the two planes there (a ridge is the lower envelope of its slopes); for the tent, the
-        // side of the ridge's line.
-        const onLeft = pl.a * x + pl.b * y + pl.c < pr.a * x + pr.b * y + pr.c || (pl === pr && u < 0);
-        const lim = onLeft ? reachL : reachR;
-        if (lim < 0 || d > lim + s / 2) continue;
-        const p = onLeft ? pl : pr;
+        // Which plane: the lowest of the shape's there (a roof of slopes is their lower envelope): past a hipped end
+        // the hip face where it lies further from its end than the pixel from the ridge's line; else the side whose
+        // plane is lower (for the tent, the side of the ridge's line).
+        const eLo = ends.lo !== null && t.hipLo !== null ? t.hipLo - v : -Infinity;
+        const eHi = ends.hi !== null && t.hipHi !== null ? v - t.hipHi : -Infinity;
+        let code: number;
+        let p: Plane;
+        let dist: number;
+        let lim: number;
+        if (eHi > d && eHi >= eLo) {
+          [code, p, dist, lim] = [3, ends.hi!, eHi, t.reachEnd];
+        } else if (eLo > d) {
+          [code, p, dist, lim] = [2, ends.lo!, eLo, t.reachEnd];
+        } else {
+          const onLeft = pl.a * x + pl.b * y + pl.c < pr.a * x + pr.b * y + pr.c || (pl === pr && u < 0);
+          [code, p, dist, lim] = [onLeft ? -1 : 1, onLeft ? pl : pr, d, onLeft ? reachL : reachR];
+        }
+        if (lim < 0 || dist > lim + s / 2) continue;
         const zS = p.a * x + p.b * y + p.c;
         const m = model[i]!;
         // (By the ridge, on its own columns, the height map rounds the crest off under both planes: the tent's.)
         // A face that reaches over from the other side of the ridge slopes the other way across it.
         const f = planes[labels[i]!]!;
-        const over = k >= 0 && k <= last && (p.a * fr.ex + p.b * fr.ey) * (f.a * fr.ex + f.b * fr.ey) < 0 && m - zS > 0.1 && Math.abs(dsm[i]! - zS) < Math.abs(dsm[i]! - m);
-        const inside = (k >= 0 && k <= last && d < prm.shapeRoundM) || zS >= m - 0.02 || over;
-        if (inside) side[i] = onLeft ? -1 : 1;
+        const ridgeBand = k >= 0 && k <= last && d < prm.shapeRoundM && eLo <= 0 && eHi <= 0;
+        const over = code < 2 && k >= 0 && k <= last && (p.a * fr.ex + p.b * fr.ey) * (f.a * fr.ex + f.b * fr.ey) < 0 && m - zS > 0.1 && Math.abs(dsm[i]! - zS) < Math.abs(dsm[i]! - m);
+        if (ridgeBand || zS >= m - 0.02 || over) side[i] = code;
       }
       // Hanging together with the ridge: flood from the pixels on the ridge's own columns within shapeRoundM of it.
       const queue: number[] = [];
@@ -614,10 +695,13 @@ export function findRidgeRoofs(scene: ShapeScene, prm: ShapeParams, debug?: (msg
           queue.push(j);
         }
       }
-      for (const i of queue) (side[i]! < 0 ? left : right).push(i);
+      for (const i of queue) {
+        const code = side[i]!;
+        (code === -1 ? left : code === 1 ? right : code === 2 ? endLo : endHi).push(i);
+      }
     };
     if (prm.ridgeFootprint === 'planes') {
-      collect(tentPlane(1), tentPlane(-1));
+      collect(tentPlane(1), tentPlane(-1), { lo: t.hipLo !== null ? endPlane(-1, t.hipLo, zr, q) : null, hi: t.hipHi !== null ? endPlane(1, t.hipHi, zr, q) : null });
     } else {
       for (let i = 0; i < n; i++) {
         if (!usable(i) || labels[i]! < 0) continue;
@@ -731,7 +815,9 @@ export function findRidgeRoofs(scene: ShapeScene, prm: ShapeParams, debug?: (msg
         if (kept >= 30) P = refitFaces(g, s, dsm, { labels: keep, planes: [P] }, scene.tolM, maxX12)[0]!;
         // Across that plane's level line through the crest's middle: a level ridge where the two meet.
         mirror = { a: -P.a, b: -P.b, c: P.c + 2 * (P.a * ridgeAt.x + P.b * ridgeAt.y) };
-        collect(sign === 1 ? mirror : P, sign === 1 ? P : mirror);
+        const pTop = planeZ(P, ridgeAt.x, ridgeAt.y);
+        const pPitch = Math.hypot(P.a, P.b);
+        collect(sign === 1 ? mirror : P, sign === 1 ? P : mirror, { lo: t.hipLo !== null ? endPlane(-1, t.hipLo, pTop, pPitch) : null, hi: t.hipHi !== null ? endPlane(1, t.hipHi, pTop, pPitch) : null });
       }
       const pxs = sign === 1 ? left : right;
       let sum = 0;
@@ -740,6 +826,22 @@ export function findRidgeRoofs(scene: ShapeScene, prm: ShapeParams, debug?: (msg
       sides.push({ px: Int32Array.from(pxs), plane: mirror, gain: sum / pxs.length });
     } else {
       for (const f of fresh0) sides.push({ px: Int32Array.from(f.px), plane: { a: f.sign * pitch * fr.ex, b: f.sign * pitch * fr.ey, c: top - f.sign * pitch * u0 }, gain: f.gain });
+    }
+    // The hip faces past the ridge's ends: new faces of their own, each with its evidence (a face of under a square
+    // metre is left to the faces round it).
+    if (prm.ridgeFootprint === 'planes') {
+      const pTop = partner >= 0 ? planeZ(planes[partner]!, ridgeAt.x, ridgeAt.y) : zr;
+      const pPitch = partner >= 0 ? Math.hypot(planes[partner]!.a, planes[partner]!.b) : q;
+      for (const [pxs, dir, vEnd] of [
+        [endLo, -1, t.hipLo],
+        [endHi, 1, t.hipHi],
+      ] as const) {
+        if (vEnd === null || pxs.length * s * s < 1) continue;
+        const plane = endPlane(dir, vEnd, pTop, pPitch);
+        let sum = 0;
+        for (const i of pxs) sum += Math.min(1, Math.abs(dsm[i]! - model[i]!)) - Math.min(1, Math.abs(dsm[i]! - planeZ(plane, pixelX(g, s, i), pixelY(g, s, i))));
+        sides.push({ px: Int32Array.from(pxs), plane, gain: sum / pxs.length });
+      }
     }
     const fresh = sides.reduce((acc, sd) => acc + sd.px.length, 0);
     const gain = fresh > 0 ? sides.reduce((acc, sd) => acc + sd.gain * sd.px.length, 0) / fresh : 0;

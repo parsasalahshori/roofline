@@ -102,6 +102,15 @@ export type ShapeParams = {
    */
   ridgeFootprint: 'planes' | 'walk';
   /**
+   * A ridge roof's end that runs neither into a higher roof nor to the roof's edge may be hipped (a hip dormer's front,
+   * three small faces instead of two): a face through the ridge's end falling away along the ridge at the slopes'
+   * pitch, kept when it explains the heights past the end better than the faces there by shapeGainM a pixel; a ridge
+   * shorter than ridgeMinM stands when each of its ends is hipped or runs into a higher roof. False: ends are cut.
+   * OFF BY DEFAULT: a hip dormer's front is 1 to 1.5 m2, under the smallest face size (the sliver check), and on the
+   * dev houses it placed no hip face.
+   */
+  ridgeHipEnds: boolean;
+  /**
    * A ridge roof is two slopes standing on the roof: its crest stands at least this far (metres, median along the
    * ridge) above the plane of the face its new slopes are cut from. 0: not checked. A crest that is a ridge the roof
    * already has, drawn a little off, stands on that face's own plane.
@@ -166,6 +175,7 @@ export const DEFAULT_SHAPE_PARAMS: ShapeParams = {
   ridgeSideGainM: 0.02,
   ridgePitchPrior: true,
   ridgeFootprint: 'planes',
+  ridgeHipEnds: false,
   shapeCrestM: 0.12,
   shapeCoplanarDeg: 8,
   shapeBlurM: 0,
