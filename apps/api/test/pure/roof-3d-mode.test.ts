@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type LngLat, type Ring, roof3dSnapshotStamp, type Roof3dSnapshot } from '@roofline/shared';
-import { roof3dAt, roof3dFromKept, roof3dOnBoughtLayers } from '../../src/estimator/roof-3d.ts';
+import { refetchRoofPhoto, roof3dAt, roof3dFromKept, roof3dOnBoughtLayers } from '../../src/estimator/roof-3d.ts';
 import { roof3dCounts } from '../../src/estimator/roof-3d-events.ts';
 import { SolarLayersUnavailableError } from '../../src/providers/solar-layers.ts';
 import { hipLayers } from '../roof-3d-fixture.ts';
@@ -113,6 +113,30 @@ describe('a kept roof whose photo the file store lost', () => {
     expect(layers.calls).toHaveLength(2);
     expect(again?.photo?.key).toBeDefined();
     expect(wiped.files.has(again!.photo!.key)).toBe(true);
+  });
+});
+
+describe('a roof photo the file store lost is fetched again', () => {
+  it('the same window of Google\'s photo comes back under the same key', async () => {
+    const layers = new ScriptedLayers(() => LAYERS);
+    const files = new Map<string, Uint8Array>();
+    const store = { configured: true, put: async (key: string, bytes: Uint8Array) => void files.set(key, bytes), get: async (key: string) => files.get(key) ?? null };
+    const { deps } = pureDeps(layers);
+    (deps as { objectStore: unknown }).objectStore = store;
+    const snap = await roof3dFromKept(deps, null, INSIDE, Promise.resolve(buildingOf(HOUSE)));
+    const photo = snap!.photo!;
+    const original = files.get(photo.key)!;
+    files.clear();
+    const again = await refetchRoofPhoto(deps, photo);
+    expect(again).not.toBeNull();
+    expect(Buffer.from(again!).equals(Buffer.from(original))).toBe(true);
+    expect(files.has(photo.key)).toBe(true);
+  });
+
+  it('without Google or a file store: null, never a throw', async () => {
+    const { deps } = pureDeps(new ScriptedLayers(() => LAYERS));
+    const photo = { key: 'roof-photos/x.png', corners: [[-96, 41.2502], [-95.9997, 41.2502], [-95.9997, 41.25], [-96, 41.25]] as [number, number][], width: 10, height: 10 };
+    expect(await refetchRoofPhoto(deps, photo as never)).toBeNull();
   });
 });
 

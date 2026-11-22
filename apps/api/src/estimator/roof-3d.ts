@@ -651,6 +651,45 @@ export async function storeRoofPhoto(deps: AppDeps, layers: RoofLayers, roof: Ro
 }
 
 /**
+ * The photo a kept roof names, fetched from Google again when the file store lost it (a server whose disk is wiped on
+ * every deploy): Data Layers is asked once more round the photo's own corners, the same window is cut from its photo
+ * and stored under the same key, so the roof and its outline keep sitting on the photo they were measured from.
+ * Called only while the snapshot is within Google's 30 days. Null when Google or the file store cannot give it.
+ */
+export async function refetchRoofPhoto(deps: AppDeps, photo: Roof3dPhoto): Promise<Uint8Array | null> {
+  if (!deps.solarLayers.configured || !deps.objectStore.configured) return null;
+  const lng0 = photo.corners.reduce((sum, [lng]) => sum + lng, 0) / 4;
+  const lat0 = photo.corners.reduce((sum, [, lat]) => sum + lat, 0) / 4;
+  const mPerDegLat = 110_540;
+  const mPerDegLng = 111_320 * Math.cos((lat0 * Math.PI) / 180);
+  const reach = Math.max(...photo.corners.map(([lng, lat]) => Math.hypot((lng - lng0) * mPerDegLng, (lat - lat0) * mPerDegLat)));
+  let layers: RoofLayers | null;
+  try {
+    layers = await deps.solarLayers.roofLayers([lng0, lat0], Math.ceil(reach + 5));
+  } catch {
+    return null;
+  }
+  const img = layers?.photo ?? null;
+  const zone = layers === null ? null : utmZoneOfEpsg(layers.epsg);
+  if (img === null || zone === null) return null;
+  // The photo's top-left corner on the new grid (Google's grid is the same 0.1 m one; rounded to its pixel)
+  const [tlLng, tlLat] = photo.corners[0];
+  const tl = lngLatToUtm(zone, tlLng, tlLat);
+  const c0 = Math.round((tl.easting - img.originX) / img.pixelSizeM);
+  const r0 = Math.round((img.originY - tl.northing) / img.pixelSizeM);
+  if (c0 < 0 || r0 < 0 || c0 + photo.width > img.width || r0 + photo.height > img.height) return null;
+  const rgb = new Uint8Array(photo.width * photo.height * 3);
+  for (let r = 0; r < photo.height; r++) rgb.set(img.rgb.subarray(((r + r0) * img.width + c0) * 3, ((r + r0) * img.width + c0 + photo.width) * 3), r * photo.width * 3);
+  const png = encodeRgbPng(photo.width, photo.height, rgb);
+  try {
+    await deps.objectStore.put(photo.key, png, 'image/png');
+  } catch {
+    // Served this once anyway; the next view asks again.
+  }
+  return png;
+}
+
+/**
  * A reconstruction too far off to show at all (the roof is then measured from its outline as before): its outline
  * overlaps Google's mask by less than 0.6, or its faces cover less than 60% of it. Milder shortfalls are shown,
  * marked for review (RoofQuality).

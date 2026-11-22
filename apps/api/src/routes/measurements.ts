@@ -7,6 +7,7 @@ import { aerialMeasure } from '../estimator/aerial.ts';
 import { requestExactReport } from '../estimator/exact-report.ts';
 import { measureProperty, prefetchMeasure } from '../estimator/measure.ts';
 import { measurementPreview } from '../estimator/preview.ts';
+import { refetchRoofPhoto } from '../estimator/roof-3d.ts';
 import { AppError, MESSAGES } from '../errors.ts';
 import { can } from '../permissions.ts';
 import { assertKnownFields, noNul, parse, UUID } from '../validate.ts';
@@ -269,8 +270,8 @@ export function measurementRoutes(deps: AppDeps): Router {
     if (roofPhotoGone(snapshot ?? null, clock.now())) throw new AppError(410, MESSAGES.googlePhotoExpired);
     const photo = snapshot?.photo ?? null;
     if (photo === null || !solarDataCurrent(snapshot, clock.now())) throw new AppError(404, MESSAGES.notFound);
-    const bytes = await deps.objectStore.get(photo.key);
-    // Named but no longer in the store: the sweep took it (its row is cleared on the same run).
+    // Named but no longer in the store: a wiped disk (asked of Google again while its 30 days last), or the sweep took it.
+    const bytes = (await deps.objectStore.get(photo.key)) ?? (await refetchRoofPhoto(deps, photo));
     if (bytes === null) throw new AppError(410, MESSAGES.googlePhotoExpired);
     res.set('Content-Type', 'image/png');
     res.set('Cache-Control', 'private, max-age=86400');
