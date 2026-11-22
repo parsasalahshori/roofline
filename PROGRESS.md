@@ -272,6 +272,15 @@ brief: ~/RooflineWork/plans/roof4-brief.md (addendum to roof3-brief.md). Base ro
   under-segmented big faces only 55-300 ft (split move cancelled). Merge PARKED (off). Small faces are NOT shallow: noisy +-1/12 (attenuation hypothesis dropped).
   Now testing: regularise small-face planes (facing snapped to building directions, pooled pitch, offset refit) before lines are derived.
 
+- OWNER (Nov 21): "I need the big complicated houses to match EagleView." By EagleView face count, best build: simple (<=12 faces, 10 houses) line feet 14 % median,
+  medium 17 %, COMPLEX (31+, 12 houses) 24 % median / 25 % mean, area median 2.9 % (mean 8.7), half of EV's faces found. Told the owner plainly: the top-down
+  height map cannot reach EagleView on complex houses; the new-flow session now ranks extra inputs (oblique/3D tiles if terms allow, photo-first small features,
+  lidar, phone photos, confirm-and-correct taps, honest routing). Paid data stays out unless he says so.
+- small: unseen precision of ridge roofs 3 of 5 faces real (one wrong shape on ev-51881772); dev 8/8. Stays off pending a label-free look. Fitted pitches right.
+- SKELETON DONE (0ccd3715, 648709fc on roof4/skeleton): NO WIN. Whole-house oracle 31.1; graft ceiling 17.3; hip ends nothing to graft; bay fans from the
+  outline 25 of 200 ft on EV hips; corner tie dev 17.2 / 23.6 / 18.5, held-out 20.9 / 30.0 / 27.4, pitch worse: OFF. Assets: skeleton.ts (exact weighted
+  straight skeleton, tested) and corner-tie.ts (off). Not merged yet (nothing on by default). Fans handed back to the small track (detect on heights, not outline).
+
 ## next
 - wait for the seven reports; merge winners behind the gates; sealed fresh set once; reviewer; remediation; algorithm 8;
   then ask the owner to merge + deploy.
